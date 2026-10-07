@@ -1,0 +1,15 @@
+{
+  "name": "snapstudy",
+  "description": "Demo app for ShipShape. Snap a photo of homework and chat with an AI tutor. Contains launch problems on purpose.",
+  "dependencies": {
+    "expo": "54.0.0",
+    "react-native": "0.81.0",
+    "expo-image-picker": "17.0.0",
+    "react-native-fbsdk-next": "13.4.0",
+    "@react-native-firebase/auth": "23.0.0",
+    "@react-native-firebase/analytics": "23.0.0",
+    "@react-native-google-signin/google-signin": "15.0.0",
+    "@stripe/stripe-react-native": "0.50.0",
+    "openai": "5.20.0"
+  }
+}

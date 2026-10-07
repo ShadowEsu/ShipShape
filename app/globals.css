@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0b1b2b;
+  --color-sea: #0f5e7a;
+  --color-sea-light: #e6f2f6;
+  --color-foam: #f6f8fa;
+  --color-line: #dfe5ea;
+  --color-blocker: #b42318;
+  --color-warn: #b54708;
+  --color-doc: #175cd3;
+  --color-good: #067647;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  background: white;
+  color: var(--color-ink);
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg bg-sea px-4 py-2 text-sm font-semibold text-white hover:bg-ink disabled:opacity-50;
+}
+.btn-ghost {
+  @apply inline-flex items-center justify-center rounded-lg border border-line px-4 py-2 text-sm font-semibold hover:bg-foam;
+}
+.input {
+  @apply w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-sea focus:ring-2 focus:ring-sea/20;
+}
+.card {
+  @apply rounded-xl border border-line bg-white p-5;
+}
