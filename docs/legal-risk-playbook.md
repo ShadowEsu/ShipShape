@@ -98,7 +98,10 @@ ShipShape will hold contracts, signatures, SSNs/EINs and financial terms. A brea
 ---
 
 ## Terms of Service: what to ask your attorney for
-Instead of "you agree never to sue us," ask for:
+A literal "users cannot sue ShipShape" clause won't survive in court. The closest *enforceable*
+version is: (a) arbitration instead of court, (b) no class actions, and (c) damages capped at
+what the user paid. Together those make suing ShipShape slow, individual and not worth much,
+which in practice is what you want. Ask for:
 1. A clear statement that ShipShape is software, **not a law firm**, and that no attorney-client relationship exists.
 2. **No guarantee** that a document fits a particular situation or is enforceable.
 3. **User responsibility** for the accuracy of what they enter and for approving documents.
@@ -117,11 +120,51 @@ Instead of "you agree never to sue us," ask for:
 ---
 
 ## Launch scope (v1) that keeps risk low
-- Users: freelancers and small businesses in a few states (not NC until compliant).
-- Documents: Common Paper agreements + federal forms + user uploads; YC SAFE as a link-out.
-- AI: natural-language search, plain-English explanations, factual field-fill. No clause drafting.
-- E-sign via a provider API. Encrypted storage. Full audit trail.
-- Pre-sign review screen + "Talk to a lawyer" on every document.
+
+**What ShipShape is:** a memory + form-filling app. It points you to the real document
+online, remembers your details, fills them in for you, and keeps everything in one place.
+Think "Adobe Fill & Sign + a smart directory of official forms + an AI that remembers you."
+It creates no new legal content.
+
+**Who it's for:** startups, freelancers and small businesses (restaurants, shops, agencies).
+
+**In scope**
+- Formal business agreements: NDAs, service/freelance agreements, SOWs, consulting,
+  partnership/co-founder agreements, vendor/supplier agreements, consent and release forms.
+- Startup financing documents: YC SAFE (via link-out/import), plus other official forms.
+- Government business forms: federal (IRS W-9, SS-4, etc.), plus state and local forms
+  for business registration and permits.
+- User-uploaded PDFs: any form the user brings, autofilled from their profile.
+
+**Out of scope (deliberately)**
+- Employment contracts, offer letters, employee handbooks, contractor-vs-employee decisions.
+  Employment law varies by state and carries the highest legal risk.
+- Lawsuits, demand letters, court filings, anything "suing somebody."
+- Writing or editing contract terms with AI. Recommending which terms a user should pick.
+
+**How a document flows**
+1. The user searches in plain English ("NDA for a client meeting").
+2. ShipShape shows matching official/trusted sources. It **links to the original** or
+   imports a freely licensed copy (Common Paper, government forms). The user can also
+   upload their own PDF.
+3. **Autofill** from the saved profile: legal name, business name, address, email, phone,
+   entity type, EIN, state of formation, title. Don't store SSNs or ages unless a form needs them,
+   and never send them to the AI.
+4. The user reviews every field. The AI only fills facts and never touches the clauses.
+5. **Signature:** the user can save a signature, but **places it with a deliberate tap every
+   time**. It's never auto-applied. Multi-party signing goes through an e-sign provider.
+6. **Before finalizing or downloading as PDF:** a clear notice plus a required checkbox:
+   *"ShipShape fills in forms. It is not a law firm and doesn't give legal advice. We strongly
+   recommend having a lawyer review this before you sign or rely on it."*
+   Log the acknowledgment with a timestamp.
+7. The document is saved to the user's vault with its source, version, and history of what was filled.
+
+**AI memory ("it remembers you")**
+- Learns profile facts from the forms the user fills ("Your EIN changed. Update your profile?").
+- Reminds you about documents: renewals, expirations, unsigned agreements.
+- Answers "where's my NDA with Acme?" or "what did I agree to pay the designer?" from the
+  user's own stored documents.
+- Explains what a section of a document *generally* means. It doesn't say what the user should do.
 
 ## Sources
 - [G.S. 84-2.2: NC interactive legal-document website requirements](https://ncleg.gov/EnactedLegislation/Statutes/HTML/BySection/Chapter_84/GS_84-2.2.html)
