@@ -1,0 +1,795 @@
+<title>ShipShape Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: long-form blueprint — sticky contents rail on wide screens, one reading column; passport-document motifs (stamps, MRZ line) carry the subject. */
+:root {
+  --paper: #F3F6F7;
+  --surface: #FFFFFF;
+  --sunk: #E8EEF0;
+  --ink: #0E1B24;
+  --muted: #51616B;
+  --line: #D3DDE2;
+  --harbor: #0F4C5C;
+  --harbor-soft: #DCEBEF;
+  --stamp: #B3261E;
+  --ok: #2E7A4C;
+  --warn: #A86A12;
+  --ok-soft: #E1F1E7;
+  --warn-soft: #F8ECD6;
+  --stamp-soft: #F6E0DE;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0A1218; --surface: #101C24; --sunk: #0D171E; --ink: #E4ECF0; --muted: #98A9B3;
+    --line: #22343F; --harbor: #6CBBD0; --harbor-soft: #13303A; --stamp: #F07A70;
+    --ok: #6BC795; --warn: #E7B158; --ok-soft: #12301F; --warn-soft: #33270F; --stamp-soft: #3A1714;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0A1218; --surface: #101C24; --sunk: #0D171E; --ink: #E4ECF0; --muted: #98A9B3;
+  --line: #22343F; --harbor: #6CBBD0; --harbor-soft: #13303A; --stamp: #F07A70;
+  --ok: #6BC795; --warn: #E7B158; --ok-soft: #12301F; --warn-soft: #33270F; --stamp-soft: #3A1714;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.6; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 40px); padding-block: 40px 96px; }
+
+h1, h2, h3, h4 { font-family: var(--display); font-weight: 700; line-height: 1.15; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.6rem, 3vw, 2.1rem); font-variation-settings: "wdth" 88; }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; }
+p { margin: 0; }
+a { color: var(--harbor); }
+strong { font-weight: 600; }
+.mono { font-family: var(--mono); }
+.label { font-family: var(--display); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 62ch; }
+.prose { display: grid; gap: 14px; max-width: 68ch; }
+.muted { color: var(--muted); }
+.small { font-size: 0.9rem; }
+
+/* ---------- Hero ---------- */
+.hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: clamp(24px, 5vw, 64px); align-items: center; padding-bottom: 48px; border-bottom: 1px solid var(--line); }
+.hero h1 { font-size: clamp(2.8rem, 7vw, 5rem); font-variation-settings: "wdth" 72; font-weight: 800; letter-spacing: -0.02em; }
+.hero .thesis { font-family: var(--display); font-variation-settings: "wdth" 92; font-size: clamp(1.25rem, 2.4vw, 1.6rem); font-weight: 500; line-height: 1.3; margin-top: 18px; max-width: 30ch; text-wrap: balance; }
+.hero .meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 24px; }
+.hero-text { display: grid; gap: 0; min-width: 0; }
+
+/* Passport card */
+.passport { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 1px 0 var(--line), 0 18px 40px -24px rgba(14, 27, 36, 0.35); overflow: hidden; min-width: 0; }
+.passport-head { background: var(--harbor); color: var(--paper); padding: 16px 20px; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.passport-head .biz { font-family: var(--display); font-weight: 700; font-size: 1.1rem; }
+.passport-head .url { font-family: var(--mono); font-size: 0.78rem; opacity: 0.85; }
+.passport-body { padding: 8px 20px 4px; position: relative; }
+.pp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 12px 0; border-bottom: 1px dashed var(--line); align-items: center; }
+.pp-row:last-child { border-bottom: 0; }
+.pp-row .name { font-family: var(--display); font-weight: 600; font-size: 0.95rem; }
+.pp-row .sub { font-size: 0.82rem; color: var(--muted); font-family: var(--mono); }
+.chip { font-family: var(--display); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; padding: 4px 9px; border-radius: 999px; white-space: nowrap; }
+.chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chip.act { background: var(--harbor-soft); color: var(--harbor); }
+.stamp { display: block; width: max-content; margin: 2px 6px 14px auto; transform: rotate(-6deg); border: 2.5px solid var(--stamp); color: var(--stamp); border-radius: 8px; padding: 4px 10px; font-family: var(--display); font-weight: 800; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.8; pointer-events: none; font-variation-settings: "wdth" 80; }
+.stamp small { display: block; font-size: 0.6rem; letter-spacing: 0.08em; font-weight: 600; }
+.mrz { background: var(--sunk); border-top: 1px solid var(--line); padding: 12px 20px; font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.08em; color: var(--muted); overflow-x: auto; white-space: nowrap; }
+.example-note { font-size: 0.78rem; color: var(--muted); margin-top: 10px; text-align: right; }
+
+/* ---------- Layout with rail ---------- */
+.layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 56px; margin-top: 48px; }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; display: grid; gap: 4px; }
+.rail a { font-family: var(--display); font-size: 0.86rem; color: var(--muted); text-decoration: none; padding: 5px 10px; border-left: 2px solid var(--line); }
+.rail a:hover, .rail a:focus-visible { color: var(--ink); border-left-color: var(--harbor); outline: none; }
+.rail .label { padding: 0 10px 8px; }
+main { display: grid; gap: 80px; min-width: 0; }
+section { display: grid; gap: 24px; scroll-margin-top: 24px; min-width: 0; }
+.sec-head { display: grid; gap: 8px; }
+.sec-head .label { color: var(--harbor); }
+
+/* ---------- Components ---------- */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.stat { background: var(--surface); padding: 20px; display: grid; gap: 6px; align-content: start; }
+.stat .num { font-family: var(--display); font-variation-settings: "wdth" 75; font-size: 2.2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat .what { font-size: 0.92rem; }
+.stat .src { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
+
+.personas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.persona { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 10px; align-content: start; }
+.persona .who { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.persona blockquote { margin: 0; font-style: italic; color: var(--muted); border-left: 2px solid var(--harbor); padding-left: 12px; }
+.persona ul { margin: 0; padding-left: 18px; font-size: 0.95rem; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; min-width: 640px; }
+th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--display); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--sunk); font-weight: 700; }
+tr:last-child td { border-bottom: 0; }
+td.us { font-weight: 600; }
+.verdict { font-family: var(--display); font-weight: 700; font-size: 0.8rem; }
+.verdict.red { color: var(--stamp); }
+.verdict.amb { color: var(--warn); }
+.verdict.grn { color: var(--ok); }
+
+/* Positioning map */
+.map-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); gap: 28px; align-items: center; }
+.map { position: relative; aspect-ratio: 1 / 0.82; max-width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.map::before, .map::after { content: ""; position: absolute; background: var(--line); }
+.map::before { left: 50%; top: 10%; bottom: 10%; width: 1px; }
+.map::after { top: 50%; left: 8%; right: 8%; height: 1px; }
+.axis { position: absolute; font-family: var(--display); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.axis.l { left: 10px; top: 50%; transform: translateY(-140%); }
+.axis.r { right: 10px; top: 50%; transform: translateY(-140%); text-align: right; }
+.axis.t { top: 10px; left: 50%; transform: translateX(8px); }
+.axis.b { bottom: 10px; left: 50%; transform: translateX(8px); }
+.dot { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 6px; font-family: var(--display); font-size: 0.78rem; font-weight: 600; white-space: nowrap; color: var(--muted); }
+.dot::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.us { color: var(--harbor); font-size: 0.95rem; font-weight: 800; }
+.dot.us::before { width: 14px; height: 14px; background: var(--harbor); box-shadow: 0 0 0 5px var(--harbor-soft); }
+
+/* Pillars */
+.pillars { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.pillar { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 10px; align-content: start; }
+.pillar .tag { font-family: var(--mono); font-size: 0.74rem; color: var(--harbor); }
+.pillar ul { margin: 0; padding-left: 18px; font-size: 0.95rem; display: grid; gap: 4px; }
+.callout { background: var(--harbor); color: var(--paper); border-radius: 12px; padding: 24px; display: grid; gap: 8px; }
+.callout .label { color: inherit; opacity: 0.8; }
+.callout p { font-family: var(--display); font-variation-settings: "wdth" 90; font-size: 1.2rem; font-weight: 500; line-height: 1.35; }
+
+/* Journeys / flows */
+.flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; counter-reset: step; }
+.step { position: relative; padding: 16px 14px 16px 0; display: grid; gap: 6px; align-content: start; }
+.step::before { counter-increment: step; content: counter(step); font-family: var(--mono); font-size: 0.75rem; color: var(--harbor); border: 1px solid var(--harbor); border-radius: 999px; width: 26px; height: 26px; display: grid; place-items: center; background: var(--surface); position: relative; z-index: 1; }
+.step::after { content: ""; position: absolute; top: 29px; left: 26px; right: 0; height: 1px; background: var(--harbor); opacity: 0.35; }
+.step:last-child::after { display: none; }
+.step h4 { font-size: 0.95rem; }
+.step p { font-size: 0.88rem; color: var(--muted); }
+.journey { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; display: grid; gap: 6px; }
+.journey .jh { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+
+/* AI pipeline */
+.pipe { display: grid; gap: 12px; }
+.pipe-row { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.pipe-row .k { display: grid; gap: 4px; align-content: start; }
+.pipe-row .k .mono { font-size: 0.72rem; color: var(--harbor); }
+.pipe-row .v { display: grid; gap: 8px; font-size: 0.95rem; min-width: 0; }
+.pipe-row .v ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+code { font-family: var(--mono); font-size: 0.85em; background: var(--sunk); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.guard { border: 1px solid var(--stamp); background: var(--stamp-soft); border-radius: 12px; padding: 18px 20px; display: grid; gap: 8px; }
+.guard .label { color: var(--stamp); }
+.guard ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 0.95rem; }
+
+/* Stack */
+.stack { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.stack div { background: var(--surface); padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
+.stack .what { font-family: var(--display); font-weight: 700; font-size: 0.95rem; }
+.stack .why { font-size: 0.86rem; color: var(--muted); }
+pre.schema { margin: 0; background: var(--sunk); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; font-family: var(--mono); font-size: 0.8rem; line-height: 1.65; overflow-x: auto; color: var(--ink); }
+pre.schema .c { color: var(--muted); }
+
+/* Principles */
+.principles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.principle { display: grid; gap: 6px; align-content: start; padding-top: 14px; border-top: 2px solid var(--harbor); }
+.principle p { font-size: 0.93rem; color: var(--muted); }
+
+/* GTM phases */
+.phases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.phase { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 12px; align-content: start; }
+.phase .when { font-family: var(--mono); font-size: 0.75rem; color: var(--harbor); }
+.phase h3 { font-variation-settings: "wdth" 85; font-size: 1.35rem; }
+.phase ul { margin: 0; padding-left: 18px; font-size: 0.93rem; display: grid; gap: 5px; }
+.loop { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.loop div { background: var(--harbor-soft); border-radius: 10px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.loop .n { font-family: var(--mono); font-size: 0.72rem; color: var(--harbor); }
+.loop p { font-size: 0.9rem; }
+
+/* Pricing */
+.tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.tier { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 10px; align-content: start; }
+.tier.feat { border: 2px solid var(--harbor); }
+.tier .price { font-family: var(--display); font-variation-settings: "wdth" 75; font-size: 2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.tier .price span { font-size: 0.95rem; font-weight: 500; color: var(--muted); }
+.tier ul { margin: 0; padding-left: 18px; font-size: 0.92rem; display: grid; gap: 4px; }
+
+/* Metrics */
+.metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.metric { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 6px; }
+.metric .target { font-family: var(--mono); font-size: 0.8rem; color: var(--ok); }
+.north { grid-column: 1 / -1; background: var(--harbor-soft); border-color: transparent; }
+
+/* Roadmap */
+.road { display: grid; gap: 0; border-left: 2px solid var(--line); margin-left: 8px; }
+.ms { position: relative; padding: 0 0 28px 28px; display: grid; gap: 8px; }
+.ms::before { content: ""; position: absolute; left: -9px; top: 4px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); border: 3px solid var(--harbor); }
+.ms .when { font-family: var(--mono); font-size: 0.78rem; color: var(--harbor); }
+.ms ul { margin: 0; padding-left: 18px; font-size: 0.94rem; display: grid; gap: 3px; }
+.ms .exit { font-size: 0.88rem; color: var(--muted); }
+.ms .exit strong { color: var(--ink); }
+
+/* Risks */
+.risks { display: grid; gap: 12px; }
+.risk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.risk .r { font-family: var(--display); font-weight: 700; }
+.risk .m { font-size: 0.94rem; color: var(--muted); }
+
+.never { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.never div { border: 1px dashed var(--stamp); color: var(--ink); border-radius: 10px; padding: 12px 14px; font-family: var(--display); font-weight: 600; font-size: 0.92rem; }
+
+.decisions { display: grid; gap: 10px; counter-reset: d; }
+.decisions div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; display: grid; gap: 4px; }
+.sources { font-size: 0.82rem; color: var(--muted); display: grid; gap: 4px; }
+.sources a { overflow-wrap: anywhere; }
+footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .rail { display: none; }
+  .flow { grid-template-columns: minmax(0, 1fr); }
+  .step { grid-template-columns: 26px minmax(0, 1fr); column-gap: 14px; padding: 0 0 18px; }
+  .step::before { grid-row: 1 / span 2; }
+  .step::after { top: 26px; left: 12px; right: auto; width: 1px; height: calc(100% - 26px); }
+}
+@media (max-width: 820px) {
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .personas, .pillars, .metrics { grid-template-columns: minmax(0, 1fr); }
+  .principles, .phases, .tiers, .stack { grid-template-columns: minmax(0, 1fr); }
+  .loop { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .map-wrap { grid-template-columns: minmax(0, 1fr); }
+  .pipe-row, .risk { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
+@media (max-width: 460px) {
+  body { font-size: 16px; }
+  .stats, .loop { grid-template-columns: minmax(0, 1fr); }
+  .dot { font-size: 0.68rem; }
+  .dot.us { font-size: 0.8rem; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stamp { animation: press 700ms cubic-bezier(.2,.8,.2,1) 300ms both; }
+  @keyframes press { from { transform: rotate(-6deg) scale(1.25); opacity: 0.3; } to { transform: rotate(-6deg) scale(1); opacity: 0.8; } }
+}
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <div class="hero-text">
+    <span class="label">Product blueprint · v1 · October 2026</span>
+    <h1 style="margin-top:14px">ShipShape</h1>
+    <p class="thesis">Every business gets asked for the same papers. ShipShape keeps yours filled, current, and one link away.</p>
+    <div class="meta">
+      <span class="label">Web app first</span>
+      <span class="label">Startups · Freelancers · Contractors · Restaurants · Small businesses</span>
+    </div>
+  </div>
+  <div>
+    <div class="passport" aria-label="Example ShipShape passport">
+      <div class="passport-head">
+        <span class="biz">Rivera Plumbing LLC</span>
+        <span class="url">shipshape.app/rivera-plumbing</span>
+      </div>
+      <div class="passport-body">
+        <div class="pp-row"><div><div class="name">W-9 · Request for TIN</div><div class="sub">IRS form · signed 02 Jan 2026</div></div><span class="chip ok">Current</span></div>
+        <div class="pp-row"><div><div class="name">Certificate of insurance</div><div class="sub">General liability · $2M aggregate</div></div><span class="chip warn">Renews in 21 days</span></div>
+        <div class="pp-row"><div><div class="name">Contractor license</div><div class="sub">CSLB #1084427 · Class C-36</div></div><span class="chip ok">Valid to Nov 2027</span></div>
+        <div class="pp-row"><div><div class="name">Mutual NDA</div><div class="sub">Common Paper Mutual NDA v1.0</div></div><span class="chip act">Sign to view</span></div>
+        <div class="stamp" aria-hidden="true">Shipshape<small>Up to date</small></div>
+      </div>
+      <div class="mrz" aria-hidden="true">P&lt;USARIVERA&lt;PLUMBING&lt;LLC&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;<br>SS0000412&lt;7USA2611024CA&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;04</div>
+    </div>
+    <p class="example-note">Example business and numbers, for illustration.</p>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="rail" aria-label="Contents">
+    <span class="label">Contents</span>
+    <a href="#problem">The problem</a>
+    <a href="#market">Market</a>
+    <a href="#landscape">Competitors</a>
+    <a href="#product">The product</a>
+    <a href="#journeys">Key journeys</a>
+    <a href="#everyone">One app, everyone</a>
+    <a href="#ai">How the AI works</a>
+    <a href="#build">The build</a>
+    <a href="#design">Design</a>
+    <a href="#trust">Trust & legal</a>
+    <a href="#gtm">Go to market</a>
+    <a href="#money">Business model</a>
+    <a href="#metrics">Metrics</a>
+    <a href="#roadmap">Roadmap</a>
+    <a href="#risks">Risks</a>
+    <a href="#next">Decisions</a>
+  </nav>
+
+  <main>
+
+    <!-- PROBLEM -->
+    <section id="problem">
+      <div class="sec-head">
+        <span class="label">01 · The problem</span>
+        <h2>Paperwork is a team sport, played over email</h2>
+      </div>
+      <div class="prose">
+        <p>Every small business fills out forms. That part is annoying but rare. The part that never ends is <strong>sending the same documents to other businesses</strong>: a W-9 to every client's accounts-payable team, an insurance certificate to every general contractor, permits to the landlord, an NDA before every meeting.</p>
+        <p>Today that happens through attachments, "can you resend the updated one?" and documents that expire without anyone noticing. Nobody owns the problem, because every tool on the market is built for one person filling one form alone.</p>
+      </div>
+      <div class="personas">
+        <div class="persona">
+          <div class="who"><h3>Maya, freelance designer</h3><span class="label">Freelancer</span></div>
+          <blockquote>"Every new client asks for my W-9 and sends me their NDA. I dig through Downloads every time."</blockquote>
+          <ul><li>Sends a W-9 and signs an NDA for every new client</li><li>Re-types her address and EIN into every form</li><li>January: five clients ask for W-9s for 1099s at once</li></ul>
+        </div>
+        <div class="persona">
+          <div class="who"><h3>Luis, plumbing contractor</h3><span class="label">Contractor</span></div>
+          <blockquote>"My insurance renewed and three GCs held my payments until I re-sent the certificate."</blockquote>
+          <ul><li>Sends COI, license and W-9 to every GC and property manager</li><li>Insurance renewal means re-sending to everyone</li><li>Works from his phone, between jobs</li></ul>
+        </div>
+        <div class="persona">
+          <div class="who"><h3>Priya, café owner</h3><span class="label">Restaurant</span></div>
+          <blockquote>"Health permit, food handler cards, liquor license, lease, supplier W-9s. It's all in a shoebox and my email."</blockquote>
+          <ul><li>Sends permits and COIs to landlord, delivery apps, caterers</li><li>Collects W-9s and certificates from her own vendors</li><li>Renewal dates scattered across agencies</li></ul>
+        </div>
+        <div class="persona">
+          <div class="who"><h3>Sam, first-time founder</h3><span class="label">Startup</span></div>
+          <blockquote>"I raised from six angels. Six SAFEs, six emails, and I still can't find the signed one from March."</blockquote>
+          <ul><li>Sends SAFEs to investors, NDAs to partners</li><li>Customers' procurement asks for W-9 and security docs</li><li>Needs the same company details on every form</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- MARKET -->
+    <section id="market">
+      <div class="sec-head">
+        <span class="label">02 · Market</span>
+        <h2>Everyone running a business has this problem</h2>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="num">36.2M</span><span class="what">small businesses in the U.S.</span><span class="src">SBA Advocacy, Jun 2025</span></div>
+        <div class="stat"><span class="num">72.9M</span><span class="what">Americans did independent work in 2025</span><span class="src">MBO Partners, 2025</span></div>
+        <div class="stat"><span class="num">5.67M</span><span class="what">new business applications in 2025, a record</span><span class="src">Census BFS, via summaries</span></div>
+        <div class="stat"><span class="num">700K+</span><span class="what">restaurants, each juggling permits and vendors</span><span class="src">NRA data, via Toast</span></div>
+      </div>
+      <p class="muted small">Freelancer counts vary with the definition: BLS counts about 9.8M people whose main job is independent work. Even that narrow count is a large starting market.</p>
+    </section>
+
+    <!-- LANDSCAPE -->
+    <section id="landscape">
+      <div class="sec-head">
+        <span class="label">03 · Competitors</span>
+        <h2>What exists, and where the opening is</h2>
+        <p class="lede">We checked competitors before choosing the product. Each piece on its own is taken. The combination, built around sharing, is open.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Capability</th><th>Who does it today</th><th>Verdict</th></tr></thead>
+          <tbody>
+            <tr><td>AI that remembers you and autofills PDFs</td><td>Filly, Instafill.ai, Simplicity AI, pdfFiller, AutoFillPDF</td><td><span class="verdict amb">Table stakes</span> We need it; we can't win on it.</td></tr>
+            <tr><td>Legal templates + AI assistant</td><td>Rocket Lawyer (Copilot, about $149–349/yr with attorney access), LegalZoom</td><td><span class="verdict red">Crowded</span> They own thousands of templates and lawyers.</td></tr>
+            <tr><td>"Which licenses do I need?"</td><td>LegalZoom AI License Research (Mar 2026), BossWorks, SmallBizHandbook, state wizards</td><td><span class="verdict red">Crowded</span> Also closest to legal advice.</td></tr>
+            <tr><td>E-signatures</td><td>DocuSign, Dropbox Sign, PandaDoc</td><td><span class="verdict amb">Commodity</span> Integrate, don't build.</td></tr>
+            <tr><td>Expiry tracking for COIs and permits</td><td>myCOI, Billy, TrustLayer, PermitsAlert</td><td><span class="verdict amb">Enterprise</span> Often $500+/mo, built for big GCs.</td></tr>
+            <tr><td class="us">A live, shareable business packet that requests work both ways</td><td>Nobody for small businesses</td><td><span class="verdict grn">Open</span> This is ShipShape.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="map-wrap">
+        <div class="map" role="img" aria-label="Positioning map. Horizontal axis from single-player to multiplayer; vertical axis from one-off forms to an ongoing record. ShipShape sits alone in the multiplayer, ongoing-record corner.">
+          <span class="axis l">Single-player</span>
+          <span class="axis r">Multiplayer</span>
+          <span class="axis t">Ongoing record</span>
+          <span class="axis b">One-off forms</span>
+          <span class="dot" style="left:24%; top:72%">PDF fillers</span>
+          <span class="dot" style="left:30%; top:60%">Rocket Lawyer</span>
+          <span class="dot" style="left:22%; top:40%">LegalZoom</span>
+          <span class="dot" style="left:64%; top:78%">DocuSign</span>
+          <span class="dot" style="left:70%; top:36%">COI tools</span>
+          <span class="dot us" style="left:76%; top:20%">ShipShape</span>
+        </div>
+        <div class="prose">
+          <h3>Why the corner is empty</h3>
+          <p>Form tools stop when the PDF downloads. Legal platforms sell documents one at a time. COI trackers serve the large company collecting documents and ignore the small one sending them.</p>
+          <p>ShipShape serves both sides of the exchange, for businesses of any size, and stays useful after the form is filled.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRODUCT -->
+    <section id="product">
+      <div class="sec-head">
+        <span class="label">04 · The product</span>
+        <h2>Four pieces, one passport</h2>
+        <p class="lede">ShipShape is your business's paperwork passport: everything other businesses ask you for, always current, shared with one link.</p>
+      </div>
+      <div class="pillars">
+        <div class="pillar">
+          <span class="tag">MEMORY</span>
+          <h3>It remembers your business</h3>
+          <ul><li>Legal name, DBA, EIN, address, entity type, state, license and policy numbers, signature</li><li>Learns from every document you upload or fill</li><li>Every fact shows where it came from ("from your W-9, Jan 2026")</li><li>Never overwrites silently. It asks: "Your address changed. Update everywhere?"</li></ul>
+        </div>
+        <div class="pillar">
+          <span class="tag">VAULT</span>
+          <h3>Every document, findable</h3>
+          <ul><li>Upload PDFs or phone photos; ShipShape names and files them</li><li>Fill any PDF form from your memory in seconds</li><li>Tap to place your signature. It's never applied automatically</li><li>Full history: source, version, what was filled, who signed</li></ul>
+        </div>
+        <div class="pillar">
+          <span class="tag">PASSPORT</span>
+          <h3>One link that's always current</h3>
+          <ul><li>Share a packet: W-9, COI, license, NDA to sign</li><li>Choose what each recipient sees; set expiry; see who viewed</li><li>When a document renews, every recipient gets the new one</li><li><strong>Requests run both ways:</strong> ask a vendor for their W-9 and COI, and they fill it through ShipShape</li></ul>
+        </div>
+        <div class="pillar">
+          <span class="tag">DEADLINES</span>
+          <h3>Nothing lapses quietly</h3>
+          <ul><li>Reads renewal, expiry and notice dates out of your documents</li><li>Reminds you 60, 30 and 7 days ahead</li><li>Flags what your recipients are waiting on</li><li>Shows a single "shipshape" status: everything current, or what isn't</li></ul>
+        </div>
+      </div>
+      <div class="callout">
+        <span class="label">The AI assistant · working name "First Mate"</span>
+        <p>"Where's my NDA with Acme?" · "What did I agree to pay the designer?" · "What expires this quarter?" · "Send my COI to the new GC."</p>
+      </div>
+    </section>
+
+    <!-- JOURNEYS -->
+    <section id="journeys">
+      <div class="sec-head">
+        <span class="label">05 · Key journeys</span>
+        <h2>The moments that have to feel effortless</h2>
+      </div>
+      <div class="journey">
+        <div class="jh"><h3>First session: a passport in under five minutes</h3><span class="label">Activation</span></div>
+        <div class="flow">
+          <div class="step"><h4>"I run a…"</h4><p>Pick one: freelancer, contractor, restaurant, startup, other.</p></div>
+          <div class="step"><h4>Drop in what you have</h4><p>Upload or photograph 2–3 documents: W-9, insurance, license.</p></div>
+          <div class="step"><h4>AI builds your profile</h4><p>Fields extracted with sources. You confirm with one tap each.</p></div>
+          <div class="step"><h4>Passport appears</h4><p>Pre-assembled from what you uploaded, with gaps listed.</p></div>
+          <div class="step"><h4>Share the link</h4><p>Copy, text or email it. That's the magic moment.</p></div>
+        </div>
+      </div>
+      <div class="journey">
+        <div class="jh"><h3>Filling any form</h3><span class="label">Daily use</span></div>
+        <div class="flow">
+          <div class="step"><h4>Find or upload</h4><p>Search "W-9" or drop in the client's PDF.</p></div>
+          <div class="step"><h4>Autofill</h4><p>Known fields fill instantly; unsure ones are highlighted.</p></div>
+          <div class="step"><h4>Review</h4><p>Every field editable. The document text is never changed.</p></div>
+          <div class="step"><h4>Sign</h4><p>Tap to place your signature, or send for signature.</p></div>
+          <div class="step"><h4>Save and send</h4><p>Lawyer-review notice, then filed to the vault and passport.</p></div>
+        </div>
+      </div>
+      <div class="journey">
+        <div class="jh"><h3>Collecting from others</h3><span class="label">Growth loop</span></div>
+        <div class="flow">
+          <div class="step"><h4>Make a request</h4><p>"Need W-9 + COI from my 12 subcontractors."</p></div>
+          <div class="step"><h4>They get a link</h4><p>No account needed to start.</p></div>
+          <div class="step"><h4>They fill and upload</h4><p>With autofill, which invites them to save a free passport.</p></div>
+          <div class="step"><h4>You see status</h4><p>Received, missing, expiring, all in one view.</p></div>
+          <div class="step"><h4>Auto-chase</h4><p>Polite reminders before and after expiry.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EVERYONE -->
+    <section id="everyone">
+      <div class="sec-head">
+        <span class="label">06 · One app, everyone</span>
+        <h2>Same four pieces, different starter kits</h2>
+        <p class="lede">We don't build four products. Each segment gets a starter kit and its own first "magic moment", on one shared core.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Segment</th><th>Starter kit (official sources)</th><th>Shares with</th><th>Magic moment</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Freelancers</strong></td><td>W-9, service agreement and NDA (Common Paper), invoice details</td><td>Clients, agencies, AP departments</td><td>A W-9 sent in 10 seconds in January</td></tr>
+            <tr><td><strong>Contractors</strong></td><td>W-9, COI upload, license upload, lien and waiver forms (state, link-out)</td><td>GCs, property managers, homeowners</td><td>COI renewal reaches every GC automatically</td></tr>
+            <tr><td><strong>Restaurants</strong></td><td>Business license, health permit, food handler cards, COI, supplier W-9s, lease upload</td><td>Landlord, delivery apps, caterers, vendors</td><td>One "everything's current" page before inspection</td></tr>
+            <tr><td><strong>Startups</strong></td><td>SAFE (YC, link-out or import), NDA, consulting agreement, SS-4, W-9</td><td>Investors, partners, customers' procurement</td><td>Every signed SAFE in one place, with cap and date</td></tr>
+            <tr><td><strong>Small businesses</strong></td><td>W-9, vendor agreements, NDA, permits, insurance</td><td>Everyone they buy from or sell to</td><td>"Send me your paperwork" answered with one link</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small">Out of scope on purpose: employment contracts, offer letters, handbooks, lawsuits and court filings. See Trust & legal.</p>
+    </section>
+
+    <!-- AI -->
+    <section id="ai">
+      <div class="sec-head">
+        <span class="label">07 · How the AI works</span>
+        <h2>AI that reads and fills, and never writes the law</h2>
+        <p class="lede">The AI reads your documents, remembers facts, fills fields and finds things. It never drafts or changes contract terms and never tells anyone what they should sign.</p>
+      </div>
+      <div class="pipe">
+        <div class="pipe-row">
+          <div class="k"><span class="mono">STAGE 1</span><h4>Read</h4></div>
+          <div class="v"><p>Each upload (PDF or photo) goes to Claude, which reads PDFs natively. A structured-output schema returns:</p>
+            <ul><li><code>doc_type</code>, issuer, parties</li><li><code>dates</code>: effective, expires, renewal notice window</li><li><code>facts</code>: key, value, page, confidence</li><li>a one-line plain-English summary</li></ul></div>
+        </div>
+        <div class="pipe-row">
+          <div class="k"><span class="mono">STAGE 2</span><h4>Remember</h4></div>
+          <div class="v"><p>Extracted facts are compared with the profile. New facts become suggestions; changed facts ask before updating. Each fact keeps its source document, page and date, so the app can always say where it learned something.</p></div>
+        </div>
+        <div class="pipe-row">
+          <div class="k"><span class="mono">STAGE 3</span><h4>Fill</h4></div>
+          <div class="v">
+            <ul><li><strong>Fillable PDFs:</strong> read field names with pdf-lib; the AI maps each field to a profile key with a confidence score</li><li><strong>Flat or scanned PDFs:</strong> render pages to images; the AI locates labels and boxes; values are drawn as an overlay</li><li>Low-confidence fields are highlighted for the user. Fields with no matching fact stay blank; nothing is invented</li></ul>
+          </div>
+        </div>
+        <div class="pipe-row">
+          <div class="k"><span class="mono">STAGE 4</span><h4>Watch</h4></div>
+          <div class="v"><p>Dates feed a deadlines table that drives reminders and the passport status. A nightly re-check runs through the Message Batches API, which costs half as much as live calls.</p></div>
+        </div>
+        <div class="pipe-row">
+          <div class="k"><span class="mono">STAGE 5</span><h4>Answer</h4></div>
+          <div class="v"><p>Questions search only the user's own documents (Postgres full-text plus vector search, isolated by row-level security). The AI answers with page citations, so every answer links to the source.</p></div>
+        </div>
+      </div>
+      <div class="guard">
+        <span class="label">Guardrails built into the system prompt and the code</span>
+        <ul>
+          <li>Explains what a document <em>says</em>, never what the user <em>should do</em>. "Should I sign this?" leads to "Talk to a lawyer"</li>
+          <li>Never generates or edits clauses; the original document text is locked</li>
+          <li>SSNs, EINs and bank numbers are detected and swapped for tokens before any AI call, then filled back in on our servers</li>
+          <li>Documents are never used to train models; each business's data is isolated</li>
+        </ul>
+      </div>
+      <div class="prose">
+        <h3>Model and cost</h3>
+        <p>We start with Claude Opus 5.5 (<code>claude-opus-5-5</code>, $4 per million input tokens and $20 per million output) for every stage. Effort runs low for extraction and medium for questions. The fixed system prompt and schemas are cached, and nightly jobs run in batch. Our rough estimate is a few cents per document processed. Once we have a measured test set, we can test cheaper models for high-volume steps.</p>
+      </div>
+    </section>
+
+    <!-- BUILD -->
+    <section id="build">
+      <div class="sec-head">
+        <span class="label">08 · The build</span>
+        <h2>A small, boring, reliable stack</h2>
+        <p class="lede">Supabase and Vercel are already connected to the account, so we can ship the first version on day one of building.</p>
+      </div>
+      <div class="stack">
+        <div><span class="label">App</span><span class="what">Next.js on Vercel</span><span class="why">Server components, edge-fast passport pages, preview deploys per change</span></div>
+        <div><span class="label">Data</span><span class="what">Supabase Postgres</span><span class="why">Row-level security per business, full-text search and pgvector built in</span></div>
+        <div><span class="label">Auth</span><span class="what">Supabase Auth</span><span class="why">Email magic link and Google; optional 2FA for the vault</span></div>
+        <div><span class="label">Files</span><span class="what">Supabase Storage</span><span class="why">Private buckets, encrypted, short-lived signed URLs only</span></div>
+        <div><span class="label">PDF</span><span class="what">pdf-lib + PDF.js</span><span class="why">Fill and flatten forms; render pages in the browser</span></div>
+        <div><span class="label">AI</span><span class="what">Claude API (TypeScript SDK)</span><span class="why">PDF reading, structured outputs, citations, prompt caching, batches</span></div>
+        <div><span class="label">Signing</span><span class="what">E-sign provider API</span><span class="why">Multi-party signatures with ESIGN/UETA consent and audit certificates</span></div>
+        <div><span class="label">Email</span><span class="what">Transactional email service</span><span class="why">Requests, reminders, "your COI was viewed"</span></div>
+        <div><span class="label">Jobs</span><span class="what">Scheduled functions</span><span class="why">Reminder sweeps, nightly date re-checks</span></div>
+      </div>
+<pre class="schema"><span class="c">-- Core data model (Postgres, every table scoped by business_id with RLS)</span>
+businesses      id, owner_id, legal_name, dba, entity_type, state, segment
+members         business_id, user_id, role                     <span class="c">-- owner, editor, viewer</span>
+facts           business_id, key, value_enc, source_doc_id, page, confidence, confirmed_at
+documents       business_id, title, doc_type, source_url, license, status, current_version_id
+doc_versions    document_id, storage_path, filled_fields_json, signed_at, created_by
+deadlines       document_id, kind, due_on, reminded_at[]           <span class="c">-- expires, renews, notice</span>
+passports       business_id, slug, title, theme
+passport_items  passport_id, document_id, visibility, requires_signature
+share_links     passport_id, recipient_email, token_hash, expires_at, revoked_at
+views           share_link_id, viewed_at, ip_country, downloaded
+requests        business_id, title, due_on, template_items_json
+request_targets request_id, email, status, passport_id_received
+acknowledgments user_id, document_id, kind, text_version, accepted_at   <span class="c">-- lawyer-review notice</span>
+audit_events    business_id, actor_id, action, subject, at</pre>
+    </section>
+
+    <!-- DESIGN -->
+    <section id="design">
+      <div class="sec-head">
+        <span class="label">09 · Design</span>
+        <h2>Calm, clear, and easy for anyone to use</h2>
+        <p class="lede">The bar: Luis can share his passport from a truck in two minutes, and a founder thinks it looks like it belongs next to Stripe.</p>
+      </div>
+      <div class="principles">
+        <div class="principle"><h4>Show, don't ask</h4><p>Prefill everything we know, with a small source chip. Ask only for what's missing.</p></div>
+        <div class="principle"><h4>One decision per screen</h4><p>Plain words: "Insurance certificate", not "ACORD 25". No legal jargon in the interface.</p></div>
+        <div class="principle"><h4>Status at a glance</h4><p>Green: current. Amber: renewing soon. Red: expired. Shown the same way everywhere.</p></div>
+        <div class="principle"><h4>Phone first</h4><p>Camera upload, thumb-reachable actions, passport pages that load fast on bad signal.</p></div>
+        <div class="principle"><h4>Make trust visible</h4><p>Who viewed what and when, link expiry, lock icons on sensitive fields, one-tap revoke.</p></div>
+        <div class="principle"><h4>A professional handoff</h4><p>The recipient's view is the brand's billboard: clean, fast, "Powered by ShipShape".</p></div>
+      </div>
+      <div class="prose">
+        <p><strong>Brand idea.</strong> "Shipshape" means everything in good order. The identity borrows from passports and harbor charts: deep harbor blue, passport-stamp marks for status, and a machine-readable line as a signature detail. The tone is confident and quiet, like a good accountant.</p>
+      </div>
+    </section>
+
+    <!-- TRUST -->
+    <section id="trust">
+      <div class="sec-head">
+        <span class="label">10 · Trust & legal</span>
+        <h2>Designed so there's little to sue over</h2>
+        <p class="lede">No terms of service make a company impossible to sue. Our protection is a product that stays clearly on the software side of the line. The full analysis is in <code>docs/legal-risk-playbook.md</code>.</p>
+      </div>
+      <div class="never">
+        <div>Never gives legal advice or picks terms for you</div>
+        <div>Never writes or edits contract clauses</div>
+        <div>Never signs for you automatically</div>
+        <div>Never re-hosts documents we lack rights to</div>
+        <div>Never trains AI on your documents</div>
+        <div>Never markets itself as a lawyer</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Risk</th><th>How we handle it</th></tr></thead>
+          <tbody>
+            <tr><td>Unauthorized practice of law</td><td>Software only: search, fill facts, store, share. A "talk to a lawyer" option on every document. North Carolina's document-site rules met before serving NC (G.S. 84-2.2).</td></tr>
+            <tr><td>A user's document fails them</td><td>Official, attorney-drafted sources only. A required review screen with a logged acknowledgment before signing or downloading. Full audit trail.</td></tr>
+            <tr><td>Copyright</td><td>CC BY sources (Common Paper) with attribution, public government forms, user uploads. YC SAFE through a link-out until permission is granted.</td></tr>
+            <tr><td>FTC / advertising</td><td>No "AI lawyer" or "guaranteed binding" claims. DoNotPay paid $193K over exactly that.</td></tr>
+            <tr><td>Data breach</td><td>Encryption, RLS, tokenized sensitive numbers, short-lived links, revocation, audit log. SOC 2 once we sell to larger buyers.</td></tr>
+            <tr><td>Disputes</td><td>Attorney-drafted terms: arbitration, class-action waiver, liability capped at fees paid. Delaware C-corp or LLC, plus tech E&O and cyber insurance.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- GTM -->
+    <section id="gtm">
+      <div class="sec-head">
+        <span class="label">11 · Go to market</span>
+        <h2>Swim, then surf, then ride the wave</h2>
+        <p class="lede">Start narrow enough to win, then let every shared passport and every request carry ShipShape to the next business.</p>
+      </div>
+      <div class="phases">
+        <div class="phase">
+          <span class="when">MONTHS 0–3</span>
+          <h3>Swim</h3>
+          <p class="small muted">Prove one group loves it.</p>
+          <ul>
+            <li>Wedge: freelancers and small trade contractors, one state (not NC at first)</li>
+            <li>25 interviews, then 50 design partners using it weekly</li>
+            <li>Founder-led: r/freelance, r/Construction, trade associations, local Small Business Development Centers, coworking spaces</li>
+            <li>Done by hand where needed: we help set up passports on calls</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <span class="when">MONTHS 3–9</span>
+          <h3>Surf</h3>
+          <p class="small muted">Turn every share into an invite.</p>
+          <ul>
+            <li>Launch Collect for GCs, property managers and agencies. Each brings 10–30 subs or vendors</li>
+            <li>SEO pages for every official form: "Fill out a W-9 online in 30 seconds"</li>
+            <li>Partners: insurance brokers (COIs), bookkeepers and accountants (W-9 season), accelerators (SAFEs)</li>
+            <li>Ride January: 1099 season drives W-9 requests</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <span class="when">MONTHS 9–18</span>
+          <h3>Ride the wave</h3>
+          <p class="small muted">Become the default answer to "send me your paperwork".</p>
+          <ul>
+            <li>Restaurant and startup kits, multi-location businesses</li>
+            <li>Installable phone app (PWA, then native)</li>
+            <li>Integrations: accounting tools (vendor W-9 import), e-sign, Google Drive</li>
+            <li>API for marketplaces and platforms that onboard thousands of small vendors</li>
+          </ul>
+        </div>
+      </div>
+      <div class="sec-head" style="margin-top:8px"><h3>The growth loop</h3></div>
+      <div class="loop">
+        <div><span class="n">1</span><p>Maya shares her passport with a new client.</p></div>
+        <div><span class="n">2</span><p>The client's AP team sees a clean page: "Powered by ShipShape."</p></div>
+        <div><span class="n">3</span><p>The client uses Collect to request W-9s from their other freelancers.</p></div>
+        <div><span class="n">4</span><p>Each freelancer saves a free passport and shares it with their own clients.</p></div>
+      </div>
+    </section>
+
+    <!-- MONEY -->
+    <section id="money">
+      <div class="sec-head">
+        <span class="label">12 · Business model</span>
+        <h2>Free to share, paid to run your paperwork</h2>
+        <p class="lede">The free plan has to be good enough to spread. People pay for ongoing convenience, and for collecting documents from many other businesses.</p>
+      </div>
+      <div class="tiers">
+        <div class="tier">
+          <span class="label">Free</span><span class="price">$0</span>
+          <ul><li>Profile memory</li><li>Vault up to 15 documents</li><li>1 passport link</li><li>Fill and sign official forms</li></ul>
+        </div>
+        <div class="tier feat">
+          <span class="label">Pro · for one business</span><span class="price">$15<span>/mo</span></span>
+          <ul><li>Unlimited documents and links</li><li>Deadline reminders and auto-resend on renewal</li><li>First Mate AI assistant</li><li>Multi-party e-sign, view tracking</li></ul>
+        </div>
+        <div class="tier">
+          <span class="label">Collect · for teams</span><span class="price">$79<span>/mo+</span></span>
+          <ul><li>Request packets from vendors, subs, clients</li><li>Compliance dashboard, expiry alerts</li><li>Team seats, branded requests</li><li>Priced by number of counterparties</li></ul>
+        </div>
+      </div>
+      <p class="muted small">Prices are starting hypotheses to test with design partners. Reference points: Rocket Lawyer charges about $149–349 a year; enterprise COI trackers often charge $500+ a month.</p>
+    </section>
+
+    <!-- METRICS -->
+    <section id="metrics">
+      <div class="sec-head">
+        <span class="label">13 · Metrics</span>
+        <h2>How we'll know it's working</h2>
+      </div>
+      <div class="metrics">
+        <div class="metric north"><span class="label">North star</span><h3>Documents delivered through passports and requests, per week</h3><p class="small muted">It counts real exchanges between businesses, which is the thing only ShipShape does.</p></div>
+        <div class="metric"><h4>Activation</h4><p class="small muted">New users who share a passport in their first session</p><span class="target">Target: 40%</span></div>
+        <div class="metric"><h4>Viral share</h4><p class="small muted">New sign-ups that came from a passport view or request</p><span class="target">Target: 30% by month 6</span></div>
+        <div class="metric"><h4>Retention</h4><p class="small muted">Businesses that add or share a document in month two</p><span class="target">Target: 45%</span></div>
+        <div class="metric"><h4>Time to fill</h4><p class="small muted">Median time from opening a form to signed and saved</p><span class="target">Target: under 90 seconds</span></div>
+      </div>
+      <p class="muted small">Targets are starting goals, not benchmarks. We'll reset them after the first 50 design partners.</p>
+    </section>
+
+    <!-- ROADMAP -->
+    <section id="roadmap">
+      <div class="sec-head">
+        <span class="label">14 · Roadmap</span>
+        <h2>From interviews to a growth loop in about four months</h2>
+      </div>
+      <div class="road">
+        <div class="ms"><span class="when">WEEKS 1–2 · VALIDATE</span><h3>Talk to 25 businesses</h3>
+          <ul><li>10 contractors, 10 freelancers, 5 restaurant owners</li><li>Ask: how many times last month did you send a W-9, COI or license? How? Has anything expired unnoticed?</li><li>Clickable prototype of the passport and share flow</li></ul>
+          <p class="exit"><strong>Go if</strong> most send documents several times a month and 10 agree to try it.</p></div>
+        <div class="ms"><span class="when">WEEKS 3–8 · MVP</span><h3>Memory, vault, fill, sign, passport</h3>
+          <ul><li>Accounts, business profile, uploads with AI read and remember</li><li>Fill any PDF, tap-to-sign, lawyer-review notice, PDF download</li><li>Passport page with share links, expiry and view tracking</li><li>Starter kits for freelancers and contractors</li></ul>
+          <p class="exit"><strong>Ship when</strong> a new user can share a passport in under five minutes.</p></div>
+        <div class="ms"><span class="when">WEEKS 9–12 · LOOP</span><h3>Requests, reminders, Collect</h3>
+          <ul><li>Request documents from others; recipients fill without an account</li><li>Deadline reminders and auto-resend on renewal</li><li>Collect dashboard beta with 5 GCs or agencies</li></ul>
+          <p class="exit"><strong>Measure</strong> viral share and month-two retention.</p></div>
+        <div class="ms"><span class="when">WEEKS 13–16 · ASSIST</span><h3>First Mate and SEO</h3>
+          <ul><li>Ask-your-vault with page citations</li><li>Public form pages for the top 50 official forms</li><li>Paid plans switched on</li></ul></div>
+        <div class="ms"><span class="when">AFTER · EXPAND</span><h3>Restaurants, startups, phone app, integrations</h3>
+          <ul><li>Segment kits, multi-location, PWA then native, accounting and e-sign integrations, platform API</li></ul></div>
+      </div>
+    </section>
+
+    <!-- RISKS -->
+    <section id="risks">
+      <div class="sec-head">
+        <span class="label">15 · Risks</span>
+        <h2>What could sink it, and the plan for each</h2>
+      </div>
+      <div class="risks">
+        <div class="risk"><div class="r">Recipients want attachments, not links</div><div class="m">Every passport also exports a single PDF bundle or zip, and can send a plain email with attachments. The link is a convenience, not a gate.</div></div>
+        <div class="risk"><div class="r">People won't trust us with sensitive documents</div><div class="m">Visible security: who viewed, expiry, revoke, tokenized numbers. Security page, then SOC 2. Start with documents that are already semi-public (W-9s, COIs, licenses).</div></div>
+        <div class="risk"><div class="r">An incumbent adds sharing</div><div class="m">Speed and the network. Every passport and request we deliver makes switching harder. Incumbents sell documents; we run exchanges.</div></div>
+        <div class="risk"><div class="r">Fake or edited certificates</div><div class="m">We show "uploaded by the business" and never claim verification. Later: direct feeds from insurance brokers and state license lookups for a "Verified" badge.</div></div>
+        <div class="risk"><div class="r">Scope creep into legal advice</div><div class="m">The "never" list is a product rule. New features get a quick check against it, and the attorney reviews flows before launch.</div></div>
+        <div class="risk"><div class="r">Too broad to explain</div><div class="m">One message everywhere: "Your business paperwork, filled and shared with one link." Segments only change the starter kit.</div></div>
+      </div>
+    </section>
+
+    <!-- DECISIONS -->
+    <section id="next">
+      <div class="sec-head">
+        <span class="label">16 · Decisions</span>
+        <h2>What to decide before we build</h2>
+      </div>
+      <div class="decisions">
+        <div><h4>First wedge</h4><p class="small muted">Recommended: freelancers plus small trade contractors. They have the most repeat sending and the clearest growth loop.</p></div>
+        <div><h4>Launch state</h4><p class="small muted">Pick one state to start reminders, local forms and outreach. Leave North Carolina until compliant.</p></div>
+        <div><h4>Assistant name</h4><p class="small muted">"First Mate" fits the brand. Keep it, or simply "Ask ShipShape".</p></div>
+        <div><h4>Legal budget</h4><p class="small muted">A few hours with a legal-tech attorney before public launch: product flows, terms, privacy policy.</p></div>
+      </div>
+      <div class="sources">
+        <span class="label">Sources</span>
+        <a href="https://advocacy.sba.gov/?p=30239">SBA Office of Advocacy: 36.2M small businesses (June 2025)</a>
+        <a href="https://digitalapplied.com/blog/gig-economy-freelance-statistics-2026-data-points">MBO Partners 2025 independent workforce, via Digital Applied</a>
+        <a href="https://founderreports.com/how-many-businesses-are-started-each-year/">Census Business Formation Statistics, 2025 applications, via Founder Reports</a>
+        <a href="https://pos.toasttab.com/blog/on-the-line/how-many-restaurants-are-in-the-us">Toast: how many restaurants are in the U.S.</a>
+        <a href="https://getfilly.app/">Filly</a> · <a href="https://instafill.ai/">Instafill.ai</a> · <a href="https://ai-pdf-form-filler.pdffiller.com/">pdfFiller AI</a>
+        <a href="https://ailawyer.pro/blog/rocket-lawyer-vs-legalzoom">Rocket Lawyer vs LegalZoom 2026 pricing</a>
+        <a href="https://www.legalzoom.com/press-releases/legalzooms-ai-powered-business-license-platform">LegalZoom AI business license research</a>
+        <a href="https://billyforinsurance.com/resources/best-coi-tracking-software/">COI tracking software comparison (Billy)</a>
+        <a href="https://ncleg.gov/EnactedLegislation/Statutes/HTML/BySection/Chapter_84/GS_84-2.2.html">N.C. G.S. 84-2.2</a> · <a href="https://www.ftc.gov/node/87474">FTC: DoNotPay order</a> · <a href="https://commonpaper.com/standards/">Common Paper standards (CC BY 4.0)</a>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <span class="label">ShipShape · Product blueprint v1</span>
+  <span class="label">Planning document, not legal advice</span>
+</footer>
+
+</div>
