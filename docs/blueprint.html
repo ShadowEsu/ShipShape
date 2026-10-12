@@ -286,7 +286,7 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line);
 
 <header class="hero">
   <div class="hero-text">
-    <span class="label">Product blueprint · v2 · October 2026</span>
+    <span class="label">Product blueprint · v3 · October 2026</span>
     <h1>ShipShape</h1>
     <p class="thesis">A private, owner-confirmed record of your business. It fills your forms, keeps them current, and shares them with one link.</p>
     <div class="meta">
@@ -325,6 +325,7 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line);
     <a href="#product">The product</a>
     <a href="#memory">Memory that checks in</a>
     <a href="#suggest">Suggestions you approve</a>
+    <a href="#make">Find, ask, licenses, drafts</a>
     <a href="#pdf">PDFs done right</a>
     <span class="label grp">Safe</span>
     <a href="#privacy">Privacy architecture</a>
@@ -578,6 +579,52 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line);
       </div>
     </section>
 
+    <!-- FIND, ASK, LICENSES, DRAFTS -->
+    <section id="make">
+      <div class="sec-head">
+        <span class="label">Find, ask, licenses, drafts</span>
+        <h2>It finds forms for you, answers questions, and can draft, with clear warnings</h2>
+        <p class="lede">ShipShape does more than store. It goes out and finds official forms and licenses, answers questions about your own paperwork, and can draft documents. The riskier the document, the more warnings and the more of your sign-off it takes.</p>
+      </div>
+      <div class="cards2">
+        <div class="card"><span class="tag">FIND</span><h3>Official forms, found for you</h3><ul><li>Search in plain words: "register a business name in Alameda County"</li><li>Results from federal, state, county and city sources, each quoted and linked</li><li>Add to your checklist or say "not now"</li></ul></div>
+        <div class="card"><span class="tag">ASK</span><h3>Questions about your paperwork</h3><ul><li>"Where's my NDA with Acme?" "What expires this quarter?"</li><li>Answers from your own documents, with page references</li><li>"Should I form an LLC?" gets a polite no and where to get real help (state bar lawyer referral, SCORE, a CPA)</li></ul></div>
+        <div class="card"><span class="tag">LICENSES</span><h3>License and permit finder</h3><ul><li>Enter your trade and city; see matching agencies at every level</li><li>Shows what you already have on file and its renewal date</li><li>Labelled as a starting list, not a determination: "Requirements change. Confirm with each agency."</li><li>Results show <em>why</em> they matched ("matched: 'contractor'"), never "you need this"</li></ul></div>
+        <div class="card"><span class="tag">DRAFTS</span><h3>AI drafts, by risk level</h3><ul><li><strong>Everyday:</strong> invoices, quotes, receipts, letters. AI drafts freely, with a short "check the details" notice</li><li><strong>Agreements:</strong> NDAs, service agreements, simple consent forms. Start from a licensed template; AI-written wording is highlighted and labelled; red warning banner and watermark; signed acknowledgment before download</li><li><strong>Not available:</strong> wills, court filings, employment contracts, deeds, notarized documents</li></ul></div>
+      </div>
+      <div class="mock-wrap">
+        <div class="mock" aria-label="Example screen: draft acknowledgment">
+          <div class="mock-bar"><strong>Draft acknowledgment</strong><span class="chip red">Required before download</span></div>
+          <div class="mock-body">
+            <div class="fact"><span class="v">☐ I understand ShipShape is software, not a law firm, and nothing here is legal advice.</span></div>
+            <div class="fact"><span class="v">☐ Parts of this draft were written by AI. They may be wrong, incomplete, or not enforceable where I do business.</span></div>
+            <div class="fact"><span class="v">☐ I'm responsible for reviewing it and deciding whether a lawyer should review it before I sign, send or rely on it.</span></div>
+            <div class="fact"><span class="v">☐ I use AI drafts at my own risk, as described in the Terms of Service.</span></div>
+            <div class="fact"><span class="k">Type your full name to sign</span><span class="btns"><span class="btn pri">Sign acknowledgment</span></span></div>
+          </div>
+          <div class="notice">Example screen. The signature, time, IP and statement text are saved to the activity log.</div>
+        </div>
+        <div class="prose">
+          <h3>What the warnings and sign-off actually do</h3>
+          <p><strong>They help.</strong> A signed acknowledgment is strong evidence the user understood the risks, it supports "as-is" and liability-limit terms, and it fits Texas's safe harbor for software that says it's not a substitute for a lawyer.</p>
+          <p><strong>They don't make you un-suable.</strong> A state bar or attorney general isn't a party to your terms, so practice-of-law actions can still happen. Courts also void attempts to waive fraud or gross negligence, and North Carolina forbids liability disclaimers for document sites entirely.</p>
+          <p><strong>So drafting launches last.</strong> Find, Ask and the license finder ship first. Agreement drafting ships after a lawyer reviews the flow, and stays off in North Carolina until we comply there.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Terms of Service clause</th><th>What it does</th><th>Its limit</th></tr></thead>
+          <tbody>
+            <tr><td>"As is," use at your own risk</td><td>No promise that a form or draft fits your situation</td><td>Can't excuse fraud, willful harm or breaking the law (e.g. California Civil Code 1668)</td></tr>
+            <tr><td>Limitation of liability</td><td>Caps damages, e.g. at what you paid in the last 12 months</td><td>State carve-outs; void in North Carolina for document sites</td></tr>
+            <tr><td>Arbitration + class-action waiver</td><td>Disputes go one at a time to an arbitrator, not a jury or class action</td><td>Must allow public injunctive relief in California; mass-arbitration fees can be costly</td></tr>
+            <tr><td>Not a law firm, no attorney-client relationship</td><td>Sets expectations; supports the Texas safe harbor</td><td>Doesn't bind state bars or regulators</td></tr>
+            <tr><td>Clickwrap acceptance</td><td>A clear button and visible link make the terms enforceable</td><td>Faint, hidden links lose in court (Berman v. Freedom Financial)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- PDF -->
     <section id="pdf">
       <div class="sec-head">
@@ -728,6 +775,7 @@ audit_events    business_id, actor_id, action, subject_id, at        <span class
       <div class="sec-head">
         <span class="label">Design</span>
         <h2>Calm, clear, and easy for anyone to use</h2>
+        <p class="lede">The look: the warmth and clean type of Claude's interface with the authority of a great newspaper. Warm ivory paper, ink-black type, a newsprint serif for headlines, a clean sans for controls, a masthead and section bar, and a home screen that reads like the front page of your business. See the five screens on the <a href="https://claude.ai/artifact/Lj39QzkxnTZ12enz1nA1ZR">ShipShape app design canvas</a>.</p>
       </div>
       <div class="cards3">
         <div class="principle"><h4>Show, don't ask</h4><p>Prefill from confirmed facts with a small source chip. Ask only for what's missing.</p></div>
@@ -799,7 +847,7 @@ audit_events    business_id, actor_id, action, subject_id, at        <span class
         <div class="ms"><span class="when">WEEKS 3–8 · MVP</span><h3>Memory, vault, fill, edit, sign, passport</h3><ul><li>Confirm-before-use memory with provenance and hard delete</li><li>Fill and edit any PDF; sealed download with audit page</li><li>Passport with per-recipient links, expiry, revoke, view log</li><li>Security page, subprocessor list, retention schedule, terms reviewed by an attorney</li></ul><p class="exit"><strong>Ship when</strong> every promise on the website has its control live.</p></div>
         <div class="ms"><span class="when">WEEKS 9–12 · LOOP</span><h3>Requests, reminders, Collect beta</h3><ul><li>Two-way requests; W-9 shared only on approval</li><li>Deadline reminders and "update everywhere"</li><li>Collect beta with 5 GCs or agencies</li></ul></div>
         <div class="ms"><span class="when">WEEKS 13–16 · ASSIST</span><h3>Suggestions and ask-your-vault</h3><ul><li>Curated official-source search with yes/no</li><li>Vault Q&amp;A with page citations</li><li>Free public form pages; paid plans on</li></ul></div>
-        <div class="ms"><span class="when">AFTER</span><h3>Restaurants, startups, phone app, integrations, SOC 2 Type I</h3></div>
+        <div class="ms"><span class="when">AFTER</span><h3>License finder, then agreement drafting (after attorney review), restaurants, startups, phone app, SOC 2 Type I</h3></div>
       </div>
     </section>
 
@@ -852,7 +900,7 @@ audit_events    business_id, actor_id, action, subject_id, at        <span class
 </div>
 
 <footer>
-  <span class="label">ShipShape · Product blueprint v2</span>
+  <span class="label">ShipShape · Product blueprint v3</span>
   <span class="label">Planning document, not legal advice</span>
 </footer>
 

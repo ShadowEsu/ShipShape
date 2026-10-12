@@ -1,0 +1,19 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-12T06:08:59Z"},
+  "title": "ShipShape App Design",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 1560, "title": "Front page", "expand": "fill"},
+    "Ask.dc.html": {"x": 1520, "y": 0, "w": 1440, "h": 1560, "title": "Ask and find", "expand": "fill"},
+    "Licenses.dc.html": {"x": 0, "y": 1680, "w": 1440, "h": 1560, "title": "License and permit finder", "expand": "fill"},
+    "Draft.dc.html": {"x": 1520, "y": 1680, "w": 1440, "h": 1760, "title": "Make a draft, with warnings", "expand": "fill", "is_interactive": true},
+    "Passport.dc.html": {"x": 0, "y": 3560, "w": 1440, "h": 1300, "title": "Passport, as a recipient sees it", "expand": "fill"}
+  },
+  "order": ["Main.dc.html", "Ask.dc.html", "Licenses.dc.html", "Draft.dc.html", "Passport.dc.html"],
+  "notes": {
+    "title": {"x": 0, "y": -300, "text": "ShipShape · app design concept", "kind": "title1", "maxW": 2960}
+  },
+  "designSystems": []
+}

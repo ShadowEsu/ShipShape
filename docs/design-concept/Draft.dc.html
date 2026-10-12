@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Make a draft</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&family=Libre+Franklin:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0;background:#FAF8F3}
+a{color:#B5532F}a:hover{color:#8E3F22}
+button{cursor:pointer}
+button:disabled{cursor:not-allowed}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid #1F5563;outline-offset:2px}
+</style>
+</helmet>
+<div style="background: #FAF8F3; color: #16150F; font-family: 'Newsreader', Georgia, serif; min-height: 100%;">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 0 32px 64px; box-sizing: border-box;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; padding: 18px 0 12px; border-bottom: 3px double #16150F;">
+      <a href="Main.dc.html" style="font-size: 32px; font-weight: 600; color: #16150F; text-decoration: none; letter-spacing: -0.01em;">ShipShape</a>
+      <nav aria-label="Sections" style="display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600;">
+        <a href="Main.dc.html" style="color: #16150F; text-decoration: none;">Front page</a>
+        <a href="Ask.dc.html" style="color: #16150F; text-decoration: none;">Ask</a>
+        <a href="#" style="color: #16150F; text-decoration: none;">Documents</a>
+        <a href="Passport.dc.html" style="color: #16150F; text-decoration: none;">Passport</a>
+        <a href="Licenses.dc.html" style="color: #16150F; text-decoration: none;">Licenses</a>
+        <a href="Draft.dc.html" style="color: #16150F; text-decoration: none; border-bottom: 2px solid #B5532F;">Drafts</a>
+      </nav>
+    </div>
+
+    <header style="padding: 36px 0 24px; display: flex; flex-direction: column; gap: 12px; max-width: 780px;">
+      <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #B5532F;">Drafts</span>
+      <h1 style="margin: 0; font-size: 52px; line-height: 1.05; font-weight: 600; letter-spacing: -0.015em;">AI can draft it. You decide whether to use it.</h1>
+      <p style="margin: 0; font-size: 20px; line-height: 1.5; color: #3E3B34;">Every draft shows which words came from a trusted template and which came from AI. Agreements can't be downloaded until you read the warnings and sign an acknowledgment.</p>
+    </header>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
+      <div style="background: #FFFFFF; border: 1px solid #DDD8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #2F6B45;">Everyday documents</span>
+        <p style="margin: 0; font-size: 18px; font-weight: 600;">Invoices, quotes, receipts, letters, meeting notes</p>
+        <p style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">AI drafts these freely. A short notice reminds you to check the details.</p>
+      </div>
+      <div style="background: #FFFFFF; border: 2px solid #C98A2B; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #8A5A10;">Agreements · extra care</span>
+        <p style="margin: 0; font-size: 18px; font-weight: 600;">NDAs, service agreements, simple consent forms</p>
+        <p style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">Start from a licensed template. AI-written wording is marked. Signed acknowledgment required before download.</p>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #DDD8CC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #A3261D;">Not available</span>
+        <p style="margin: 0; font-size: 18px; font-weight: 600;">Wills, court filings, employment contracts, deeds, anything notarized</p>
+        <p style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">ShipShape won't draft these. We'll point you to a lawyer referral service.</p>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 36px; padding-top: 36px; align-items: flex-start;">
+
+      <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+        <div role="alert" style="display: flex; gap: 12px; align-items: flex-start; background: #A3261D; color: #FFFFFF; border-radius: 12px; padding: 14px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px;"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+          <p style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; line-height: 1.5;"><strong>This is an AI-assisted draft, not legal advice.</strong> It may be wrong, incomplete, or unenforceable in your state. Have a lawyer review it before you sign, send, or rely on it.</p>
+        </div>
+
+        <div style="position: relative; overflow: hidden; background: #FFFFFF; border: 1px solid #DDD8CC; border-radius: 6px; box-shadow: 0 18px 40px -28px rgba(22,21,15,0.5); padding: 48px 52px 40px; display: flex; flex-direction: column; gap: 18px;">
+          <div aria-hidden="true" style="position: absolute; top: 42%; left: -10%; right: -10%; transform: rotate(-18deg); text-align: center; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 56px; font-weight: 800; letter-spacing: 0.08em; color: rgba(163,38,29,0.08); white-space: nowrap; pointer-events: none;">AI DRAFT · NOT LEGAL ADVICE</div>
+          <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #5E5A51;">Cover page · derived from Common Paper Professional Services Agreement v1.0 · CC BY 4.0 · modified</span>
+          <h2 style="margin: 0; font-size: 32px; font-weight: 600;">Professional Services Agreement</h2>
+          <div style="display: grid; grid-template-columns: minmax(0, 180px) minmax(0, 1fr); gap: 10px 20px; font-size: 17px; border-top: 1px solid #16150F; padding-top: 14px;">
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">Provider</span><span>Rivera Plumbing LLC</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">Customer</span><span>Harbor Homes Inc.</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">Effective date</span><span>October 12, 2026</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">Services</span><span>Repipe two units at 88 Linden Street</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">Fees</span><span style="color: #5E5A51;">[You enter the amount]</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">Governing law</span><span><span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #E7EEF0; color: #1F5563;">You choose</span></span>
+          </div>
+          <div style="background: #F8EBD3; border: 1px dashed #C98A2B; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #7A4E0C;">AI-written · not reviewed by a lawyer</span>
+            <p style="margin: 0; font-size: 17px; line-height: 1.5;">Customer will give Provider access to the work area between 8 a.m. and 5 p.m. on scheduled work days.</p>
+            <div style="display: flex; gap: 14px; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600;">
+              <a href="#">Edit</a><a href="#">Remove</a>
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51; border-top: 1px solid #DDD8CC; padding-top: 14px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+            <span>Standard terms: Common Paper Professional Services Agreement v1.0, unchanged and locked.</span>
+          </div>
+        </div>
+      </div>
+
+      <aside aria-label="Acknowledgment" style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #DDD8CC; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 16px;">
+        <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #A3261D;">Before you download</span>
+        <h2 style="margin: 0; font-size: 26px; line-height: 1.15; font-weight: 600;">Draft acknowledgment</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 1.5; color: #3E3B34;">Read each statement. Check it only if it's true for you.</p>
+        <sc-for list="{{ items }}" as="item" hint-placeholder-count="4">
+          <div style="display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid #EAE5DA;">
+            <input type="checkbox" id="{{ item.id }}" checked="{{ item.checked }}" onChange="{{ item.toggle }}" style="width: 20px; height: 20px; margin: 3px 0 0; accent-color: #16150F; flex: none;">
+            <label for="{{ item.id }}" style="font-size: 16px; line-height: 1.45;">{{ item.text }}</label>
+          </div>
+        </sc-for>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label for="ack-name" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 600; color: #5E5A51;">Type your full name to sign</label>
+          <input id="ack-name" type="text" value="{{ name }}" onChange="{{ onName }}" placeholder="Luis Rivera" style="font-family: 'Newsreader', Georgia, serif; font-size: 20px; font-style: italic; padding: 10px 12px; border: 1px solid #C9C3B5; border-radius: 10px; background: #FAF8F3; color: #16150F;">
+        </div>
+        <sc-if value="{{ unsigned }}" hint-placeholder-val="{{ true }}">
+          <button type="button" disabled="{{ notReady }}" onClick="{{ sign }}" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; font-weight: 700; padding: 13px 18px; border-radius: 999px; border: 1px solid {{ signBorder }}; background: {{ signBg }}; color: {{ signFg }};">Sign acknowledgment</button>
+          <p style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Your signature, the time and these statements are saved to your activity log.</p>
+        </sc-if>
+        <sc-if value="{{ signed }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 10px; background: #E8F1EA; border-radius: 12px; padding: 14px;">
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 700; color: #2F6B45;">Acknowledgment signed · October 12, 2026</span>
+            <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; font-weight: 700; padding: 13px 18px; border-radius: 999px; border: 1px solid #16150F; background: #16150F; color: #FAF8F3;">Download draft PDF</button>
+          </div>
+        </sc-if>
+        <a href="#" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; font-weight: 600;">Find a lawyer to review it</a>
+      </aside>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const s = this.state || {};
+    const texts = [
+      'I understand ShipShape is software, not a law firm, and nothing here is legal advice.',
+      'I understand parts of this draft were written by AI. They may be wrong, incomplete, or not enforceable where I do business.',
+      'I am responsible for reviewing this draft and deciding whether a lawyer should review it before I sign, send, or rely on it.',
+      'I use AI drafts at my own risk, as described in the Terms of Service.'
+    ];
+    const checks = s.checks || [false, false, false, false];
+    const name = s.name || '';
+    const ready = checks.every(Boolean) && name.trim().length >= 3;
+    const signed = !!s.signed;
+    const items = texts.map((text, i) => ({
+      id: 'ack' + i,
+      text: text,
+      checked: checks[i],
+      toggle: () => {
+        const next = checks.slice();
+        next[i] = !next[i];
+        this.setState({ checks: next });
+      }
+    }));
+    return {
+      items: items,
+      name: name,
+      onName: (e) => this.setState({ name: e.target.value }),
+      notReady: !ready,
+      sign: () => { if (ready) this.setState({ signed: true }); },
+      signed: signed,
+      unsigned: !signed,
+      signBg: ready ? '#16150F' : '#E7E2D8',
+      signFg: ready ? '#FAF8F3' : '#6B665C',
+      signBorder: ready ? '#16150F' : '#D6D0C3'
+    };
+  }
+}
+</script>
+</body>
+</html>
