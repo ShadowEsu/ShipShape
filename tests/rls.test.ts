@@ -119,6 +119,7 @@ const TABLES: Record<string, string | null> = {
   vendors: "org_id",
   vendor_links: "org_id",
   vendor_files: "org_id",
+  identities: null, // server only: which Cognito user is which user, checked below
 };
 
 describe("row level security", () => {
@@ -167,11 +168,14 @@ describe("row level security", () => {
     }
   });
 
-  it("waitlist and rate limits are closed to signed-in users", async () => {
+  it("waitlist, rate limits and sign-in identities are closed to signed-in users", async () => {
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.waitlist")));
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.waitlist (email) values ('x@example.com')")));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.rate_hits")));
     await expectDenied(asUser(a, (tx) => tx.query("select app.rate_hit('test', 'k', 60, 5)")));
+    // A row here decides whose account a Cognito sign-in opens: signed-in users can't read or add one.
+    await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.identities")));
+    await expectDenied(asUser(a, (tx) => tx.query("insert into app.identities (provider, subject, user_id) values ('cognito', $1, $2)", [crypto.randomUUID(), a])));
   });
 
   it("billing is read-only to members, Stripe ids and webhook events stay server-side", async () => {

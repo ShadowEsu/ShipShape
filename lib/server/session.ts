@@ -2,16 +2,17 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { TERMS_VERSION } from "@/lib/legal";
 import { asService, asUser } from "./db";
 import { safeEqual } from "./crypto";
 
 /**
- * Sessions. Until the Supabase project exists (Security R8 wants Supabase Auth with MFA), the app
- * signs its own session cookie: HttpOnly, SameSite=Lax, Secure in production, 12-hour lifetime,
- * HMAC-SHA256 with SHIPSHAPE_SESSION_SECRET.
+ * Sessions. The app signs its own session cookie: HttpOnly, SameSite=Lax, Secure in production,
+ * 12-hour lifetime, HMAC-SHA256 with SHIPSHAPE_SESSION_SECRET.
  *
  * Who can get a session:
  * - anyone, for a demo workspace with sample data (no real documents; uploads are refused);
+ * - an account holder, after signing in with Cognito (lib/server/cognito.ts), where it's set up;
  * - email sign-in without verification ONLY outside production (local development).
  */
 
@@ -35,17 +36,18 @@ export interface Workspace {
   demo: boolean;
 }
 
-function secret(): string {
+export function sessionSecret(): string {
   const s = process.env.SHIPSHAPE_SESSION_SECRET;
   if (!s || s.length < 32) throw new Error("SHIPSHAPE_SESSION_SECRET must be at least 32 characters");
   return s;
 }
 
-const sign = (payload: string) => createHmac("sha256", secret()).update(payload).digest("base64url");
+const sign = (payload: string) => createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
 
-export function encodeSession(s: Pick<Session, "userId" | "demo">, now = Date.now()): string {
+/** `authAt` defaults to now; account sign-in passes the moment Cognito says the person authenticated. */
+export function encodeSession(s: Pick<Session, "userId" | "demo"> & { authAt?: number }, now = Date.now()): string {
   const at = Math.floor(now / 1000);
-  const payload = Buffer.from(JSON.stringify({ u: s.userId, d: s.demo, a: at, e: at + TTL_SECONDS })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ u: s.userId, d: s.demo, a: s.authAt ?? at, e: at + TTL_SECONDS })).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 
@@ -70,7 +72,7 @@ export async function getSession(): Promise<Session | null> {
   return decodeSession((await cookies()).get(COOKIE)?.value);
 }
 
-export async function startSession(s: Pick<Session, "userId" | "demo">) {
+export async function startSession(s: Pick<Session, "userId" | "demo"> & { authAt?: number }) {
   (await cookies()).set(COOKIE, encodeSession(s), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -108,4 +110,14 @@ export async function createLocalUser(email: string | null, demo: boolean): Prom
     const [row] = await tx.query<{ id: string }>("insert into auth.users (email, is_anonymous) values ($1, $2) returning id", [email, demo]);
     return row.id;
   });
+}
+
+/** The last step of every sign-in: records the Terms and Privacy agreement, makes sure there's a workspace, starts the session. */
+export async function finishSignIn(userId: string, { demo, authAt }: { demo: boolean; authAt?: number }) {
+  await asUser(userId, async (tx) => {
+    await tx.query("insert into app.consents (user_id, item, policy_version) values ($1, 'terms_privacy', $2)", [userId, TERMS_VERSION]);
+    const [has] = await tx.query("select 1 from app.members where user_id = $1", [userId]);
+    if (!has) await tx.query("select app.create_workspace('My business')");
+  });
+  await startSession({ userId, demo, authAt });
 }
