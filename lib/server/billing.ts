@@ -59,6 +59,7 @@ export interface StripePort {
   retrievePrice(id: string): Promise<{ active: boolean; unit_amount: number | null; currency: string; recurring: { interval: string } | null }>;
   retrieveSubscription(id: string): Promise<SubscriptionState>;
   cancelSubscription(id: string): Promise<unknown>;
+  retrieveCharge(id: string): Promise<{ customer: string | { id: string } | null }>;
 }
 
 let testPort: StripePort | null = null;
@@ -76,6 +77,7 @@ function stripePort(cfg: BillingConfig): StripePort {
     retrievePrice: (id) => s.prices.retrieve(id),
     retrieveSubscription: (id) => s.subscriptions.retrieve(id),
     cancelSubscription: (id) => s.subscriptions.cancel(id),
+    retrieveCharge: (id) => s.charges.retrieve(id),
   };
 }
 
@@ -215,9 +217,18 @@ async function syncSubscription(tx: Tx, cfg: BillingConfig, stripe: StripePort, 
   );
 }
 
-async function applyEvent(tx: Tx, cfg: BillingConfig, stripe: StripePort, event: Stripe.Event) {
+/** The Stripe customer an event is about. A dispute names only its charge, so the charge is read for it. */
+async function eventCustomer(stripe: StripePort, event: Stripe.Event): Promise<string | null> {
+  if (event.type === "charge.dispute.created") {
+    const charge = idOf(event.data.object.charge);
+    return charge ? idOf((await stripe.retrieveCharge(charge)).customer) : null;
+  }
   const object = event.data.object;
-  const customer = "customer" in object ? idOf(object.customer) : null;
+  return "customer" in object ? idOf(object.customer) : null;
+}
+
+async function applyEvent(tx: Tx, cfg: BillingConfig, stripe: StripePort, event: Stripe.Event) {
+  const customer = await eventCustomer(stripe, event);
   if (!customer) return;
   const [row] = await tx.query<{ org_id: string; stripe_subscription_id: string | null; status: string }>(
     "select org_id, stripe_subscription_id, status from app.billing where stripe_customer_id = $1 for update",

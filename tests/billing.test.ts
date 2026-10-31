@@ -61,6 +61,12 @@ class FakeStripe implements StripePort {
     s.status = "canceled";
     return {};
   }
+  charges = new Map<string, string>();
+  async retrieveCharge(id: string) {
+    const customer = this.charges.get(id);
+    if (!customer) throw new Error("no such charge");
+    return { customer };
+  }
 }
 
 let seq = 0;
@@ -284,9 +290,18 @@ describe("access follows the subscription Stripe reports now", () => {
     expect(fake.cancelled).toContain(a.sub.id);
     expect(await plan(a.ctx)).toBe("free");
 
+    // A real dispute names its charge and no customer.
     const b = await payingWorkspace();
-    await send("charge.dispute.created", { object: "dispute", customer: b.customer });
+    fake.charges.set("ch_Disputed1", b.customer);
+    await send("charge.dispute.created", { object: "dispute", charge: "ch_Disputed1" });
+    expect(fake.cancelled).toContain(b.sub.id);
     expect(await plan(b.ctx)).toBe("free");
+
+    // A dispute on someone else's charge changes nothing here.
+    const c = await payingWorkspace();
+    fake.charges.set("ch_Stranger1", "cus_Stranger1");
+    await send("charge.dispute.created", { object: "dispute", charge: "ch_Stranger1" });
+    expect(await plan(c.ctx)).toBe("pro");
   });
 
   it("events for a customer that isn't ours change nothing", async () => {
