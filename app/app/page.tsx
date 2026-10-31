@@ -28,7 +28,13 @@ export default async function AppHome() {
     { done: Object.keys(profile.confirmed).length > 0, href: "/app/facts", title: "Confirm your business facts", body: "Name, address, EIN: typed once, used everywhere." },
     { done: docs.length > 0, href: "/app/documents/new", title: "Add a document you already have", body: "A certificate, license or signed agreement." },
     { done: docs.some((d) => d.template_id === "irs-w9"), href: "/app/make/irs-w9", title: "Make a W-9", body: "The official IRS form, filled from your facts." },
-    { done: docs.some((d) => d.expires_on || d.renews_on), href: "/app/deadlines", title: "Add an expiry date", body: "So ShipShape can warn you before it lapses." },
+    {
+      done: docs.some((d) => d.expires_on || d.renews_on),
+      // Straight to the Expires field: the first document (none has dates yet), or a new one.
+      href: docs[0] ? `/app/documents/${docs[0].id}#expires_on` : "/app/documents/new#expires_on",
+      title: "Add an expiry date",
+      body: docs[0] ? `Start with ${docs[0].title}, so ShipShape can warn you before it lapses.` : "So ShipShape can warn you before it lapses.",
+    },
     { done: links.length > 0, href: "/app/passport", title: "Share a passport link", body: "One link with the documents a customer asked for." },
   ];
   const done = setup.filter((s) => s.done).length;

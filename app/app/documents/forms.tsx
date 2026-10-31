@@ -89,7 +89,8 @@ function DetailFields({ v }: { v?: DetailValues }) {
           <label htmlFor="expires_on" className="label">
             Expires
           </label>
-          <input id="expires_on" name="expires_on" type="date" defaultValue={v?.expires_on ?? ""} className="input" />
+          {/* scroll-mt: the setup checklist links to #expires_on; keep the label in view above it. */}
+          <input id="expires_on" name="expires_on" type="date" defaultValue={v?.expires_on ?? ""} className="input scroll-mt-16" />
         </div>
         <div>
           <label htmlFor="renews_on" className="label">
