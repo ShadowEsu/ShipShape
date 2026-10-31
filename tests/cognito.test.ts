@@ -1,6 +1,10 @@
 import { createHash, generateKeyPairSync, randomUUID, sign, type KeyObject } from "node:crypto";
-import { beforeAll, describe, expect, it, vi } from "vitest";
-import { type CallbackParams, type CognitoConfig, cognitoConfig, completeSignIn, startSignIn } from "@/lib/server/cognito";
+import { CognitoIdentityProviderClient, NotAuthorizedException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { deleteAccount } from "@/lib/server/account";
+import { type CallbackParams, type CognitoConfig, cognitoAdmin, cognitoConfig, completeSignIn, setSignInAdminForTests, startSignIn } from "@/lib/server/cognito";
+import { asUser } from "@/lib/server/db";
+import { UserError } from "@/lib/server/errors";
 import { authIsRecent, decodeSession, encodeSession } from "@/lib/server/session";
 import { freshDb, type TestDb } from "./support/db";
 
@@ -257,5 +261,96 @@ describe("the pool's keys", () => {
     const later = signInWith({ cfg, keys, token: byB, startedAt: NOW + 6 * 60_000 });
     await later.result;
     expect(later.calls.filter((c) => c.endsWith("jwks.json"))).toHaveLength(1);
+  });
+});
+
+describe("deleting the account", () => {
+  afterEach(() => {
+    setSignInAdminForTests(undefined);
+    vi.unstubAllEnvs();
+  });
+
+  /** A person who signed in through Cognito and made a workspace, signed in just now. */
+  async function cognitoOwner() {
+    const sub = randomUUID();
+    const { userId } = await signInWith({ sub }).result;
+    const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Cognito Co') as id"));
+    return { sub, userId, ctx: { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Cognito Co", role: "owner" as const } };
+  }
+  const exists = async (userId: string) => (await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [userId]))).length === 1;
+
+  it("deletes the person's Cognito user while their data is still there, then the data; people without one aren't sent to Cognito", async () => {
+    for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
+    const owner = await cognitoOwner();
+    const deleted: { sub: string; dataStillThere: boolean }[] = [];
+    setSignInAdminForTests({ deleteUser: async (sub) => void deleted.push({ sub, dataStillThere: await exists(owner.userId) }) });
+    await deleteAccount(owner.ctx);
+    expect(deleted).toEqual([{ sub: owner.sub, dataStillThere: true }]);
+    expect(await exists(owner.userId)).toBe(false);
+
+    const plain = await db.user(`plain-${randomUUID().slice(0, 8)}@example.test`);
+    const [org] = await asUser(plain, (tx) => tx.query<{ id: string }>("select app.create_workspace('Plain Co') as id"));
+    await deleteAccount({ userId: plain, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Plain Co", role: "owner" });
+    expect(deleted).toHaveLength(1);
+    expect(await exists(plain)).toBe(false);
+  });
+
+  it("if Cognito can't delete the user, nothing is deleted, and trying again finishes", async () => {
+    for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
+    const owner = await cognitoOwner();
+    let down = true;
+    setSignInAdminForTests({
+      deleteUser: async () => {
+        if (down) throw new Error("Cognito unavailable");
+      },
+    });
+    const error = await deleteAccount(owner.ctx).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(UserError);
+    expect(await exists(owner.userId)).toBe(true);
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [owner.ctx.orgId]))).toHaveLength(1);
+    down = false;
+    await deleteAccount(owner.ctx);
+    expect(await exists(owner.userId)).toBe(false);
+  });
+
+  it("a Cognito user whose sign-in isn't set up here can't be half-deleted", async () => {
+    for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
+    const owner = await cognitoOwner();
+    for (const key of Object.keys(ENV)) vi.stubEnv(key, undefined);
+    await expect(deleteAccount(owner.ctx)).rejects.toBeInstanceOf(UserError);
+    expect(await exists(owner.userId)).toBe(true);
+  });
+
+  describe("through the AWS SDK", () => {
+    /** A real Cognito client whose requests are answered here, never sent. */
+    function offline(answer: () => never | undefined) {
+      const client = new CognitoIdentityProviderClient({ region: "us-east-1", credentials: { accessKeyId: "test", secretAccessKey: "test" } });
+      const sent: unknown[] = [];
+      client.middlewareStack.add(
+        () => async (args) => {
+          sent.push(args.input);
+          answer();
+          return { output: { $metadata: {} }, response: {} };
+        },
+        { step: "initialize" },
+      );
+      return { admin: cognitoAdmin(client, "us-east-1_Test1"), sent };
+    }
+
+    it("asks for AdminDeleteUser on this pool by sub; a user that's already gone counts as deleted, other refusals don't", async () => {
+      const ok = offline(() => undefined);
+      await ok.admin.deleteUser("1f2e3d4c-sub");
+      expect(ok.sent).toEqual([{ UserPoolId: "us-east-1_Test1", Username: "1f2e3d4c-sub" }]);
+
+      const gone = offline(() => {
+        throw new UserNotFoundException({ message: "User does not exist.", $metadata: {} });
+      });
+      await expect(gone.admin.deleteUser("1f2e3d4c-sub")).resolves.toBeUndefined();
+
+      const denied = offline(() => {
+        throw new NotAuthorizedException({ message: "not allowed", $metadata: {} });
+      });
+      await expect(denied.admin.deleteUser("1f2e3d4c-sub")).rejects.toBeInstanceOf(NotAuthorizedException);
+    });
   });
 });

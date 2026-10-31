@@ -64,7 +64,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 
 ## Security model
 
-- Accounts sign in through Amazon Cognito's managed login (authorization code with PKCE, state and nonce held in a 10-minute cookie only `/auth/callback` receives). The server verifies the ID token itself (RS256 with the pool's published keys, issuer, audience, expiry, nonce, a verified email), maps it to one user, and then issues its own 12-hour session cookie. Every sign-in asks for the password again, and the session records when it happened, so actions that need a recent sign-in measure a real one. Where Cognito isn't set up, only the sample workspace opens.
+- Accounts sign in through Amazon Cognito's managed login (authorization code with PKCE, state and nonce held in a 10-minute cookie only `/auth/callback` receives). The server verifies the ID token itself (RS256 with the pool's published keys, issuer, audience, expiry, nonce, a verified email), maps it to one user, and then issues its own 12-hour session cookie. Every sign-in asks for the password again, and the session records when it happened, so actions that need a recent sign-in measure a real one. Deleting an account deletes its Cognito user too, after billing is cancelled and before any data goes, so nobody can sign back in to an emptied account; if Cognito can't be reached, nothing is deleted. Where Cognito isn't set up, only the sample workspace opens.
 - Every query runs inside a transaction as the user, with row level security deciding what it can see. Code that needs more (sign-in, public links, webhooks) goes through a short, named list of service paths.
 - Tax IDs are encrypted with AES-256-GCM using a key outside the database and shown as the last 4 digits by default; revealing one needs a recent sign-in and is recorded.
 - Files live in one private bucket that only the server reaches (S3 in production: Block Public Access, KMS encryption, versioning; a folder locally), up to 10 MB, PDF/PNG/JPEG. Every download goes through `/api/files` with a link the server signs for 5 minutes, so no storage URL reaches a browser. Writes never overwrite a file.
@@ -81,7 +81,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 - [ ] Security review GO (gates for real documents, AI and payments)
 - [ ] Production Postgres and file storage, connecting as the `shipshape_app` role (Amazon RDS + S3 is the plan; `npm run migrate` sets up the database)
 - [ ] Supabase Data API switched off, or serving `public` only (never `app`); `node scripts/probe-supabase.mjs` passes against the project (Data API, bucket privacy, anonymous list/download/upload refused)
-- [ ] Cognito user pool (managed login, MFA required, email verification) with a confidential app client, and account deletion removing the Cognito user too
+- [ ] Cognito user pool (managed login, MFA required, email verification, `email` not writable by the app client) with a confidential app client, and the production role allowed `cognito-idp:AdminDeleteUser` on that pool only
 - [ ] Email provider for reminders and signing codes
 - [ ] A lawyer reviews `/terms` and `/privacy` (drafts), the e-sign flow, and which states ShipShape serves
 - [ ] Stripe live mode after the payments review

@@ -1,5 +1,7 @@
 import "server-only";
 import { createHash, createHmac, createPublicKey, randomBytes, verify, type KeyObject } from "node:crypto";
+import { AdminDeleteUserCommand, CognitoIdentityProviderClient, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
+import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 import { z } from "zod";
 import { TERMS_VERSION } from "@/lib/legal";
 import { safeEqual } from "./crypto";
@@ -33,6 +35,8 @@ export interface CognitoConfig {
   issuer: string;
   /** <SHIPSHAPE_APP_URL>/auth/callback, registered on the app client exactly. */
   redirectUri: string;
+  region: string;
+  poolId: string;
 }
 
 export const CALLBACK_PATH = "/auth/callback";
@@ -58,7 +62,7 @@ export function cognitoConfig(env: Env): CognitoConfig | null {
   }
   const app = new URL(appUrl);
   if (env.NODE_ENV === "production" && app.protocol !== "https:") throw new Error("SHIPSHAPE_APP_URL must be https:// in production");
-  return { domain: login.origin, clientId, clientSecret, issuer: `https://cognito-idp.${region}.amazonaws.com/${pool}`, redirectUri: `${app.origin}${CALLBACK_PATH}` };
+  return { domain: login.origin, clientId, clientSecret, issuer: `https://cognito-idp.${region}.amazonaws.com/${pool}`, redirectUri: `${app.origin}${CALLBACK_PATH}`, region, poolId: pool };
 }
 
 /** Why a sign-in didn't finish; the sign-in page shows a fixed message for each. */
@@ -261,4 +265,60 @@ export async function userForIdentity(id: Pick<VerifiedIdentity, "sub" | "email"
     await tx.query("insert into app.identities (provider, subject, user_id) values ('cognito', $1, $2)", [id.sub, user.id]);
     return user.id;
   });
+}
+
+// Deleting the Cognito user ---------------------------------------------------------------------------
+
+/** What account deletion needs from Cognito. */
+export interface SignInAdmin {
+  /** Deletes the pool's user with this sub; a user that's already gone counts as deleted. */
+  deleteUser(sub: string): Promise<void>;
+}
+
+/** AdminDeleteUser on `poolId` through `client` (with a pool that signs in by email, the username is the sub). */
+export function cognitoAdmin(client: CognitoIdentityProviderClient, poolId: string): SignInAdmin {
+  return {
+    async deleteUser(sub) {
+      try {
+        await client.send(new AdminDeleteUserCommand({ UserPoolId: poolId, Username: sub }));
+      } catch (e) {
+        if (!(e instanceof UserNotFoundException)) throw e;
+      }
+    },
+  };
+}
+
+let admin: SignInAdmin | undefined;
+
+/** Tests stand in for Cognito. */
+export function setSignInAdminForTests(a: SignInAdmin | undefined) {
+  admin = a;
+}
+
+/**
+ * Production calls Cognito with credentials for AWS_ROLE_ARN from Vercel's OIDC token (the role
+ * allows AdminDeleteUser on this pool only; aws-plan.md), never stored keys.
+ */
+function signInAdmin(cfg: CognitoConfig, env: Env): SignInAdmin {
+  if (admin) return admin;
+  let credentials: ReturnType<typeof awsCredentialsProvider> | undefined;
+  if (env.NODE_ENV === "production") {
+    const roleArn = env.AWS_ROLE_ARN;
+    if (!roleArn) throw new Error("Deleting Cognito users needs AWS_ROLE_ARN in production");
+    credentials = awsCredentialsProvider({ roleArn });
+  }
+  admin = cognitoAdmin(new CognitoIdentityProviderClient({ region: cfg.region, ...(credentials ? { credentials } : {}) }), cfg.poolId);
+  return admin;
+}
+
+/**
+ * Account deletion's first step: the person's Cognito user, so they can't sign back in to an
+ * account whose data is gone. Users without a Cognito identity (sample workspaces) have none.
+ */
+export async function deleteSignIn(userId: string): Promise<void> {
+  const [identity] = await asService((tx) => tx.query<{ subject: string }>("select subject from app.identities where provider = 'cognito' and user_id = $1", [userId]));
+  if (!identity) return;
+  const cfg = cognitoConfig(process.env);
+  if (!cfg) throw new Error("This account signs in with Cognito, which isn't set up here");
+  await signInAdmin(cfg, process.env).deleteUser(identity.subject);
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import type { AllowedMime } from "./files";
 import { cancelSubscriptionsBeforeDeletion } from "./billing";
+import { deleteSignIn } from "./cognito";
 import { asUser, pgErrorCode } from "./db";
 import { downloadName } from "./documents";
 import { UserError } from "./errors";
@@ -191,8 +192,16 @@ export async function deleteAccount(ctx: Ctx): Promise<void> {
   // Stop billing first: a deleted workspace must never keep being charged. The database refuses
   // (SS001) if a billed workspace it is about to delete wasn't handled here: another owner left in
   // the meantime and made this person the sole owner. Then billing is handled again, once.
+  // The Cognito user goes next, before the rows: nobody can sign back in to an emptied account, and
+  // if Cognito fails nothing is deleted yet (a retry finds the user gone and carries on).
   const remove = async () => {
     const handled = await cancelSubscriptionsBeforeDeletion(ctx.userId);
+    try {
+      await deleteSignIn(ctx.userId);
+    } catch (e) {
+      console.error(`account deletion: sign-in not removed (${e instanceof Error ? e.name : "unknown"})`);
+      throw new UserError("We couldn't remove your sign-in just now, so your account wasn't deleted. Try again in a minute.");
+    }
     return asUser(ctx.userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account($1::uuid[])", [handled]));
   };
   let rows: { storage_path: string }[];
