@@ -101,11 +101,12 @@ function checkObjectStream(stream: PDFRawStream) {
     if (i % 2 === 1) offsets.push(value);
   }
   if (at > first || first > bytes.length) exceed(left, "object stream header runs past /First");
-  // Each object must end before the next one starts (so offsets increase and stay inside the data):
-  // then pdf-lib parses each byte once, not one object again for every entry that points into it.
+  // Each object must be one value that ends before the next one starts, with only white space and
+  // comments between (so offsets increase and stay inside the data): then pdf-lib parses each byte
+  // once, not one object again for every entry that points into it, and copies no stream (R7-7).
   for (let i = 0; i < offsets.length; i++) {
     const end = i + 1 < offsets.length ? first + offsets[i + 1] : bytes.length;
-    if (objectEnd(bytes, first + offsets[i], end) < 0) exceed(left, "object stream objects overlap or are out of order");
+    if (objectEnd(bytes, first + offsets[i], end) < 0) exceed(left, "object stream objects overlap, are out of order or aren't one value each");
   }
 }
 
@@ -155,8 +156,11 @@ function skipBlank(b: Uint8Array, at: number): number {
 }
 
 /**
- * Where the object starting at `at` ends, if it ends before `limit`; -1 otherwise. One value: a
- * token, a string, or a balanced [ ] or << >> (an indirect reference's 0 R counts as what follows).
+ * Where the object starting at `at` ends, or -1 unless it is exactly one value followed only by
+ * white space and comments up to `limit` (Security R7-1, R7-7). One value, read as pdf-lib reads
+ * it: a token, a string, a balanced [ ] or << >>, or an indirect reference (int int R). A token
+ * starting with "stream" is refused wherever it is: object streams can't hold streams (PDF
+ * 32000-1 7.5.7), and after any dictionary pdf-lib would copy one up to a matching endstream.
  */
 function objectEnd(b: Uint8Array, at: number, limit: number): number {
   let depth = 0;
@@ -164,6 +168,7 @@ function objectEnd(b: Uint8Array, at: number, limit: number): number {
     at = skipBlank(b, at);
     if (at >= limit) return -1;
     const c = b[at];
+    const start = at;
     if (c === 91 || (c === 60 && b[at + 1] === 60)) {
       depth++;
       at += c === 91 ? 1 : 2;
@@ -186,11 +191,41 @@ function objectEnd(b: Uint8Array, at: number, limit: number): number {
       if (at >= limit) return -1;
       at++;
     } else {
-      at++; // a name's slash, a stray delimiter, or the first byte of a token
-      while (at < limit && !isWhite(b[at]) && !isDelimiter(b[at])) at++;
+      at = tokenEnd(b, at + 1, limit); // a name's slash, a stray delimiter, or the first byte of a token
+      if (startsWith(b, start, at, "stream")) return -1;
     }
-    if (depth === 0) return at <= limit ? at : -1;
+    if (depth === 0) {
+      if (digitsOnly(b, start, at)) at = referenceEnd(b, at, limit);
+      return at <= limit && skipBlank(b, at) >= limit ? at : -1;
+    }
   }
+}
+
+/** After an integer at depth 0: the end of the "gen R" that makes it a reference, or `at` if none follows. */
+function referenceEnd(b: Uint8Array, at: number, limit: number): number {
+  const gen = skipBlank(b, at);
+  const genEnd = tokenEnd(b, gen, limit);
+  if (!digitsOnly(b, gen, genEnd)) return at;
+  const r = skipBlank(b, genEnd);
+  const rEnd = tokenEnd(b, r, limit);
+  return rEnd === r + 1 && b[r] === 82 ? rEnd : at;
+}
+
+function tokenEnd(b: Uint8Array, at: number, limit: number): number {
+  while (at < limit && !isWhite(b[at]) && !isDelimiter(b[at])) at++;
+  return at;
+}
+
+function digitsOnly(b: Uint8Array, start: number, end: number): boolean {
+  if (end <= start) return false;
+  for (let i = start; i < end; i++) if (b[i] < 48 || b[i] > 57) return false;
+  return true;
+}
+
+function startsWith(b: Uint8Array, start: number, end: number, word: string): boolean {
+  if (end - start < word.length) return false;
+  for (let i = 0; i < word.length; i++) if (b[start + i] !== word.charCodeAt(i)) return false;
+  return true;
 }
 
 // Named, so a second evaluation of this module (a dev reload) doesn't wrap the wrappers again.

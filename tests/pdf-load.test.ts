@@ -90,14 +90,30 @@ describe("loading an upload", () => {
     await expect(loadUntrusted(await fixture("A1-overlap-50x4M.pdf"))).rejects.toThrow(PdfTooComplex);
   });
 
+  /** An object stream holding `body`, with object 100 + i at offsets[i]. */
+  const objectStream = (offsets: number[], body: string) => {
+    const header = offsets.map((offset, i) => `${100 + i} ${offset}`).join(" ") + " ";
+    return stream(`/Type /ObjStm /N ${offsets.length} /First ${header.length} /Filter /FlateDecode`, deflateSync(Buffer.from(header + body)));
+  };
+
   it("entries sharing an offset, or pointing into one nested array in increasing order, are refused however small: each would be parsed again", async () => {
-    const objectStream = (offsets: number[], body: string) => {
-      const header = offsets.map((offset, i) => `${100 + i} ${offset}`).join(" ") + " ";
-      return stream(`/Type /ObjStm /N ${offsets.length} /First ${header.length} /Filter /FlateDecode`, deflateSync(Buffer.from(header + body)));
-    };
     const numbers = "0 ".repeat(1000);
     await expect(loadUntrusted(pdfWith([[4, objectStream([0, 0, 0, 0, 0], `[${numbers}]`)]]))).rejects.toThrow("objects overlap");
     await expect(loadUntrusted(pdfWith([[4, objectStream([0, 1, 2, 3, 4], `[[[[[${numbers}]]]]]`)]]))).rejects.toThrow("objects overlap");
+  });
+
+  it("a stream keyword after a packed dictionary is refused: pdf-lib would copy a stream for every such object (R7-7 A6: 8 KiB took 48 s and 1.5 GB)", async () => {
+    await expect(loadUntrusted(await fixture("A6-stream-in-objstm-300.pdf"))).rejects.toThrow(PdfTooComplex);
+    const data = `${"0 ".repeat(1000)}\nendstream`;
+    await expect(loadUntrusted(pdfWith([[4, objectStream([0], `<<>>\nstream\n${data}`)]]))).rejects.toThrow("aren't one value each");
+    await expect(loadUntrusted(pdfWith([[4, objectStream([0], `[<<>>streamx\n${data}]`)]]))).rejects.toThrow("aren't one value each");
+  });
+
+  it("a packed object that is a bare reference, or is followed by a comment, still loads", async () => {
+    const first = "12 0 R % the next object follows\n";
+    const doc = await loadUntrusted(pdfWith([[4, objectStream([0, first.length], `${first}<< /A 1 0 R >>`)]]));
+    expect(doc.context.lookup(PDFRef.of(100))).toBe(PDFRef.of(12, 0));
+    expect(doc.context.lookup(PDFRef.of(101))).toBeInstanceOf(PDFDict);
   });
 
   it("one object stream inflating to 30 MiB is refused (R7-1 A3: 1.4 GB once parsed)", async () => {

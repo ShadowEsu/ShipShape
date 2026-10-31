@@ -388,12 +388,16 @@ function contentReader(): ContentReader {
 
 /**
  * How two of a page's content streams meet. Viewers read them as one, and the format only allows a
- * split between tokens (Security R5-1, R6-1, R6-2):
+ * split between tokens (Security R5-1, R6-1, R6-2, R7-5):
  * - "join" when the split falls at white space or a delimiter: the bytes go together as they are;
  * - "space" when it falls between two complete operators that can't run together (ET|Q, Q|q, as
  *   pdf-lib's own stamping makes): viewers read two operators there, and one space says so;
  * - "refuse" for anything viewers read differently: a split inside a comment, a string or inline
  *   image data, through a name (/|F1) or a << or >>, or through any other token (T|j, 1|2, BM|C).
+ *   pdf.js extends an operator one character at a time while that still names one, so g|sh reads
+ *   as gs + h there: refused when the left operator plus the right one's first character starts
+ *   any operator. pdf.js also ends inline image data only at EI followed by white space, so EI|Q is
+ *   refused too.
  */
 function joint(before: Uint8Array, after: Uint8Array): "join" | "space" | "refuse" {
   if (endsInside(before)) return "refuse";
@@ -409,9 +413,9 @@ function joint(before: Uint8Array, after: Uint8Array): "join" | "space" | "refus
   while (end < after.length && regular(after[end])) end++;
   const left = latin1(before.subarray(start));
   const right = latin1(after.subarray(0, end));
-  if (!OPERATORS.has(left) || !OPERATORS.has(right)) return "refuse";
-  const together = left + right;
-  for (const op of OPERATORS) if (op.startsWith(together)) return "refuse";
+  if (!OPERATORS.has(left) || !OPERATORS.has(right) || left === "EI") return "refuse";
+  const extended = left + right[0];
+  for (const op of OPERATORS) if (op.startsWith(extended)) return "refuse";
   return "space";
 }
 
@@ -422,7 +426,7 @@ const OPERATORS = new Set(
   "b B b* B* BDC BI BMC BT BX c cm CS cs d d0 d1 Do DP EI EMC ET EX f F f* G g gs h i ID j J K k l m M MP n q Q re RG rg ri s S SC sc SCN scn sh T* Tc Td TD Tf Tj TJ TL Tm Tr Ts Tw Tz v w W W* y ' \"".split(" "),
 );
 
-/** True if the content ends inside a comment, a literal string or inline image data. */
+/** True if the content ends inside a comment, a literal or hex string, or inline image data. */
 function endsInside(b: Uint8Array): boolean {
   let depth = 0;
   let comment = false;
@@ -435,7 +439,13 @@ function endsInside(b: Uint8Array): boolean {
       else if (c === 41) depth--;
     } else if (c === 37) comment = true;
     else if (c === 40) depth = 1;
-    else if (c === 73 && b[i + 1] === 68 && (i === 0 || (!regular(b[i - 1]) && b[i - 1] !== SLASH)) && (i + 2 >= b.length || !regular(b[i + 2]))) {
+    else if (c === LESS && b[i + 1] === LESS) i++; // << opens a dictionary
+    else if (c === LESS) {
+      // A hex string: nothing in it is a comment (R7-6), and it ends at the next >.
+      const close = b.indexOf(GREATER, i + 1);
+      if (close < 0) return true;
+      i = close;
+    } else if (c === 73 && b[i + 1] === 68 && (i === 0 || (!regular(b[i - 1]) && b[i - 1] !== SLASH)) && (i + 2 >= b.length || !regular(b[i + 2]))) {
       // The ID operator: image data follows one white-space byte, up to EI after white space.
       if (i + 3 > b.length) return true;
       const end = inlineImageEnd(b, i + 3);

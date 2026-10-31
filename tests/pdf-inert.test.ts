@@ -400,6 +400,22 @@ describe("the file a signer reviews (Security R2)", () => {
         await refusedSplit(["q BI /W 2 /H 1 /BPC 8 /CS /G ID ab", "cd EI Q"]);
       });
 
+      it("refuses splits pdf.js reads differently: an operator that grows by the next one's first letter, and EI before an operator (R7-5)", async () => {
+        const fee = "(LATE FEE USD 10000 PER DAY) Tj ET";
+        await refusedSplit(["1 g BT /F1 18 Tf 72 700 Td 0 g", `sh ${fee}`]); // J2: pdf.js reads gs + h, so the fee stays white in the upload
+        await refusedSplit(["0 g BT /F1 18 Tf 72 700 Td 1 g", `sc ${fee}`]); // J1
+        await refusedSplit(["/F1 30 B", `Tf BT 72 700 Td ${fee}`]); // J3: BT + f
+        await refusedSplit(["q 10 0 0 10 50 50 cm BI /W 2 /H 1 /BPC 8 /CS /G ID ab EI", "Q BT /F1 18 Tf 72 700 Td (AFTER IMAGE) Tj ET"]); // J4: EIQ is more image data in pdf.js
+        for (const [left, right] of [["ET", "Q"], ["Q", "q"], ["Q", "Q"], ["q", "BT"], ["ET", "BT"], ["EMC", "Q"], ["f", "Q"], ["S", "Q"], ["n", "Q"]]) {
+          expect(await content([left, right])).toBe(`${left} ${right}`);
+        }
+      });
+
+      it("a % inside a hex string isn't a comment, so the split there is inside a real string and refused (R7-6, J15)", async () => {
+        await refusedSplit(["BT /F1 18 Tf 72 700 Td <%> (LATE FEE\nUSD ET", "Q 1000) Tj ET"]);
+        await refusedSplit(["BT /F1 18 Tf 72 700 Td <48", "65> Tj ET"]);
+      });
+
       it("inline image data isn't read as syntax: a ( in the pixels doesn't open a string", async () => {
         expect(await content(["q 10 0 0 10 50 50 cm BI /W 2 /H 1 /BPC 8 /CS /G ID (x EI Q", "BT /F1 18 Tf 72 700 Td (A) Tj ET"])).toBe(
           "q 10 0 0 10 50 50 cm BI /W 2 /H 1 /BPC 8 /CS /G ID (x EI Q BT /F1 18 Tf 72 700 Td (A) Tj ET",
