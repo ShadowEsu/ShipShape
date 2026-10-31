@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { CreateBucketCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { CreateBucketCommand, GetObjectCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { productionAwsClient } from "@/lib/server/aws";
 import { type BlobStore, localBlobStore, MAX_URL_SECONDS, s3BlobStore, storeFromEnv, verifyFileParams } from "@/lib/server/storage";
 
 const newPath = () => `${randomUUID()}/${randomUUID()}/v1.pdf`;
@@ -75,10 +76,38 @@ describe("which store a deployment uses (Security D-2)", () => {
     expect(() => storeFromEnv({ NODE_ENV: "production" })).toThrow("needs SHIPSHAPE_S3_BUCKET");
     expect(() => storeFromEnv({ ...production, SHIPSHAPE_BLOB_DIR: "/tmp/files", SHIPSHAPE_S3_BUCKET: undefined })).toThrow("needs SHIPSHAPE_S3_BUCKET");
     expect(() => storeFromEnv({ ...production, AWS_ROLE_ARN: undefined })).toThrow("needs AWS_ROLE_ARN");
-    expect(() => storeFromEnv({ ...production, SHIPSHAPE_S3_ENDPOINT: "http://127.0.0.1:5917" })).toThrow("no SHIPSHAPE_S3_ENDPOINT");
+    expect(() => storeFromEnv({ ...production, SHIPSHAPE_S3_ENDPOINT: "http://127.0.0.1:5917" })).toThrow("refuses SHIPSHAPE_S3_ENDPOINT");
+    expect(() => storeFromEnv({ ...production, AWS_ENDPOINT_URL: "https://elsewhere.example" })).toThrow("refuses AWS_ENDPOINT_URL");
+    expect(() => storeFromEnv({ ...production, AWS_ENDPOINT_URL_S3: "https://elsewhere.example" })).toThrow("refuses AWS_ENDPOINT_URL_S3");
     expect(() => storeFromEnv({ ...production, AWS_REGION: undefined })).toThrow("needs AWS_REGION");
     // The complete set is accepted (no AWS call happens until a file is stored or read).
     expect(() => storeFromEnv(production)).not.toThrow();
+  });
+
+  it("in production, an endpoint_url in the SDK's config file is ignored too: requests go to AWS (CG-1)", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "aws-config-"));
+    const config = path.join(dir, "config");
+    await writeFile(config, "[default]\nendpoint_url = http://127.0.0.1:9\n");
+    vi.stubEnv("AWS_CONFIG_FILE", config);
+    vi.stubEnv("AWS_PROFILE", "default");
+    try {
+      // Production's settings, with test keys instead of the OIDC token (there is none here).
+      const client = new S3Client({ region: "us-east-1", ...productionAwsClient(production, "test"), credentials: { accessKeyId: "test", secretAccessKey: "test" } });
+      let host: string | undefined;
+      // Reads where the request would go once its endpoint is resolved, and answers it here.
+      client.middlewareStack.add(
+        (_next, context) => async () => {
+          host = context.endpointV2?.url.hostname;
+          return { output: { $metadata: {} }, response: {} };
+        },
+        { step: "build" },
+      );
+      await client.send(new GetObjectCommand({ Bucket: "shipshape-files", Key: "k" }));
+      expect(host).toBe("shipshape-files.s3.us-east-1.amazonaws.com");
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dir, { recursive: true });
+    }
   });
 });
 

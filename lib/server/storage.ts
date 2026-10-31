@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DeleteObjectsCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
+import { productionAwsClient } from "./aws";
 import { safeEqual } from "./crypto";
 
 /**
@@ -136,17 +136,16 @@ type Env = Record<string, string | undefined>;
 
 /**
  * Production signs S3 calls with credentials for AWS_ROLE_ARN, obtained per request from Vercel's
- * OIDC token: no stored keys (aws-plan.md). Elsewhere (a local S3 stand-in) the SDK's usual
- * credentials and SHIPSHAPE_S3_ENDPOINT apply.
+ * OIDC token, and reaches only AWS's own endpoint (productionAwsClient; aws-plan.md). Elsewhere (a
+ * local S3 stand-in) the SDK's usual credentials and SHIPSHAPE_S3_ENDPOINT apply.
  */
 function s3Client(env: Env): S3Client {
   const region = env.AWS_REGION;
   if (!region) throw new Error("S3 storage needs AWS_REGION");
   const endpoint = env.SHIPSHAPE_S3_ENDPOINT;
   if (env.NODE_ENV === "production") {
-    const roleArn = env.AWS_ROLE_ARN;
-    if (!roleArn || endpoint) throw new Error("Production S3 storage needs AWS_ROLE_ARN and no SHIPSHAPE_S3_ENDPOINT");
-    return new S3Client({ region, credentials: awsCredentialsProvider({ roleArn }) });
+    if (endpoint) throw new Error("Production S3 storage refuses SHIPSHAPE_S3_ENDPOINT (a local stand-in)");
+    return new S3Client({ region, ...productionAwsClient(env, "Production S3 storage") });
   }
   return new S3Client({ region, ...(endpoint ? { endpoint, forcePathStyle: true } : {}) });
 }
