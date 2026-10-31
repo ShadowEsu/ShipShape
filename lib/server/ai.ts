@@ -165,12 +165,16 @@ export interface RequestItem {
   quote: string | null;
   /** null: no quote given. false: the quote isn't in the request, so show "Not found in the request". */
   traced: boolean | null;
-  /** ready: a current match; expiring / expired: only matches in that state; missing: none; unmatched: kind "other". */
+  /** From the best match: ready (current), expiring, expired; missing: no match; unmatched: kind "other" and no title match. */
   state: "ready" | "expiring" | "expired" | "missing" | "unmatched";
   matches: MatchedDoc[];
 }
 
 const VALIDITY_ORDER: Record<Validity, number> = { ok: 0, none: 1, expiring: 2, expired: 3 };
+
+// Words too common in document names to tell two documents apart.
+const FILLER = new Set(["the", "and", "for", "your", "our", "copy", "form", "completed", "signed", "sample", "naming", "with", "from", "certificate", "proof"]);
+const nameWords = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !FILLER.has(w)));
 
 export interface RequestInput {
   text: string;
@@ -231,21 +235,21 @@ export async function readRequest(ctx: Ctx, input: RequestInput, network: string
   const items = parseReply(reply);
   await asUser(ctx.userId, (tx) => tx.query("select app.audit_append($1, 'ai.request_read', $1)", [ctx.orgId]));
 
-  const docs = await listDocuments(ctx);
+  // Candidates: the same kind, or a title sharing at least two words with what was asked for (a
+  // "city business license" kept as a permit). Best first: most shared words, then most current.
+  const docs = (await listDocuments(ctx)).map((d) => ({ doc: d, words: nameWords(d.title) }));
   const source = normalise(redacted);
   return items.map((item) => {
     const quote = item.quote || null;
-    const matches =
-      item.kind === "other"
-        ? []
-        : docs
-            .filter((d) => d.kind === item.kind)
-            .sort((a, b) => VALIDITY_ORDER[a.validity] - VALIDITY_ORDER[b.validity])
-            .slice(0, 5)
-            .map((d) => ({ id: d.id, title: d.title, validity: d.validity, expires_on: d.expires_on }));
+    const asked = nameWords(item.label);
+    const matches = docs
+      .map(({ doc, words }) => ({ doc, shared: [...asked].filter((w) => words.has(w)).length }))
+      .filter(({ doc, shared }) => (item.kind !== "other" && doc.kind === item.kind) || shared >= 2)
+      .sort((a, b) => b.shared - a.shared || VALIDITY_ORDER[a.doc.validity] - VALIDITY_ORDER[b.doc.validity])
+      .slice(0, 5)
+      .map(({ doc }) => ({ id: doc.id, title: doc.title, validity: doc.validity, expires_on: doc.expires_on }));
     const best = matches[0]?.validity;
-    const state: RequestItem["state"] =
-      item.kind === "other" ? "unmatched" : !best ? "missing" : best === "ok" || best === "none" ? "ready" : best;
+    const state: RequestItem["state"] = !best ? (item.kind === "other" ? "unmatched" : "missing") : best === "ok" || best === "none" ? "ready" : best;
     return { kind: item.kind, label: item.label, quote, traced: quote === null ? null : source.includes(normalise(quote)), state, matches };
   });
 }

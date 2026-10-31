@@ -181,6 +181,24 @@ describe("what comes back", () => {
     expect(result[4].matches).toEqual([]);
   });
 
+  it("prefers the document named like the request over another of the same kind", async () => {
+    const ctx = await workspace();
+    await addDoc(ctx, "Contractor license", "license", 200);
+    await addDoc(ctx, "City business license", "permit", -12);
+    await addDoc(ctx, "Mutual NDA with Northwind", "nda", null);
+    reply = items(
+      { kind: "license", label: "City business license", quote: "a copy of your city business license" },
+      { kind: "other", label: "Signed NDA with Northwind", quote: "" },
+      { kind: "other", label: "Safety plan", quote: "" },
+    );
+    const [city, nda, safety] = await ask(ctx, `${REQUEST} Also a copy of your city business license.`);
+    // Not "You have it" on the strength of the contractor license: the city license has lapsed.
+    expect(city.state).toBe("expired");
+    expect(city.matches.map((m) => m.title)).toEqual(["City business license", "Contractor license"]);
+    expect(nda.state).toBe("ready");
+    expect(safety.state).toBe("unmatched");
+  });
+
   it("marks a quote that isn't in the request, and only that one", async () => {
     reply = items(W9, { kind: "nda", label: "NDA", quote: "a signed mutual NDA" }, { kind: "coi", label: "Insurance certificate" });
     const result = await ask(await workspace());
