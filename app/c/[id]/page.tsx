@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { Notice, fmtDay } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
@@ -102,8 +103,11 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
             ))}
           </ul>
           <p className="text-sm text-ink-3">
-            What you send goes only to {collect.orgName}, through ShipShape. ShipShape is document software, not a law firm; it doesn&apos;t
-            check or vouch for what these documents say.
+            What you send goes only to {collect.orgName}, through ShipShape, and is never sent to AI.{" "}
+            <Link href="/privacy#collect" className="underline">
+              How ShipShape handles it
+            </Link>
+            . ShipShape is document software, not a law firm; it doesn&apos;t check or vouch for what these documents say.
           </p>
         </div>
       ) : token ? (

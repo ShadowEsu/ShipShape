@@ -38,6 +38,15 @@ export default function PrivacyPage() {
           signature, the signer&apos;s name and email, the name they typed, when they signed and what they agreed to. Visitors and
           signers are recorded as a short keyed fingerprint of their network address, never the address itself.
         </li>
+        <li id="collect">
+          <strong>Collect (files your vendors send):</strong> a workspace can ask its vendors and subcontractors for documents through
+          an upload link. ShipShape keeps the vendor&apos;s name and, if the workspace adds one, their email address (shown only to
+          the workspace; ShipShape doesn&apos;t email vendors), the files they send, which can include tax IDs (on a W-9, for
+          example), with their dates, a SHA-256 fingerprint and when each arrived. A sender&apos;s network address is used only as a
+          short keyed fingerprint to limit how often a link can be used, cleared within a day, and is never stored with the file.
+          Vendor files are never sent to AI. They stay until the workspace deletes them (owners and admins can delete any file) or
+          the workspace is deleted.
+        </li>
         <li>
           <strong>Billing (Pro):</strong> Stripe&apos;s customer and subscription IDs and your plan&apos;s status. Card details go to
           Stripe and never reach ShipShape.
@@ -50,8 +59,8 @@ export default function PrivacyPage() {
 
       <h2>Cookies</h2>
       <p>
-        One sign-in cookie that lasts up to 12 hours, and a cookie that keeps a passport or signing link open for 30 minutes on that
-        link&apos;s own pages. No advertising or analytics cookies, and no tracking scripts.
+        One sign-in cookie that lasts up to 12 hours, and a cookie that keeps a passport, signing or upload link open for 30 minutes
+        on that link&apos;s own pages. No advertising or analytics cookies, and no tracking scripts.
       </p>
 
       <h2>Who else handles your data</h2>
@@ -88,7 +97,8 @@ export default function PrivacyPage() {
       <ul>
         <li>
           <strong>Export:</strong> Settings → Export everything gives you one file with every version of every document, their
-          details and fingerprints, your business facts (the tax ID as its last 4 digits) and the history.
+          details and fingerprints, your business facts (the tax ID as its last 4 digits), your vendors and the files they sent, and
+          the history.
         </li>
         <li>
           <strong>Delete:</strong> Settings → Delete your account removes, straight away, every workspace you own alone with its
