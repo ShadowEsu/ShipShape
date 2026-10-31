@@ -64,8 +64,11 @@ export default function PrivacyPage() {
         <li>
           {AI_RECIPIENT}, only when you choose an AI action and tick the box for that action. Today there is one, &ldquo;What are they
           asking for?&rdquo;: it receives the request text you paste, with numbers shaped like an SSN or EIN removed, and never your
-          documents. ShipShape keeps neither that text nor the answer; your history records only that a request was read. AI actions
-          are switched on after our security review.
+          documents. ShipShape keeps neither that text nor the answer; your history records only that a request was read. Anthropic
+          deletes what it receives through its API within 30 days, except when its systems flag a request under its usage policy (then
+          up to 2 years) or the law requires longer (
+          <a href="https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data">Anthropic&apos;s
+          retention policy</a>). AI actions are switched on after our security review.
         </li>
       </ul>
       <p>
