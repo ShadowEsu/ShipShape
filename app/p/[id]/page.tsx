@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import { ValidityChip, fmtDay } from "@/components/app-ui";
+import { NamedByWorkspace, ValidityChip, fmtDay } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
+import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { openPassport, PASSPORT_COOKIE } from "@/lib/server/passport";
 
@@ -30,6 +31,7 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
             <p className="text-ink-2">
               {passport.label} · this link works until {fmtDay(passport.expiresAt)}
             </p>
+            <NamedByWorkspace contact={contactEmail()} page={`/p/${id}`} />
           </header>
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
             {passport.documents.map((d) => (

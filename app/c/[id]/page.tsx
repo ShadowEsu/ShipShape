@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
-import { Notice, fmtDay } from "@/components/app-ui";
+import { NamedByWorkspace, Notice, fmtDay } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { COLLECT_COOKIE, openCollect, type PublicCollect, type ReceiveOutcome } from "@/lib/server/collect";
+import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
 
 export const metadata: Metadata = { title: "Send documents", robots: { index: false, follow: false } };
@@ -53,6 +54,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
             <p className="text-ink-2">
               For {collect.vendorName} · this link works until {fmtDay(collect.expiresAt)}
             </p>
+            <NamedByWorkspace contact={contactEmail()} page={`/c/${id}`} />
           </header>
           <div aria-live="polite">
             <Outcome r={r} collect={collect} />

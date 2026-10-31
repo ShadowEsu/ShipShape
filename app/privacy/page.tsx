@@ -3,10 +3,12 @@ import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 import { AI_RECIPIENT } from "@/lib/ai";
 import { TERMS_VERSION } from "@/lib/legal";
+import { contactEmail } from "@/lib/server/flags";
 
 export const metadata: Metadata = { title: "Privacy (draft)" };
 
 export default function PrivacyPage() {
+  const contact = contactEmail();
   return (
     <LegalPage title="Privacy policy" version={TERMS_VERSION}>
       <p>
@@ -114,8 +116,19 @@ export default function PrivacyPage() {
       </ul>
       <p>
         Depending on where you live (California, for example), you may have further rights to know, correct or delete your data. The
-        export and delete tools above are the quickest way; a contact address for privacy requests will be listed here before real
-        accounts open. See also the <Link href="/terms">terms</Link>.
+        export and delete tools above are the quickest way;{" "}
+        {contact ? (
+          <>
+            for privacy requests, or to report a page someone shared with you through ShipShape, write to{" "}
+            <a href={`mailto:${contact}`} className="underline">
+              {contact}
+            </a>
+            .
+          </>
+        ) : (
+          "a contact address for privacy requests will be listed here before real accounts open."
+        )}{" "}
+        See also the <Link href="/terms">terms</Link>.
       </p>
     </LegalPage>
   );

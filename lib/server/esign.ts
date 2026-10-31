@@ -233,6 +233,8 @@ export async function sendSigningCode(id: string, token: string): Promise<"ok" |
   const body = [
     `Your code to sign "${r.title}" for ${r.org_name} is ${code}.`,
     "It works for 10 minutes. If you didn't ask for it, ignore this message; nothing is signed without it.",
+    // The sender's workspace chose its name (Security RN-2).
+    `"${r.org_name}" is the name the sender's workspace gave itself; ShipShape doesn't verify business names.`,
   ].join("\n\n");
   const [row] = await asAnon((tx) =>
     tx.query<{ result: "ok" | "too_many" | "invalid" }>("select app.esign_issue_code($1, $2, $3, $4, $5) as result", [

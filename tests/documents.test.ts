@@ -9,7 +9,7 @@ import { downloadUrl, fillTemplate, getDocument, listDocuments, uploadDocument, 
 import { UserError } from "@/lib/server/errors";
 import { checkUpload } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
-import { GateClosed } from "@/lib/server/flags";
+import { assertLaunchConfig, GateClosed } from "@/lib/server/flags";
 import { createPassport, openPassport } from "@/lib/server/passport";
 import { factsForFill, NeedsRecentSignIn, renameWorkspace, revealEin, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
@@ -86,6 +86,15 @@ describe("real documents gate (Security G3)", () => {
     expect(got?.versions.map((v) => v.version)).toEqual([2, 1]);
     expect(got?.audit.map((a) => a.action)).toEqual(["document.version_added", "document.version_added", "document.created"]);
     vi.unstubAllEnvs();
+  });
+
+  it("production with the gate open won't start without a contact address (RN-2: /privacy and Report this page need one)", () => {
+    const prod = { NODE_ENV: "production", SHIPSHAPE_REAL_DOCS: "1" };
+    expect(() => assertLaunchConfig(prod)).toThrow(/CONTACT_EMAIL/);
+    expect(() => assertLaunchConfig({ ...prod, CONTACT_EMAIL: "not an address" })).toThrow(/CONTACT_EMAIL/);
+    expect(() => assertLaunchConfig({ ...prod, CONTACT_EMAIL: "support@shipshape.example" })).not.toThrow();
+    expect(() => assertLaunchConfig({ NODE_ENV: "production" })).not.toThrow(); // sample workspaces only
+    expect(() => assertLaunchConfig({ NODE_ENV: "development", SHIPSHAPE_REAL_DOCS: "1" })).not.toThrow();
   });
 });
 
@@ -293,19 +302,27 @@ describe("workspace name", () => {
     vi.unstubAllEnvs();
   });
 
-  it("can't be changed by a member, in a sample workspace, or to an empty, multi-line or overlong name", async () => {
+  it("can't be changed by a member, in a sample workspace, or to an empty, multi-line, overlong, ShipShape or address name (RN-2, RN-3)", async () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     const ctx = await workspace("rename-owner@example.com", "real");
     const memberId = await db.user("rename-member@example.com");
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, memberId]));
     await expect(renameWorkspace({ ...ctx, userId: memberId, role: "member" }, "Taken Over")).rejects.toBeInstanceOf(UserError);
     await expect(renameWorkspace(sample, "Real Co")).rejects.toBeInstanceOf(GateClosed);
-    for (const bad of ["   ", "Harbor\nSupply", "x".repeat(121), 42]) {
+    const lookalikes = ["ShipShape Support", "Ship-Shape Co", "Ship.Shape", "Acme https://acme.example", "help@acme.example"];
+    for (const bad of ["   ", "Harbor\nSupply", "x".repeat(121), 42, ...lookalikes]) {
       await expect(renameWorkspace(ctx, bad)).rejects.toBeInstanceOf(UserError);
     }
     const names = await db.root((tx) => tx.query<{ name: string }>("select name from app.organizations where id = any($1)", [[ctx.orgId, sample.orgId]]));
     expect(names.map((n) => n.name).sort()).toEqual(["Real", "Sample"]);
     expect(await renames(ctx.orgId)).toEqual([]);
+    vi.unstubAllEnvs();
+  });
+
+  it("may contain 'ship' and 'shape' inside other words", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await workspace("relationship@example.com", "real");
+    expect(await renameWorkspace(ctx, "Relationship Shaper Co")).toBe("Relationship Shaper Co");
     vi.unstubAllEnvs();
   });
 });

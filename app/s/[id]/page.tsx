@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import { fmtDay } from "@/components/app-ui";
+import { fmtDay, NamedByWorkspace } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { fmtDateTime } from "@/components/ui";
 import { ESIGN_CONSENT_TEXT } from "@/lib/consent";
 import { openSigning, SIGN_COOKIE } from "@/lib/server/esign";
+import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { SignForm } from "./sign-form";
 
@@ -28,6 +29,7 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
               {view.orgName} asked {view.signerName} to sign this document.
               {view.status === "pending" && <> The request is open until {fmtDay(view.expiresAt)}.</>}
             </p>
+            <NamedByWorkspace contact={contactEmail()} page={`/s/${id}`} />
           </header>
 
           {view.status === "signed" ? (

@@ -53,3 +53,24 @@ export function Notice({ tone = "warn", children }: { tone?: "warn" | "bad" | "o
   const cls = { warn: "bg-warn-soft text-warn", bad: "bg-bad-soft text-bad", ok: "bg-ok-soft text-ok", info: "bg-accent-soft text-ink" }[tone];
   return <div className={`rounded-xl px-4 py-3 text-sm ${cls}`}>{children}</div>;
 }
+
+/**
+ * Under a workspace's name on pages people outside it open (Security RN-2): the workspace chose that
+ * name, and a way to report the page once there is a contact address.
+ */
+export function NamedByWorkspace({ contact, page }: { contact: string | null; page: string }) {
+  const report = `mailto:${contact}?subject=${encodeURIComponent("Report a ShipShape page")}&body=${encodeURIComponent(`Page: ${page}\n\nWhat's wrong:`)}`;
+  return (
+    <p className="text-xs text-ink-3">
+      The workspace chose this name; ShipShape doesn&apos;t verify business names.
+      {contact && (
+        <>
+          {" "}
+          <a href={report} className="underline">
+            Report this page
+          </a>
+        </>
+      )}
+    </p>
+  );
+}

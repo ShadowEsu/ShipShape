@@ -1,4 +1,5 @@
 import "server-only";
+import { z } from "zod";
 
 /**
  * Security gate G3: real documents stay off until Security's GO. Server-side only, never a UI hide.
@@ -28,4 +29,22 @@ export function assertCanFill(ws: { demo: boolean }) {
  */
 export function collectOpen(ws: { demo: boolean }): boolean {
   return ws.demo || (realDocsEnabled() && process.env.NODE_ENV !== "production");
+}
+
+type Env = Record<string, string | undefined>;
+
+/** The address people write to: privacy requests and reporting a page (CONTACT_EMAIL). Null while unset or not an address. */
+export function contactEmail(env: Env = process.env): string | null {
+  const address = env.CONTACT_EMAIL?.trim() ?? "";
+  return z.email().safeParse(address).success ? address : null;
+}
+
+/**
+ * Checked when the server starts (instrumentation.ts): production with real documents open must
+ * have a contact address, which /privacy promises and every shared page's "Report this page" uses.
+ */
+export function assertLaunchConfig(env: Env) {
+  if (env.NODE_ENV === "production" && env.SHIPSHAPE_REAL_DOCS === "1" && !contactEmail(env)) {
+    throw new Error("Production with real documents needs CONTACT_EMAIL (not configured)");
+  }
 }
