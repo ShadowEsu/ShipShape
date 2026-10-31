@@ -26,6 +26,10 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   env: { SHIPSHAPE_BUILT_AT: BUILT_AT },
   serverExternalPackages: ["@electric-sql/pglite"],
+  // Uploads go through server actions: 10 MB files plus form overhead.
+  experimental: { serverActions: { bodySizeLimit: "11mb" } },
+  // The official forms and templates are read from disk at request time.
+  outputFileTracingIncludes: { "/**": ["./templates/**/*", "./supabase/**/*.sql"] },
   async headers() {
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },

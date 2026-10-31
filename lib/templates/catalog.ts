@@ -1,4 +1,4 @@
-import type { TemplateInfo } from "./types";
+import type { FieldDef, TemplateInfo } from "./types";
 
 export const NDA_DEFAULT_PURPOSE = "Evaluating whether to enter into a business relationship with the other party.";
 
@@ -153,3 +153,6 @@ export const LINK_OUTS = [
 ];
 
 export const templateById = (id: string) => TEMPLATES.find((t) => t.id === id);
+
+/** A field is shown (and validated) only when its `when` condition holds. */
+export const isVisible = (f: FieldDef, values: Record<string, string>) => !f.when || values[f.when.key] === f.when.equals;

@@ -77,22 +77,29 @@ async function createRemoteDriver(url: string): Promise<Driver> {
   };
 }
 
-let driver: Promise<Driver> | undefined;
+// One driver per process. Next.js bundles route handlers and pages separately, so a module-level
+// variable would open a second PGlite on the same data directory, and the two wouldn't see each
+// other's writes (and a second postgres.js pool in production).
+declare global {
+  var shipshapeDb: Promise<Driver> | undefined;
+}
 
 function getDriver(): Promise<Driver> {
-  if (!driver) {
+  if (!globalThis.shipshapeDb) {
     const url = process.env.DATABASE_URL;
-    if (url) driver = createRemoteDriver(url);
-    else if (process.env.NODE_ENV === "production") driver = Promise.reject(new Error("DATABASE_URL is not set"));
-    else driver = createLocalDriver(process.env.SHIPSHAPE_PGLITE_DIR ?? path.join(ROOT, ".data", "pglite"));
-    driver.catch(() => (driver = undefined));
+    let d: Promise<Driver>;
+    if (url) d = createRemoteDriver(url);
+    else if (process.env.NODE_ENV === "production") d = Promise.reject(new Error("DATABASE_URL is not set"));
+    else d = createLocalDriver(process.env.SHIPSHAPE_PGLITE_DIR ?? path.join(ROOT, ".data", "pglite"));
+    d.catch(() => (globalThis.shipshapeDb = undefined));
+    globalThis.shipshapeDb = d;
   }
-  return driver;
+  return globalThis.shipshapeDb;
 }
 
 /** Tests inject their own database. */
 export function setDriverForTests(d: Driver) {
-  driver = Promise.resolve(d);
+  globalThis.shipshapeDb = Promise.resolve(d);
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

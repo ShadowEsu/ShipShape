@@ -176,7 +176,7 @@ export const DocMeta = z.object({
 });
 
 /** A file the person uploads (Security G3: real data, behind SHIPSHAPE_REAL_DOCS). */
-export async function uploadDocument(ctx: Ctx, meta: z.input<typeof DocMeta>, bytes: Uint8Array): Promise<string> {
+export async function uploadDocument(ctx: Ctx, meta: unknown, bytes: Uint8Array): Promise<string> {
   assertRealData(ctx);
   const m = DocMeta.parse(meta);
   const check = checkUpload(bytes);
@@ -234,7 +234,7 @@ export async function fillTemplate(ctx: Ctx, templateId: string, values: Values,
   return { ok: true, id };
 }
 
-export async function updateDocument(ctx: Ctx, id: string, meta: z.input<typeof DocMeta>) {
+export async function updateDocument(ctx: Ctx, id: string, meta: unknown) {
   const m = DocMeta.parse(meta);
   const rows = await asUser(ctx.userId, (tx) =>
     tx.query(

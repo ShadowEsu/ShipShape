@@ -4,7 +4,7 @@ import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { composePdf, inlineRuns, isPrintable, type Block } from "@/lib/pdf/compose";
 import type { EntityType, ProfileKey } from "@/lib/profile-fields";
-import { NDA_DEFAULT_PURPOSE } from "@/lib/templates/catalog";
+import { isVisible as visible, NDA_DEFAULT_PURPOSE } from "@/lib/templates/catalog";
 import type { Facts, FieldDef, Rendered, TemplateInfo } from "@/lib/templates/types";
 import { sha256Hex } from "./crypto";
 
@@ -52,8 +52,6 @@ export function prefill(t: TemplateInfo, facts: Facts): Values {
   }
   return out;
 }
-
-export const visible = (f: FieldDef, v: Values) => !f.when || v[f.when.key] === f.when.equals;
 
 export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<string, string> {
   const errors: Record<string, string> = {};
