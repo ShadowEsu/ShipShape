@@ -364,6 +364,22 @@ describe("audit chain", () => {
     );
     expect(chain).toEqual({ broken: null, viewed: 2 });
   });
+
+  it.skipIf(!process.env.SHIPSHAPE_PG_TEST_URL)("history writers in one workspace take turns: 3 at once for 20 rounds all land in one unbroken chain (Security A-31)", async () => {
+    const owner = await db.user("rounds@example.com");
+    const org = (await asUser(owner, (tx) => tx.query<{ id: string }>("select app.create_workspace('Rounds Workspace') as id")))[0].id;
+    const writer = async () => {
+      for (let i = 0; i < 20; i++) await asUser(owner, (tx) => tx.query("select app.audit_append($1, 'document.viewed', $1)", [org]));
+    };
+    await Promise.all([writer(), writer(), writer()]);
+    const [chain] = await asUser(owner, (tx) =>
+      tx.query<{ broken: string | null; viewed: number }>(
+        "select app.audit_verify($1) as broken, (select count(*)::int from app.audit_log where org_id = $1 and action = 'document.viewed') as viewed",
+        [org],
+      ),
+    );
+    expect(chain).toEqual({ broken: null, viewed: 60 });
+  });
 });
 
 describe("security review E2-E7", () => {
