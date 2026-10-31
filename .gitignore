@@ -1,6 +1,7 @@
 node_modules
 .next
 .data
+.moto
 .vercel
 .env*
 !.env.example

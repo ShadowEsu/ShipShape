@@ -14,10 +14,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit && node scripts/check-sql.mjs",
     "test": "vitest run",
+    "test:s3": "SHIPSHAPE_S3_TEST_ENDPOINT=http://127.0.0.1:5917 vitest run tests/blob-store.test.ts",
     "eval:ai": "vitest run --config vitest.evals.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1161.0",
     "@electric-sql/pglite": "0.5.13",
+    "@vercel/oidc-aws-credentials-provider": "3.3.17",
     "next": "16.4.3",
     "pdf-lib": "1.17.1",
     "postgres": "4.0.0",
@@ -35,5 +38,10 @@
     "tailwindcss": "4.3.3",
     "typescript": "^5.9.0",
     "vitest": "5.0.5"
+  },
+  "overrides": {
+    "@vercel/cli-config": {
+      "zod": "$zod"
+    }
   }
 }

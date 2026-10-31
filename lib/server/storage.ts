@@ -2,17 +2,17 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DeleteObjectsCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 import { safeEqual } from "./crypto";
 
 /**
  * Document files. Paths always start with the workspace id (`<org>/<document>/v<n>.<ext>`), and a
- * file is only reachable through a signed URL that lives at most 5 minutes, minted by the server
- * after the database confirmed (under RLS) that the caller may see that version.
+ * file is only reachable through a link the server signs for at most 5 minutes, minted after the
+ * database confirmed (under RLS) that the caller may see that version. /api/files checks the link
+ * and streams the bytes from the store, so no storage URL ever reaches a browser (Security R2, C-4).
  *
- * Local and tests: files on disk, served by /api/files with an HMAC signature.
- * Production: the private Supabase Storage bucket `documents` (created and checked by
- * 0013_storage_lockdown.sql) and its signed URLs, on the storage origin (added with the Supabase
- * project; Security R2, C-4).
+ * Local and tests: files on disk. Production: one private S3 bucket (`s3BlobStore`, aws-plan.md).
  */
 
 export const MAX_URL_SECONDS = 300;
@@ -20,14 +20,20 @@ export const MAX_URL_SECONDS = 300;
 /**
  * Every method throws when the store fails; none reports success it didn't have (Security C1-a).
  * Callers depend on it: deleting a vendor file and signing roll the database back when storage
- * throws. The Supabase store must check each response (supabase-js returns `{ error }` rather than
- * throwing) and throw on it.
+ * throws. The S3 store gets this from the SDK, which throws on error responses, and throws itself
+ * on the per-file errors a batch delete reports in a successful response.
  */
 export interface BlobStore {
   put(objectPath: string, bytes: Uint8Array, mime: string): Promise<void>;
   get(objectPath: string): Promise<Uint8Array>;
   remove(objectPaths: string[]): Promise<void>;
-  signedUrl(objectPath: string, opts: { filename: string; inline: boolean; ttlSeconds?: number }): Promise<string>;
+  signedUrl(objectPath: string, opts: FileUrlOptions): Promise<string>;
+}
+
+interface FileUrlOptions {
+  filename: string;
+  inline: boolean;
+  ttlSeconds?: number;
 }
 
 const SAFE_PATH = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\/v[0-9]+\.(pdf|png|jpg)$/;
@@ -42,9 +48,18 @@ function urlKey(): string {
   return k;
 }
 
-/** The signed part of a local file URL. */
+/** The signed part of a file URL. */
 export function signFileParams(p: string, exp: number, inline: boolean, filename: string): string {
   return createHmac("sha256", urlKey()).update(`file:${p}:${exp}:${inline ? 1 : 0}:${filename}`).digest("base64url");
+}
+
+/** The link /api/files serves, whichever store holds the file: signed here, valid at most 5 minutes. */
+export async function fileUrl(p: string, { filename, inline, ttlSeconds = MAX_URL_SECONDS }: FileUrlOptions): Promise<string> {
+  assertObjectPath(p);
+  const exp = Math.floor(Date.now() / 1000) + Math.min(ttlSeconds, MAX_URL_SECONDS);
+  const q = new URLSearchParams({ p, e: String(exp), i: inline ? "1" : "0", n: filename });
+  q.set("s", signFileParams(p, exp, inline, filename));
+  return `/api/files?${q}`;
 }
 
 export interface VerifiedFile {
@@ -82,22 +97,66 @@ export function localBlobStore(root: string): BlobStore {
     async remove(paths) {
       await Promise.all(paths.map((p) => rm(full(p), { force: true })));
     },
-    async signedUrl(p, { filename, inline, ttlSeconds = MAX_URL_SECONDS }) {
-      assertObjectPath(p);
-      const exp = Math.floor(Date.now() / 1000) + Math.min(ttlSeconds, MAX_URL_SECONDS);
-      const q = new URLSearchParams({ p, e: String(exp), i: inline ? "1" : "0", n: filename });
-      q.set("s", signFileParams(p, exp, inline, filename));
-      return `/api/files?${q}`;
-    },
+    signedUrl: fileUrl,
   };
+}
+
+/**
+ * Files in one private S3 bucket (aws-plan.md: Block Public Access, SSE-KMS by default, versioning
+ * with a 7-day noncurrent expiry). Downloads still go through /api/files; the bucket is never
+ * linked to.
+ */
+export function s3BlobStore(client: S3Client, bucket: string): BlobStore {
+  return {
+    async put(p, bytes, mime) {
+      assertObjectPath(p);
+      // Never overwrite: a change is a new version. S3 refuses the write (412) if the path exists.
+      await client.send(new PutObjectCommand({ Bucket: bucket, Key: p, Body: bytes, ContentType: mime, IfNoneMatch: "*" }));
+    },
+    async get(p) {
+      assertObjectPath(p);
+      const { Body } = await client.send(new GetObjectCommand({ Bucket: bucket, Key: p }));
+      if (!Body) throw new Error("S3 returned no file");
+      return Body.transformToByteArray();
+    },
+    async remove(paths) {
+      for (const p of paths) assertObjectPath(p);
+      for (let i = 0; i < paths.length; i += S3_DELETE_BATCH) {
+        const objects = paths.slice(i, i + S3_DELETE_BATCH).map((Key) => ({ Key }));
+        const { Errors } = await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: objects, Quiet: true } }));
+        if (Errors?.length) throw new Error(`S3 kept ${Errors.length} of the files to delete (${Errors[0].Code ?? "no error code"})`);
+      }
+    },
+    signedUrl: fileUrl,
+  };
+}
+const S3_DELETE_BATCH = 1000; // the most one DeleteObjects request takes
+
+/**
+ * Production signs S3 calls with credentials for AWS_ROLE_ARN, obtained per request from Vercel's
+ * OIDC token: no stored keys (aws-plan.md). Elsewhere (a local S3 stand-in) the SDK's usual
+ * credentials and SHIPSHAPE_S3_ENDPOINT apply.
+ */
+function s3Client(): S3Client {
+  const region = process.env.AWS_REGION;
+  if (!region) throw new Error("S3 storage needs AWS_REGION");
+  const endpoint = process.env.SHIPSHAPE_S3_ENDPOINT;
+  if (process.env.NODE_ENV === "production") {
+    const roleArn = process.env.AWS_ROLE_ARN;
+    if (!roleArn || endpoint) throw new Error("Production S3 storage needs AWS_ROLE_ARN and no SHIPSHAPE_S3_ENDPOINT");
+    return new S3Client({ region, credentials: awsCredentialsProvider({ roleArn }) });
+  }
+  return new S3Client({ region, ...(endpoint ? { endpoint, forcePathStyle: true } : {}) });
 }
 
 let store: BlobStore | undefined;
 
 export function blobStore(): BlobStore {
   if (!store) {
-    if (process.env.NODE_ENV === "production") throw new Error("Production storage needs the Supabase project (not configured)");
-    store = localBlobStore(process.env.SHIPSHAPE_BLOB_DIR ?? path.join(process.cwd(), ".data", "blobs"));
+    const bucket = process.env.SHIPSHAPE_S3_BUCKET;
+    if (bucket) store = s3BlobStore(s3Client(), bucket);
+    else if (process.env.NODE_ENV === "production") throw new Error("Production storage needs SHIPSHAPE_S3_BUCKET (not configured)");
+    else store = localBlobStore(process.env.SHIPSHAPE_BLOB_DIR ?? path.join(process.cwd(), ".data", "blobs"));
   }
   return store;
 }

@@ -31,9 +31,11 @@ npm run dev                  # http://localhost:3000: website at /, app at /app 
 With `DATABASE_URL` empty, the app uses PGlite (Postgres in WebAssembly) under `.data/pglite` and stores files under `.data/blobs`. On start it sets the database up the way a production one is set up (below) and applies any new migration from `supabase/migrations/`.
 
 ```bash
-npm test        # vitest against PGlite: row level security matrix, documents, passport, collect, deadlines, e-sign, account, billing, AI, log redaction
+npm test        # vitest against PGlite: row level security matrix, documents, passport, collect, deadlines, e-sign, account, billing, AI, log redaction, file stores
 npm run lint    # typecheck, plus a check that no SQL is built by string interpolation
 ```
+
+`npm test` checks the S3 file store offline; `npm run test:s3` runs the same file-store checks against an S3 API on port 5917. Locally that's [moto](https://github.com/getmoto/moto) in its own virtualenv: `python3 -m venv .moto && .moto/bin/pip install "moto[server]==5.2.5" && .moto/bin/moto_server -p 5917`.
 
 ### Database setup on plain Postgres (Amazon RDS)
 
@@ -64,7 +66,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 
 - Every query runs inside a transaction as the user, with row level security deciding what it can see. Code that needs more (sign-in, public links, webhooks) goes through a short, named list of service paths.
 - Tax IDs are encrypted with AES-256-GCM using a key outside the database and shown as the last 4 digits by default; revealing one needs a recent sign-in and is recorded.
-- Files live in one private storage bucket (`documents`, 10 MB, PDF/PNG/JPEG) that only the server reaches, and are served through signed links that expire after 5 minutes. A migration creates the bucket and refuses to finish if any storage policy lets visitors or signed-in users at it.
+- Files live in one private bucket that only the server reaches (S3 in production: Block Public Access, KMS encryption, versioning; a folder locally), up to 10 MB, PDF/PNG/JPEG. Every download goes through `/api/files` with a link the server signs for 5 minutes, so no storage URL reaches a browser. Writes never overwrite a file.
 - Everything lives in the `app` schema, which the Supabase Data API must never serve (`scripts/probe-supabase.mjs` checks the live project); no function in it is executable by PUBLIC, and each role gets only explicit grants (a test checks that across every migration).
 - Passport, signing and upload links carry their secret in the URL fragment, so it never reaches a server log; the page trades it for a short-lived, path-scoped cookie and removes it from the address bar. Only a hash is stored.
 - Files vendors send through upload links are checked by content (PDF, PNG or JPEG, 10 MB), kept apart from the workspace's own documents, and always download rather than open in the browser. The database caps each link at 25 files and each workspace at 250 MiB of vendor files; owners and admins can delete a file, which removes the stored copy and is recorded in the history. In sample workspaces those links store a generated sample file, never the upload.

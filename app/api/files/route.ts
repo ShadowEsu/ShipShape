@@ -5,8 +5,9 @@ export const dynamic = "force-dynamic";
 const TYPES = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg" } as const;
 
 /**
- * Local stand-in for Supabase Storage's signed URLs: serves one stored file for a link signed by
- * the server within the last 5 minutes. Production serves files from the storage origin instead.
+ * Serves one stored file for a link the server signed within the last 5 minutes, streaming it from
+ * the store (a folder locally, the private S3 bucket in production), so no storage URL ever reaches
+ * a browser.
  */
 export async function GET(req: Request) {
   const file = verifyFileParams(new URL(req.url).searchParams);
