@@ -33,10 +33,10 @@ jobs:
       - name: Tests on PostgreSQL 17, through the production driver
         run: |
           SHIPSHAPE_PG_TEST_URL="$(cat "$RUNNER_TEMP/pg/url")" DATABASE_CA_CERT="$(cat "$RUNNER_TEMP/pg/ca.pem")" npm test
-      - name: Start an S3 stand-in (moto, the version the README names)
+      - name: Start an S3 stand-in (moto 5.2.5, every package pinned by hash)
         run: |
           python3 -m venv "$RUNNER_TEMP/moto"
-          "$RUNNER_TEMP/moto/bin/pip" install --quiet "moto[server]==5.2.5"
+          "$RUNNER_TEMP/moto/bin/pip" install --quiet --require-hashes -r scripts/ci-moto-requirements.txt
           "$RUNNER_TEMP/moto/bin/moto_server" -H 127.0.0.1 -p 5917 > "$RUNNER_TEMP/moto.log" 2>&1 &
           for _ in $(seq 30); do curl -s -o /dev/null http://127.0.0.1:5917 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/moto.log"
