@@ -17,6 +17,12 @@ import { safeEqual } from "./crypto";
 
 export const MAX_URL_SECONDS = 300;
 
+/**
+ * Every method throws when the store fails; none reports success it didn't have (Security C1-a).
+ * Callers depend on it: deleting a vendor file and signing roll the database back when storage
+ * throws. The Supabase store must check each response (supabase-js returns `{ error }` rather than
+ * throwing) and throw on it.
+ */
 export interface BlobStore {
   put(objectPath: string, bytes: Uint8Array, mime: string): Promise<void>;
   get(objectPath: string): Promise<Uint8Array>;

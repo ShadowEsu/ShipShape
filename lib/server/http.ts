@@ -36,4 +36,10 @@ export async function rateLimited(bucket: string, rawKey: string, max: number, w
   return !row.ok;
 }
 
+/** Clears rate-limit fingerprints older than a day, even with no traffic (the daily cron). Returns how many. */
+export async function purgeRateHits(): Promise<number> {
+  const [row] = await asService((tx) => tx.query<{ n: number }>("select app.purge_rate_hits() as n"));
+  return row.n;
+}
+
 export const tooMany = () => fail("Too many requests. Try again in a little while.", 429);

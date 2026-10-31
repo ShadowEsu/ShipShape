@@ -388,3 +388,18 @@ describe("storage lockdown (Security C-4)", () => {
     await expectDenied(asAnon((tx) => tx.query("select app.storage_lockdown_problems()")));
   });
 });
+
+describe("rate-limit fingerprints (Security C-3 INFO)", () => {
+  it("the daily purge clears windows older than a day with no traffic, and only the service role may run it", async () => {
+    await db.root((tx) =>
+      tx.query(
+        "insert into app.rate_hits (bucket, key, window_start, n) values ('probe', 'old', now() - interval '25 hours', 1), ('probe', 'fresh', now() - interval '1 hour', 1)",
+      ),
+    );
+    await expectDenied(asUser(a, (tx) => tx.query("select app.purge_rate_hits()")));
+    const [run] = await asService((tx) => tx.query<{ n: number }>("select app.purge_rate_hits() as n"));
+    expect(run.n).toBeGreaterThanOrEqual(1);
+    const left = await db.root((tx) => tx.query<{ key: string }>("select key from app.rate_hits where bucket = 'probe'"));
+    expect(left.map((r) => r.key)).toEqual(["fresh"]);
+  });
+});
