@@ -21,3 +21,24 @@ create function auth.uid() returns uuid language sql stable as $$
   select (nullif(current_setting('request.jwt.claims', true), '')::json ->> 'sub')::uuid
 $$;
 grant execute on function auth.uid() to anon, authenticated, service_role;
+
+-- Supabase Storage's two tables, as far as ShipShape's lockdown migration (0013) touches them.
+-- Hosted Supabase ships them with row level security on and no policies.
+create schema storage;
+create table storage.buckets (
+  id text primary key,
+  name text not null unique,
+  public boolean default false,
+  file_size_limit bigint,
+  allowed_mime_types text[],
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create table storage.objects (
+  id uuid primary key default gen_random_uuid(),
+  bucket_id text references storage.buckets(id),
+  name text,
+  owner uuid,
+  created_at timestamptz default now()
+);
+alter table storage.objects enable row level security;

@@ -55,7 +55,8 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 
 - Every query runs inside a transaction as the user, with row level security deciding what it can see. Code that needs more (sign-in, public links, webhooks) goes through a short, named list of service paths.
 - Tax IDs are encrypted with AES-256-GCM using a key outside the database and shown as the last 4 digits by default; revealing one needs a recent sign-in and is recorded.
-- Files live in private storage and are served through signed links that expire after 5 minutes.
+- Files live in one private storage bucket (`documents`, 10 MB, PDF/PNG/JPEG) that only the server reaches, and are served through signed links that expire after 5 minutes. A migration creates the bucket and refuses to finish if any storage policy lets visitors or signed-in users at it.
+- Everything lives in the `app` schema, which the Supabase Data API must never serve (`scripts/probe-supabase.mjs` checks the live project); no function in it is executable by PUBLIC, and each role gets only explicit grants (a test checks that across every migration).
 - Passport, signing and upload links carry their secret in the URL fragment, so it never reaches a server log; the page trades it for a short-lived, path-scoped cookie and removes it from the address bar. Only a hash is stored.
 - Files vendors send through upload links are checked by content (PDF, PNG or JPEG, 10 MB), kept apart from the workspace's own documents, and always download rather than open in the browser. The database caps each link at 25 files and each workspace at 250 MiB of vendor files; owners and admins can delete a file, which removes the stored copy and is recorded in the history. In sample workspaces those links store a generated sample file, never the upload.
 - The audit history is append-only and each entry hashes the one before it; entries for new document versions (signed copies included) and vendor files carry the file's SHA-256 inside the chain.
@@ -66,6 +67,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 
 - [ ] Security review GO (gates for real documents, AI and payments)
 - [ ] Production Postgres and storage (Supabase), connecting as the `shipshape_app` role
+- [ ] Supabase Data API switched off, or serving `public` only (never `app`); `node scripts/probe-supabase.mjs` passes against the project (Data API, bucket privacy, anonymous list/download/upload refused)
 - [ ] Email provider for reminders and signing codes
 - [ ] A lawyer reviews `/terms` and `/privacy` (drafts), the e-sign flow, and which states ShipShape serves
 - [ ] Stripe live mode after the payments review

@@ -334,4 +334,57 @@ describe("security review E2-E7", () => {
     await expectDenied(inject("select * from app.documents"));
     await expectDenied(inject("update app.audit_log set action = 'x.y'"));
   });
+
+  it("no function in app is executable by PUBLIC; roles get only explicit grants (Security F2-1)", async () => {
+    const open = await db.root((tx) =>
+      tx.query<{ fn: string }>(
+        `select p.oid::regprocedure::text as fn from pg_proc p
+         where p.pronamespace = 'app'::regnamespace
+           and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) x where x.grantee = 0 and x.privilege_type = 'EXECUTE'))
+         order by 1`,
+      ),
+    );
+    expect(open.map((r) => r.fn)).toEqual([]);
+  });
+
+  it("a member can't write or forge history rows directly, in any workspace (Security F2-1)", async () => {
+    const forge = (org: string) =>
+      asUser(a, (tx) => tx.query("select app.audit_write($1, $2, 'esign.signed', $1, $3)", [org, a, "c".repeat(64)]));
+    await expectDenied(forge(orgB));
+    await expectDenied(forge(orgA));
+    await expectDenied(asUser(a, (tx) => tx.query("select app.audit_hash($1, 1, now(), $2, 'x.y', null, null, null)", [orgA, a])));
+  });
+});
+
+describe("storage lockdown (Security C-4)", () => {
+  const problems = async () => (await db.root((tx) => tx.query<{ p: string }>("select p from app.storage_lockdown_problems() p"))).map((r) => r.p);
+
+  it("creates one private bucket for every file, and reports anything that would open storage to visitors", async () => {
+    const [bucket] = await db.root((tx) =>
+      tx.query<{ public: boolean; file_size_limit: string; allowed_mime_types: string[] }>(
+        "select public, file_size_limit::text, allowed_mime_types from storage.buckets where id = 'documents'",
+      ),
+    );
+    expect(bucket).toEqual({ public: false, file_size_limit: "10485760", allowed_mime_types: ["application/pdf", "image/png", "image/jpeg"] });
+    expect(await problems()).toEqual([]);
+
+    await db.root((tx) => tx.query("create policy anyone_reads on storage.objects for select to anon using (true)"));
+    await db.root((tx) => tx.query("update storage.buckets set public = true where id = 'documents'"));
+    await db.root((tx) => tx.query("alter table storage.objects disable row level security"));
+    expect(await problems()).toEqual([
+      "row level security is off on storage.objects",
+      "storage policy anyone_reads on storage.objects applies to anon",
+      "bucket documents is public",
+    ]);
+
+    await db.root((tx) => tx.query("drop policy anyone_reads on storage.objects"));
+    await db.root((tx) => tx.query("update storage.buckets set public = false where id = 'documents'"));
+    await db.root((tx) => tx.query("alter table storage.objects enable row level security"));
+    expect(await problems()).toEqual([]);
+  });
+
+  it("the check isn't callable from the app's roles", async () => {
+    await expectDenied(asUser(a, (tx) => tx.query("select app.storage_lockdown_problems()")));
+    await expectDenied(asAnon((tx) => tx.query("select app.storage_lockdown_problems()")));
+  });
 });

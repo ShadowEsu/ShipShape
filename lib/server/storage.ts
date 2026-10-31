@@ -10,8 +10,9 @@ import { safeEqual } from "./crypto";
  * after the database confirmed (under RLS) that the caller may see that version.
  *
  * Local and tests: files on disk, served by /api/files with an HMAC signature.
- * Production: a private Supabase Storage bucket and its signed URLs, on the storage origin
- * (added with the Supabase project; Security R2).
+ * Production: the private Supabase Storage bucket `documents` (created and checked by
+ * 0013_storage_lockdown.sql) and its signed URLs, on the storage origin (added with the Supabase
+ * project; Security R2, C-4).
  */
 
 export const MAX_URL_SECONDS = 300;
