@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteAccount, exportWorkspace } from "@/lib/server/account";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
@@ -140,5 +140,23 @@ describe("account deletion", () => {
     await expect(deleteAccount({ ...ctx, demo: false, authAt: Math.floor(Date.now() / 1000) - 3600 })).rejects.toThrow(NeedsRecentSignIn);
     await expect(asAnon((tx) => tx.query("select * from app.delete_my_account('{}'::uuid[])"))).rejects.toThrow(/permission denied/);
     expect(await count("documents", ctx.orgId)).toBeGreaterThan(0);
+  });
+
+  it("finishes even if storage can't remove the files, and logs one line without any path", async () => {
+    const me = await sampleWorkspace();
+    const local = localBlobStore(blobDir);
+    setBlobStoreForTests({ ...local, remove: () => Promise.reject(new Error("S3 unavailable")) });
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void logged.push(a.join(" ")));
+    try {
+      await deleteAccount(me);
+    } finally {
+      spy.mockRestore();
+      setBlobStoreForTests(local);
+    }
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [me.orgId]))).toEqual([]);
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [me.userId]))).toEqual([]);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).not.toContain(me.orgId); // every storage path starts with the workspace id
   });
 });
