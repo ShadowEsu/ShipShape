@@ -13,8 +13,6 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
     hookTimeout: 60_000,
-    // The worker threads tests start (lib/pdf/build-isolated.ts) run the app's TypeScript in Node itself.
-    execArgv: ["--experimental-transform-types", "--disable-warning=ExperimentalWarning", "--import", path.join(import.meta.dirname, "tests/support/node-ts.mjs")],
     env: {
       SHIPSHAPE_FIELD_KEY: Buffer.alloc(32, 7).toString("base64"),
       SHIPSHAPE_SESSION_SECRET: "test-session-secret-not-used-anywhere-else",

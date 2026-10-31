@@ -3,7 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import { appendPages } from "@/lib/pdf/append";
-import { buildToSignIsolated } from "@/lib/pdf/build-isolated";
+import { BuildBusy, buildToSignIsolated } from "@/lib/pdf/build-isolated";
 import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
 import { NotSignable } from "@/lib/pdf/to-sign";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
@@ -57,6 +57,7 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
     try {
       toSign = await buildToSignIsolated(original, latest.mime);
     } catch (e) {
+      if (e instanceof BuildBusy) throw new UserError("ShipShape is preparing other documents for signature right now. Try again in a minute.");
       if (!(e instanceof NotSignable)) throw e;
       throw new UserError(
         e.reason === "viewer_dependent"

@@ -3,7 +3,7 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { PDFDict, PDFDocument, PDFRef } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { buildToSignIsolated } from "@/lib/pdf/build-isolated";
+import { BuildBusy, BuildSlots, buildToSignIsolated } from "@/lib/pdf/build-isolated";
 import { loadUntrusted, MAX_INFLATED_BYTES, MAX_PACKED_OBJECTS, PdfTooComplex } from "@/lib/pdf/load";
 import { buildToSign, NotSignable } from "@/lib/pdf/to-sign";
 
@@ -145,7 +145,7 @@ describe("loading an upload", () => {
   });
 });
 
-describe("each upload is built in a thread of its own (Security R7-8)", () => {
+describe("each upload is built in a process of its own, at most two at once (Security R7-8, R9-1, R9-2)", () => {
   /** One page plus an array of `count` distinct names: pdf-lib keeps every name it has seen for good. */
   const names = (count: number) => pdfWith([[4, Buffer.from(`[${Array.from({ length: count }, (_, i) => `/n${i}`).join(" ")}]`)]]);
 
@@ -158,12 +158,48 @@ describe("each upload is built in a thread of its own (Security R7-8)", () => {
     await expect(buildToSignIsolated(a6, "application/pdf")).rejects.toMatchObject({ reason: "unreadable" });
   });
 
-  it("an upload needing more memory or time than its thread may use is refused as unreadable; under the normal limits it builds", async () => {
+  it("an upload needing more memory or time than its process may use is refused as unreadable; under the normal limits it builds", async () => {
     const heavy = names(300_000);
-    const outOfMemory = await buildToSignIsolated(heavy, "application/pdf", { heapMb: 16, timeoutMs: 20_000 }).catch((e: unknown) => e);
+    const outOfMemory = await buildToSignIsolated(heavy, "application/pdf", { heapMb: 32, timeoutMs: 20_000 }).catch((e: unknown) => e);
     expect(outOfMemory).toBeInstanceOf(NotSignable);
-    expect(outOfMemory).toMatchObject({ reason: "unreadable", cause: { code: "ERR_WORKER_OUT_OF_MEMORY" } });
-    await expect(buildToSignIsolated(heavy, "application/pdf", { heapMb: 512, timeoutMs: 1 })).rejects.toMatchObject({ reason: "unreadable" });
+    expect(outOfMemory).toMatchObject({ reason: "unreadable" });
+    await expect(buildToSignIsolated(heavy, "application/pdf", { heapMb: 256, timeoutMs: 1 })).rejects.toMatchObject({ reason: "unreadable" });
     expect((await buildToSignIsolated(heavy, "application/pdf")).length).toBeGreaterThan(0);
+  });
+
+  it("more sends at once than slots wait their turn and all build", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage().drawText("Fee: USD 100");
+    const bytes = await doc.save();
+    const built = await Promise.all([1, 2, 3, 4].map(() => buildToSignIsolated(bytes, "application/pdf")));
+    expect(built.every((b) => b.length > 0)).toBe(true);
+  });
+
+  it("slots: holders beyond the size wait in order; a wait that runs out is BuildBusy and takes no slot", async () => {
+    const slots = new BuildSlots(2);
+    const first = await slots.take(1000);
+    const second = await slots.take(1000);
+    const order: string[] = [];
+    const granted = (name: string) => (release: () => void) => {
+      order.push(name);
+      return release;
+    };
+    const third = slots.take(1000).then(granted("third"));
+    const fourth = slots.take(1000).then(granted("fourth"));
+    await expect(slots.take(5)).rejects.toBeInstanceOf(BuildBusy);
+    expect(order).toEqual([]);
+    first();
+    first(); // releasing twice frees one slot, not two
+    const thirdRelease = await third;
+    expect(order).toEqual(["third"]);
+    second();
+    const fourthRelease = await fourth;
+    expect(order).toEqual(["third", "fourth"]);
+    // Both slots are held again (third, fourth): the timed-out waiter left nothing behind.
+    await expect(slots.take(5)).rejects.toBeInstanceOf(BuildBusy);
+    thirdRelease();
+    fourthRelease();
+    await Promise.all([slots.take(5), slots.take(5)]);
+    await expect(slots.take(5)).rejects.toBeInstanceOf(BuildBusy);
   });
 });

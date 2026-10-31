@@ -36,8 +36,22 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@electric-sql/pglite"],
   // Uploads go through server actions: 10 MB files plus form overhead.
   experimental: { serverActions: { bodySizeLimit: "11mb" } },
-  // The official forms and templates are read from disk at request time.
-  outputFileTracingIncludes: { "/**": ["./templates/**/*", "./supabase/**/*.sql"] },
+  // The official forms and templates are read from disk at request time. lib/pdf/build-isolated.ts
+  // runs to-sign.child.ts in a child process as plain TypeScript (Node strips the types), so it
+  // and what it imports ship as files: the bundle doesn't contain them in a form Node can start.
+  outputFileTracingIncludes: {
+    "/**": [
+      "./templates/**/*",
+      "./supabase/**/*.sql",
+      "./package.json",
+      "./lib/pdf/{to-sign.child,to-sign,inert,load}.ts",
+      "./node_modules/pdf-lib/package.json",
+      "./node_modules/pdf-lib/cjs/**/*.js",
+      "./node_modules/pdf-lib/node_modules/tslib/**/*",
+      "./node_modules/@pdf-lib/{standard-fonts,upng}/**/*",
+      "./node_modules/pako/**/*",
+    ],
+  },
   async headers() {
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },

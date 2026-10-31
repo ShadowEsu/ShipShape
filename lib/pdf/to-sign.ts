@@ -1,14 +1,15 @@
+// Runs in Node itself too, in the child process build-isolated.ts starts: hence the `.ts` imports and
+// only TypeScript Node can strip (no parameter properties, enums or namespaces).
 import { PDFDocument } from "pdf-lib";
-import { attachLinkTargets, detachLinkTargets, flattenAnnotations, makeInert, viewerDependent } from "./inert";
-import { loadUntrusted } from "./load";
+import { attachLinkTargets, detachLinkTargets, flattenAnnotations, makeInert, viewerDependent } from "./inert.ts";
+import { loadUntrusted } from "./load.ts";
 
 /** Why a file can't be sent for signature; `cause` says what ShipShape couldn't read (for logs and tests, never shown). */
 export class NotSignable extends Error {
-  constructor(
-    readonly reason: "viewer_dependent" | "unreadable",
-    cause?: unknown,
-  ) {
+  readonly reason: "viewer_dependent" | "unreadable";
+  constructor(reason: "viewer_dependent" | "unreadable", cause?: unknown) {
     super(reason, { cause });
+    this.reason = reason;
   }
 }
 

@@ -1,54 +1,129 @@
-import { Worker } from "node:worker_threads";
+import { spawn } from "node:child_process";
+import path from "node:path";
 import { z } from "zod";
 import type { buildToSign } from "./to-sign";
 import { NotSignable } from "./to-sign";
 
-/** Per upload: what its thread may use before the upload is refused as unreadable. */
+/** Per upload: what its process may use before the upload is refused as unreadable. */
 export interface IsolationLimits {
-  /** V8's old generation, where pdf-lib's objects live (Security measured accepted files under 300 MB per process). */
+  /** V8's old generation, where pdf-lib's objects live (Security: real 3-8 MB PDFs build within 128 MB). */
   heapMb: number;
   timeoutMs: number;
 }
-export const ISOLATION_LIMITS: IsolationLimits = { heapMb: 512, timeoutMs: 20_000 };
+export const ISOLATION_LIMITS: IsolationLimits = { heapMb: 256, timeoutMs: 20_000 };
+/** Builds at once per server instance, and how long a build waits for its turn (Security R9-2). */
+export const MAX_BUILDS = 2;
+export const SLOT_WAIT_MS = 20_000;
 
-const Outcome = z.union([
+/** Every build slot stayed busy for SLOT_WAIT_MS: the server is busy, the file may be fine. */
+export class BuildBusy extends Error {
+  constructor() {
+    super("every build slot stayed busy");
+  }
+}
+
+/** At most `size` holders at once; the rest wait in order, each for at most `waitMs`. */
+export class BuildSlots {
+  #free: number;
+  readonly #waiting: (() => void)[] = [];
+  constructor(size: number) {
+    this.#free = size;
+  }
+
+  /** Resolves with this holder's release once a slot is free; rejects with BuildBusy after `waitMs`. */
+  take(waitMs: number): Promise<() => void> {
+    const { promise, resolve, reject } = Promise.withResolvers<() => void>();
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      const next = this.#waiting.shift();
+      if (next) next();
+      else this.#free++;
+    };
+    if (this.#free > 0) {
+      this.#free--;
+      resolve(release);
+      return promise;
+    }
+    const grant = () => {
+      clearTimeout(timer);
+      resolve(release);
+    };
+    const timer = setTimeout(() => {
+      this.#waiting.splice(this.#waiting.indexOf(grant), 1);
+      reject(new BuildBusy());
+    }, waitMs);
+    this.#waiting.push(grant);
+    return promise;
+  }
+}
+const slots = new BuildSlots(MAX_BUILDS);
+
+// Shipped as TypeScript (next.config.ts outputFileTracingIncludes) and run by Node itself.
+const CHILD = path.join(process.cwd(), "lib", "pdf", "to-sign.child.ts");
+
+const Message = z.union([
+  z.object({ ready: z.literal(true) }),
   z.object({ built: z.instanceof(Uint8Array) }),
   z.object({ refused: z.enum(["viewer_dependent", "unreadable"]) }),
   z.object({ failed: z.string() }),
 ]);
 
 /**
- * buildToSign in a worker thread of its own, one per upload (Security R7-8). pdf-lib keeps every
- * name and reference it has seen in process-wide tables that are never cleared, so in the server's
- * own thread each upload full of fresh names would hold on to its memory for the life of the
- * instance; here the tables go with the thread. An upload that needs more memory or time than
- * `limits` is refused as unreadable instead of taking the server down. A worker that fails any
- * other way (it couldn't start, a bug) rejects with that error, so it isn't mistaken for a bad file.
+ * buildToSign in a child process of its own, one per upload, at most MAX_BUILDS at once (Security
+ * R7-8, R9-1, R9-2). pdf-lib keeps every name and reference it has seen in process-wide tables that
+ * are never cleared; here they go with the process. An upload that takes the process past `limits`
+ * (V8 aborts the process at its heap limit, or the timeout kills it) is refused as unreadable, and
+ * the server itself never runs out. Of the environment the child gets only NODE_ENV, so no secret. A child that
+ * fails before it has loaded (missing files, a bug) or fails any other way rejects with that error,
+ * so a broken deployment isn't mistaken for a bad file; waiting too long for a slot is BuildBusy.
  */
-export function buildToSignIsolated(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits = ISOLATION_LIMITS): Promise<Uint8Array> {
+export async function buildToSignIsolated(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits = ISOLATION_LIMITS): Promise<Uint8Array> {
+  const release = await slots.take(SLOT_WAIT_MS);
+  try {
+    return await buildInChild(bytes, mime, limits);
+  } finally {
+    release();
+  }
+}
+
+function buildInChild(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits): Promise<Uint8Array> {
   const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
-  const worker = new Worker(new URL("./to-sign.worker.ts", import.meta.url), {
-    workerData: { bytes, mime },
-    resourceLimits: { maxOldGenerationSizeMb: limits.heapMb },
+  // fork() would do, but Turbopack's build resolves fork()'s path as a module and fails
+  // (vercel/next.js#97952); spawn with an "ipc" channel is the same thing.
+  const child = spawn(process.execPath, [`--max-old-space-size=${limits.heapMb}`, CHILD], {
+    env: { NODE_ENV: process.env.NODE_ENV },
+    serialization: "advanced",
+    // What it has to say comes over IPC; V8's out-of-memory dump and pdf-lib's warnings stay out of the logs.
+    stdio: ["ignore", "ignore", "ignore", "ipc"],
   });
+  let ready = false;
   let done = false;
   const finish = (settle: () => void) => {
     if (done) return;
     done = true;
     clearTimeout(timer);
-    void worker.terminate();
+    child.kill("SIGKILL");
     settle();
   };
   const timer = setTimeout(() => finish(() => reject(new NotSignable("unreadable", new Error(`not built within ${limits.timeoutMs} ms`)))), limits.timeoutMs);
-  worker.on("message", (message: unknown) =>
+  child.on("message", (raw: unknown) => {
+    const message = Message.safeParse(raw);
+    if (!message.success) return finish(() => reject(new Error(`build process sent an unexpected message: ${message.error.message}`)));
+    const m = message.data;
+    if ("ready" in m) {
+      if (ready) return;
+      ready = true;
+      child.send({ bytes, mime });
+    } else finish(() => ("built" in m ? resolve(m.built) : "refused" in m ? reject(new NotSignable(m.refused)) : reject(new Error(`buildToSign failed in its process: ${m.failed}`))));
+  });
+  child.on("error", (e) => finish(() => reject(e)));
+  child.on("exit", (code, signal) =>
     finish(() => {
-      const outcome = Outcome.parse(message);
-      if ("built" in outcome) resolve(outcome.built);
-      else if ("refused" in outcome) reject(new NotSignable(outcome.refused));
-      else reject(new Error(`buildToSign failed in its worker: ${outcome.failed}`));
+      const how = new Error(`build process stopped (exit code ${code}, signal ${signal})`);
+      reject(ready ? new NotSignable("unreadable", how) : how);
     }),
   );
-  worker.on("error", (e) => finish(() => reject("code" in e && e.code === "ERR_WORKER_OUT_OF_MEMORY" ? new NotSignable("unreadable", e) : e)));
-  worker.on("exit", (code) => finish(() => reject(new NotSignable("unreadable", new Error(`worker stopped (exit code ${code})`)))));
   return promise;
 }
