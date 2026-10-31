@@ -43,7 +43,8 @@ export default function PrivacyPage() {
           Stripe and never reach ShipShape.
         </li>
         <li>
-          <strong>Waitlist:</strong> the email address you gave us, only to tell you when ShipShape opens.
+          <strong>Waitlist:</strong> the email address you gave us, and whether you asked to hear about Collect, only to tell you when
+          ShipShape opens or, if you asked, when Collect goes on sale.
         </li>
       </ul>
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel } from "@/components/site";
+import { WaitlistForm } from "@/components/waitlist";
 import { PLANS } from "@/lib/plans";
 
 export const metadata: Metadata = { title: "Pricing", description: "ShipShape is free for up to 10 documents. Pro is $15 a month." };
@@ -69,6 +70,9 @@ export default function PricingPage() {
               For businesses that gather documents from many vendors or subcontractors: send each one an upload link and see who&apos;s
               current. Try it in the sample workspace. It isn&apos;t in a plan yet, so it isn&apos;t for sale.
             </p>
+            <div className="mt-auto">
+              <WaitlistForm interest="collect" />
+            </div>
           </section>
         </div>
 
