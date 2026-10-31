@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
+import { AI_RECIPIENT } from "@/lib/ai";
 import { TERMS_VERSION } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Privacy (draft)" };
@@ -61,8 +62,10 @@ export default function PrivacyPage() {
           messages appear inside the app instead.
         </li>
         <li>
-          Anthropic (Claude), only if you choose an AI action on a document, after you tick a box for that action. No AI features are
-          switched on yet.
+          {AI_RECIPIENT}, only when you choose an AI action and tick the box for that action. Today there is one, &ldquo;What are they
+          asking for?&rdquo;: it receives the request text you paste, with numbers shaped like an SSN or EIN removed, and never your
+          documents. ShipShape keeps neither that text nor the answer; your history records only that a request was read. AI actions
+          are switched on after our security review.
         </li>
       </ul>
       <p>

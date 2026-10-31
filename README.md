@@ -17,8 +17,8 @@ The app runs as a preview: sample workspaces with a made-up business and documen
 | | |
 | --- | --- |
 | **Works today** (sample workspace) | Vault, versions and history; W-9 and NDA fill; passport links; deadlines and calendar file; signature requests; export and account deletion; plan limits and Stripe billing in test mode |
-| **Awaiting setup** | Accounts for real documents (security review, production database and storage); outgoing email for reminders and signing codes (they appear in the app's outbox meanwhile); live payments |
-| **Planned** | "What are they asking for?" (paste a request, match it to your documents; opt-in AI per action); reading dates off certificates (opt-in AI); Collect, for gathering documents from your own vendors |
+| **Awaiting setup** | Accounts for real documents (security review, production database and storage); outgoing email for reminders and signing codes (they appear in the app's outbox meanwhile); live payments; "What are they asking for?" (paste a request, see which documents it asks for and which you have; built, opt-in AI per request, switched on after the AI security review) |
+| **Planned** | Reading dates off certificates (opt-in AI); Collect, for gathering documents from your own vendors |
 
 ## Run it
 

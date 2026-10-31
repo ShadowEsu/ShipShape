@@ -88,6 +88,7 @@ const TABLES: Record<string, string | null> = {
   signature_requests: "org_id",
   billing: "org_id",
   stripe_events: null, // server only, checked below
+  ai_calls: null, // server only, checked in ai.test.ts
 };
 
 describe("row level security", () => {

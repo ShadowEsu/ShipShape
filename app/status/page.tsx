@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteFooter, SiteHeader } from "@/components/site";
 import { fmtDateTime } from "@/components/ui";
 import { billingConfig } from "@/lib/server/billing";
+import { aiEnabled } from "@/lib/server/ai";
 import { dbUp } from "@/lib/server/db";
 import { realDocsEnabled } from "@/lib/server/flags";
 
@@ -51,7 +52,12 @@ export default async function StatusPage() {
           />
           <Row name="Email" state="Off" tone="off" note="Reminders and signing codes show inside the app instead." />
           <Row name="Payments" state={billingConfig() ? "Test mode" : "Off"} tone="off" note="No real charges during the preview." />
-          <Row name="AI features" state="Off" tone="off" note="Not built yet; each will need your opt-in." />
+          <Row
+            name="AI features"
+            state={aiEnabled() ? "On" : "Off"}
+            tone={aiEnabled() ? "ok" : "off"}
+            note="Reading a pasted request; opt-in each time. On after our security review."
+          />
         </ul>
       </main>
       <SiteFooter />

@@ -26,7 +26,8 @@ const CAPABILITIES: { title: string; body: string; status: Status }[] = [
   { title: "Accounts for real documents", body: "Pending our security review and the production database.", status: "Awaiting setup" },
   { title: "Email reminders and signing codes", body: "Pending an email provider; they show inside the app meanwhile.", status: "Awaiting setup" },
   { title: "Payments", body: "Built and tested in Stripe's test mode; no real charges yet.", status: "Awaiting setup" },
-  { title: "“What are they asking for?”", body: "Paste a request and see which of your documents match. Opt-in AI, per action.", status: "Planned" },
+  { title: "“What are they asking for?”", body: "Paste a request and see which documents it asks for and which you have. Built; opt-in per request, switched on after our security review.", status: "Awaiting setup" },
+  { title: "Dates read off certificates", body: "Expiry dates filled in from an uploaded certificate, with your OK. Opt-in AI.", status: "Planned" },
   { title: "Collect", body: "Request documents from your own vendors and see who's current.", status: "Planned" },
 ];
 

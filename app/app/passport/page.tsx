@@ -14,9 +14,11 @@ function status(l: { revoked_at: string | null; expires_at: string }) {
   return { label: "Working", cls: "bg-ok-soft text-ok", icon: "✓" };
 }
 
-export default async function PassportPage() {
+/** `?docs=<id>,<id>` ticks those documents in the form (from "What are they asking for?"); ids not in this workspace are ignored. */
+export default async function PassportPage({ searchParams }: { searchParams: Promise<{ docs?: string }> }) {
   const ctx = await requireWorkspace();
-  const [links, docs] = await Promise.all([listPassports(ctx), listDocuments(ctx)]);
+  const [links, docs, { docs: picked }] = await Promise.all([listPassports(ctx), listDocuments(ctx), searchParams]);
+  const preselected = typeof picked === "string" ? picked.split(",").slice(0, 50) : [];
 
   return (
     <div className="space-y-8">
@@ -31,6 +33,7 @@ export default async function PassportPage() {
           <h2 className="mb-4 font-semibold">New link</h2>
           <NewPassportForm
             days={PASSPORT_DAYS}
+            preselected={preselected}
             docs={docs.map((d) => ({
               id: d.id,
               title: d.title,

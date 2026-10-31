@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/site";
+import { AI_RECIPIENT } from "@/lib/ai";
 import { PLANS } from "@/lib/plans";
 
 export const metadata: Metadata = { title: "FAQ", description: "What ShipShape does, what it doesn't, and how it keeps your paperwork safe." };
@@ -40,7 +41,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Does ShipShape use AI?",
-    a: "Not yet. When AI features arrive (such as matching a customer's request to your documents), each one will be off until you tick a box for that action, will use Anthropic's Claude, will strip tax IDs first, and won't be used to train AI models.",
+    a: `One feature uses it, and it's switched on only after our security review: "What are they asking for?" reads a request you paste and lists the documents it asks for, then ShipShape checks your vault for them. It runs only when you tick a box for that request, sends ${AI_RECIPIENT} only the text you pasted (numbers shaped like an SSN or EIN removed, never your documents), and nothing is used to train AI models. The answer is a draft you check, not legal advice.`,
   },
   {
     q: "Can I get my data out, or delete it?",

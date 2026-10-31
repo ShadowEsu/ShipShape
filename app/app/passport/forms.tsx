@@ -11,7 +11,7 @@ export interface PickableDoc {
   note: string | null;
 }
 
-export function NewPassportForm({ docs, days }: { docs: PickableDoc[]; days: readonly number[] }) {
+export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc[]; days: readonly number[]; preselected: string[] }) {
   const [state, action, pending] = useActionState<PassportFormState, FormData>(makePassport, {});
   const [url, setUrl] = useState<string | null>(null);
 
@@ -52,7 +52,7 @@ export function NewPassportForm({ docs, days }: { docs: PickableDoc[]; days: rea
             {docs.map((d) => (
               <li key={d.id}>
                 <label className="flex items-start gap-3 rounded-lg border border-line px-3 py-2 text-sm has-[:checked]:border-ink">
-                  <input type="checkbox" name="doc" value={d.id} className="mt-0.5 size-4 accent-[var(--accent)]" />
+                  <input type="checkbox" name="doc" value={d.id} defaultChecked={preselected.includes(d.id)} className="mt-0.5 size-4 accent-[var(--accent)]" />
                   <span className="min-w-0">
                     <span className="block font-medium">{d.title}</span>
                     <span className="block text-xs text-ink-3">
