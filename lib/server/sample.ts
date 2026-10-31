@@ -3,6 +3,7 @@ import { samplePdf } from "@/lib/pdf/sample-pdf";
 import type { ProfileKey } from "@/lib/profile-fields";
 import { templateById } from "@/lib/templates/catalog";
 import type { Facts, TemplateInfo } from "@/lib/templates/types";
+import { isoToday } from "@/lib/today";
 import { seedSampleVendors } from "./collect";
 import { encryptField } from "./crypto";
 import type { Tx } from "./db";
@@ -40,9 +41,9 @@ const day = (offset: number) => {
 };
 
 async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides: Record<string, string>) {
-  const start = prefill(t, facts);
+  const start = prefill(t, facts, ctx.today);
   const values = { ...start, ...overrides };
-  const out = await render(t, values, facts);
+  const out = await render(t, values, facts, ctx.today);
   // Titles built from a sample party's name already end in "(sample)".
   const title = out.title.endsWith("(sample)") ? out.title : `${out.title} (sample)`;
   await insertDocument(
@@ -56,8 +57,8 @@ async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides
 }
 
 /** Runs as the new sample workspace's owner, inside their transaction. */
-export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string) {
-  const ctx: Ctx = { userId, demo: true, authAt: 0, orgId, name: "Harbor Plumbing (sample)", role: "owner" };
+export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string, today = isoToday()) {
+  const ctx: Ctx = { userId, demo: true, authAt: 0, orgId, name: "Harbor Plumbing (sample)", role: "owner", today };
   const f = SAMPLE_FACTS;
   await tx.query(
     "update app.profiles set legal_name = $2, dba = $3, entity_type = $4, address_line1 = $5, city = $6, state = $7, postal_code = $8, phone = $9, email = $10, state_of_formation = $11, signer_name = $12, signer_title = $13 where org_id = $1",

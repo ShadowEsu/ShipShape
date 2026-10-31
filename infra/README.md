@@ -168,7 +168,7 @@ Afterwards:
   - `UserAttributeUpdateSettings`: an email change needs verification before it applies.
 - **`EngineVersion` is a parameter:** cfn-lint's data marks the bare major version `17` deprecated for new instances (W3691), so the minor version is chosen at deploy time.
 - **The exported Postgres log is kept for 30 days by default.** The plan doesn't name a period. Without the log group, CloudWatch would keep it forever.
-- **Open (check at M6):** Cognito may need a required attribute to be writable for self-sign-up through managed login. Security listed both "self-registration on" and "email not writable". If `CreateUserPoolClient` refuses `WriteAttributes: [name]`, or managed-login sign-up fails, Security decides; don't widen `WriteAttributes` silently.
+- **Open (check at M6):** Cognito may need a required attribute to be writable for self-sign-up through managed login. Security listed both "self-registration on" and "email not writable". Security's decision (2026-10-31, request 20261031-2242): if `CreateUserPoolClient` refuses `WriteAttributes: [name]`, `email` may be added, provided the scopes stay `openid email` (no `aws.cognito.signin.user.admin`), `ALLOW_REFRESH_TOKEN_AUTH` stays the only flow, `UserAttributeUpdateSettings` keeps email verified before it applies, the app keeps keying on `sub`, and an M6 probe shows `UpdateUserAttributes(email)` with an app token gets `NotAuthorized`. Nothing wider.
 
 ## Proven against moto (local stand-in, not evidence about AWS)
 

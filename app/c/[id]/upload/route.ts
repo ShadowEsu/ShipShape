@@ -6,7 +6,7 @@ import { clientIp, fail, rateLimited, sameOrigin, tooMany } from "@/lib/server/h
 
 export const dynamic = "force-dynamic";
 
-// Room for the form's other fields and multipart boundaries around a 10 MB file.
+// Room for the form's other fields and multipart boundaries around a 4 MB file.
 const MAX_BODY_BYTES = MAX_UPLOAD_BYTES + 64 * 1024;
 
 /**

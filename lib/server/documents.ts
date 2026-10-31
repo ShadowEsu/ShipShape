@@ -4,6 +4,7 @@ import { z } from "zod";
 import { ACK_TEXT, ACK_VERSION } from "@/lib/legal";
 import { isPrintable } from "@/lib/pdf/compose";
 import { templateById } from "@/lib/templates/catalog";
+import type { Validity } from "@/lib/today";
 import { sha256Hex } from "./crypto";
 import { asUser, type Tx } from "./db";
 import { checkUpload, EXTENSION, type AllowedMime } from "./files";
@@ -12,7 +13,7 @@ import { UserError } from "./errors";
 import { assertCanFill, assertRealData } from "./flags";
 import { assertWithinPlan } from "./plans";
 import { factsForFill, type Ctx } from "./profile";
-import { blobStore, foldName } from "./storage";
+import { blobStore, foldName, putVersionFile } from "./storage";
 
 export const DOC_KINDS = {
   w9: "W-9",
@@ -26,8 +27,6 @@ export const DOC_KINDS = {
   other: "Other",
 } as const;
 export type DocKind = keyof typeof DOC_KINDS;
-
-export type Validity = "expired" | "expiring" | "ok" | "none";
 
 export interface DocRow {
   id: string;
@@ -47,13 +46,14 @@ export interface DocRow {
   latest_origin: "upload" | "filled" | "signed" | "sample" | null;
 }
 
+// $1 is the viewer's date (ctx.today): a document is current through its last day where the person is.
 const DOC_SELECT = `
   select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on,
          d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.notes, d.template_id,
          d.created_at::text as created_at,
          case when d.expires_on is null then 'none'
-              when d.expires_on < current_date then 'expired'
-              when d.expires_on <= current_date + 30 then 'expiring'
+              when d.expires_on < $1::date then 'expired'
+              when d.expires_on <= $1::date + 30 then 'expiring'
               else 'ok' end as validity,
          (select count(*)::int from app.document_versions v where v.document_id = d.id) as versions,
          (select v.origin from app.document_versions v where v.document_id = d.id order by v.version desc limit 1) as latest_origin
@@ -61,11 +61,11 @@ const DOC_SELECT = `
 
 const LIST_SQL =
   DOC_SELECT +
-  ` where d.org_id = $1 and d.status = $2
-      and ($3::text is null or d.kind = $3)
-      and ($4::text = '' or d.search @@ websearch_to_tsquery('simple', $4) or d.title ilike '%' || $4 || '%')
+  ` where d.org_id = $2 and d.status = $3
+      and ($4::text is null or d.kind = $4)
+      and ($5::text = '' or d.search @@ websearch_to_tsquery('simple', $5) or d.title ilike '%' || $5 || '%')
     order by coalesce(d.expires_on, '9999-12-31') asc, d.created_at desc`;
-const GET_SQL = DOC_SELECT + " where d.id = $1 and d.org_id = $2";
+const GET_SQL = DOC_SELECT + " where d.id = $2 and d.org_id = $3";
 
 /**
  * Characters that don't belong in one line of text: C0 and C1 controls (line breaks, tabs, NUL,
@@ -80,7 +80,7 @@ function breaksOneLine(c: string): boolean {
 export async function listDocuments(ctx: Ctx, opts: { q?: string; kind?: string; archived?: boolean } = {}): Promise<DocRow[]> {
   const q = Array.from(opts.q ?? "", (c) => (breaksOneLine(c) ? " " : c)).join("").trim().slice(0, 100);
   const kind = opts.kind && opts.kind in DOC_KINDS ? opts.kind : null;
-  return asUser(ctx.userId, (tx) => tx.query<DocRow>(LIST_SQL, [ctx.orgId, opts.archived ? "archived" : "active", kind, q]));
+  return asUser(ctx.userId, (tx) => tx.query<DocRow>(LIST_SQL, [ctx.today, ctx.orgId, opts.archived ? "archived" : "active", kind, q]));
 }
 
 export interface VersionRow {
@@ -103,7 +103,7 @@ export interface AuditRow {
 export async function getDocument(ctx: Ctx, id: string) {
   if (!z.uuid().safeParse(id).success) return null;
   return asUser(ctx.userId, async (tx) => {
-    const [doc] = await tx.query<DocRow>(GET_SQL, [id, ctx.orgId]);
+    const [doc] = await tx.query<DocRow>(GET_SQL, [ctx.today, id, ctx.orgId]);
     if (!doc) return null;
     const versions = await tx.query<VersionRow>(
       "select version, mime, size_bytes, sha256, origin, fill_record, created_at::text as created_at from app.document_versions where document_id = $1 order by version desc",
@@ -165,7 +165,7 @@ async function insertVersion(
     [documentId, version, ctx.orgId, objectPath, file.mime, file.bytes.length, sha256Hex(file.bytes), origin, record ? JSON.stringify(record) : null, ctx.userId],
   );
   // Stored last, inside the transaction: if storing fails, the rows roll back with it.
-  await blobStore().put(objectPath, file.bytes, file.mime);
+  await putVersionFile(objectPath, file.bytes, file.mime);
 }
 
 const optionalText = (max: number) =>
@@ -230,8 +230,8 @@ export async function fillTemplate(ctx: Ctx, templateId: string, values: Values,
   const errors = validate(t, values, facts);
   if (!acknowledged) errors._ack = "Tick the box to confirm you've reviewed the document.";
   if (Object.keys(errors).length) return { ok: false, errors };
-  const start = prefill(t, facts);
-  const out = await render(t, values, facts);
+  const start = prefill(t, facts, ctx.today);
+  const out = await render(t, values, facts, ctx.today);
   const record = { template: t.id, templateVersion: t.source.version, fields: fillRecord(t, values, start) };
   const id = await asUser(ctx.userId, async (tx) => {
     const docId = await insertDocument(

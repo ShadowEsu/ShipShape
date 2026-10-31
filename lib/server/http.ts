@@ -4,6 +4,23 @@ import { keyedHash } from "./crypto";
 
 export const fail = (error: string, status = 400) => Response.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
 
+const STREAM_CHUNK_BYTES = 1024 * 1024;
+
+/**
+ * A response body that hands over `bytes` 1 MiB at a time. Vercel caps a buffered function
+ * response at 4.5 MB but not a streamed one, so downloads and exports go out this way.
+ */
+export function bytesStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  let offset = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= bytes.length) return controller.close();
+      controller.enqueue(bytes.subarray(offset, offset + STREAM_CHUNK_BYTES));
+      offset += STREAM_CHUNK_BYTES;
+    },
+  });
+}
+
 /** The caller's IP as reported by Vercel's proxy (first hop of x-forwarded-for). */
 export const clientIp = (headers: Headers) => headers.get("x-forwarded-for")?.split(",")[0].trim() || headers.get("x-real-ip") || "unknown";
 

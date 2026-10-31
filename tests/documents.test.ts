@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PDFPage } from "pdf-lib";
@@ -14,8 +14,9 @@ import { assertLaunchConfig, GateClosed } from "@/lib/server/flags";
 import { createPassport, openPassport } from "@/lib/server/passport";
 import { factsForFill, NeedsRecentSignIn, renameWorkspace, revealEin, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
-import { localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
+import { blobStore, localBlobStore, ObjectExists, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { templateById } from "@/lib/templates/catalog";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 let db: TestDb;
@@ -32,10 +33,10 @@ async function workspace(email: string, kind: "sample" | "real"): Promise<Ctx> {
   if (kind === "sample") {
     const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
-    return { userId, demo: true, authAt: now(), orgId: org.id, name: "Sample", role: "owner" };
+    return { userId, demo: true, authAt: now(), orgId: org.id, name: "Sample", role: "owner", today: isoToday() };
   }
   const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Real') as id"));
-  return { userId, demo: false, authAt: now(), orgId: org.id, name: "Real", role: "owner" };
+  return { userId, demo: false, authAt: now(), orgId: org.id, name: "Real", role: "owner", today: isoToday() };
 }
 
 beforeAll(async () => {
@@ -87,6 +88,34 @@ describe("real documents gate (Security G3)", () => {
     const got = await getDocument(real, id);
     expect(got?.versions.map((v) => v.version)).toEqual([2, 1]);
     expect(got?.audit.map((a) => a.action)).toEqual(["document.version_added", "document.version_added", "document.created"]);
+    vi.unstubAllEnvs();
+  });
+
+  it("judges expiry by the person's own date: current through the last day where they are, not UTC's", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const id = await uploadDocument(real, { title: "Liability certificate", kind: "coi", expires_on: "2027-01-31" }, PDF);
+    const validityOn = async (today: string) => (await getDocument({ ...real, today }, id))?.doc.validity;
+    expect(await validityOn("2026-12-31")).toBe("ok");
+    expect(await validityOn("2027-01-01")).toBe("expiring");
+    expect(await validityOn("2027-01-31")).toBe("expiring");
+    expect(await validityOn("2027-02-01")).toBe("expired");
+    expect((await listDocuments({ ...real, today: "2027-02-01" })).find((d) => d.id === id)?.validity).toBe("expired");
+    vi.unstubAllEnvs();
+  });
+
+  it("a stored file left behind by a lost transaction doesn't block that version number (review #7)", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const id = await uploadDocument(real, { title: "Bond", kind: "other" }, PDF);
+    // As if an earlier attempt at version 2 stored its file and then failed to commit: no row, file present.
+    const orphan = path.join(blobDir, real.orgId, id, "v2.pdf");
+    await writeFile(orphan, "stale bytes from a lost transaction");
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await uploadVersion(real, id, PDF)).toBe(2);
+    expect(warned).toHaveBeenCalledTimes(1);
+    warned.mockRestore();
+    expect(Buffer.from(await blobStore().get(`${real.orgId}/${id}/v2.pdf`))).toEqual(Buffer.from(PDF));
+    // Untouched afterwards: a third attempt at the same path is still refused.
+    await expect(blobStore().put(`${real.orgId}/${id}/v2.pdf`, PDF, "application/pdf")).rejects.toThrow(ObjectExists);
     vi.unstubAllEnvs();
   });
 
@@ -177,7 +206,7 @@ describe("W-9 fill", () => {
     const t = templateById("irs-w9")!;
     const facts = await factsForFill(sample);
     expect(facts.ein).toBe(SAMPLE_EIN);
-    const values = { ...prefill(t, facts), sign: "", signature: "" };
+    const values = { ...prefill(t, facts, sample.today), sign: "", signature: "" };
     expect(values).toMatchObject({ name: "Harbor Plumbing LLC", tax_class: "llc", llc_class: "P", tin_kind: "ein", ein: "••-•••4567" });
     const doc = await loadW9();
     fillW9Form(doc, values, facts);
@@ -192,7 +221,7 @@ describe("W-9 fill", () => {
   it("needs the acknowledgment, records where each value came from, and never stores tax ids", async () => {
     const t = templateById("irs-w9")!;
     const facts = await factsForFill(sample);
-    const values = { ...prefill(t, facts), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
+    const values = { ...prefill(t, facts, sample.today), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
     const refused = await fillTemplate(sample, t.id, values, false);
     expect(refused).toEqual({ ok: false, errors: { _ack: expect.any(String) } });
 
@@ -206,6 +235,16 @@ describe("W-9 fill", () => {
     const everything = JSON.stringify(await db.root((tx) => tx.query("select * from app.document_versions v join app.documents d on d.id = v.document_id join app.profiles p on p.org_id = d.org_id")));
     for (const secret of ["900123456", "900-12-3456", "12-3456", "1234567"]) expect(everything).not.toContain(secret);
     expect(got!.audit.map((a) => a.action)).toContain("document.acknowledged");
+  });
+
+  it("dates a signed W-9 and a new NDA on the signer's own day, not UTC's", async () => {
+    const t = templateById("irs-w9")!;
+    const facts = await factsForFill(sample);
+    const evening = { ...sample, today: "2031-02-03" };
+    const values = { ...prefill(t, facts, evening.today), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
+    const made = await fillTemplate(evening, t.id, values, true);
+    expect((await getDocument(sample, made.ok ? made.id : ""))?.doc.issued_on).toBe("2031-02-03");
+    expect(prefill(templateById("common-paper-mnda")!, facts, "2031-02-03").effective_date).toBe("2031-02-03");
   });
 
   it("reports missing and invalid fields instead of making a document", async () => {
@@ -231,7 +270,7 @@ describe("Mutual NDA fill", () => {
   it("makes an NDA whose MNDA Term sets the expiry date", async () => {
     const t = templateById("common-paper-mnda")!;
     const values = {
-      ...prefill(t, await factsForFill(sample)),
+      ...prefill(t, await factsForFill(sample), sample.today),
       ...typed,
       purpose: "Evaluating a partnership.\nNothing else.", // a text box may hold line breaks
     };
@@ -246,7 +285,7 @@ describe("Mutual NDA fill", () => {
 
   it("refuses an Effective Date that isn't a real day or is outside 1900-2200, which would have failed in the database (schema sweep row 29-30)", async () => {
     const t = templateById("common-paper-mnda")!;
-    const values = { ...prefill(t, await factsForFill(sample)), ...typed };
+    const values = { ...prefill(t, await factsForFill(sample), sample.today), ...typed };
     for (const bad of ["2026-02-30", "2026-13-01", "0000-01-01", "1899-12-31", "9999-12-31", "2026-1-1"]) {
       const res = await fillTemplate(sample, t.id, { ...values, effective_date: bad }, true);
       expect(res.ok ? {} : res.errors, bad).toEqual({ effective_date: "Enter a date between 1900 and 2200." });
@@ -260,7 +299,7 @@ describe("Mutual NDA fill", () => {
   it("takes a text box's line breaks as browsers post them (CRLF) and draws each line on its own (Security R2-6)", async () => {
     const t = templateById("common-paper-mnda")!;
     const data = new FormData();
-    const posted = { ...prefill(t, await factsForFill(sample)), ...typed, purpose: "Firstline of it.\r\nSecondline of it.\rThirdline of it." };
+    const posted = { ...prefill(t, await factsForFill(sample), sample.today), ...typed, purpose: "Firstline of it.\r\nSecondline of it.\rThirdline of it." };
     for (const [k, v] of Object.entries(posted)) data.set(k, v);
     const values = formValues(t, data);
     expect(values.purpose).toBe("Firstline of it.\nSecondline of it.\nThirdline of it.");
@@ -291,6 +330,8 @@ describe("business facts", () => {
     expect(p.ein_last4).toBe("4321");
     expect(p.ein_cipher).not.toContain("7654321");
     await expect(revealEin({ ...real, authAt: now() - 3600 })).rejects.toThrow(NeedsRecentSignIn);
+    // The sample's made-up EIN shows an hour into the sample too: its visitor has no password to re-enter (review #19).
+    expect(await revealEin({ ...sample, authAt: now() - 3600 })).toBe(SAMPLE_EIN);
     expect(await revealEin(real)).toBe("00-7654321");
     const [a] = await db.root((tx) => tx.query<{ n: number }>("select count(*)::int as n from app.audit_log where org_id = $1 and action = 'profile.tax_id_revealed'", [real.orgId]));
     expect(a.n).toBe(1);

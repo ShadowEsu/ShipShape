@@ -51,7 +51,8 @@ export function inlineRuns(md: string): Run[] {
 /**
  * Splits runs into words at spaces only, for laying out. A run that starts or ends without a space
  * stays joined to the text beside it (“**Cover Page**” draws no space inside the quotes), and a
- * joined word is never split across lines. "br" is a line break in the text (a form's text box).
+ * joined word is split across lines only when it is wider than a line (see `breakWord`). "br" is a
+ * line break in the text (a form's text box).
  */
 export function wordsOf(runs: Run[]): (Run[] | "br")[] {
   const words: (Run[] | "br")[] = [];
@@ -75,16 +76,46 @@ export function wordsOf(runs: Run[]): (Run[] | "br")[] {
   return words;
 }
 
-/** Wraps one-font text into lines no wider than `width`. */
+/**
+ * Cuts a word wider than `width` (a long email address, a SHA-256 value) into the longest pieces
+ * that fit, each at least one character, so it never runs past its line or column. Each part keeps
+ * its run's style. A word that fits comes back whole.
+ */
+export function breakWord(word: Run[], width: number, widthOf: (w: Run[]) => number): Run[][] {
+  if (widthOf(word) <= width) return [word];
+  const pieces: Run[][] = [];
+  let done: Run[] = []; // the piece so far, from the runs before this one
+  for (const r of word) {
+    let text = ""; // the piece's part of this run
+    for (const ch of r.text) {
+      if ((done.length || text) && widthOf([...done, { ...r, text: text + ch }]) > width) {
+        pieces.push(text ? [...done, { ...r, text }] : done);
+        done = [];
+        text = ch;
+      } else text += ch;
+    }
+    if (text) done.push({ ...r, text });
+  }
+  if (done.length) pieces.push(done);
+  return pieces;
+}
+
+/** Wraps one-font text into lines no wider than `width`; a word wider than a line is cut (`breakWord`). */
 export function wrapLines(text: string, font: PDFFont, size: number, width: number): string[] {
+  const widthOf = (w: Run[]) => font.widthOfTextAtSize(w.map((r) => r.text).join(""), size);
   const lines: string[] = [];
   let line = "";
   for (const word of text.split(" ").filter(Boolean)) {
-    const next = line ? `${line} ${word}` : word;
-    if (line && font.widthOfTextAtSize(next, size) > width) {
-      lines.push(line);
-      line = word;
-    } else line = next;
+    const pieces = breakWord([{ text: word }], width, widthOf);
+    for (const piece of pieces) {
+      const p = piece.map((r) => r.text).join("");
+      const next = line ? `${line} ${p}` : p;
+      // Each piece of a cut word starts its own line; the words after it continue on the last one.
+      if (line && (pieces.length > 1 || font.widthOfTextAtSize(next, size) > width)) {
+        lines.push(line);
+        line = p;
+      } else line = next;
+    }
   }
   if (line) lines.push(line);
   return lines;
@@ -144,10 +175,14 @@ class Writer {
         flush();
         continue;
       }
-      const ww = widthOf(w);
-      if (line.length && lineWidth + space(w) + ww > width) flush();
-      lineWidth += (line.length ? space(w) : 0) + ww;
-      line.push(w);
+      const pieces = breakWord(w, width, widthOf);
+      for (const p of pieces) {
+        const pw = widthOf(p);
+        // Each piece of a cut word starts its own line; the words after it continue on the last one.
+        if (line.length && (pieces.length > 1 || lineWidth + space(p) + pw > width)) flush();
+        lineWidth += (line.length ? space(p) : 0) + pw;
+        line.push(p);
+      }
     }
     // Empty text still takes one line (an empty table cell keeps its row height).
     if (line.length || !words.length) flush();

@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { asService } from "@/lib/server/db";
 import { sameOrigin } from "@/lib/server/http";
 import {
   authIsRecent,
@@ -15,6 +16,7 @@ import {
   sessionSecret,
   startSession,
 } from "@/lib/server/session";
+import { isoToday, todayIn } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 // The request's cookies, as Next.js would hold them, with the options each was set with.
@@ -139,6 +141,31 @@ describe("signing in and out", () => {
     await endSession();
     expect(jar.has("ss_session")).toBe(false);
     await expect(requireWorkspace()).rejects.toThrow("redirect /signin");
+  });
+
+  it("takes the person's date from the time-zone cookie their browser set, and UTC when it is missing or junk", async () => {
+    const userId = await createLocalUser("kiritimati@example.com", false);
+    await finishSignIn(userId, { demo: false });
+    // Kiritimati is UTC+14 and Pago Pago UTC-11: at least one of them is on a different date than UTC.
+    for (const zone of ["Pacific/Kiritimati", "Pacific/Pago_Pago"]) {
+      jar.set("ss_tz", { value: zone });
+      expect((await requireWorkspace()).today, zone).toBe(todayIn(zone));
+    }
+    expect([todayIn("Pacific/Kiritimati"), todayIn("Pacific/Pago_Pago")]).not.toEqual([isoToday(), isoToday()]);
+    for (const junk of ["Mars/Olympus_Mons", "", "x".repeat(70)]) {
+      jar.set("ss_tz", { value: junk });
+      expect((await requireWorkspace()).today, junk).toBe(isoToday());
+    }
+    jar.delete("ss_tz");
+    expect((await requireWorkspace()).today).toBe(isoToday());
+  });
+
+  // Real Postgres only: PGlite has one connection, so two sign-ins never overlap there.
+  it.skipIf(!process.env.SHIPSHAPE_PG_TEST_URL)("two sign-ins finishing at the same moment make one workspace, not two (review #26)", async () => {
+    const userId = await createLocalUser("twice@example.com", false);
+    await Promise.all([1, 2, 3].map(() => asService((tx) => tx.query("select pg_sleep(0.1)"))));
+    await Promise.all([finishSignIn(userId, { demo: false }), finishSignIn(userId, { demo: false })]);
+    expect(await rows("select 1 from app.members where user_id = $1", userId)).toBe(1);
   });
 
   it("sends the cookie only over HTTPS in production", async () => {

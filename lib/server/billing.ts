@@ -74,7 +74,9 @@ export function setStripeForTests(port: StripePort | null) {
 
 function stripePort(cfg: BillingConfig): StripePort {
   if (testPort) return testPort;
-  const s = new Stripe(cfg.secretKey, { apiVersion: STRIPE_API_VERSION, maxNetworkRetries: 2, timeout: 20_000 });
+  // Some calls run inside a database transaction whose idle timeout is 60 s (lib/server/db.ts): one
+  // attempt and one retry of 15 s each, plus backoff, finish well before Postgres closes the session.
+  const s = new Stripe(cfg.secretKey, { apiVersion: STRIPE_API_VERSION, maxNetworkRetries: 1, timeout: 15_000 });
   return {
     createCustomer: (params, idempotencyKey) => s.customers.create(params, { idempotencyKey }),
     createCheckout: (params) => s.checkout.sessions.create(params),

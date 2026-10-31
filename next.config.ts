@@ -34,8 +34,9 @@ const nextConfig: NextConfig = {
   logging: { serverFunctions: false },
   env: { SHIPSHAPE_BUILT_AT: BUILT_AT },
   serverExternalPackages: ["@electric-sql/pglite"],
-  // Uploads go through server actions: 10 MB files plus form overhead.
-  experimental: { serverActions: { bodySizeLimit: "11mb" } },
+  // Uploads go through server actions: 4 MB files plus form overhead, inside Vercel's 4.5 MB
+  // request body cap (a larger request gets Vercel's 413 before the app sees it).
+  experimental: { serverActions: { bodySizeLimit: "4500kb" } },
   // The official forms and templates are read from disk at request time. lib/pdf/build-isolated.ts
   // runs to-sign.child.ts in a child process as plain TypeScript (Node strips the types), so it
   // and what it imports ship as files: the bundle doesn't contain them in a form Node can start.

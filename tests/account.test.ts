@@ -4,7 +4,7 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { deleteAccount, EXPORT_MAX_BYTES, exportWorkspace, retryStorageCleanup } from "@/lib/server/account";
+import { deleteAccount, EXPORT_MAX_BYTES, exportWorkspace, finishDeletions, purgeSampleAccounts, retryStorageCleanup } from "@/lib/server/account";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
@@ -12,7 +12,9 @@ import { requestSignature } from "@/lib/server/esign";
 import { createPassport, openPassport } from "@/lib/server/passport";
 import { NeedsRecentSignIn, type Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
+import { createLocalUser } from "@/lib/server/session";
 import { blobStore, localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 /** Export and account deletion (Security R10). */
@@ -21,10 +23,11 @@ let db: TestDb;
 let blobDir: string;
 
 async function sampleWorkspace(): Promise<Ctx> {
-  const userId = await db.user(null);
+  // As "Try the sample" signs in: an anonymous user, then the workspace.
+  const userId = await createLocalUser(null, true);
   const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
   await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
-  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner" };
+  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner", today: isoToday() };
 }
 
 const count = async (table: string, orgId: string) =>
@@ -33,6 +36,10 @@ const count = async (table: string, orgId: string) =>
 /** Stored files queued for removal (0028) under one workspace's prefix. */
 const queued = async (orgId: string) =>
   (await db.root((tx) => tx.query<{ path: string }>("select path from app.storage_cleanup where path like $1 order by path", [`${orgId}/%`]))).map((r) => r.path);
+
+/** Files in the local blob store under `dir`; none once the directory is gone. */
+const storedFiles = async (dir: string) =>
+  existsSync(dir) ? (await readdir(dir, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length : 0;
 
 beforeAll(async () => {
   db = await freshDb();
@@ -89,6 +96,37 @@ describe("export", () => {
     expect(bytes.length).toBeGreaterThan(0);
   });
 
+  it("still exports when one stored file is gone: that file is named in the README, listed without a file, and the rest are all there (review #17)", async () => {
+    const ctx = await sampleWorkspace();
+    const [gone] = await db.root((tx) => tx.query<{ storage_path: string }>("select storage_path from app.document_versions where org_id = $1 order by created_at limit 1", [ctx.orgId]));
+    await rm(path.join(blobDir, gone.storage_path));
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { bytes } = await exportWorkspace(ctx);
+    quiet.mockRestore();
+    const file = path.join(blobDir, "export-missing.zip");
+    await writeFile(file, bytes);
+    const names = execFileSync("unzip", ["-Z1", file]).toString().trim().split("\n");
+    const docs: { versions: { file: string | null; sha256: string }[] }[] = JSON.parse(execFileSync("unzip", ["-p", file, "documents.json"]).toString());
+    const versions = docs.flatMap((d) => d.versions);
+    expect(versions.filter((v) => v.file === null)).toHaveLength(1);
+    expect(names.filter((n) => n.startsWith("documents/"))).toEqual(versions.flatMap((v) => (v.file ? [v.file] : [])));
+    expect(execFileSync("unzip", ["-p", file, "README.txt"]).toString()).toContain("NOT INCLUDED");
+    const history = execFileSync("unzip", ["-p", file, "history.csv"]).toString().trim().split("\n");
+    expect(history.at(-1)).toContain(",workspace.exported,");
+  });
+
+  it("records no export when storage itself fails, and reports the failure", async () => {
+    const ctx = await sampleWorkspace();
+    const local = localBlobStore(blobDir);
+    setBlobStoreForTests({ ...local, get: () => Promise.reject(new Error("storage down")) });
+    try {
+      await expect(exportWorkspace(ctx)).rejects.toThrow("storage down");
+    } finally {
+      setBlobStoreForTests(local);
+    }
+    expect(await db.root((tx) => tx.query("select 1 from app.audit_log where org_id = $1 and action = 'workspace.exported'", [ctx.orgId]))).toEqual([]);
+  });
+
   it("takes a workspace whose files add up to exactly 200 MB, and refuses one byte more", async () => {
     const ctx = await sampleWorkspace();
     const [{ n }] = await db.root((tx) =>
@@ -98,7 +136,7 @@ describe("export", () => {
       ),
     );
     const [doc] = await db.root((tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1 limit 1", [ctx.orgId]));
-    // Records whose sizes fill the rest of the limit (10 MB each at most), each with a small stored file.
+    // Records whose sizes fill the rest of the limit (each at most the database's 10 MB cap per file), each with a small stored file.
     const addVersion = async (version: number, size: number) => {
       const storagePath = `${ctx.orgId}/${doc.id}/v${version}.pdf`;
       await db.root((tx) =>
@@ -118,8 +156,8 @@ describe("export", () => {
 
   it("refuses a workspace whose files add up to more than 200 MB, vendors' files included, and records no export", async () => {
     const ctx = await sampleWorkspace();
-    // Records only: the size check comes before any file is read. 19 versions at the 10 MB maximum
-    // stay under the limit by themselves; 2 vendor files at 10 MB take the total over it.
+    // Records only: the size check comes before any file is read. 19 versions at the database's 10 MB
+    // cap per file stay under the limit by themselves; 2 vendor files at 10 MB take the total over it.
     await db.root((tx) =>
       tx.query(
         `insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin)
@@ -240,5 +278,74 @@ describe("account deletion", () => {
     expect(await queued(org)).toHaveLength(2500);
     expect(await retryStorageCleanup()).toBeGreaterThanOrEqual(2500);
     expect(await queued(org)).toEqual([]);
+  });
+
+  it("a batch storage refuses goes to the back of the queue, so the files behind it are still removed (review #16)", async () => {
+    const org = crypto.randomUUID();
+    const stuck = `${org}/${crypto.randomUUID()}/v1.pdf`;
+    await db.root((tx) => tx.query("insert into app.storage_cleanup (path, queued_at) values ($1, now() - interval '2 hours')", [stuck]));
+    await db.root((tx) => tx.query("insert into app.storage_cleanup (path, queued_at) select $1 || '/' || gen_random_uuid() || '/v1.pdf', now() - interval '1 hour' from generate_series(1, 1000)", [org]));
+    const local = localBlobStore(blobDir);
+    setBlobStoreForTests({ ...local, remove: (paths) => (paths.includes(stuck) ? Promise.reject(new Error("AccessDenied")) : local.remove(paths)) });
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(retryStorageCleanup()).rejects.toThrow("AccessDenied");
+    } finally {
+      quiet.mockRestore();
+      setBlobStoreForTests(local);
+    }
+    // The stuck one's batch (it and the 999 queued with it) is still queued, now behind the rest; the one path behind it is gone.
+    const left = await queued(org);
+    expect(left).toHaveLength(1000);
+    expect(left).toContain(stuck);
+    const [age] = await db.root((tx) => tx.query<{ recent: boolean }>("select queued_at > now() - interval '1 minute' as recent from app.storage_cleanup where path = $1", [stuck]));
+    expect(age.recent).toBe(true);
+    await db.root((tx) => tx.query("delete from app.storage_cleanup where path like $1", [`${org}/%`]));
+  });
+
+  it("stops at the daily run's deadline: one batch of files, no further deletions, and nothing is lost (review #15)", async () => {
+    await retryStorageCleanup(); // whatever earlier tests left behind, so the batch below is this test's own
+    const org = crypto.randomUUID();
+    await db.root((tx) => tx.query("insert into app.storage_cleanup (path) select $1 || '/' || gen_random_uuid() || '/v1.pdf' from generate_series(1, 1500)", [org]));
+    const past = Date.now() - 1;
+    expect(await retryStorageCleanup(past)).toBe(1000);
+    expect(await queued(org)).toHaveLength(500);
+    const old = await sampleWorkspace();
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '3 days' where id = $1", [old.userId]));
+    expect(await purgeSampleAccounts(past)).toEqual({ purged: 0, failed: 0 });
+    expect(await finishDeletions(past)).toEqual({ finished: 0, failed: 0 });
+    expect(await count("documents", old.orgId)).toBeGreaterThan(0);
+    expect(await retryStorageCleanup()).toBeGreaterThanOrEqual(500);
+    expect(await purgeSampleAccounts()).toEqual({ purged: 1, failed: 0 }); // the deferred one goes on the next run
+  });
+});
+
+describe("sample account purge", () => {
+  it("deletes sample accounts after two days with their workspace and stored files, and leaves newer ones alone", async () => {
+    const old = await sampleWorkspace();
+    const fresh = await sampleWorkspace();
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '3 days' where id = $1", [old.userId]));
+    const tables = ["documents", "document_versions", "audit_log", "vendors", "vendor_files", "outbox", "members"];
+    const freshRows = await Promise.all(tables.map((t) => count(t, fresh.orgId)));
+    const oldFiles = await storedFiles(path.join(blobDir, old.orgId));
+    const freshFiles = await storedFiles(path.join(blobDir, fresh.orgId));
+    const allFiles = await storedFiles(blobDir);
+    expect(await count("documents", old.orgId)).toBeGreaterThan(0);
+    expect(oldFiles).toBeGreaterThan(0);
+
+    expect(await purgeSampleAccounts()).toEqual({ purged: 1, failed: 0 });
+
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [old.userId]))).toEqual([]);
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [old.orgId]))).toEqual([]);
+    for (const table of tables) expect(await count(table, old.orgId), table).toBe(0);
+    expect(await storedFiles(path.join(blobDir, old.orgId))).toBe(0);
+    expect(await storedFiles(blobDir)).toBe(allFiles - oldFiles);
+    expect(await queued(old.orgId)).toEqual([]);
+
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [fresh.userId]))).toHaveLength(1);
+    expect(await Promise.all(tables.map((t) => count(t, fresh.orgId)))).toEqual(freshRows);
+    expect(await storedFiles(path.join(blobDir, fresh.orgId))).toBe(freshFiles);
+
+    expect(await purgeSampleAccounts()).toEqual({ purged: 0, failed: 0 });
   });
 });

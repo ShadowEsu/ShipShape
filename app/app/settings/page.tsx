@@ -21,7 +21,7 @@ const EXPORT_ERRORS: Record<string, string> = {
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; billing?: string }> }) {
   const ctx = await requireWorkspace();
   const { error, billing } = await searchParams;
-  const exportError = error ? EXPORT_ERRORS[error] : undefined;
+  const exportError = error && Object.hasOwn(EXPORT_ERRORS, error) ? EXPORT_ERRORS[error] : undefined;
   const view = await billingView(ctx);
 
   return (

@@ -1,4 +1,5 @@
 import "server-only";
+import { isoToday } from "@/lib/today";
 import { asService, asUser, pgErrorCode } from "./db";
 import { DOC_KINDS, type DocKind } from "./documents";
 import type { Ctx } from "./profile";
@@ -21,12 +22,10 @@ const DATES_SQL = `
   where d.org_id = $1 and d.status = 'active' and x.due_on is not null
   order by x.due_on, d.title`;
 
-/** Every expiry and renewal date in the workspace, soonest first (lapsed ones included). */
-export async function listDeadlines(ctx: Ctx, today = isoToday()): Promise<Deadline[]> {
-  return asUser(ctx.userId, (tx) => tx.query<Deadline>(DATES_SQL, [ctx.orgId, today]));
+/** Every expiry and renewal date in the workspace, soonest first (lapsed ones included); days counted from the viewer's date. */
+export async function listDeadlines(ctx: Ctx): Promise<Deadline[]> {
+  return asUser(ctx.userId, (tx) => tx.query<Deadline>(DATES_SQL, [ctx.orgId, ctx.today]));
 }
-
-export const isoToday = () => new Date().toISOString().slice(0, 10);
 
 // Calendar file -----------------------------------------------------------------------------------
 
@@ -35,12 +34,15 @@ function icsText(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 }
 
-function fold(line: string): string {
+/** Folds at 75 octets, never inside a character: a surrogate pair (an emoji in a title) moves whole to the next line. */
+export function fold(line: string): string {
   const out: string[] = [];
   let rest = line;
   while (Buffer.byteLength(rest) > 75) {
     let cut = 75;
     while (Buffer.byteLength(rest.slice(0, cut)) > 75) cut--;
+    const last = rest.charCodeAt(cut - 1);
+    if (last >= 0xd800 && last <= 0xdbff) cut--;
     out.push(rest.slice(0, cut));
     rest = ` ${rest.slice(cut)}`;
   }
@@ -132,6 +134,7 @@ function reminderText(r: DueReminder): { subject: string; body: string } {
  * `onlyOrg` limits it to one workspace (a sample workspace right after it is made).
  * Each reminder is written in its own savepoint (Security R-1tx): one that can't be written is
  * skipped, logged and left unsent, so the next run tries it again, and the others still go out.
+ * `today` is the UTC date: the cron runs at 15:00 UTC, when that is also the US calendar date.
  */
 export async function runReminders(today = isoToday(), onlyOrg: string | null = null): Promise<{ sent: number; failed: number }> {
   return asService(async (tx) => {
@@ -140,7 +143,16 @@ export async function runReminders(today = isoToday(), onlyOrg: string | null = 
     let failed = 0;
     for (const r of due) {
       try {
-        await tx.savepoint(async (sp) => {
+        const written = await tx.savepoint(async (sp) => {
+          // The claim comes first: a second run at the same time (the cron delivered twice, or a
+          // sample sign-in's run beside the daily one) waits on it and then writes nothing (review #10).
+          const claimed = await sp.query("insert into app.reminders_sent (document_id, org_id, due_on, days_before) values ($1, $2, $3, $4) on conflict do nothing returning 1", [
+            r.document_id,
+            r.org_id,
+            r.due_on,
+            r.days_before,
+          ]);
+          if (claimed.length === 0) return false;
           // Sample workspaces' people have no email address; their reminders go to a made-up one.
           const recipients = await sp.query<{ email: string }>(
             `select coalesce(u.email, case when o.is_demo then 'you@sample.example' end) as email
@@ -152,14 +164,9 @@ export async function runReminders(today = isoToday(), onlyOrg: string | null = 
           for (const to of recipients) {
             await sp.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, $2, $3, $4)", [r.org_id, to.email, subject, body]);
           }
-          await sp.query("insert into app.reminders_sent (document_id, org_id, due_on, days_before) values ($1, $2, $3, $4) on conflict do nothing", [
-            r.document_id,
-            r.org_id,
-            r.due_on,
-            r.days_before,
-          ]);
+          return true;
         });
-        sent++;
+        if (written) sent++;
       } catch (e) {
         failed++;
         // The document's id and the error's code only: the message may hold addresses or query text.

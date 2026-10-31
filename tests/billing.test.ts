@@ -13,6 +13,7 @@ import { requestSignature } from "@/lib/server/esign";
 import { createPassport, revokePassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 /** Stripe billing in test mode (stripe-billing-readiness checks A-H), against a fake Stripe. */
@@ -107,7 +108,7 @@ function send(type: string, object: object, opts: { id?: string; timestamp?: num
 async function realWorkspace(): Promise<Ctx> {
   const userId = await db.user(`owner${++seq}@example.com`);
   const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Real Co') as id"));
-  return { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Real Co", role: "owner" };
+  return { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Real Co", role: "owner", today: isoToday() };
 }
 
 const plan = async (ctx: Ctx) => (await billingView(ctx)).plan;
@@ -470,7 +471,7 @@ describe("account deletion", () => {
     fake.listSubscriptions = async (customer: string) => {
       if (!raced) {
         raced = true;
-        await deleteAccount({ userId: b, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: w.ctx.orgId, name: "Real Co", role: "owner" });
+        await deleteAccount({ userId: b, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: w.ctx.orgId, name: "Real Co", role: "owner", today: isoToday() });
       }
       return list(customer);
     };

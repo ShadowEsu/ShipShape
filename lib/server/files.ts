@@ -1,7 +1,7 @@
 import "server-only";
 
 /** Uploads: PDF, PNG and JPEG only, decided by the file's first bytes, never its name (Security R3). */
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export type AllowedMime = "application/pdf" | "image/png" | "image/jpeg";
 
@@ -31,7 +31,7 @@ export type UploadCheck = { ok: true; mime: AllowedMime } | { ok: false; error: 
 
 export function checkUpload(bytes: Uint8Array): UploadCheck {
   if (bytes.length === 0) return { ok: false, error: "That file is empty." };
-  if (bytes.length > MAX_UPLOAD_BYTES) return { ok: false, error: "Files can be up to 10 MB." };
+  if (bytes.length > MAX_UPLOAD_BYTES) return { ok: false, error: "Files can be up to 4 MB." };
   const mime = sniffMime(bytes);
   if (!mime) return { ok: false, error: "Upload a PDF, PNG or JPEG." };
   if (mime === "application/pdf" && ACTIVE_PDF.test(Buffer.from(bytes).toString("latin1"))) {

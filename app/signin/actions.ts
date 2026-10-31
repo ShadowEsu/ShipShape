@@ -7,7 +7,7 @@ import { asService, asUser } from "@/lib/server/db";
 import { CALLBACK_PATH, cognitoConfig, SIGN_IN_COOKIE, SIGN_IN_SECONDS, startSignIn } from "@/lib/server/cognito";
 import { runReminders } from "@/lib/server/deadlines";
 import { clientIp, rateLimited } from "@/lib/server/http";
-import { createLocalUser, endSession, finishSignIn, localSignInAllowed } from "@/lib/server/session";
+import { createLocalUser, endSession, finishSignIn, localSignInAllowed, viewerToday } from "@/lib/server/session";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 
 export interface SignInState {
@@ -52,7 +52,8 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
     const [org] = await asService((tx) =>
       tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]),
     );
-    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    const today = await viewerToday();
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId, today));
     // The sample's expired permit and expiring certificate show their reminders straight away.
     await runReminders(undefined, org.id);
   }

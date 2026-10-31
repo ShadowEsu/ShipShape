@@ -32,7 +32,7 @@ export default async function FillPage({ params }: { params: Promise<{ template:
 
   const profile = await loadProfile(ctx);
   // The browser only ever gets the masked EIN; the full number is added on the server when the PDF is made.
-  const initial = prefill(t, { values: profile.values, ein: null, einLast4: profile.einLast4 });
+  const initial = prefill(t, { values: profile.values, ein: null, einLast4: profile.einLast4 }, ctx.today);
   const chips: Record<string, FactChip> = {};
   for (const f of t.fields) {
     if (!f.fact) continue;

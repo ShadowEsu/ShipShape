@@ -1,3 +1,4 @@
+import { bytesStream } from "@/lib/server/http";
 import { blobStore, verifyFileParams } from "@/lib/server/storage";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +16,10 @@ export async function GET(req: Request) {
   // verifyFileParams only accepts paths ending in .pdf, .png or .jpg.
   const ext = file.objectPath.split(".").pop() as keyof typeof TYPES;
   const bytes = await blobStore().get(file.objectPath);
-  return new Response(Buffer.from(bytes), {
+  return new Response(bytesStream(bytes), {
     headers: {
       "Content-Type": TYPES[ext],
+      "Content-Length": String(bytes.length),
       "Content-Disposition": `${file.inline ? "inline" : "attachment"}; filename="${file.filename}"`,
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",

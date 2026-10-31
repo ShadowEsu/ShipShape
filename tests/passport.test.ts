@@ -10,6 +10,7 @@ import type { Ctx } from "@/lib/server/profile";
 import { createPassport, getPassport, listPassports, openPassport, passportFileUrl, revokePassport } from "@/lib/server/passport";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 /** Passport links (Security R6): secret in the fragment, hashed at rest, expiring, revocable, logged. */
@@ -24,7 +25,7 @@ async function sampleWorkspace(email: string): Promise<Ctx> {
   const userId = await db.user(email);
   const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
   await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
-  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Sample", role: "owner" };
+  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Sample", role: "owner", today: isoToday() };
 }
 
 beforeAll(async () => {

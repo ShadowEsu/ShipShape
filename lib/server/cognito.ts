@@ -257,6 +257,8 @@ export async function verifyIdToken(
  */
 export async function userForIdentity(id: Pick<VerifiedIdentity, "sub" | "email">): Promise<string> {
   return asService(async (tx) => {
+    // Two callbacks for the same new account at once: the second waits here and then finds the user (review #26).
+    await tx.query("select pg_advisory_xact_lock(hashtextextended('signin:' || $1, 0))", [id.sub]);
     const [known] = await tx.query<{ user_id: string }>("select user_id from app.identities where provider = 'cognito' and subject = $1", [id.sub]);
     if (known) return known.user_id;
     const [taken] = await tx.query<{ deleting: boolean }>(

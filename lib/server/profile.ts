@@ -6,10 +6,10 @@ import { decryptField, encryptField } from "./crypto";
 import { asUser } from "./db";
 import { UserError } from "./errors";
 import { assertRealData } from "./flags";
-import type { Session, Workspace } from "./session";
-import { authIsRecent } from "./session";
+import type { Session, Viewer, Workspace } from "./session";
+import { recentEnough } from "./session";
 
-export type Ctx = Session & Workspace;
+export type Ctx = Session & Workspace & Viewer;
 
 export interface Profile {
   values: Record<ProfileKey, string>;
@@ -124,7 +124,7 @@ export class NeedsRecentSignIn extends Error {}
 
 /** Shows the full EIN: a deliberate, audited action that needs a recent sign-in (Security R4, R8). */
 export async function revealEin(ctx: Ctx): Promise<string | null> {
-  if (!authIsRecent(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to see the full EIN.");
+  if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to see the full EIN.");
   return asUser(ctx.userId, async (tx) => {
     const [row] = await tx.query<{ ein_cipher: string | null }>("select ein_cipher from app.profiles where org_id = $1", [ctx.orgId]);
     if (!row?.ein_cipher) return null;

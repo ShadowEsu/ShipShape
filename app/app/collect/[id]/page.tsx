@@ -19,10 +19,17 @@ function linkStatus(l: VendorLink) {
 
 const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
-export default async function VendorPage({ params }: { params: Promise<{ id: string }> }) {
+/** What went wrong in a form posted from this page (see backToVendor in ../actions.ts). */
+const ERRORS: Record<string, string> = {
+  off: "This link was already turned off.",
+};
+
+export default async function VendorPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const ctx = await requireWorkspace();
   if (!collectOpen(ctx)) notFound();
   const { id } = await params;
+  const { error } = await searchParams;
+  const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
   const detail = await getVendor(ctx, id);
   if (!detail) notFound();
   const { vendor, files, links } = detail;
@@ -43,6 +50,11 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
         </Link>
         {vendor.email && <span className="ml-3 text-ink-3">{vendor.email}</span>}
       </p>
+      {formError && (
+        <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+          {formError}
+        </p>
+      )}
       {archived && <Notice tone="info">This vendor is archived: its upload links don&apos;t work, and it isn&apos;t counted on the Collect page.</Notice>}
 
       <section className="space-y-3" aria-labelledby="asked-heading">

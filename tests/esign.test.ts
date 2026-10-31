@@ -13,6 +13,7 @@ import { GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 /** E-signatures (Security R8): consent stored, email proven by a one-time code, signed copy immutable, every step audited. */
@@ -27,7 +28,7 @@ async function sampleWorkspace(): Promise<Ctx> {
   const userId = await db.user(null);
   const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
   await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
-  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Sample", role: "owner" };
+  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Sample", role: "owner", today: isoToday() };
 }
 
 async function nda(ctx: Ctx) {
@@ -69,6 +70,11 @@ describe("signature requests", () => {
     await revokeSignatureRequest(a, id);
     expect(await openSigning(id, token)).toBeNull();
     expect(await sendSigningCode(id, token)).toBe("invalid");
+  });
+
+  it("take a pasted signer address with a space or line break around it (review #18)", async () => {
+    const { id, token } = await requestSignature(a, { documentId: (await nda(a)).id, signerName: "Jordan Lee", signerEmail: " jordan@northwind.example\n", days: 7 });
+    expect((await openSigning(id, token))?.signerEmail).toBe("j•••@northwind.example");
   });
 
   it("keep tokens and codes out of members' reach, and other workspaces can't revoke them", async () => {

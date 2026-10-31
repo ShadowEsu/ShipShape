@@ -12,9 +12,16 @@ export const metadata: Metadata = { title: "Passport link" };
 
 const ACTION: Record<string, string> = { opened: "Opened the link", viewed: "Viewed", downloaded: "Downloaded" };
 
-export default async function PassportDetail({ params }: { params: Promise<{ id: string }> }) {
+/** What went wrong in a form posted from this page (see turnOff in ../actions.ts). */
+const ERRORS: Record<string, string> = {
+  off: "This link was already turned off.",
+};
+
+export default async function PassportDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const ctx = await requireWorkspace();
   const { id } = await params;
+  const { error } = await searchParams;
+  const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
   const p = await getPassport(ctx, id);
   if (!p) notFound();
   const revokedAt = p.link.revoked_at;
@@ -29,6 +36,11 @@ export default async function PassportDetail({ params }: { params: Promise<{ id:
         </Link>
       </nav>
       <PageHeader eyebrow="Passport link" title={p.link.label} />
+      {formError && (
+        <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+          {formError}
+        </p>
+      )}
       {revokedAt ? (
         <Notice tone="info">Turned off {fmtDateTime(revokedAt)}. Nobody can open it any more.</Notice>
       ) : expired ? (

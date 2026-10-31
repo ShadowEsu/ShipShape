@@ -26,6 +26,7 @@ import { collectOpen, GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 /** Collect: vendors send documents through upload links (secret in the fragment, hashed, expiring, revocable). */
@@ -41,14 +42,14 @@ const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString(
 async function realWorkspace(email: string): Promise<Ctx> {
   const userId = await db.user(email);
   const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Harbor Test Co') as id"));
-  return { userId, demo: false, authAt: now(), orgId: org.id, name: "Harbor Test Co", role: "owner" };
+  return { userId, demo: false, authAt: now(), orgId: org.id, name: "Harbor Test Co", role: "owner", today: isoToday() };
 }
 
 async function sampleWorkspace(): Promise<Ctx> {
   const userId = await db.user(null);
   const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
   await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
-  return { userId, demo: true, authAt: now(), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner" };
+  return { userId, demo: true, authAt: now(), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner", today: isoToday() };
 }
 
 const storedFiles = async () => (await readdir(blobDir, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length;
@@ -191,7 +192,7 @@ describe("a vendor sending files", () => {
     expect(await storedFiles()).toBe(before);
   });
 
-  it("takes a file of exactly the 10 MiB maximum; one byte more is too big", async () => {
+  it("takes a file of exactly the 4 MiB maximum; one byte more is too big", async () => {
     withRealDocs();
     const ctx = await realWorkspace("owner-max@example.com");
     const vendorId = await addVendor(ctx, { name: "Max Size Co", requested: ["w9"] });
@@ -311,6 +312,15 @@ describe("adding a vendor", () => {
     expect(email(254)).toHaveLength(254);
     await addVendor(ctx, { name: "Long Mail Co", email: email(254), requested: ["w9"] });
     await expect(addVendor(ctx, { name: "Longer Mail Co", email: email(255), requested: ["w9"] })).rejects.toThrow(ZodError);
+  });
+
+  it("takes a pasted email address with a space or line break around it (review #18)", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("vendor-trim@example.com");
+    await addVendor(ctx, { name: "Pasted Co", email: " ap@pasted.example\n", requested: ["w9"] });
+    expect((await listVendors(ctx)).find((v) => v.name === "Pasted Co")?.email).toBe("ap@pasted.example");
+    await addVendor(ctx, { name: "Blank Co", email: "  ", requested: ["w9"] });
+    expect((await listVendors(ctx)).find((v) => v.name === "Blank Co")?.email).toBeNull();
   });
 
   it("needs at least one document to ask for", async () => {

@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { TERMS_VERSION } from "@/lib/legal";
+import { isTimeZone, todayIn, TZ_COOKIE } from "@/lib/today";
 import { asService, asUser } from "./db";
 import { safeEqual } from "./crypto";
 
@@ -34,6 +35,18 @@ export interface Workspace {
   name: string;
   role: "owner" | "admin" | "member";
   demo: boolean;
+}
+
+/** What this request knows about the person's surroundings. */
+export interface Viewer {
+  /** The person's calendar date (YYYY-MM-DD) in the zone their browser reported; UTC when unknown. */
+  today: string;
+}
+
+/** The viewer's date from the time-zone cookie (components/time-zone-cookie.tsx). Junk or no cookie: UTC. */
+export async function viewerToday(): Promise<string> {
+  const zone = (await cookies()).get(TZ_COOKIE)?.value ?? "UTC";
+  return todayIn(isTimeZone(zone) ? zone : "UTC");
 }
 
 export function sessionSecret(): string {
@@ -71,6 +84,8 @@ export function decodeSession(value: string | undefined, now = Date.now()): Issu
 }
 
 export const authIsRecent = (s: Session, now = Date.now()) => now / 1000 - s.authAt <= RECENT_AUTH_SECONDS;
+/** Sensitive actions need a recent sign-in, except in a sample workspace: made-up data, and its visitor has no password to re-enter. */
+export const recentEnough = (s: Session, now = Date.now()) => s.demo || authIsRecent(s, now);
 
 export const localSignInAllowed = () => process.env.NODE_ENV !== "production";
 
@@ -96,7 +111,7 @@ export async function endSession() {
  * The signed-in user's workspace, or a redirect to sign-in. A session issued before the person
  * last chose "Sign out on every device" is refused here, in the same query (Security E9).
  */
-export async function requireWorkspace(): Promise<Session & Workspace> {
+export async function requireWorkspace(): Promise<Session & Workspace & Viewer> {
   const session = await getSession();
   if (!session) redirect("/signin");
   const [ws] = await asUser(session.userId, (tx) =>
@@ -109,7 +124,7 @@ export async function requireWorkspace(): Promise<Session & Workspace> {
     ),
   );
   if (!ws) redirect("/signin");
-  return { userId: session.userId, authAt: session.authAt, orgId: ws.org_id, name: ws.name, role: ws.role, demo: ws.is_demo };
+  return { userId: session.userId, authAt: session.authAt, orgId: ws.org_id, name: ws.name, role: ws.role, demo: ws.is_demo, today: await viewerToday() };
 }
 
 /** Ends every session this person has, on every device, this one included (Security E9). */
@@ -137,6 +152,8 @@ export const DEFAULT_WORKSPACE_NAME = "My business";
 export async function finishSignIn(userId: string, { demo, authAt }: { demo: boolean; authAt?: number }) {
   await asUser(userId, async (tx) => {
     await tx.query("insert into app.consents (user_id, item, policy_version) values ($1, 'terms_privacy', $2)", [userId, TERMS_VERSION]);
+    // Two sign-ins finishing at once must not make two workspaces: the second waits for the first's commit (review #26).
+    await tx.query("select pg_advisory_xact_lock(hashtextextended('workspace:' || $1, 0))", [userId]);
     const [has] = await tx.query("select 1 from app.members where user_id = $1", [userId]);
     if (!has) await tx.query("select app.create_workspace($1)", [DEFAULT_WORKSPACE_NAME]);
   });

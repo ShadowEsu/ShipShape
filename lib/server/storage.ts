@@ -2,7 +2,7 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DeleteObjectsCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectsCommand, GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { productionAwsClient } from "./aws";
 import { safeEqual } from "./crypto";
 
@@ -29,6 +29,12 @@ export interface BlobStore {
   remove(objectPaths: string[]): Promise<void>;
   signedUrl(objectPath: string, opts: FileUrlOptions): Promise<string>;
 }
+
+/** `put` refused because an object is already stored at that path. */
+export class ObjectExists extends Error {}
+
+/** `get` found nothing at that path: the object is gone (or was never stored), not a storage fault. */
+export class ObjectMissing extends Error {}
 
 interface FileUrlOptions {
   filename: string;
@@ -117,10 +123,20 @@ export function localBlobStore(root: string): BlobStore {
     async put(p, bytes) {
       const f = full(p);
       await mkdir(path.dirname(f), { recursive: true });
-      await writeFile(f, bytes, { flag: "wx" }); // never overwrite: a change is a new version
+      try {
+        await writeFile(f, bytes, { flag: "wx" }); // never overwrite: a change is a new version
+      } catch (e) {
+        if (typeof e === "object" && e !== null && "code" in e && e.code === "EEXIST") throw new ObjectExists(p);
+        throw e;
+      }
     },
     async get(p) {
-      return new Uint8Array(await readFile(full(p)));
+      try {
+        return new Uint8Array(await readFile(full(p)));
+      } catch (e) {
+        if (typeof e === "object" && e !== null && "code" in e && e.code === "ENOENT") throw new ObjectMissing(p);
+        throw e;
+      }
     },
     async remove(paths) {
       await Promise.all(paths.map((p) => rm(full(p), { force: true })));
@@ -139,13 +155,23 @@ export function s3BlobStore(client: S3Client, bucket: string): BlobStore {
     async put(p, bytes, mime) {
       assertObjectPath(p);
       // Never overwrite: a change is a new version. S3 refuses the write (412) if the path exists.
-      await client.send(new PutObjectCommand({ Bucket: bucket, Key: p, Body: bytes, ContentType: mime, IfNoneMatch: "*" }));
+      try {
+        await client.send(new PutObjectCommand({ Bucket: bucket, Key: p, Body: bytes, ContentType: mime, IfNoneMatch: "*" }));
+      } catch (e) {
+        if (e instanceof S3ServiceException && (e.name === "PreconditionFailed" || e.$metadata.httpStatusCode === 412)) throw new ObjectExists(p);
+        throw e;
+      }
     },
     async get(p) {
       assertObjectPath(p);
-      const { Body } = await client.send(new GetObjectCommand({ Bucket: bucket, Key: p }));
-      if (!Body) throw new Error("S3 returned no file");
-      return Body.transformToByteArray();
+      try {
+        const { Body } = await client.send(new GetObjectCommand({ Bucket: bucket, Key: p }));
+        if (!Body) throw new Error("S3 returned no file");
+        return await Body.transformToByteArray();
+      } catch (e) {
+        if (e instanceof S3ServiceException && (e.name === "NoSuchKey" || e.$metadata.httpStatusCode === 404)) throw new ObjectMissing(p);
+        throw e;
+      }
     },
     async remove(paths) {
       for (const p of paths) assertObjectPath(p);
@@ -191,6 +217,25 @@ let store: BlobStore | undefined;
 export function blobStore(): BlobStore {
   store ??= storeFromEnv(process.env);
   return store;
+}
+
+/**
+ * Stores a version's file at the path its row owns. The row was inserted a moment ago under the
+ * document's lock, so anything already at that path has no row: a put that landed and then lost its
+ * transaction (a failed commit, a function killed at its time limit, a retried PUT whose first try
+ * went through). Left alone it would block that version number for good (review #7); it is replaced.
+ * `put` itself still never overwrites.
+ */
+export async function putVersionFile(objectPath: string, bytes: Uint8Array, mime: string): Promise<void> {
+  const s = blobStore();
+  try {
+    await s.put(objectPath, bytes, mime);
+  } catch (e) {
+    if (!(e instanceof ObjectExists)) throw e;
+    console.warn(`storage: replacing a stored file that has no record (${objectPath})`);
+    await s.remove([objectPath]);
+    await s.put(objectPath, bytes, mime);
+  }
 }
 
 /** Tests use a temporary directory. */

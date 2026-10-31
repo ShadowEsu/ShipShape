@@ -8,6 +8,7 @@ import { asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 /**
@@ -39,7 +40,7 @@ const PERMIT = { kind: "permit", label: "Plumbing permit", quote: "your plumbing
 async function workspace(): Promise<Ctx> {
   const userId = await db.user(`ai${++seq}@example.com`);
   const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Elm Plumbing') as id"));
-  return { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Elm Plumbing", role: "owner" };
+  return { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Elm Plumbing", role: "owner", today: isoToday() };
 }
 
 async function addDoc(ctx: Ctx, title: string, kind: string, expiresInDays: number | null) {

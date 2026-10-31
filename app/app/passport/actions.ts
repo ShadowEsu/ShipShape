@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect, RedirectType } from "next/navigation";
 import { z } from "zod";
 import { UserError } from "@/lib/server/errors";
 import { createPassport, revokePassport } from "@/lib/server/passport";
@@ -34,7 +35,17 @@ export async function makePassport(_prev: PassportFormState, data: FormData): Pr
 export async function turnOff(data: FormData) {
   const ctx = await requireWorkspace();
   const id = String(data.get("id") ?? "");
-  await revokePassport(ctx, id);
+  // Back to the link's page; ?error=off makes it say the link was already off (ERRORS in [id]/page.tsx),
+  // and the plain address drops a message from an earlier attempt.
+  const page = z.uuid().safeParse(id).success ? `/app/passport/${id}` : "/app/passport";
+  try {
+    await revokePassport(ctx, id);
+  } catch (e) {
+    // Already off: a second click, or turned off in another tab.
+    if (e instanceof UserError) redirect(`${page}?error=off`, RedirectType.replace);
+    throw e;
+  }
   revalidatePath("/app/passport");
   revalidatePath(`/app/passport/${id}`);
+  redirect(page, RedirectType.replace);
 }

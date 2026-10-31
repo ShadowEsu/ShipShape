@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { exportWorkspace } from "@/lib/server/account";
 import { UserError } from "@/lib/server/errors";
-import { fail, sameOrigin } from "@/lib/server/http";
+import { bytesStream, fail, sameOrigin } from "@/lib/server/http";
 import { NeedsRecentSignIn } from "@/lib/server/profile";
 import { requireWorkspace } from "@/lib/server/session";
 
@@ -19,9 +19,10 @@ export async function POST(req: Request) {
     if (e instanceof UserError) redirect(`/app/settings?error=${ctx.role === "member" ? "role" : "size"}`);
     throw e;
   }
-  return new Response(Buffer.from(out.bytes), {
+  return new Response(bytesStream(out.bytes), {
     headers: {
       "Content-Type": "application/zip",
+      "Content-Length": String(out.bytes.length),
       "Content-Disposition": `attachment; filename="${out.filename}"`,
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",

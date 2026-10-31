@@ -4,12 +4,13 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { AI_RECIPIENT, AI_REQUEST_CONSENT_VERSION, AI_REQUEST_MAX_CHARS } from "@/lib/ai";
 import { asService, asUser } from "./db";
-import { DOC_KINDS, listDocuments, type DocKind, type Validity } from "./documents";
+import { DOC_KINDS, listDocuments, type DocKind } from "./documents";
 import { UserError } from "./errors";
 import { GateClosed } from "./flags";
 import { rateLimited } from "./http";
 import { scrub } from "./log";
 import type { Ctx } from "./profile";
+import type { Validity } from "@/lib/today";
 
 /**
  * AI on user text (Security G4). Rules this module enforces:

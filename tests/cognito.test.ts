@@ -6,9 +6,10 @@ import { AdminDeleteUserCommand, CognitoIdentityProviderClient, NotAuthorizedExc
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteAccount, deletionPending, finishDeletions } from "@/lib/server/account";
 import { type CallbackParams, type CognitoConfig, cognitoAdmin, cognitoClient, cognitoConfig, completeSignIn, setSignInAdminForTests, startSignIn } from "@/lib/server/cognito";
-import { asUser } from "@/lib/server/db";
+import { asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
 import { authIsRecent, decodeSession, encodeSession } from "@/lib/server/session";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 /** Account sign-in through Cognito (AWS step 4): what the callback accepts, and who it signs in. */
@@ -167,6 +168,16 @@ describe("a sign-in", () => {
     expect(next.userId).not.toBe(userId);
   });
 
+  // Real Postgres only: PGlite has one connection, so two callbacks never overlap there.
+  it.skipIf(!process.env.SHIPSHAPE_PG_TEST_URL)("two callbacks for the same new account at the same moment make one user, not a failed sign-in (review #26)", async () => {
+    const sub = randomUUID();
+    // Opens the pool's connections first, so the two callbacks really overlap.
+    await Promise.all([1, 2, 3].map(() => asService((tx) => tx.query("select pg_sleep(0.1)"))));
+    const [a, b] = await Promise.all([signInWith({ sub, email: "race@example.test" }).result, signInWith({ sub, email: "race@example.test" }).result]);
+    expect(a.userId).toBe(b.userId);
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where email = 'race@example.test'"))).toHaveLength(1);
+  });
+
   it("the session's sign-in time is Cognito's, so an old Cognito sign-in doesn't count as recent", () => {
     const authAt = Math.floor(NOW / 1000) - 11 * 60;
     const session = decodeSession(encodeSession({ userId: randomUUID(), demo: false, authAt }, NOW), NOW);
@@ -278,7 +289,7 @@ describe("deleting the account", () => {
     const sub = randomUUID();
     const { userId } = await signInWith({ sub }).result;
     const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Cognito Co') as id"));
-    return { sub, userId, ctx: { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Cognito Co", role: "owner" as const } };
+    return { sub, userId, ctx: { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Cognito Co", role: "owner" as const, today: isoToday() } };
   }
   const exists = async (userId: string) => (await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [userId]))).length === 1;
   const recorded = async (userId: string) => (await db.root((tx) => tx.query("select 1 from app.deletion_requests where user_id = $1", [userId]))).length === 1;
@@ -294,7 +305,7 @@ describe("deleting the account", () => {
 
     const plain = await db.user(`plain-${randomUUID().slice(0, 8)}@example.test`);
     const [org] = await asUser(plain, (tx) => tx.query<{ id: string }>("select app.create_workspace('Plain Co') as id"));
-    await deleteAccount({ userId: plain, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Plain Co", role: "owner" });
+    await deleteAccount({ userId: plain, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Plain Co", role: "owner", today: isoToday() });
     expect(deleted).toHaveLength(1);
     expect(await exists(plain)).toBe(false);
   });

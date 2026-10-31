@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
 import { connection } from "next/server";
+import { TimeZoneCookie } from "@/components/time-zone-cookie";
 import { appUrl } from "@/lib/server/flags";
 import "./globals.css";
 
@@ -45,6 +46,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         >
           Skip to content
         </a>
+        <TimeZoneCookie />
         {children}
       </body>
     </html>

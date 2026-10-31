@@ -5,7 +5,7 @@ import path from "node:path";
 import { CreateBucketCommand, GetObjectCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { productionAwsClient } from "@/lib/server/aws";
-import { type BlobStore, localBlobStore, MAX_URL_SECONDS, s3BlobStore, storeFromEnv, verifyFileParams } from "@/lib/server/storage";
+import { type BlobStore, localBlobStore, MAX_URL_SECONDS, ObjectExists, s3BlobStore, storeFromEnv, verifyFileParams } from "@/lib/server/storage";
 
 const newPath = () => `${randomUUID()}/${randomUUID()}/v1.pdf`;
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -20,10 +20,10 @@ function contract(store: () => BlobStore) {
     expect(Array.from(await store().get(p))).toEqual(Array.from(data));
   });
 
-  it("never overwrites: a second write to a path fails and the first file stays", async () => {
+  it("never overwrites: a second write to a path fails as ObjectExists and the first file stays", async () => {
     const p = newPath();
     await store().put(p, bytes("first"), "application/pdf");
-    await expect(store().put(p, bytes("second"), "application/pdf")).rejects.toThrow();
+    await expect(store().put(p, bytes("second"), "application/pdf")).rejects.toThrow(ObjectExists);
     expect(text(await store().get(p))).toBe("first");
   });
 

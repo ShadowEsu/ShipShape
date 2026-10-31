@@ -127,7 +127,7 @@ export function NewDocumentForm() {
           File
         </label>
         <input id="file" name="file" type="file" required accept="application/pdf,image/png,image/jpeg" className="input py-1.5" />
-        <p className="mt-1 text-xs text-ink-3">PDF, PNG or JPEG, up to 10 MB.</p>
+        <p className="mt-1 text-xs text-ink-3">PDF, PNG or JPEG, up to 4 MB.</p>
       </div>
       <DetailFields v={state.values} />
       <Status state={state} savedText="" />

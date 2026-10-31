@@ -16,7 +16,7 @@ import { rateLimited } from "./http";
 import { visitorId } from "./passport";
 import { assertWithinPlan } from "./plans";
 import type { Ctx } from "./profile";
-import { blobStore } from "./storage";
+import { blobStore, putVersionFile } from "./storage";
 
 export const SIGN_DAYS = [7, 14, 30] as const;
 
@@ -30,7 +30,7 @@ export const esignAvailable = (ctx: { demo: boolean }) => ctx.demo || process.en
 const NewRequest = z.object({
   documentId: z.uuid(),
   signerName: z.string().trim().min(1, "Who should sign?").max(120).refine(isPrintable, "Use letters, numbers and common punctuation."),
-  signerEmail: z.email("Enter the signer's email address.").max(200),
+  signerEmail: z.string().trim().pipe(z.email("Enter the signer's email address.").max(200)),
   days: z.coerce.number().refine((d) => SIGN_DAYS.some((x) => x === d), "Choose how long the request stays open."),
 });
 
@@ -182,7 +182,7 @@ async function open(id: string, token: string, record: boolean): Promise<OpenRow
   if (!z.uuid().safeParse(id).success || !TOKEN.test(token)) return null;
   const [row] = await asAnon((tx) =>
     tx.query<OpenRow>(
-      "select org_id, org_name, is_demo, document_id, title, signer_name, signer_email, status, expires_at::text as expires_at, requested_at::text as requested_at, version, next_version, storage_path, mime, sha256, signed_at::text as signed_at, to_sign_path, to_sign_sha256 from app.esign_open($1, $2, $3)",
+      "select org_id, org_name, is_demo, document_id, title, signer_name, signer_email, status, expires_at::text as expires_at, to_char(requested_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS \"UTC\"') as requested_at, version, next_version, storage_path, mime, sha256, signed_at::text as signed_at, to_sign_path, to_sign_sha256 from app.esign_open($1, $2, $3)",
       [id, sha256Hex(token), record],
     ),
   );
@@ -307,7 +307,7 @@ export async function completeSigning(
     const certificate = await certificatePdf([
       ["Document", r.title],
       ["Sent by", r.org_name],
-      ["Requested", r.requested_at.slice(0, 16).replace("T", " ")],
+      ["Requested", r.requested_at],
       ["Signer named by the sender", r.signer_name],
       ["Signed as (typed name)", typedName],
       ["Email confirmed by one-time code", r.signer_email],
@@ -318,10 +318,12 @@ export async function completeSigning(
       ["Consent text", `${ESIGN_CONSENT_VERSION} (SHA-256 ${sha256Hex(ESIGN_CONSENT_TEXT).slice(0, 16)}…)`],
     ]);
     bytes = await appendPages(toSign, certificate);
-  } catch {
+  } catch (e) {
+    // A fault in the certificate or the merge, not a bad file: logged by name so it can be fixed.
+    console.error(`esign: building the signed copy failed (${e instanceof Error ? e.name : "unknown"})`);
     return "unsupported";
   }
-  // Every stored version is at most 10 MiB; a signed copy over that is refused up front, not by the database.
+  // Every stored version is at most 4 MiB; a signed copy over that is refused up front, not by the database.
   if (bytes.length > MAX_UPLOAD_BYTES) return "too_large";
   // The signed copy becomes the document's next version. If one landed between the signer's open
   // and now (an upload, or another request on the same document), the database refuses the stale
@@ -344,7 +346,7 @@ export async function completeSigning(
           bytes.length,
         ]);
         // Stored last, inside the transaction: if storing fails, the signature rolls back with it.
-        if (row.result === "ok") await blobStore().put(path, bytes, "application/pdf");
+        if (row.result === "ok") await putVersionFile(path, bytes, "application/pdf");
         return row.result;
       });
     } catch (e) {

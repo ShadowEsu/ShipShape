@@ -28,8 +28,6 @@ const TAX_CLASS: Partial<Record<EntityType, [string, string?]>> = {
   // llc_single and other: the owner picks the box (the IRS instructions decide, not us).
 };
 
-export const today = () => new Date().toISOString().slice(0, 10);
-
 function factValue(fact: NonNullable<FieldDef["fact"]>, facts: Facts): string {
   const v = facts.values;
   if (fact === "ein") return facts.einLast4 ? `••-•••${facts.einLast4}` : "";
@@ -39,8 +37,8 @@ function factValue(fact: NonNullable<FieldDef["fact"]>, facts: Facts): string {
   return v[fact as ProfileKey] ?? "";
 }
 
-/** Starting values: facts where a field names one, the template's own defaults otherwise. */
-export function prefill(t: TemplateInfo, facts: Facts): Values {
+/** Starting values: facts where a field names one, the template's own defaults otherwise; `today` is the viewer's date. */
+export function prefill(t: TemplateInfo, facts: Facts, today: string): Values {
   const out: Values = {};
   for (const f of t.fields) if (f.fact) out[f.key] = factValue(f.fact, facts);
   if (t.kind === "w9") {
@@ -49,7 +47,7 @@ export function prefill(t: TemplateInfo, facts: Facts): Values {
   }
   if (t.kind === "nda") {
     out.purpose = NDA_DEFAULT_PURPOSE;
-    out.effective_date = today();
+    out.effective_date = today;
   }
   return out;
 }
@@ -146,7 +144,7 @@ export function fillW9Form(doc: PDFDocument, v: Values, facts: Facts) {
   }
 }
 
-async function renderW9(v: Values, facts: Facts): Promise<Rendered> {
+async function renderW9(v: Values, facts: Facts, today: string): Promise<Rendered> {
   const doc = await loadW9();
   fillW9Form(doc, v, facts);
   const form = doc.getForm();
@@ -156,7 +154,7 @@ async function renderW9(v: Values, facts: Facts): Promise<Rendered> {
     const italic = await doc.embedFont(StandardFonts.TimesRomanItalic);
     const plain = await doc.embedFont(StandardFonts.Helvetica);
     page.drawText(v.signature, { x: 125, y: 196, size: 13, font: italic, color: rgb(0.05, 0.1, 0.35) });
-    page.drawText(today(), { x: 410, y: 197, size: 10, font: plain, color: rgb(0.05, 0.1, 0.35) });
+    page.drawText(today, { x: 410, y: 197, size: 10, font: plain, color: rgb(0.05, 0.1, 0.35) });
   }
   form.flatten();
   doc.setProducer("ShipShape");
@@ -164,7 +162,7 @@ async function renderW9(v: Values, facts: Facts): Promise<Rendered> {
     bytes: await doc.save(),
     title: `W-9 ${v.business_name || v.name}${signed ? "" : " (unsigned)"}`.slice(0, 200),
     counterparty: v.requester ? v.requester.split("\n")[0].slice(0, 200) : null,
-    issuedOn: today(),
+    issuedOn: today,
     expiresOn: null,
   };
 }
@@ -245,6 +243,7 @@ async function renderNda(v: Values): Promise<Rendered> {
   };
 }
 
-export function render(t: TemplateInfo, v: Values, facts: Facts): Promise<Rendered> {
-  return t.kind === "w9" ? renderW9(v, facts) : renderNda(v);
+/** `today` is the viewer's date: the W-9's certification date and issue date where the signer is. */
+export function render(t: TemplateInfo, v: Values, facts: Facts, today: string): Promise<Rendered> {
+  return t.kind === "w9" ? renderW9(v, facts, today) : renderNda(v);
 }

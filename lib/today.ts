@@ -1,0 +1,43 @@
+/**
+ * "Today" is a calendar date, and whose calendar depends on where the person is: at 7 pm in
+ * California it is still the 31st, while UTC has moved to the 1st. The browser reports its time
+ * zone in a cookie; the server turns that into the viewer's date once per request, and every
+ * expiry check and dated form uses that date. Unknown or junk zone: UTC.
+ */
+
+export const TZ_COOKIE = "ss_tz";
+
+/** An IANA zone name the runtime knows (`America/Los_Angeles`, `Etc/GMT+5`, `UTC`). */
+export function isTimeZone(s: string): boolean {
+  if (!/^[A-Za-z][A-Za-z0-9_+/-]{0,63}$/.test(s)) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: s });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The calendar date in a zone as YYYY-MM-DD (en-CA formats dates that way). */
+export function todayIn(timeZone: string, now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+/** The UTC date: the cron's day, and the fallback when the viewer's zone is unknown. */
+export const isoToday = () => todayIn("UTC");
+
+/** Adds days to a YYYY-MM-DD date. */
+export function plusDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export type Validity = "none" | "ok" | "expiring" | "expired";
+
+/** Same rule as the documents SQL: expired after its last day, expiring within 30 days of it. */
+export function validityOn(expiresOn: string | null, today: string): Validity {
+  if (!expiresOn) return "none";
+  if (expiresOn < today) return "expired";
+  return expiresOn <= plusDays(today, 30) ? "expiring" : "ok";
+}

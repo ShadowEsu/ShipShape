@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, ValidityChip, fmtDay } from "@/components/app-ui";
 import { fmtDateTime } from "@/components/ui";
+import { PLANS } from "@/lib/plans";
 import { FACT_LABELS } from "@/lib/profile-fields";
 import { DOC_KINDS, getDocument } from "@/lib/server/documents";
 import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
@@ -31,6 +32,12 @@ const ACTIONS: Record<string, string> = {
   "esign.signed": "Signed",
   "esign.revoked": "Signature request withdrawn",
   "esign.review_downloaded": "File sent for signing downloaded",
+};
+
+/** What went wrong in a form posted from this page (see backToDocument in ../actions.ts). */
+const ERRORS: Record<string, string> = {
+  limit: `The Free plan holds ${PLANS.free.documents} active documents. Archive one, or upgrade, then restore this one.`,
+  closed: "This request was already signed or withdrawn, so there is nothing to withdraw.",
 };
 
 const REQUEST_STATUS: Record<SignatureRequestRow["status"], string> = {
@@ -68,9 +75,11 @@ function fieldSources(fields: Record<string, string>, template: TemplateInfo | u
     }));
 }
 
-export default async function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function DocumentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const ctx = await requireWorkspace();
   const { id } = await params;
+  const { error } = await searchParams;
+  const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
   const got = await getDocument(ctx, id);
   if (!got) notFound();
   const { doc, versions, audit } = got;
@@ -87,6 +96,11 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           ← Documents
         </Link>
       </nav>
+      {formError && (
+        <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+          {formError}
+        </p>
+      )}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="min-w-0 space-y-6">
           <article className="rounded-2xl border border-line bg-paper p-6 shadow-sm sm:p-8">

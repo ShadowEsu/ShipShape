@@ -61,8 +61,9 @@ export default function PrivacyPage() {
 
       <h2>Cookies</h2>
       <p>
-        One sign-in cookie that lasts up to 12 hours, and a cookie that keeps a passport, signing or upload link open for 30 minutes
-        on that link&apos;s own pages. No advertising or analytics cookies, and no tracking scripts.
+        One sign-in cookie that lasts up to 12 hours, a cookie that keeps a passport, signing or upload link open for 30 minutes
+        on that link&apos;s own pages, and one that holds your browser&apos;s time zone for a year so dates are judged on your own
+        calendar day. No advertising or analytics cookies, and no tracking scripts.
       </p>
 
       <h2>Who else handles your data</h2>
@@ -108,6 +109,10 @@ export default function PrivacyPage() {
           first. If a step can&apos;t finish straight away, we keep a note of your account&apos;s ID and when you asked (for stored
           files, a list of the files still to remove, which names no one), and finish the deletion by ourselves within two days; the
           note goes with it. Copies other people already downloaded stay with them, and Stripe keeps payment records as the law requires.
+        </li>
+        <li>
+          <strong>Sample workspaces:</strong> a &ldquo;Try the sample&rdquo; visit makes a workspace of made-up data and no email
+          address. It is deleted by itself two days after it was made, files included.
         </li>
         <li>
           Deleted data can remain in our providers&apos; backups until those backups expire; the exact period will be stated here

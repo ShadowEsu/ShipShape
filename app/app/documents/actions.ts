@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, RedirectType } from "next/navigation";
 import { z } from "zod";
 import { setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
-import { UserError } from "@/lib/server/errors";
+import { PlanLimit, UserError } from "@/lib/server/errors";
 import { requestSignature, revokeSignatureRequest } from "@/lib/server/esign";
 import { GateClosed } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
@@ -84,12 +84,28 @@ export async function addVersion(_prev: FormState, data: FormData): Promise<Form
   return { saved: true };
 }
 
+/**
+ * Back to the document's page after a plain form post. A code makes the page say what went wrong
+ * (ERRORS in [id]/page.tsx); without one, a message from an earlier attempt leaves the address.
+ */
+function backToDocument(id: string, error?: "limit" | "closed"): never {
+  redirect(error ? `/app/documents/${id}?error=${error}` : `/app/documents/${id}`, RedirectType.replace);
+}
+
 export async function archive(data: FormData) {
   const ctx = await requireWorkspace();
   const id = documentId(data);
-  await setArchived(ctx, id, data.get("archived") === "1");
+  try {
+    await setArchived(ctx, id, data.get("archived") === "1");
+  } catch (e) {
+    if (e instanceof PlanLimit) backToDocument(id, "limit");
+    // Otherwise the document isn't in this workspace any more, which its page shows.
+    if (e instanceof UserError) backToDocument(id);
+    throw e;
+  }
   revalidatePath("/app/documents");
   revalidatePath(`/app/documents/${id}`);
+  backToDocument(id);
 }
 
 export interface SignFormState {
@@ -119,6 +135,14 @@ export async function askToSign(_prev: SignFormState, data: FormData): Promise<S
 
 export async function withdrawSignature(data: FormData) {
   const ctx = await requireWorkspace();
-  await revokeSignatureRequest(ctx, String(data.get("request") ?? ""));
-  revalidatePath(`/app/documents/${documentId(data)}`);
+  const id = documentId(data);
+  try {
+    await revokeSignatureRequest(ctx, String(data.get("request") ?? ""));
+  } catch (e) {
+    // The request isn't open any more: signed in the meantime, or a second click on Withdraw.
+    if (e instanceof UserError) backToDocument(id, "closed");
+    throw e;
+  }
+  revalidatePath(`/app/documents/${id}`);
+  backToDocument(id);
 }

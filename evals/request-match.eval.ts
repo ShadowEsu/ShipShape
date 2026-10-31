@@ -6,6 +6,7 @@ import { AI_MODEL, readRequest, setAiProviderForTests, type AiRequest, type Requ
 import { asUser } from "@/lib/server/db";
 import type { DocKind } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "../tests/support/db";
 
 /**
@@ -178,7 +179,7 @@ const runner = async (req: AiRequest) => {
 async function workspace(): Promise<Ctx> {
   const userId = await db.user(`eval${++seq}@example.com`);
   const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Eval Co (sample)') as id"));
-  return { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Eval Co (sample)", role: "owner" };
+  return { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Eval Co (sample)", role: "owner", today: isoToday() };
 }
 
 describe.skipIf(!RUNNER)(`request matching on ${AI_MODEL}`, () => {

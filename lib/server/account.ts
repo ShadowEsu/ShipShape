@@ -6,8 +6,8 @@ import { asService, asUser, pgErrorCode } from "./db";
 import { downloadName } from "./documents";
 import { UserError } from "./errors";
 import { loadProfile, NeedsRecentSignIn, type Ctx } from "./profile";
-import { authIsRecent } from "./session";
-import { blobStore } from "./storage";
+import { recentEnough } from "./session";
+import { blobStore, ObjectMissing } from "./storage";
 import { zip } from "./zip";
 
 /** delete_my_account's refusal when a billed workspace it would delete wasn't handled (0019). */
@@ -15,9 +15,6 @@ const BILLING_NOT_HANDLED = "SS001";
 
 /** Exports are built in memory; past this, the user is asked to contact us instead. */
 export const EXPORT_MAX_BYTES = 200 * 1024 * 1024;
-
-// Sample workspaces hold only made-up data and their visitors have no password to re-enter.
-const recentEnough = (ctx: Ctx) => ctx.demo || authIsRecent(ctx);
 
 interface ExportDoc {
   id: string;
@@ -86,7 +83,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
   if (ctx.role === "member") throw new UserError("Only owners and admins can export the workspace.");
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to export.");
 
-  const { docs, versions, vendors, vendorFiles, history } = await asUser(ctx.userId, async (tx) => {
+  const { docs, versions, vendors, vendorFiles } = await asUser(ctx.userId, async (tx) => {
     const docs = await tx.query<ExportDoc>(
       "select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on, d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.created_at::text as created_at from app.documents d where d.org_id = $1 order by d.created_at, d.id",
       [ctx.orgId],
@@ -106,30 +103,37 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     if ([...versions, ...vendorFiles].reduce((n, v) => n + v.size_bytes, 0) > EXPORT_MAX_BYTES) {
       throw new UserError("This workspace is too large to export in one file. Write to us and we'll send it another way.");
     }
-    await tx.query("select app.audit_append($1, 'workspace.exported', $1)", [ctx.orgId]);
-    const history = await tx.query<ExportEvent>(
-      "select a.seq::text as seq, a.at::text as at, a.actor::text as actor, a.action, a.object_id::text as object_id, a.detail_sha256 from app.audit_log a where a.org_id = $1 order by a.seq",
-      [ctx.orgId],
-    );
-    return { docs, versions, vendors, vendorFiles, history };
+    return { docs, versions, vendors, vendorFiles };
   });
 
   const profile = await loadProfile(ctx);
   const store = blobStore();
   const files: { name: string; data: Uint8Array }[] = [];
-  const listed: (ExportDoc & { versions: (Omit<ExportVersion, "storage_path" | "document_id"> & { file: string })[] })[] = docs.map((d) => ({ ...d, versions: [] }));
+  // A file whose stored object is gone (review #17) is named in the README and listed with no file,
+  // rather than making the whole workspace impossible to export. A storage fault still throws.
+  const missing: string[] = [];
+  const fetch = async (file: string, storagePath: string): Promise<string | null> => {
+    try {
+      files.push({ name: file, data: await store.get(storagePath) });
+      return file;
+    } catch (e) {
+      if (!(e instanceof ObjectMissing)) throw e;
+      missing.push(file);
+      return null;
+    }
+  };
+  const listed: (ExportDoc & { versions: (Omit<ExportVersion, "storage_path" | "document_id"> & { file: string | null })[] })[] = docs.map((d) => ({ ...d, versions: [] }));
   const byId = new Map(listed.map((d) => [d.id, d]));
 
   for (const v of versions) {
     const doc = byId.get(v.document_id);
     if (!doc) continue;
     // The short id keeps two documents with the same title apart.
-    const file = `documents/${doc.id.slice(0, 8)} ${downloadName(doc.title, v.version, v.mime)}`;
-    files.push({ name: file, data: await store.get(v.storage_path) });
+    const file = await fetch(`documents/${doc.id.slice(0, 8)} ${downloadName(doc.title, v.version, v.mime)}`, v.storage_path);
     doc.versions.push({ version: v.version, mime: v.mime, size_bytes: v.size_bytes, sha256: v.sha256, origin: v.origin, created_at: v.created_at, file });
   }
 
-  const listedVendors: (ExportVendor & { files: (Omit<ExportVendorFile, "storage_path" | "vendor_id"> & { file: string })[] })[] = vendors.map((v) => ({
+  const listedVendors: (ExportVendor & { files: (Omit<ExportVendorFile, "storage_path" | "vendor_id"> & { file: string | null })[] })[] = vendors.map((v) => ({
     ...v,
     files: [],
   }));
@@ -138,10 +142,19 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     const vendor = vendorById.get(f.vendor_id);
     if (!vendor) continue;
     const { storage_path, vendor_id: _vendor, ...details } = f;
-    const file = `vendor-files/${f.id.slice(0, 8)} ${f.filename}`;
-    files.push({ name: file, data: await store.get(storage_path) });
+    const file = await fetch(`vendor-files/${f.id.slice(0, 8)} ${f.filename}`, storage_path);
     vendor.files.push({ ...details, file });
   }
+  if (missing.length) console.error(`export: ${missing.length} stored files were not found`);
+
+  // Recorded once the files are in hand, so the history never claims an export that didn't happen.
+  const history = await asUser(ctx.userId, async (tx) => {
+    await tx.query("select app.audit_append($1, 'workspace.exported', $1)", [ctx.orgId]);
+    return tx.query<ExportEvent>(
+      "select a.seq::text as seq, a.at::text as at, a.actor::text as actor, a.action, a.object_id::text as object_id, a.detail_sha256 from app.audit_log a where a.org_id = $1 order by a.seq",
+      [ctx.orgId],
+    );
+  });
 
   const now = new Date();
   const enc = new TextEncoder();
@@ -157,6 +170,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     "history.csv      the workspace history, oldest first",
     "",
     "Check a file against its fingerprint with: shasum -a 256 <file>",
+    ...(missing.length ? ["", "NOT INCLUDED: the stored copy of these files could not be found. Their details and fingerprints are still listed.", ...missing.map((m) => `  ${m}`)] : []),
   ].join("\n");
 
   return {
@@ -216,16 +230,23 @@ export async function deletionPending(userId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+/** The daily run's work budget: well inside the cron function's 60 s limit (Security N-091b, review #15). */
+export const DAILY_RUN_BUDGET_MS = 50_000;
+
 /**
- * The daily run (Security CG-3): finishes every recorded deletion older than PENDING_AFTER. Each
- * one that fails stays recorded for the next run; only error names are logged.
+ * The daily run (Security CG-3): finishes every recorded deletion older than PENDING_AFTER, until
+ * none are left or `until` (ms since epoch) passes; the rest wait for the next run. Each one that
+ * fails stays recorded for the next run; only error names are logged.
  */
-export async function finishDeletions(): Promise<{ finished: number; failed: number }> {
+export async function finishDeletions(until = Date.now() + DAILY_RUN_BUDGET_MS): Promise<{ finished: number; failed: number }> {
   const due = await asService((tx) =>
     tx.query<{ user_id: string }>("select user_id from app.deletion_requests where requested_at < now() - $1::interval order by requested_at limit 100", [PENDING_AFTER]),
   );
   let finished = 0;
+  let tried = 0;
   for (const { user_id } of due) {
+    if (Date.now() >= until) break;
+    tried++;
     try {
       await finishDeletion(user_id, await cancelSubscriptionsBeforeDeletion(user_id));
       finished++;
@@ -233,7 +254,38 @@ export async function finishDeletions(): Promise<{ finished: number; failed: num
       console.error(`account deletion: a recorded deletion didn't finish (${e instanceof Error ? e.name : "unknown"})`);
     }
   }
-  return { finished, failed: due.length - finished };
+  return { finished, failed: tried - finished };
+}
+
+/** Sample visitors' sessions last 12 hours; their accounts go after this, with everything in them. */
+const SAMPLE_KEPT_FOR = "2 days";
+const SAMPLE_BATCH = 50;
+
+/**
+ * The daily run: deletes sample-workspace visitors' accounts older than SAMPLE_KEPT_FOR, oldest
+ * first, up to SAMPLE_BATCH a run or until `until` passes, with the same steps as a recorded
+ * deletion. Sample workspaces are never billed, so the database refusing over billing counts as a
+ * failure and isn't retried; one already gone counts as purged. Only counts and error names are logged.
+ */
+export async function purgeSampleAccounts(until = Date.now() + DAILY_RUN_BUDGET_MS): Promise<{ purged: number; failed: number }> {
+  const due = await asService((tx) =>
+    tx.query<{ id: string }>("select id from auth.users where is_anonymous and created_at < now() - $1::interval order by created_at limit $2", [SAMPLE_KEPT_FOR, SAMPLE_BATCH]),
+  );
+  let purged = 0;
+  let tried = 0;
+  for (const { id } of due) {
+    if (Date.now() >= until) break;
+    tried++;
+    try {
+      // A sample visitor has no Cognito identity, so this finds none and calls nothing.
+      await deleteSignIn(id);
+      await removeAfterDeletion(await deleteRows(id, []));
+      purged++;
+    } catch (e) {
+      console.error(`sample purge: a sample account wasn't deleted (${e instanceof Error ? e.name : "unknown"})`);
+    }
+  }
+  return { purged, failed: tried - purged };
 }
 
 /**
@@ -246,18 +298,26 @@ export async function finishDeletions(): Promise<{ finished: number; failed: num
  */
 async function finishDeletion(userId: string, handled: string[]): Promise<void> {
   await deleteSignIn(userId);
-  const deleteRows = (orgs: string[]) =>
-    asUser(userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account($1::uuid[])", [orgs]));
   let rows: { storage_path: string }[];
   try {
-    rows = await deleteRows(handled);
+    rows = await deleteRows(userId, handled);
   } catch (e) {
     if (pgErrorCode(e) !== BILLING_NOT_HANDLED) throw e;
-    rows = await deleteRows(await cancelSubscriptionsBeforeDeletion(userId));
+    rows = await deleteRows(userId, await cancelSubscriptionsBeforeDeletion(userId));
   }
-  // After the commit. The deletion queued these paths (app.storage_cleanup, 0028), so if storage
-  // fails now they stay queued and the daily run retries them (Security N-091a); only the count is
-  // logged.
+  await removeAfterDeletion(rows);
+}
+
+/** Deletes the user's rows (app.delete_my_account) and returns the stored files they leave behind. */
+const deleteRows = (userId: string, handled: string[]) =>
+  asUser(userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account($1::uuid[])", [handled]));
+
+/**
+ * After the commit. The deletion queued these paths (app.storage_cleanup, 0028), so if storage
+ * fails now they stay queued and the daily run retries them (Security N-091a); only the count is
+ * logged.
+ */
+async function removeAfterDeletion(rows: { storage_path: string }[]): Promise<void> {
   try {
     await removeQueued(rows.map((r) => r.storage_path));
   } catch {
@@ -273,24 +333,34 @@ async function removeQueued(paths: string[]): Promise<void> {
 }
 
 const CLEANUP_BATCH = 1000;
-/** Well inside the cron function's time limit, so one run clears even a large account (Security N-091b). */
-const CLEANUP_BUDGET_MS = 50_000;
 
 /**
  * The daily run: removes stored files an account deletion couldn't remove (Security N-091a), in
- * batches of 1,000 until none are left or 50 seconds have passed. Returns how many; a storage
- * failure throws, so the run reports it (error name only).
+ * batches of 1,000 until none are left or `until` passes. Returns how many. A batch storage
+ * refuses (one key under a policy or lock) goes to the back of the queue so the paths behind it
+ * still get their turn (review #16); the run then still throws, so it reports the failure (error
+ * name only).
  */
-export async function retryStorageCleanup(): Promise<number> {
-  const until = Date.now() + CLEANUP_BUDGET_MS;
+export async function retryStorageCleanup(until = Date.now() + DAILY_RUN_BUDGET_MS): Promise<number> {
+  const started = new Date();
   let removed = 0;
+  let refused: unknown = null;
   for (;;) {
     const queued = await asService((tx) =>
-      tx.query<{ path: string }>("select path from app.storage_cleanup order by queued_at, path limit $1", [CLEANUP_BATCH]),
+      tx.query<{ path: string }>("select path from app.storage_cleanup where queued_at < $2 order by queued_at, path limit $1", [CLEANUP_BATCH, started]),
     );
     const paths = queued.map((q) => q.path);
-    await removeQueued(paths);
-    removed += paths.length;
-    if (paths.length < CLEANUP_BATCH || Date.now() >= until) return removed;
+    if (!paths.length) break;
+    try {
+      await removeQueued(paths);
+      removed += paths.length;
+    } catch (e) {
+      await asService((tx) => tx.query("update app.storage_cleanup set queued_at = now() where path = any($1::text[])", [paths]));
+      console.error(`stored-file cleanup: a batch of ${paths.length} wasn't removed (${e instanceof Error ? e.name : "unknown"}); it goes to the back of the queue`);
+      refused = e;
+    }
+    if (paths.length < CLEANUP_BATCH || Date.now() >= until) break;
   }
+  if (refused) throw refused;
+  return removed;
 }

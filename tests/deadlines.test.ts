@@ -4,11 +4,12 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { GET as cron } from "@/app/api/cron/reminders/route";
 import { asService, asUser } from "@/lib/server/db";
-import { deadlinesIcs, listDeadlines, listOutbox, runReminders, type Deadline } from "@/lib/server/deadlines";
+import { deadlinesIcs, fold, listDeadlines, listOutbox, runReminders, type Deadline } from "@/lib/server/deadlines";
 import { listDocuments } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 let db: TestDb;
@@ -26,7 +27,7 @@ async function freshSample(): Promise<Ctx> {
   const userId = await db.user(null);
   const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
   await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
-  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner" };
+  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner", today: isoToday() };
 }
 
 /** A real Pro workspace with one owner, and a way to add documents that expire in so many days. */
@@ -166,6 +167,19 @@ describe("reminders", () => {
     const sent = await db.root((tx) => tx.query<{ to_email: string }>("select to_email from app.outbox where org_id = $1 order by to_email", [pro.orgId]));
     expect(sent.map((m) => m.to_email)).toEqual(["admin@example.com", "boss@example.com"]);
   });
+
+  // Real Postgres only: PGlite has one connection, so two runs never overlap there.
+  it.skipIf(!process.env.SHIPSHAPE_PG_TEST_URL)("two runs at the same moment (the cron delivered twice) send each reminder once (review #10)", async () => {
+    const pro = await proWorkspace("twice@example.com");
+    await pro.expiresIn("Elevator permit", 7);
+    // Opens the pool's connections first, so the two runs really overlap.
+    await Promise.all([1, 2, 3].map(() => asService((tx) => tx.query("select pg_sleep(0.1)"))));
+    const runs = await Promise.all([runReminders(today, pro.orgId), runReminders(today, pro.orgId)]);
+    expect(runs.map((r) => r.sent + r.failed).sort()).toEqual([0, 1]);
+    expect(runs.map((r) => r.failed)).toEqual([0, 0]);
+    const sent = await db.root((tx) => tx.query<{ to_email: string }>("select to_email from app.outbox where org_id = $1", [pro.orgId]));
+    expect(sent.map((m) => m.to_email)).toEqual(["twice@example.com"]);
+  });
 });
 
 describe("calendar file", () => {
@@ -193,6 +207,15 @@ describe("calendar file", () => {
     expect(ics).toContain("X-WR-CALNAME:A\\, B\\; C deadlines");
     expect(ics).toContain("Permit\\; zone A\\, lot 7");
     expect(ics.split("\r\n").every((l) => Buffer.byteLength(l) <= 75)).toBe(true);
+  });
+
+  it("never folds a line in the middle of an emoji (review #21)", () => {
+    // "SUMMARY:" plus 64 letters is 72 bytes; the 4-byte emoji would be cut after its first half.
+    const line = `SUMMARY:${"a".repeat(64)}😀 expires`;
+    const [first, second] = fold(line).split("\r\n");
+    expect(Buffer.byteLength(first)).toBeLessThanOrEqual(75);
+    expect(first.endsWith("a")).toBe(true); // a lone high surrogate would be 3 bytes of U+FFFD once written
+    expect(second).toBe(" 😀 expires");
   });
 
   it("keeps a date that falls today and drops one that passed yesterday", () => {

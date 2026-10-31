@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Validity } from "@/lib/server/documents";
+import type { Validity } from "@/lib/today";
 
 export function PageHeader({ eyebrow, title, children }: { eyebrow?: string; title: string; children?: React.ReactNode }) {
   return (

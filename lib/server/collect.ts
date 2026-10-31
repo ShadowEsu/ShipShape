@@ -38,7 +38,9 @@ const text = (max: number, required: string) =>
 const NewVendor = z.object({
   name: text(120, "Give the vendor a name."),
   email: z
-    .union([z.literal(""), z.email("That email address doesn't look right.").max(254)])
+    .string()
+    .trim()
+    .pipe(z.union([z.literal(""), z.email("That email address doesn't look right.").max(254)]))
     .optional()
     .transform((s) => s || null),
   requested: z
@@ -98,8 +100,8 @@ const VENDOR_SQL = `
   select v.id, v.name, v.email, v.status, k.kind, f.id as file_id, f.received_at::text as received_at, f.expires_on::text as expires_on,
          case when f.id is null then 'missing'
               when f.expires_on is null then 'ok'
-              when f.expires_on < current_date then 'expired'
-              when f.expires_on <= current_date + 30 then 'expiring'
+              when f.expires_on < $4::date then 'expired'
+              when f.expires_on <= $4::date + 30 then 'expiring'
               else 'ok' end as state,
          (select count(*)::int from app.vendor_links l where l.vendor_id = v.id and l.revoked_at is null and l.expires_at > now()) as open_links
   from app.vendors v
@@ -125,7 +127,7 @@ interface VendorSqlRow {
 }
 
 async function queryVendors(ctx: Ctx, onlyId: string | null, status: "active" | "archived" | null): Promise<VendorRow[]> {
-  const rows = await asUser(ctx.userId, (tx) => tx.query<VendorSqlRow>(VENDOR_SQL, [ctx.orgId, onlyId, status]));
+  const rows = await asUser(ctx.userId, (tx) => tx.query<VendorSqlRow>(VENDOR_SQL, [ctx.orgId, onlyId, status, ctx.today]));
   const byId = new Map<string, VendorRow>();
   for (const r of rows) {
     if (!isKind(r.kind)) continue;

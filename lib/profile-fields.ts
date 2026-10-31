@@ -40,20 +40,23 @@ export type ProfileKey =
   | "signer_name"
   | "signer_title";
 
+// Limits fit the forms these facts fill (lib/templates/catalog.ts): a W-9 name or company line holds
+// 120 characters, a signer's name or title 80, an address line 120 (street plus suite, joined with
+// ", "), a city-state-zip line 120, a notice email 160. A saved fact never fails a form it prefills.
 export const PROFILE_FIELDS: ProfileField[] = [
-  { key: "legal_name", label: "Legal name", hint: "Exactly as the IRS has it (for a sole proprietor, the owner's name).", autoComplete: "organization", max: 200 },
-  { key: "dba", label: "Business name (DBA)", hint: "If different from the legal name.", max: 200 },
-  { key: "address_line1", label: "Street address", autoComplete: "address-line1", max: 200 },
-  { key: "address_line2", label: "Suite or unit", autoComplete: "address-line2", max: 200 },
-  { key: "city", label: "City", autoComplete: "address-level2", max: 100 },
-  { key: "state", label: "State", autoComplete: "address-level1", max: 50 },
+  { key: "legal_name", label: "Legal name", hint: "Exactly as the IRS has it (for a sole proprietor, the owner's name).", autoComplete: "organization", max: 120 },
+  { key: "dba", label: "Business name (DBA)", hint: "If different from the legal name.", max: 120 },
+  { key: "address_line1", label: "Street address", autoComplete: "address-line1", max: 80 },
+  { key: "address_line2", label: "Suite or unit", autoComplete: "address-line2", max: 38 },
+  { key: "city", label: "City", autoComplete: "address-level2", max: 60 },
+  { key: "state", label: "State", autoComplete: "address-level1", max: 30 },
   { key: "postal_code", label: "ZIP code", autoComplete: "postal-code", max: 20 },
   { key: "phone", label: "Phone", autoComplete: "tel", max: 40 },
-  { key: "email", label: "Business email", autoComplete: "email", max: 200 },
+  { key: "email", label: "Business email", autoComplete: "email", max: 160 },
   { key: "website", label: "Website", autoComplete: "url", max: 200 },
   { key: "state_of_formation", label: "State of formation", hint: "Where the business was registered.", max: 50 },
-  { key: "signer_name", label: "Who signs", hint: "The person who usually signs for the business.", autoComplete: "name", max: 200 },
-  { key: "signer_title", label: "Their title", autoComplete: "organization-title", max: 100 },
+  { key: "signer_name", label: "Who signs", hint: "The person who usually signs for the business.", autoComplete: "name", max: 80 },
+  { key: "signer_title", label: "Their title", autoComplete: "organization-title", max: 80 },
 ];
 
 export const FACT_LABELS: Record<string, string> = {

@@ -495,6 +495,15 @@ describe("rate-limit fingerprints (Security C-3 INFO)", () => {
     expect(left.map((r) => r.key)).toEqual(["fresh"]);
   });
 
+  it("a rate hit only counts; clearing old windows is the purge's job alone (review #22: the sweep read the whole table on every hit)", async () => {
+    await db.root((tx) => tx.query("insert into app.rate_hits (bucket, key, window_start, n) values ('probe', 'stale', now() - interval '2 days', 1)"));
+    await asService((tx) => tx.query("select app.rate_hit('probe', 'live', 60, 5)"));
+    const after = await db.root((tx) => tx.query<{ key: string }>("select key from app.rate_hits where bucket = 'probe' and key in ('live', 'stale') order by key"));
+    expect(after.map((r) => r.key)).toEqual(["live", "stale"]);
+    await asService((tx) => tx.query("select app.purge_rate_hits()"));
+    expect(await db.root((tx) => tx.query("select 1 from app.rate_hits where bucket = 'probe' and key = 'stale'"))).toEqual([]);
+  });
+
   it("rateLimited refuses a window longer than an hour, which the purge would clear while it still counts", async () => {
     await expect(rateLimited("probe-window", "k", 1, 3601)).rejects.toThrow(/probe-window/);
     expect(await rateLimited("probe-window", "k", 1, 3600)).toBe(false);
