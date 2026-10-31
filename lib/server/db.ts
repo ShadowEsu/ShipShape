@@ -145,12 +145,18 @@ export function setDriverForTests(d: Driver) {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Every transaction states who it runs for, plus limits so a stuck request can't hold locks for
+// long (a workspace's history lock stops every writer in it): a statement, lock waits included,
+// gets 30 s; a transaction left open and idle (its function killed halfway, e.g. while storing a
+// file) is ended after 60 s, which releases its locks. Transaction-local, so any pooler is fine.
+const START = "select set_config('request.jwt.claims', $1, true), set_config('statement_timeout', '30s', true), set_config('idle_in_transaction_session_timeout', '60s', true)";
+
 /** Runs `fn` as the signed-in user. Row level security decides what they can see and change. */
 export async function asUser<T>(userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
   if (!UUID.test(userId)) throw new Error("Invalid user id");
   return (await getDriver()).transaction(async (tx) => {
     await tx.query("set local role authenticated");
-    await tx.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: userId, role: "authenticated" })]);
+    await tx.query(START, [JSON.stringify({ sub: userId, role: "authenticated" })]);
     return fn(tx);
   });
 }
@@ -159,7 +165,7 @@ export async function asUser<T>(userId: string, fn: (tx: Tx) => Promise<T>): Pro
 export async function asAnon<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   return (await getDriver()).transaction(async (tx) => {
     await tx.query("set local role anon");
-    await tx.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ role: "anon" })]);
+    await tx.query(START, [JSON.stringify({ role: "anon" })]);
     return fn(tx);
   });
 }
@@ -168,7 +174,7 @@ export async function asAnon<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
 export async function asService<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   return (await getDriver()).transaction(async (tx) => {
     await tx.query("set local role service_role");
-    await tx.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ role: "service_role" })]);
+    await tx.query(START, [JSON.stringify({ role: "service_role" })]);
     return fn(tx);
   });
 }
