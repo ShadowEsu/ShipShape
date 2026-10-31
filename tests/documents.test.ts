@@ -343,4 +343,20 @@ describe("document details", () => {
     }
     expect((await getDocument(sample, doc.id))?.doc.expires_on).toBe("9999-12-31");
   });
+
+  it("keeps a title to one line of text in any language; a line break or control character is a form error", async () => {
+    const [doc] = await listDocuments(sample);
+    await updateDocument(sample, doc.id, { title: "Bail commercial – Société Générale 東京", kind: "agreement" });
+    for (const bad of ["Lease\nAddendum", "Lease\u0000", "Lease\tA", "Lease\u0085"]) {
+      await expect(updateDocument(sample, doc.id, { title: bad, kind: "agreement" })).rejects.toThrow(z.ZodError);
+    }
+    expect((await getDocument(sample, doc.id))?.doc.title).toBe("Bail commercial – Société Générale 東京");
+  });
+
+  it("search ignores control characters instead of failing", async () => {
+    const [doc] = await listDocuments(sample);
+    await updateDocument(sample, doc.id, { title: "Umbrella liability policy", kind: "other" });
+    expect((await listDocuments(sample, { q: "umbrella" })).map((d) => d.id)).toEqual([doc.id]);
+    expect((await listDocuments(sample, { q: "umbrella\u0000" })).map((d) => d.id)).toEqual([doc.id]);
+  });
 });
