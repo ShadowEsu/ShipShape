@@ -53,6 +53,19 @@ export function prefill(t: TemplateInfo, facts: Facts): Values {
   return out;
 }
 
+/**
+ * A template's values from its posted form. Browsers send a text box's line breaks as CRLF (Security
+ * R2-6); validation and the PDF fonts take "\n", so CRLF and a lone CR become "\n".
+ */
+export function formValues(t: TemplateInfo, data: FormData): Values {
+  const out: Values = {};
+  for (const f of t.fields) {
+    const v = data.get(f.key);
+    out[f.key] = typeof v === "string" ? v.replace(/\r\n?/g, "\n") : "";
+  }
+  return out;
+}
+
 export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const f of t.fields) {

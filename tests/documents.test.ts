@@ -1,12 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PDFPage } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { asService, asUser } from "@/lib/server/db";
 import { downloadUrl, fillTemplate, getDocument, listDocuments, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import { checkUpload } from "@/lib/server/files";
-import { fillW9Form, loadW9, prefill } from "@/lib/server/fill";
+import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
 import { GateClosed } from "@/lib/server/flags";
 import { factsForFill, NeedsRecentSignIn, revealEin, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
@@ -186,19 +187,23 @@ describe("W-9 fill", () => {
 });
 
 describe("Mutual NDA fill", () => {
+  const typed = {
+    effective_date: "2026-11-01",
+    mnda_term: "years",
+    mnda_years: "2",
+    conf_term: "perpetual",
+    governing_law: "California",
+    jurisdiction: "courts located in Springfield, CA",
+    p2_company: "Acme Sample Co",
+    p2_name: "Sam Example",
+    p2_notice: "legal@acme.example",
+  };
+
   it("makes an NDA whose MNDA Term sets the expiry date", async () => {
     const t = templateById("common-paper-mnda")!;
     const values = {
       ...prefill(t, await factsForFill(sample)),
-      effective_date: "2026-11-01",
-      mnda_term: "years",
-      mnda_years: "2",
-      conf_term: "perpetual",
-      governing_law: "California",
-      jurisdiction: "courts located in Springfield, CA",
-      p2_company: "Acme Sample Co",
-      p2_name: "Sam Example",
-      p2_notice: "legal@acme.example",
+      ...typed,
       purpose: "Evaluating a partnership.\nNothing else.", // a text box may hold line breaks
     };
     // A one-line field may not (Security F4-1).
@@ -208,6 +213,29 @@ describe("Mutual NDA fill", () => {
     expect(made.ok).toBe(true);
     const doc = (await getDocument(sample, made.ok ? made.id : ""))!.doc;
     expect(doc).toMatchObject({ kind: "nda", counterparty: "Acme Sample Co", issued_on: "2026-11-01", expires_on: "2028-11-01" });
+  });
+
+  it("takes a text box's line breaks as browsers post them (CRLF) and draws each line on its own (Security R2-6)", async () => {
+    const t = templateById("common-paper-mnda")!;
+    const data = new FormData();
+    const posted = { ...prefill(t, await factsForFill(sample)), ...typed, purpose: "Firstline of it.\r\nSecondline of it.\rThirdline of it." };
+    for (const [k, v] of Object.entries(posted)) data.set(k, v);
+    const values = formValues(t, data);
+    expect(values.purpose).toBe("Firstline of it.\nSecondline of it.\nThirdline of it.");
+    const drawn = vi.spyOn(PDFPage.prototype, "drawText");
+    try {
+      const made = await fillTemplate(sample, t.id, values, true);
+      expect(made.ok ? {} : made.errors).toEqual({});
+      const at = (word: string) => drawn.mock.calls.find(([text]) => text === word)?.[1];
+      const [first, second, third] = ["Firstline", "Secondline", "Thirdline"].map(at);
+      expect(first?.x).toBeDefined();
+      expect([second?.x, third?.x]).toEqual([first?.x, first?.x]);
+      expect(first?.y).toBeGreaterThan(second?.y ?? Infinity);
+      expect(second?.y).toBeGreaterThan(third?.y ?? Infinity);
+      expect(drawn.mock.calls.some(([text]) => text.includes("\r"))).toBe(false);
+    } finally {
+      drawn.mockRestore();
+    }
   });
 });
 

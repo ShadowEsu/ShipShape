@@ -392,6 +392,37 @@ describe("account deletion", () => {
     await expect(deleteAccount(a.ctx)).rejects.toThrow(/couldn't be cancelled just now/);
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toHaveLength(1);
   });
+
+  it("a co-owner leaving mid-deletion can't leave a deleted workspace billed (Security F5-r2)", async () => {
+    // The database refuses to delete a billed workspace whose billing wasn't handled.
+    const solo = await payingWorkspace();
+    await expect(asUser(solo.ctx.userId, (tx) => tx.query("select * from app.delete_my_account('{}'::uuid[])"))).rejects.toMatchObject({ code: "SS001" });
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [solo.ctx.orgId]))).toHaveLength(1);
+
+    // W is paying and co-owned by A and B; A also solely owns X, which has a Stripe customer.
+    const w = await payingWorkspace();
+    const a = w.ctx.userId;
+    const b = await db.user(`coowner${++seq}@example.com`);
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'owner')", [w.ctx.orgId, b]));
+    const [x] = await asUser(a, (tx) => tx.query<{ id: string }>("select app.create_workspace('Second Co') as id"));
+    await startCheckout({ ...w.ctx, orgId: x.id, name: "Second Co" }, true);
+
+    // While A's deletion is asking Stripe about X (W isn't A's to cancel yet), B deletes their account,
+    // which leaves A as W's only owner.
+    const list = fake.listSubscriptions.bind(fake);
+    let raced = false;
+    fake.listSubscriptions = async (customer: string) => {
+      if (!raced) {
+        raced = true;
+        await deleteAccount({ userId: b, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: w.ctx.orgId, name: "Real Co", role: "owner" });
+      }
+      return list(customer);
+    };
+    await deleteAccount(w.ctx);
+    expect(raced).toBe(true);
+    expect(fake.cancelled).toEqual([w.sub.id]);
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = any($1::uuid[])", [[w.ctx.orgId, x.id]]))).toEqual([]);
+  });
 });
 
 describe("plan limits, enforced by the server", () => {

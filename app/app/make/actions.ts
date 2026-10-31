@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { fillTemplate } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
+import { formValues } from "@/lib/server/fill";
 import { requireWorkspace } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
 
@@ -18,11 +19,7 @@ export async function fill(_prev: FillState, data: FormData): Promise<FillState>
   const ctx = await requireWorkspace();
   const t = templateById(String(data.get("template") ?? ""));
   if (!t) return { error: "Unknown template." };
-  const values: Record<string, string> = {};
-  for (const f of t.fields) {
-    const v = data.get(f.key);
-    values[f.key] = typeof v === "string" ? v : "";
-  }
+  const values = formValues(t, data);
   let id: string;
   try {
     const res = await fillTemplate(ctx, t.id, values, data.get("ack") === "on");

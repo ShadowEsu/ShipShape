@@ -138,7 +138,7 @@ describe("account deletion", () => {
   it("needs a recent sign-in in a real workspace, and only ever deletes the caller", async () => {
     const ctx = await sampleWorkspace();
     await expect(deleteAccount({ ...ctx, demo: false, authAt: Math.floor(Date.now() / 1000) - 3600 })).rejects.toThrow(NeedsRecentSignIn);
-    await expect(asAnon((tx) => tx.query("select * from app.delete_my_account()"))).rejects.toThrow(/permission denied/);
+    await expect(asAnon((tx) => tx.query("select * from app.delete_my_account('{}'::uuid[])"))).rejects.toThrow(/permission denied/);
     expect(await count("documents", ctx.orgId)).toBeGreaterThan(0);
   });
 });

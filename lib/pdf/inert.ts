@@ -1,4 +1,21 @@
-import { PDFArray, PDFDict, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, type PDFDocument, type PDFObject } from "pdf-lib";
+import {
+  concatTransformationMatrix,
+  drawObject,
+  PDFArray,
+  PDFBool,
+  PDFDict,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  PDFRef,
+  PDFStream,
+  PDFString,
+  popGraphicsState,
+  pushGraphicsState,
+  type PDFDocument,
+  type PDFObject,
+  type PDFPage,
+} from "pdf-lib";
 
 /**
  * Makes a PDF that ShipShape builds from someone's upload (a signed copy) unable to run anything
@@ -7,7 +24,7 @@ import { PDFArray, PDFDict, PDFHexString, PDFName, PDFRef, PDFStream, PDFString,
  * steps, a form XObject.
  *
  * 1. Pages (and any stray copy of one) keep only annotation types that just show something (F3-2).
- *    Form fields should be flattened into the page before copying (flattenForm), so no widget is left.
+ *    Form fields should be drawn into the page before copying (flattenWidgets), so no widget is left.
  * 2. Every object loses its script and trigger keys, and any /A that isn't a jump within the
  *    document or a web/mail link (F3-1, F3-3). Unsafe action objects are emptied wherever they sit.
  * 3. Objects nothing points to any more (a dropped attachment's file, say) are deleted, so they
@@ -18,14 +35,70 @@ export function makeInert(doc: PDFDocument): void {
   dropUnreachable(doc);
 }
 
-/** Fields become part of the page drawing; their scripts and widgets go. False if the form can't be flattened. */
-export function flattenForm(doc: PDFDocument): boolean {
-  try {
-    doc.getForm().flatten();
-    return true;
-  } catch {
-    return false;
+/**
+ * Draws each form field's current appearance into its page and removes the form (Security R2-3).
+ * Field by field: a widget with nothing to draw (no appearance, a missing state, hidden) is simply
+ * left out, and the form's own logic never runs, so ordinary forms always work. What gets drawn is
+ * each widget's stored appearance, which is what viewers show once /NeedAppearances is refused.
+ */
+export function flattenWidgets(doc: PDFDocument): void {
+  for (const page of doc.getPages()) {
+    const annots = page.node.lookup(ANNOTS);
+    if (!(annots instanceof PDFArray)) continue;
+    for (const entry of annots.asArray()) {
+      const widget = doc.context.lookup(entry);
+      if (widget instanceof PDFDict && nameAt(widget, SUBTYPE) === WIDGET) drawWidget(page, widget);
+    }
   }
+  doc.catalog.delete(ACROFORM);
+}
+
+/**
+ * True when viewers can disagree about what the file shows (Security R2-1): a layer hidden by
+ * default, a form that asks the viewer to redraw its fields, or an object defined twice in a file
+ * with a single revision. The signer reviews ShipShape's own copy either way; these are refused so
+ * nobody is shown one thing in their viewer and another in ShipShape's.
+ */
+export function viewerDependent(doc: PDFDocument, raw: Uint8Array): boolean {
+  const oc = doc.catalog.lookup(OCPROPERTIES);
+  const config = oc instanceof PDFDict ? oc.lookup(D) : undefined;
+  if (config instanceof PDFDict) {
+    const off = config.lookup(OFF);
+    if ((off instanceof PDFArray && off.size() > 0) || nameAt(config, BASE_STATE) === OFF) return true;
+  }
+  const form = doc.catalog.lookup(ACROFORM);
+  const redraw = form instanceof PDFDict ? form.lookup(NEED_APPEARANCES) : undefined;
+  if (redraw instanceof PDFBool && redraw.asBoolean()) return true;
+  const text = new TextDecoder("latin1").decode(raw);
+  const revisions = text.match(/startxref/g)?.length ?? 0;
+  if (revisions > 1) return false; // later revisions legitimately redefine objects
+  const seen = new Set<string>();
+  for (const m of text.matchAll(/(?<![0-9])(\d+)\s+(\d+)\s+obj\b/g)) {
+    const key = `${m[1]} ${m[2]}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}
+
+/**
+ * Before copyPages (Security R2-2): a link's target page becomes its page number. Copying would
+ * otherwise drag each target along as a stray duplicate page outside the page tree, leaving every
+ * internal link dead. Targets that aren't pages of this document (named destinations, other files)
+ * are dropped. attachLinkTargets turns the numbers back into the copied pages.
+ */
+export function detachLinkTargets(doc: PDFDocument): void {
+  const pages = doc.getPages();
+  const index = new Map(pages.map((p, i) => [p.ref.tag, i]));
+  const toNumber = (target: PDFObject | undefined) => (target instanceof PDFRef ? index.get(target.tag) : undefined);
+  for (const page of pages) eachLink(page.node, (holder, key) => retarget(holder, key, toNumber));
+}
+
+/** After copyPages: page numbers left by detachLinkTargets point at the copied pages again. */
+export function attachLinkTargets(doc: PDFDocument): void {
+  const pages = doc.getPages();
+  const toRef = (target: PDFObject | undefined) => (target instanceof PDFNumber ? pages[target.asNumber()]?.ref : undefined);
+  for (const page of pages) eachLink(page.node, (holder, key) => retarget(holder, key, toRef));
 }
 
 const ANNOTATIONS = new Set(
@@ -36,7 +109,11 @@ const ANNOTATIONS = new Set(
 
 // Keys that trigger or carry scripts, other documents, media, attachments or links to other
 // annotations; none matters for how a page looks.
-const DROP_KEYS = ["JS", "AA", "OpenAction", "Next", "PresSteps", "Popup", "IRT", "EF", "RichMediaContent", "RichMediaSettings", "3DD"].map((k) => PDFName.of(k));
+const DROP_KEYS = [
+  "JS", "AA", "OpenAction", "Next", "PresSteps", "Popup", "IRT", "EF", "RichMediaContent", "RichMediaSettings", "3DD",
+  // Not run by viewers once nothing references them, but still payloads (Security R2-4).
+  "XFA", "RF", "AF", "PA",
+].map((k) => PDFName.of(k));
 // Action types other than a jump or a link. /S also names structure roles, transitions and border
 // styles, so only these exact action names mark a dictionary as an action to empty.
 const UNSAFE_ACTIONS = new Set(
@@ -52,7 +129,115 @@ const TYPE = PDFName.of("Type");
 const ACTION = PDFName.of("Action");
 const ANNOTS = PDFName.of("Annots");
 const SUBTYPE = PDFName.of("Subtype");
-const SAFE_URI = /^(https?|mailto):/i;
+// A mail link with a query can carry ?attach= for some mail programs (Security R2-7).
+const SAFE_URI = /^(https?:|mailto:[^?]*$)/i;
+const AP = PDFName.of("AP");
+const AS = PDFName.of("AS");
+const BASE_STATE = PDFName.of("BaseState");
+const BBOX = PDFName.of("BBox");
+const D = PDFName.of("D");
+const DEST = PDFName.of("Dest");
+const F = PDFName.of("F");
+const FORM = PDFName.of("Form");
+const MATRIX = PDFName.of("Matrix");
+const NORMAL = PDFName.of("N");
+const NEED_APPEARANCES = PDFName.of("NeedAppearances");
+const OCPROPERTIES = PDFName.of("OCProperties");
+const OFF = PDFName.of("OFF");
+const P = PDFName.of("P");
+const RECT = PDFName.of("Rect");
+const WIDGET = PDFName.of("Widget");
+const XOBJECT = PDFName.of("XObject");
+const ACROFORM = PDFName.of("AcroForm");
+// Annotation flags: Hidden (2) and NoView (32).
+const NOT_SHOWN = 2 | 32;
+
+/** The n numbers of an array such as /Rect or /Matrix, or null if it isn't exactly that. */
+function numbersAt(dict: PDFDict, key: PDFName, n: number): number[] | null {
+  const arr = dict.lookup(key);
+  if (!(arr instanceof PDFArray) || arr.size() !== n) return null;
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const v = arr.lookup(i);
+    if (!(v instanceof PDFNumber) || !Number.isFinite(v.asNumber())) return null;
+    out.push(v.asNumber());
+  }
+  return out;
+}
+
+/** The widget's normal appearance stream (for check boxes and radio buttons, its current state's). */
+function normalAppearance(widget: PDFDict): { ref: PDFRef; stream: PDFStream } | null {
+  const ap = widget.lookup(AP);
+  if (!(ap instanceof PDFDict)) return null;
+  let entry = ap.get(NORMAL);
+  let target = widget.context.lookup(entry);
+  if (target instanceof PDFDict) {
+    const state = nameAt(widget, AS);
+    if (state === null) return null;
+    entry = target.get(state);
+    target = widget.context.lookup(entry);
+  }
+  return entry instanceof PDFRef && target instanceof PDFStream ? { ref: entry, stream: target } : null;
+}
+
+/** Draws one widget's appearance where the widget sits (PDF 32000-1 12.5.5: BBox through Matrix onto Rect). */
+function drawWidget(page: PDFPage, widget: PDFDict) {
+  const flags = widget.lookup(F);
+  if (flags instanceof PDFNumber && (flags.asNumber() & NOT_SHOWN) !== 0) return;
+  const appearance = normalAppearance(widget);
+  const rect = numbersAt(widget, RECT, 4);
+  if (!appearance || !rect) return;
+  const [x1, x2] = [Math.min(rect[0], rect[2]), Math.max(rect[0], rect[2])];
+  const [y1, y2] = [Math.min(rect[1], rect[3]), Math.max(rect[1], rect[3])];
+  const bbox = numbersAt(appearance.stream.dict, BBOX, 4) ?? [0, 0, x2 - x1, y2 - y1];
+  const [a, b, c, d, e, f] = numbersAt(appearance.stream.dict, MATRIX, 6) ?? [1, 0, 0, 1, 0, 0];
+  const corners = [
+    [bbox[0], bbox[1]],
+    [bbox[2], bbox[1]],
+    [bbox[0], bbox[3]],
+    [bbox[2], bbox[3]],
+  ].map(([x, y]) => [a * x + c * y + e, b * x + d * y + f]);
+  const bx1 = Math.min(...corners.map((p) => p[0]));
+  const bx2 = Math.max(...corners.map((p) => p[0]));
+  const by1 = Math.min(...corners.map((p) => p[1]));
+  const by2 = Math.max(...corners.map((p) => p[1]));
+  if (bx2 - bx1 <= 0 || by2 - by1 <= 0 || x2 - x1 <= 0 || y2 - y1 <= 0) return;
+  const sx = (x2 - x1) / (bx2 - bx1);
+  const sy = (y2 - y1) / (by2 - by1);
+  appearance.stream.dict.set(TYPE, XOBJECT);
+  appearance.stream.dict.set(SUBTYPE, FORM);
+  const name = page.node.newXObject("FlatWidget", appearance.ref);
+  page.pushOperators(pushGraphicsState(), concatTransformationMatrix(sx, 0, 0, sy, x1 - bx1 * sx, y1 - by1 * sy), drawObject(name), popGraphicsState());
+}
+
+/** Calls back with each place a page's links name a destination: an annotation's /Dest and a GoTo action's /D. */
+function eachLink(page: PDFDict, visit: (holder: PDFDict, key: PDFName) => void) {
+  const annots = page.lookup(ANNOTS);
+  if (!(annots instanceof PDFArray)) return;
+  for (const entry of annots.asArray()) {
+    const annot = page.context.lookup(entry);
+    if (!(annot instanceof PDFDict)) continue;
+    annot.delete(P); // the annotation's own page: copying would duplicate it too
+    if (annot.has(DEST)) visit(annot, DEST);
+    const action = annot.lookup(A);
+    if (action instanceof PDFDict && nameAt(action, S) === GOTO) {
+      visit(action, D);
+      if (!action.has(D)) annot.delete(A);
+    }
+  }
+}
+
+/** Swaps an explicit destination's page through `map`; drops the destination when there's no match. */
+function retarget(holder: PDFDict, key: PDFName, map: (target: PDFObject | undefined) => PDFRef | number | undefined) {
+  const dest = holder.lookup(key);
+  const page = dest instanceof PDFArray && dest.size() > 0 ? map(dest.get(0)) : undefined;
+  if (!(dest instanceof PDFArray) || page === undefined) {
+    holder.delete(key);
+    return;
+  }
+  const target = typeof page === "number" ? PDFNumber.of(page) : page;
+  holder.set(key, holder.context.obj([target, ...dest.asArray().slice(1)]));
+}
 
 /** A name value, or null when the key is missing or holds anything else (hostile files do that). */
 function nameAt(dict: PDFDict, key: PDFName): PDFName | null {
@@ -102,7 +287,8 @@ function sweep(obj: PDFObject) {
   }
   // An action object anywhere else (reachable through a key nobody expects) is emptied unless safe.
   const kind = nameAt(dict, S);
-  if ((nameAt(dict, TYPE) === ACTION && !safeAction(dict)) || (kind !== null && UNSAFE_ACTIONS.has(kind))) {
+  // A link action with a bad address counts whether or not it says /Type /Action (Security R2-4).
+  if (((nameAt(dict, TYPE) === ACTION || kind === URI) && !safeAction(dict)) || (kind !== null && UNSAFE_ACTIONS.has(kind))) {
     for (const key of dict.keys()) dict.delete(key);
   }
   for (const [, value] of dict.entries()) if (!(value instanceof PDFRef)) sweep(value);

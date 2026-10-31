@@ -156,3 +156,8 @@ export async function dbUp(): Promise<boolean> {
     return false;
   }
 }
+
+/** The SQLSTATE of a database error (PGlite and postgres.js both put it on `code`), or null. */
+export function pgErrorCode(e: unknown): string | null {
+  return e instanceof Error && "code" in e && typeof e.code === "string" ? e.code : null;
+}

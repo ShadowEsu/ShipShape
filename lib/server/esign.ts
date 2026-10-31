@@ -1,10 +1,10 @@
 import "server-only";
-import { randomInt } from "node:crypto";
-import { PDFDocument } from "pdf-lib";
+import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
+import { appendPages } from "@/lib/pdf/append";
 import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
-import { flattenForm, makeInert } from "@/lib/pdf/inert";
+import { buildToSign, NotSignable } from "@/lib/pdf/to-sign";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser } from "./db";
 import { downloadName } from "./documents";
@@ -32,22 +32,41 @@ const NewRequest = z.object({
   days: z.coerce.number().refine((d) => SIGN_DAYS.some((x) => x === d), "Choose how long the request stays open."),
 });
 
+/**
+ * Creates a signature request and the file the signer will review: ShipShape's inert copy of the
+ * latest version (Security R2-1). Signing appends the certificate to exactly that file.
+ */
 export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: string; token: string }> {
   if (!esignAvailable(ctx)) throw new GateClosed("Signing by email opens once ShipShape can send email.");
   const p = NewRequest.parse(input);
   const { token, hash } = newToken();
-  const id = await asUser(ctx.userId, async (tx) => {
+  const id = randomUUID();
+  const toSignPath = `${ctx.orgId}/${id}/v1.pdf`;
+  await asUser(ctx.userId, async (tx) => {
     await assertWithinPlan(tx, ctx.orgId, "esign");
-    const [latest] = await tx.query<{ version: number }>(
-      "select v.version from app.document_versions v join app.documents d on d.id = v.document_id where v.document_id = $1 and d.org_id = $2 and d.status = 'active' order by v.version desc limit 1",
+    const [latest] = await tx.query<{ version: number; storage_path: string; mime: AllowedMime }>(
+      "select v.version, v.storage_path, v.mime from app.document_versions v join app.documents d on d.id = v.document_id where v.document_id = $1 and d.org_id = $2 and d.status = 'active' order by v.version desc limit 1",
       [p.documentId, ctx.orgId],
     );
     if (!latest) throw new UserError("Document not found.");
-    const [row] = await tx.query<{ id: string }>(
-      "insert into app.signature_requests (org_id, document_id, version, signer_name, signer_email, token_hash, expires_at, created_by) values ($1, $2, $3, $4, $5, $6, now() + make_interval(days => $7), $8) returning id",
-      [ctx.orgId, p.documentId, latest.version, p.signerName, p.signerEmail, hash, p.days, ctx.userId],
+    let toSign: Uint8Array;
+    try {
+      toSign = await buildToSign(await blobStore().get(latest.storage_path), latest.mime);
+    } catch (e) {
+      if (!(e instanceof NotSignable)) throw e;
+      throw new UserError(
+        e.reason === "viewer_dependent"
+          ? "This PDF can look different in different apps (hidden layers or self-updating form fields), so it can't be sent for signature. Print it to a new PDF and upload that as a new version."
+          : "ShipShape can't read this file well enough to send it for signature. If it's password-protected, remove the password, or print it to a new PDF and upload that.",
+      );
+    }
+    if (toSign.length > MAX_UPLOAD_BYTES) throw new UserError("This document is too large to send for signature.");
+    await tx.query(
+      "insert into app.signature_requests (id, org_id, document_id, version, signer_name, signer_email, token_hash, expires_at, created_by, to_sign_path, to_sign_sha256) values ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(days => $8), $9, $10, $11)",
+      [id, ctx.orgId, p.documentId, latest.version, p.signerName, p.signerEmail, hash, p.days, ctx.userId, toSignPath, sha256Hex(toSign)],
     );
-    return row.id;
+    // Stored last, inside the transaction: if storing fails, the request rolls back with it.
+    await blobStore().put(toSignPath, toSign, "application/pdf");
   });
   return { id, token };
 }
@@ -105,13 +124,16 @@ interface OpenRow {
   mime: AllowedMime;
   sha256: string;
   signed_at: string | null;
+  /** The file the signer reviews, while the request is pending (0018). */
+  to_sign_path: string | null;
+  to_sign_sha256: string | null;
 }
 
 async function open(id: string, token: string, record: boolean): Promise<OpenRow | null> {
   if (!z.uuid().safeParse(id).success || !TOKEN.test(token)) return null;
   const [row] = await asAnon((tx) =>
     tx.query<OpenRow>(
-      "select org_id, org_name, is_demo, document_id, title, signer_name, signer_email, status, expires_at::text as expires_at, requested_at::text as requested_at, version, next_version, storage_path, mime, sha256, signed_at::text as signed_at from app.esign_open($1, $2, $3)",
+      "select org_id, org_name, is_demo, document_id, title, signer_name, signer_email, status, expires_at::text as expires_at, requested_at::text as requested_at, version, next_version, storage_path, mime, sha256, signed_at::text as signed_at, to_sign_path, to_sign_sha256 from app.esign_open($1, $2, $3)",
       [id, sha256Hex(token), record],
     ),
   );
@@ -148,11 +170,13 @@ export async function openSigning(id: string, token: string): Promise<SigningVie
   };
 }
 
-/** A 5-minute download of the document to sign (or, once signed, the signed copy). */
+/** A 5-minute download of the file to sign, exactly the bytes that will be signed (or, once signed, the signed copy). */
 export async function signingFileUrl(id: string, token: string): Promise<string | null> {
   const r = await open(id, token, false);
   if (!r) return null;
-  return blobStore().signedUrl(r.storage_path, { filename: downloadName(r.title, r.version, r.mime), inline: false });
+  if (r.status === "signed") return blobStore().signedUrl(r.storage_path, { filename: downloadName(r.title, r.version, r.mime), inline: false });
+  if (!r.to_sign_path) return null;
+  return blobStore().signedUrl(r.to_sign_path, { filename: downloadName(r.title, r.version, "application/pdf"), inline: false });
 }
 
 const codeHash = (id: string, code: string) => sha256Hex(keyedHash(code, `esign-code:${id}`));
@@ -180,47 +204,35 @@ export async function sendSigningCode(id: string, token: string): Promise<"ok" |
 
 export type SignResult = "ok" | "bad_code" | "locked" | "expired_code" | "invalid" | "needs_consent" | "needs_name" | "unsupported" | "too_large";
 
-/**
- * The signed copy: the original's pages (or the image on a page), then a signature certificate page.
- * Only pages are copied into a new document, so the upload's document-level parts (open actions,
- * named scripts, form logic, attachments) never reach the copy. Form fields are drawn into the page
- * first, and the finished copy is swept as a whole so nothing in it can run (Security F3, F3-1..3).
- */
-async function signedCopy(original: Uint8Array, mime: AllowedMime, rows: [string, string][]): Promise<Uint8Array> {
-  const out = await PDFDocument.create();
-  if (mime === "application/pdf") {
-    const source = await PDFDocument.load(original, { updateMetadata: false });
-    if (!flattenForm(source)) throw new Error("form can't be flattened");
-    for (const page of await out.copyPages(source, source.getPageIndices())) out.addPage(page);
-  } else {
-    const img = mime === "image/png" ? await out.embedPng(original) : await out.embedJpg(original);
-    const scale = Math.min(540 / img.width, 720 / img.height, 1);
-    const page = out.addPage([612, 792]);
-    page.drawImage(img, { x: (612 - img.width * scale) / 2, y: (792 - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
-  }
-  const certificate = await PDFDocument.load(
-    await composePdf(
-      [
-        { type: "title", text: "Signature certificate" },
-        { type: "para", muted: true, runs: [{ text: "Added by ShipShape to the signed copy. ShipShape is document software, not a law firm; it records how this document was signed and doesn't vouch for what it says." }] },
-        { type: "space", height: 8 },
-        // Names and titles can hold characters the certificate's font can't draw (Security F4).
-        { type: "rows", rows: rows.map(([k, v]) => [k, printableOnly(v)]) },
-        { type: "space", height: 12 },
-        { type: "heading", text: "What the signer agreed to" },
-        { type: "para", runs: [{ text: ESIGN_CONSENT_TEXT }] },
-      ],
-      { title: "Signature certificate", footer: "ShipShape signature certificate" },
-    ),
+/** The certificate page(s) appended to the reviewed file to make the signed copy. */
+function certificatePdf(rows: [string, string][]): Promise<Uint8Array> {
+  return composePdf(
+    [
+      { type: "title", text: "Signature certificate" },
+      {
+        type: "para",
+        muted: true,
+        runs: [
+          {
+            text: "Added by ShipShape to the signed copy. The pages before this one are, byte for byte, the file the signer reviewed; its SHA-256 is below. ShipShape is document software, not a law firm; it records how this document was signed and doesn't vouch for what it says.",
+          },
+        ],
+      },
+      { type: "space", height: 8 },
+      // Names and titles can hold characters the certificate's font can't draw (Security F4).
+      { type: "rows", rows: rows.map(([k, v]) => [k, printableOnly(v)]) },
+      { type: "space", height: 12 },
+      { type: "heading", text: "What the signer agreed to" },
+      { type: "para", runs: [{ text: ESIGN_CONSENT_TEXT }] },
+    ],
+    { title: "Signature certificate", footer: "ShipShape signature certificate" },
   );
-  for (const p of await out.copyPages(certificate, certificate.getPageIndices())) out.addPage(p);
-  makeInert(out);
-  return out.save();
 }
 
 /**
- * Signs: checks consent, the typed name and the one-time code, builds the signed copy with its
- * certificate, and stores it as a new version in one transaction (the database counts wrong codes).
+ * Signs: checks consent, the typed name and the one-time code, appends the certificate to the file
+ * the signer reviewed, and stores the result as a new version in one transaction (the database
+ * counts wrong codes).
  */
 export async function completeSigning(
   id: string,
@@ -232,13 +244,16 @@ export async function completeSigning(
   if (!typedName || typedName.length > 120 || !isPrintable(typedName)) return "needs_name";
   if (!/^\d{6}$/.test(input.code)) return "bad_code";
   const r = await open(id, token, false);
-  if (!r || r.status !== "pending") return "invalid";
+  if (!r || r.status !== "pending" || !r.to_sign_path || !r.to_sign_sha256) return "invalid";
 
+  const toSign = await blobStore().get(r.to_sign_path);
+  // The signature covers what the signer downloaded; a stored file that changed since is never signed.
+  if (sha256Hex(toSign) !== r.to_sign_sha256) throw new Error("the file to sign no longer matches its fingerprint");
   const visitor = visitorId(input.ip);
   const signedAt = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
   let bytes: Uint8Array;
   try {
-    bytes = await signedCopy(await blobStore().get(r.storage_path), r.mime, [
+    const certificate = await certificatePdf([
       ["Document", r.title],
       ["Sent by", r.org_name],
       ["Requested", r.requested_at.slice(0, 16).replace("T", " ")],
@@ -247,11 +262,13 @@ export async function completeSigning(
       ["Email confirmed by one-time code", r.signer_email],
       ["Signed at", signedAt],
       ["Signer's network fingerprint", visitor],
-      ["Original file SHA-256", r.sha256],
+      ["Reviewed file SHA-256", r.to_sign_sha256],
+      ["Original upload SHA-256", r.sha256],
       ["Consent text", `${ESIGN_CONSENT_VERSION} (SHA-256 ${sha256Hex(ESIGN_CONSENT_TEXT).slice(0, 16)}…)`],
     ]);
+    bytes = await appendPages(toSign, certificate);
   } catch {
-    return "unsupported"; // e.g. a password-protected PDF
+    return "unsupported";
   }
   // Every stored version is at most 10 MiB; a signed copy over that is refused up front, not by the database.
   if (bytes.length > MAX_UPLOAD_BYTES) return "too_large";

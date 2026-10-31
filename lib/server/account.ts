@@ -1,13 +1,16 @@
 import "server-only";
 import type { AllowedMime } from "./files";
 import { cancelSubscriptionsBeforeDeletion } from "./billing";
-import { asUser } from "./db";
+import { asUser, pgErrorCode } from "./db";
 import { downloadName } from "./documents";
 import { UserError } from "./errors";
 import { loadProfile, NeedsRecentSignIn, type Ctx } from "./profile";
 import { authIsRecent } from "./session";
 import { blobStore } from "./storage";
 import { zip } from "./zip";
+
+/** delete_my_account's refusal when a billed workspace it would delete wasn't handled (0019). */
+const BILLING_NOT_HANDLED = "SS001";
 
 /** Exports are built in memory; past this, the user is asked to contact us instead. */
 export const EXPORT_MAX_BYTES = 200 * 1024 * 1024;
@@ -185,9 +188,25 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
  */
 export async function deleteAccount(ctx: Ctx): Promise<void> {
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to delete your account.");
-  // Stop billing first: a deleted workspace must never keep being charged.
-  await cancelSubscriptionsBeforeDeletion(ctx.userId);
-  const rows = await asUser(ctx.userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account()"));
+  // Stop billing first: a deleted workspace must never keep being charged. The database refuses
+  // (SS001) if a billed workspace it is about to delete wasn't handled here: another owner left in
+  // the meantime and made this person the sole owner. Then billing is handled again, once.
+  const remove = async () => {
+    const handled = await cancelSubscriptionsBeforeDeletion(ctx.userId);
+    return asUser(ctx.userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account($1::uuid[])", [handled]));
+  };
+  let rows: { storage_path: string }[];
+  try {
+    rows = await remove();
+  } catch (e) {
+    if (pgErrorCode(e) !== BILLING_NOT_HANDLED) throw e;
+    try {
+      rows = await remove();
+    } catch (again) {
+      if (pgErrorCode(again) === BILLING_NOT_HANDLED) throw new UserError("Your workspaces changed while deleting. Try again.");
+      throw again;
+    }
+  }
   // After the commit: if this fails the rows are already gone, so the objects are unreachable
   // orphans in private storage; the count (never the paths) goes to the log for cleanup.
   try {

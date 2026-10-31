@@ -1,6 +1,8 @@
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, type PDFObject } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { flattenForm, makeInert } from "@/lib/pdf/inert";
+import { appendPages } from "@/lib/pdf/append";
+import { makeInert } from "@/lib/pdf/inert";
+import { buildToSign } from "@/lib/pdf/to-sign";
 
 const N = (s: string) => PDFName.of(s);
 
@@ -73,13 +75,9 @@ async function hostile(): Promise<Uint8Array> {
   return doc.save();
 }
 
+/** The file a signer reviews, built the way requestSignature builds it. */
 async function inertCopy(bytes: Uint8Array): Promise<PDFDocument> {
-  const source = await PDFDocument.load(bytes);
-  expect(flattenForm(source)).toBe(true);
-  const out = await PDFDocument.create();
-  for (const p of await out.copyPages(source, source.getPageIndices())) out.addPage(p);
-  makeInert(out);
-  return PDFDocument.load(await out.save());
+  return PDFDocument.load(await buildToSign(bytes, "application/pdf"));
 }
 
 describe("makeInert: a copy of someone's PDF can't run anything (Security F3-1..F3-4)", () => {
@@ -121,5 +119,144 @@ describe("makeInert: a copy of someone's PDF can't run anything (Security F3-1..
     expect(findings(copy).filter((f) => f === "annot /Widget")).toEqual([]);
     const xobjects = copy.getPage(0).node.Resources()?.lookupMaybe(N("XObject"), PDFDict);
     expect(xobjects?.keys().length ?? 0).toBeGreaterThan(0); // the field's appearance is now page content
+  });
+});
+
+/** A classic-xref PDF written by hand, so a fixture can do what pdf-lib won't (define an object twice). */
+function rawPdf(objects: [number, string][]): { text: string; xrefAt: number } {
+  let text = "%PDF-1.7\n";
+  const at = new Map<number, number>();
+  for (const [n, body] of objects) {
+    if (!at.has(n)) at.set(n, text.length); // the xref names the first definition
+    text += `${n} 0 obj\n${body}\nendobj\n`;
+  }
+  const size = Math.max(...objects.map(([n]) => n)) + 1;
+  const xrefAt = text.length;
+  text += `xref\n0 ${size}\n0000000000 65535 f \n`;
+  for (let n = 1; n < size; n++) text += at.has(n) ? `${String(at.get(n)).padStart(10, "0")} 00000 n \n` : "0000000000 65535 f \n";
+  text += `trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`;
+  return { text, xrefAt };
+}
+const bytesOf = (text: string) => new TextEncoder().encode(text);
+const stream = (s: string) => `<< /Length ${s.length} >>\nstream\n${s}\nendstream`;
+const HELV = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+const text = (s: string, y = 700) => stream(`BT /F1 18 Tf 72 ${y} Td (${s}) Tj ET`);
+const pageWith = (extra = "") => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${HELV} >> >> /Contents 4 0 R ${extra} >>`;
+const PAGES = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
+
+describe("the file a signer reviews (Security R2)", () => {
+  it("refuses files that viewers can show differently: hidden layers, self-redrawing forms, an object defined twice", async () => {
+    const hiddenLayer = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [6 0 R] /D << /OFF [6 0 R] >> >> >>"],
+      [2, PAGES],
+      [3, pageWith()],
+      [4, text("LATE FEE")],
+      [6, "<< /Type /OCG /Name (Layer) >>"],
+    ]);
+    const redraws = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [] /NeedAppearances true >> >>"],
+      [2, PAGES],
+      [3, pageWith()],
+      [4, text("Amount due")],
+    ]);
+    const twice = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+      [2, PAGES],
+      [3, pageWith()],
+      [4, text("Fee: USD 100")],
+      [4, text("Fee: USD 10000")],
+    ]);
+    for (const f of [hiddenLayer, redraws, twice]) {
+      await expect(buildToSign(bytesOf(f.text), "application/pdf")).rejects.toMatchObject({ reason: "viewer_dependent" });
+    }
+  });
+
+  it("accepts a file saved with an update on top, where redefining an object is how the format works", async () => {
+    const base = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+      [2, PAGES],
+      [3, pageWith()],
+      [4, text("Draft")],
+    ]);
+    const at = base.text.length;
+    const body = `4 0 obj\n${text("Final")}\nendobj\n`;
+    const xrefAt = at + body.length;
+    const updated = `${base.text}${body}xref\n4 1\n${String(at).padStart(10, "0")} 00000 n \ntrailer\n<< /Size 5 /Root 1 0 R /Prev ${base.xrefAt} >>\nstartxref\n${xrefAt}\n%%EOF\n`;
+    expect((await PDFDocument.load(await buildToSign(bytesOf(updated), "application/pdf"))).getPageCount()).toBe(1);
+  });
+
+  it("signs ordinary forms: an empty signature field, a value the standard font can't draw, a field on no page (R2-3)", async () => {
+    const form = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R 6 0 R 7 0 R] >> >>"],
+      [2, PAGES],
+      [3, pageWith("/Annots [5 0 R 6 0 R]")],
+      [4, text("Sign below")],
+      [5, "<< /Type /Annot /Subtype /Widget /FT /Sig /T (signature) /Rect [72 100 300 140] /P 3 0 R >>"],
+      [6, "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V <FEFF005A006F00EB0020014100F300640179> /Rect [72 200 300 230] /P 3 0 R >>"],
+      [7, "<< /Type /Annot /Subtype /Widget /FT /Tx /T (stale) /V (left over) /Rect [72 300 300 330] >>"],
+    ]);
+    const copy = await PDFDocument.load(await buildToSign(bytesOf(form.text), "application/pdf"));
+    expect(copy.getPageCount()).toBe(1);
+    expect(findings(copy).filter((f) => f === "annot /Widget")).toEqual([]);
+    expect(copy.catalog.has(N("AcroForm"))).toBe(false);
+  });
+
+  it("keeps internal links pointing at the copy's own pages, with no stray duplicate page (R2-2)", async () => {
+    const doc = await PDFDocument.create();
+    const [one, two] = [doc.addPage([612, 792]), doc.addPage([612, 792])];
+    const c = doc.context;
+    const dest = c.register(c.obj({ Type: "Annot", Subtype: "Link", Rect: [72, 700, 200, 720], Dest: [two.ref, "Fit"] }));
+    const goTo = c.register(c.obj({ Type: "Annot", Subtype: "Link", Rect: [72, 650, 200, 670], A: { S: "GoTo", D: [two.ref, "Fit"] } }));
+    one.node.set(N("Annots"), c.obj([dest, goTo]));
+    const copy = await inertCopy(await doc.save());
+    const pageTwo = copy.getPage(1).ref;
+    const annots = copy.getPage(0).node.lookup(N("Annots"), PDFArray).asArray().map((r) => copy.context.lookup(r, PDFDict));
+    expect(annots[0].lookup(N("Dest"), PDFArray).get(0)).toBe(pageTwo);
+    expect(annots[1].lookup(N("A"), PDFDict).lookup(N("D"), PDFArray).get(0)).toBe(pageTwo);
+    const pages = copy.context.enumerateIndirectObjects().filter(([, o]) => o instanceof PDFDict && o.lookup(N("Type")) === N("Page"));
+    expect(pages).toHaveLength(2);
+  });
+
+  it("leaves no bad-address link actions, mail links with a query, or XFA/RF/AF/PA payloads (R2-4, R2-7)", async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([612, 792]);
+    const c = doc.context;
+    const mail = c.register(c.obj({ Type: "Annot", Subtype: "Link", Rect: [72, 700, 200, 720], A: { S: "URI", URI: PDFString.of("mailto:x@example.com?attach=C:\\win.ini") } }));
+    const withPa = c.register(c.obj({ Type: "Annot", Subtype: "Link", Rect: [72, 650, 200, 670], PA: { S: "URI", URI: PDFString.of("javascript:pa()") } }));
+    page.node.set(N("Annots"), c.obj([mail, withPa]));
+    page.node.set(N("Bar"), c.obj({ S: "URI", URI: PDFString.of("javascript:orphan()") })); // no /Type /Action
+    page.node.set(N("Extra"), c.obj({ RF: c.register(c.stream("payload")), AF: [], XFA: c.register(c.stream("<xdp/>")) }));
+    const saved = new TextDecoder("latin1").decode(await buildToSign(await doc.save(), "application/pdf"));
+    for (const gone of ["javascript:", "attach=", "/XFA", "/RF", "/AF", "/PA"]) expect(saved).not.toContain(gone);
+  });
+
+  it("appends the certificate as an update: the reviewed bytes are untouched and every new cross-reference entry is right", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const base = await buildToSign(await doc.save(), "application/pdf");
+    const extra = await PDFDocument.create();
+    extra.addPage([612, 792]);
+    const signed = await appendPages(base, await extra.save());
+    expect(Buffer.from(signed.subarray(0, base.length)).equals(Buffer.from(base))).toBe(true);
+    expect((await PDFDocument.load(signed)).getPageCount()).toBe(2);
+
+    const all = new TextDecoder("latin1").decode(signed);
+    const xrefAt = Number(/startxref\s+(\d+)\s+%%EOF\s*$/.exec(all)?.[1]);
+    const section = all.slice(xrefAt, all.indexOf("trailer", xrefAt));
+    expect(section.startsWith("xref\n")).toBe(true);
+    const lines = section.split("\n").slice(1).filter(Boolean);
+    let checked = 0;
+    for (let i = 0; i < lines.length; ) {
+      const [first, count] = lines[i].split(" ").map(Number);
+      for (let k = 0; k < count; k++) {
+        const [offset, gen] = lines[i + 1 + k].split(" ").map(Number);
+        expect(all.startsWith(`${first + k} ${gen} obj`, offset)).toBe(true);
+        checked++;
+      }
+      i += 1 + count;
+    }
+    expect(checked).toBeGreaterThan(0);
+    const prev = Number(/\/Prev (\d+)/.exec(all.slice(xrefAt))?.[1]);
+    expect(all.startsWith("xref", prev)).toBe(true);
   });
 });

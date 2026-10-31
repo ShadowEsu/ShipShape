@@ -56,7 +56,8 @@ const created = await call("/auth/v1/admin/users", service, jsonBody({ email, pa
 const userId = created.json?.id ?? created.json?.user?.id ?? null;
 const signin = await call("/auth/v1/token?grant_type=password", visitor, jsonBody({ email, password }));
 const userToken = signin.json?.access_token ?? null;
-check("a throwaway signed-in user for the run", Boolean(userId && userToken), `create ${created.status} ${created.text}; sign-in ${signin.status} ${signin.text}`);
+// Status codes only: the responses can hold the throwaway user's access token.
+check("a throwaway signed-in user for the run", Boolean(userId && userToken), `create ${created.status}; sign-in ${signin.status}`);
 const roles = [["visitor", visitor]];
 if (userToken) roles.push(["signed-in user", { apikey: anonKey, Authorization: `Bearer ${userToken}` }]);
 

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { asAnon, asService, asUser, type Tx } from "@/lib/server/db";
+import { rateLimited } from "@/lib/server/http";
 import { freshDb, type TestDb } from "./support/db";
 
 /**
@@ -48,8 +49,10 @@ beforeAll(async () => {
     );
     await tx.query("insert into app.share_link_documents (link_id, document_id, org_id) values ($1, $2, $3)", [l.id, docA, orgA]);
     await tx.query(
-      "insert into app.signature_requests (org_id, document_id, version, signer_name, signer_email, token_hash, expires_at, created_by) values ($1, $2, 1, 'Sam Signer', 'sam@example.com', $3, now() + interval '7 days', $4)",
-      [orgA, docA, "c".repeat(64), a],
+      `insert into app.signature_requests (id, org_id, document_id, version, signer_name, signer_email, token_hash, expires_at, created_by, to_sign_path, to_sign_sha256)
+       select r.id, $1::uuid, $2, 1, 'Sam Signer', 'sam@example.com', $3, now() + interval '7 days', $4, $1::uuid::text || '/' || r.id::text || '/v1.pdf', $5
+       from (select gen_random_uuid() as id) r`,
+      [orgA, docA, "c".repeat(64), a, "d".repeat(64)],
     );
     return l.id;
   });
@@ -390,10 +393,10 @@ describe("storage lockdown (Security C-4)", () => {
 });
 
 describe("rate-limit fingerprints (Security C-3 INFO)", () => {
-  it("the daily purge clears windows older than a day with no traffic, and only the service role may run it", async () => {
+  it("the daily purge clears windows that started over an hour ago with no traffic, and only the service role may run it", async () => {
     await db.root((tx) =>
       tx.query(
-        "insert into app.rate_hits (bucket, key, window_start, n) values ('probe', 'old', now() - interval '25 hours', 1), ('probe', 'fresh', now() - interval '1 hour', 1)",
+        "insert into app.rate_hits (bucket, key, window_start, n) values ('probe', 'old', now() - interval '61 minutes', 1), ('probe', 'fresh', now() - interval '5 minutes', 1)",
       ),
     );
     await expectDenied(asUser(a, (tx) => tx.query("select app.purge_rate_hits()")));
@@ -401,6 +404,11 @@ describe("rate-limit fingerprints (Security C-3 INFO)", () => {
     expect(run.n).toBeGreaterThanOrEqual(1);
     const left = await db.root((tx) => tx.query<{ key: string }>("select key from app.rate_hits where bucket = 'probe'"));
     expect(left.map((r) => r.key)).toEqual(["fresh"]);
+  });
+
+  it("rateLimited refuses a window longer than an hour, which the purge would clear while it still counts", async () => {
+    await expect(rateLimited("probe-window", "k", 1, 3601)).rejects.toThrow(/probe-window/);
+    expect(await rateLimited("probe-window", "k", 1, 3600)).toBe(false);
   });
 });
 

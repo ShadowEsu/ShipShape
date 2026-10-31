@@ -103,12 +103,18 @@ describe("signing", () => {
     expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("expired_code");
   });
 
-  it("adds the signed copy (original pages + certificate) as a new version, once, and records every step", async () => {
+  it("adds the signed copy (the reviewed file + certificate) as a new version, once, and records every step", async () => {
     const doc = await nda(a);
     const before = (await getDocument(a, doc.id))!.versions;
     const original = await PDFDocument.load(await blobStore().get(`${a.orgId}/${doc.id}/v${before[0].version}.pdf`));
     const { id, token } = await request(a);
     expect(await openSigning(id, token)).not.toBeNull();
+    // What the signer downloads is the stored review file whose fingerprint the request recorded (Security R2-1).
+    const review = verifyFileParams(new URL((await signingFileUrl(id, token))!, "http://x").searchParams);
+    expect(review?.objectPath).toBe(`${a.orgId}/${id}/v1.pdf`);
+    const reviewed = await blobStore().get(review!.objectPath);
+    const [recorded] = await db.root((tx) => tx.query<{ to_sign_sha256: string }>("select to_sign_sha256 from app.signature_requests where id = $1", [id]));
+    expect(sha256Hex(reviewed)).toBe(recorded.to_sign_sha256);
     await sendSigningCode(id, token);
     const code = await lastCode(a.orgId);
     expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
@@ -119,6 +125,8 @@ describe("signing", () => {
     const bytes = await blobStore().get(`${a.orgId}/${doc.id}/v${signed.version}.pdf`);
     expect(sha256Hex(bytes)).toBe(signed.sha256);
     expect((await PDFDocument.load(bytes)).getPageCount()).toBe(original.getPageCount() + 1);
+    // The signed copy starts with exactly the bytes the signer reviewed; the certificate only follows them.
+    expect(sha256Hex(bytes.subarray(0, reviewed.length))).toBe(recorded.to_sign_sha256);
 
     const [req] = await db.root((tx) =>
       tx.query<{ status: string; consent_version: string; signed_name: string; otp_hash: string | null; signer_visitor: string }>(

@@ -24,11 +24,17 @@ export function sameOrigin(headers: Headers): boolean {
   }
 }
 
+/** The longest rate-limit window; see app.purge_rate_hits. */
+const MAX_WINDOW_SECONDS = 3600;
+
 /**
  * Shared-store rate limit (Postgres), counted per call. The key is an HMAC of the IP or token,
  * never the raw value.
  */
 export async function rateLimited(bucket: string, rawKey: string, max: number, windowSeconds: number): Promise<boolean> {
+  // app.purge_rate_hits (migration 0020) clears windows that started over an hour ago, so a longer
+  // window would be wiped while it's still counting.
+  if (windowSeconds > MAX_WINDOW_SECONDS) throw new Error(`Rate limit "${bucket}": a window can't be longer than ${MAX_WINDOW_SECONDS} seconds`);
   const key = keyedHash(rawKey, bucket);
   const [row] = await asService((tx) =>
     tx.query<{ ok: boolean }>("select app.rate_hit($1, $2, $3, $4) as ok", [bucket, key, windowSeconds, max]),
@@ -36,7 +42,7 @@ export async function rateLimited(bucket: string, rawKey: string, max: number, w
   return !row.ok;
 }
 
-/** Clears rate-limit fingerprints older than a day, even with no traffic (the daily cron). Returns how many. */
+/** Clears rate-limit windows that started over an hour ago, even with no traffic (the daily cron). Returns how many. */
 export async function purgeRateHits(): Promise<number> {
   const [row] = await asService((tx) => tx.query<{ n: number }>("select app.purge_rate_hits() as n"));
   return row.n;

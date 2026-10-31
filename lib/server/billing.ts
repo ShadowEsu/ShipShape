@@ -358,25 +358,30 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
  * person is the only owner). It asks Stripe for every subscription of each workspace's customer, so
  * one whose webhook never reached us (a checkout paid moments ago) stops too (Security B3). Runs
  * before the deletion; if Stripe can't be reached, the deletion stops.
+ *
+ * Returns the workspaces whose billing it handled. The deletion refuses any billed workspace outside
+ * that list: another owner leaving at the same moment can make this person the sole owner after
+ * this check ran (Security F5-r2).
  */
-export async function cancelSubscriptionsBeforeDeletion(userId: string) {
+export async function cancelSubscriptionsBeforeDeletion(userId: string): Promise<string[]> {
   const customers = await asService((tx) =>
-    tx.query<{ stripe_customer_id: string; known_live: boolean }>(
-      `select b.stripe_customer_id, (b.stripe_subscription_id is not null and b.status = any($2::text[])) as known_live from app.billing b
+    tx.query<{ org_id: string; stripe_customer_id: string; known_live: boolean }>(
+      `select b.org_id, b.stripe_customer_id, (b.stripe_subscription_id is not null and b.status = any($2::text[])) as known_live from app.billing b
        join app.members m on m.org_id = b.org_id and m.user_id = $1 and m.role = 'owner'
        where b.stripe_customer_id is not null
          and not exists (select 1 from app.members o where o.org_id = b.org_id and o.role = 'owner' and o.user_id <> $1)`,
       [userId, LIVE_STATUSES],
     ),
   );
-  if (!customers.length) return;
+  const handled = customers.map((c) => c.org_id);
+  if (!customers.length) return handled;
   const cfg = billingConfig();
   if (!cfg) {
     // Billing is off, so no new checkout can have started; only a subscription we know is running stops the deletion.
     if (customers.some((c) => c.known_live)) {
       throw new UserError("Your subscription couldn't be cancelled automatically. Cancel it under Billing first, then delete your account.");
     }
-    return;
+    return handled;
   }
   const stripe = stripePort(cfg);
   const busy = "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it under Billing first.";
@@ -395,4 +400,5 @@ export async function cancelSubscriptionsBeforeDeletion(userId: string) {
       }
     }
   }
+  return handled;
 }
