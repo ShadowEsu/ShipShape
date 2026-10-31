@@ -23,7 +23,12 @@ export const TERMS_VERSION = "2026-10-30-draft";
 export interface Session {
   userId: string;
   demo: boolean;
+  /** When the person last proved who they are (seconds since epoch); gates sensitive actions. */
+  authAt: number;
 }
+
+/** Sensitive actions (revealing a tax id, export, deleting the account) need a sign-in this recent. */
+export const RECENT_AUTH_SECONDS = 10 * 60;
 
 export interface Workspace {
   orgId: string;
@@ -40,8 +45,9 @@ function secret(): string {
 
 const sign = (payload: string) => createHmac("sha256", secret()).update(payload).digest("base64url");
 
-export function encodeSession(s: Session, now = Date.now()): string {
-  const payload = Buffer.from(JSON.stringify({ u: s.userId, d: s.demo, e: Math.floor(now / 1000) + TTL_SECONDS })).toString("base64url");
+export function encodeSession(s: Pick<Session, "userId" | "demo">, now = Date.now()): string {
+  const at = Math.floor(now / 1000);
+  const payload = Buffer.from(JSON.stringify({ u: s.userId, d: s.demo, a: at, e: at + TTL_SECONDS })).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 
@@ -50,13 +56,15 @@ export function decodeSession(value: string | undefined, now = Date.now()): Sess
   const [payload, mac] = value.split(".");
   if (!payload || !mac || !safeEqual(mac, sign(payload))) return null;
   try {
-    const { u, d, e } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    if (typeof u !== "string" || typeof e !== "number" || e * 1000 <= now) return null;
-    return { userId: u, demo: d === true };
+    const { u, d, a, e } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (typeof u !== "string" || typeof a !== "number" || typeof e !== "number" || e * 1000 <= now) return null;
+    return { userId: u, demo: d === true, authAt: a };
   } catch {
     return null;
   }
 }
+
+export const authIsRecent = (s: Session, now = Date.now()) => now / 1000 - s.authAt <= RECENT_AUTH_SECONDS;
 
 export const localSignInAllowed = () => process.env.NODE_ENV !== "production";
 
@@ -64,7 +72,7 @@ export async function getSession(): Promise<Session | null> {
   return decodeSession((await cookies()).get(COOKIE)?.value);
 }
 
-export async function startSession(s: Session) {
+export async function startSession(s: Pick<Session, "userId" | "demo">) {
   (await cookies()).set(COOKIE, encodeSession(s), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

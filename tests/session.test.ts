@@ -6,7 +6,7 @@ const USER = "11111111-1111-4111-8111-111111111111";
 
 describe("session cookie", () => {
   it("round-trips", () => {
-    expect(decodeSession(encodeSession({ userId: USER, demo: true }))).toEqual({ userId: USER, demo: true });
+    expect(decodeSession(encodeSession({ userId: USER, demo: true }))).toEqual({ userId: USER, demo: true, authAt: expect.any(Number) });
   });
 
   it("rejects a changed payload, a changed signature, junk and expiry", () => {

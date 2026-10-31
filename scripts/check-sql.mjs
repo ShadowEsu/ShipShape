@@ -12,11 +12,16 @@ function walk(dir) {
     if (statSync(p).isDirectory()) walk(p);
     else if (/\.(ts|tsx|mjs)$/.test(name) && p !== path.join("scripts", "check-sql.mjs")) {
       const src = readFileSync(p, "utf8");
-      // A query call whose first argument is a template literal containing ${...}.
-      const re = /\.(query|unsafe)\s*(<[^>]*>)?\s*\(\s*`([^`]*)`/g;
-      for (const m of src.matchAll(re)) {
+      // A query call whose first argument is a template literal containing ${...}, or a string
+      // literal joined with + (concatenation).
+      const template = /\.(query|unsafe)\s*(<[^>]*>)?\s*\(\s*`([^`]*)`/g;
+      for (const m of src.matchAll(template)) {
         if (m[3].includes("${")) bad.push(`${p}:${src.slice(0, m.index).split("\n").length}`);
       }
+      const concat = /\.(query|unsafe)\s*(<[^>]*>)?\s*\(\s*(["'`])(?:\\.|(?!\3).)*\3\s*\+/gs;
+      for (const m of src.matchAll(concat)) bad.push(`${p}:${src.slice(0, m.index).split("\n").length}`);
+      const leadingVar = /\.(query|unsafe)\s*(<[^>]*>)?\s*\(\s*[A-Za-z_$][\w$.]*\s*\+/g;
+      for (const m of src.matchAll(leadingVar)) bad.push(`${p}:${src.slice(0, m.index).split("\n").length}`);
     }
   }
 }
