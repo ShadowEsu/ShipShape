@@ -22,6 +22,13 @@ export class BuildBusy extends Error {
   }
 }
 
+/**
+ * The build process stopped some other way than at its limits (a crash such as SIGSEGV, killed from
+ * outside, or gone without answering): ShipShape's fault, not the file's, so the sender may try again.
+ * Nothing was built: the PDF only ever arrives whole, in one message.
+ */
+export class BuildCrashed extends Error {}
+
 /** At most `size` holders at once; the rest wait in order, each for at most `waitMs`. */
 export class BuildSlots {
   #free: number;
@@ -76,23 +83,25 @@ const Message = z.union([
  * are never cleared; here they go with the process. An upload that takes the process past `limits`
  * (V8 aborts the process at its heap limit, or the timeout kills it) is refused as unreadable, and
  * the server itself never runs out. Of the environment the child gets only NODE_ENV, so no secret. A child that
- * fails before it has loaded (missing files, a bug) or fails any other way rejects with that error,
- * so a broken deployment isn't mistaken for a bad file; waiting too long for a slot is BuildBusy.
+ * fails before it has loaded (missing files, a bug) rejects with that error, so a broken deployment
+ * isn't mistaken for a bad file; one that stops any other way after loading is BuildCrashed, and
+ * waiting too long for a slot is BuildBusy.
  */
 export async function buildToSignIsolated(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits = ISOLATION_LIMITS): Promise<Uint8Array> {
   const release = await slots.take(SLOT_WAIT_MS);
   try {
-    return await buildInChild(bytes, mime, limits);
+    return await buildInChild(bytes, mime, limits, CHILD);
   } finally {
     release();
   }
 }
 
-function buildInChild(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits): Promise<Uint8Array> {
+/** Exported for tests, which pass a child that crashes; everything else goes through buildToSignIsolated. */
+export function buildInChild(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits, script: string): Promise<Uint8Array> {
   const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
   // fork() would do, but Turbopack's build resolves fork()'s path as a module and fails
   // (vercel/next.js#97952); spawn with an "ipc" channel is the same thing.
-  const child = spawn(process.execPath, [`--max-old-space-size=${limits.heapMb}`, CHILD], {
+  const child = spawn(process.execPath, [`--max-old-space-size=${limits.heapMb}`, script], {
     env: { NODE_ENV: process.env.NODE_ENV },
     serialization: "advanced",
     // What it has to say comes over IPC; V8's out-of-memory dump and pdf-lib's warnings stay out of the logs.
@@ -122,7 +131,10 @@ function buildInChild(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1]
   child.on("exit", (code, signal) =>
     finish(() => {
       const how = new Error(`build process stopped (exit code ${code}, signal ${signal})`);
-      reject(ready ? new NotSignable("unreadable", how) : how);
+      if (!ready) reject(how);
+      // V8 aborts the process when it reaches its heap limit: the file needs more than an upload may use.
+      else if (signal === "SIGABRT") reject(new NotSignable("unreadable", how));
+      else reject(new BuildCrashed(how.message, { cause: how }));
     }),
   );
   return promise;

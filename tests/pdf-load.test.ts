@@ -3,7 +3,7 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { PDFDict, PDFDocument, PDFRef } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { BuildBusy, BuildSlots, buildToSignIsolated } from "@/lib/pdf/build-isolated";
+import { BuildBusy, BuildCrashed, BuildSlots, buildInChild, buildToSignIsolated, ISOLATION_LIMITS } from "@/lib/pdf/build-isolated";
 import { loadUntrusted, MAX_INFLATED_BYTES, MAX_PACKED_OBJECTS, PdfTooComplex } from "@/lib/pdf/load";
 import { buildToSign, NotSignable } from "@/lib/pdf/to-sign";
 
@@ -165,6 +165,13 @@ describe("each upload is built in a process of its own, at most two at once (Sec
     expect(outOfMemory).toMatchObject({ reason: "unreadable" });
     await expect(buildToSignIsolated(heavy, "application/pdf", { heapMb: 256, timeoutMs: 1 })).rejects.toMatchObject({ reason: "unreadable" });
     expect((await buildToSignIsolated(heavy, "application/pdf")).length).toBeGreaterThan(0);
+  });
+
+  it("a build process that crashes after taking the file is BuildCrashed (try again), not a refused file (REG-58)", async () => {
+    const crashing = path.join(import.meta.dirname, "fixtures", "crashing-build-child.mjs");
+    const crashed = await buildInChild(new Uint8Array([1]), "application/pdf", ISOLATION_LIMITS, crashing).catch((e: unknown) => e);
+    expect(crashed).toBeInstanceOf(BuildCrashed);
+    expect(String(crashed)).toContain("SIGSEGV");
   });
 
   it("more sends at once than slots wait their turn and all build", async () => {

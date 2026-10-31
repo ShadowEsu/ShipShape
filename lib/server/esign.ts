@@ -3,7 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import { appendPages } from "@/lib/pdf/append";
-import { BuildBusy, buildToSignIsolated } from "@/lib/pdf/build-isolated";
+import { BuildBusy, BuildCrashed, buildToSignIsolated } from "@/lib/pdf/build-isolated";
 import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
 import { NotSignable } from "@/lib/pdf/to-sign";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
@@ -68,6 +68,11 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
     toSign = await buildToSignIsolated(original, latest.mime);
   } catch (e) {
     if (e instanceof BuildBusy) throw new UserError("ShipShape is preparing other documents for signature right now. Try again in a minute.");
+    if (e instanceof BuildCrashed) {
+      // How it stopped (exit code and signal only), so a crash in production shows up in the logs (REG-58).
+      console.error(`signature request: ${e.message}`);
+      throw new UserError("ShipShape couldn't prepare this document for signature just now. Nothing was sent. Try again.");
+    }
     if (!(e instanceof NotSignable)) throw e;
     throw new UserError(
       e.reason === "viewer_dependent"
