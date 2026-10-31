@@ -74,7 +74,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
       )}
 
       <p className="text-sm">
-        <Link href={archived ? "/app/documents" : "/app/documents?archived=1"} className="text-ink-2 underline">
+        <Link href={archived ? "/app/documents" : "/app/documents?archived=1"} className="inline-flex min-h-6 items-center text-ink-2 underline">
           {archived ? "Back to current documents" : "See archived documents"}
         </Link>
       </p>

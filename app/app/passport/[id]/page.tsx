@@ -24,7 +24,7 @@ export default async function PassportDetail({ params }: { params: Promise<{ id:
   return (
     <div className="max-w-3xl space-y-6">
       <nav className="text-sm">
-        <Link href="/app/passport" className="text-ink-2 hover:underline">
+        <Link href="/app/passport" className="inline-flex min-h-6 items-center text-ink-2 hover:underline">
           ← Passport
         </Link>
       </nav>

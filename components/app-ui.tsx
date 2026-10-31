@@ -28,7 +28,7 @@ export function ValidityChip({ validity, expiresOn }: { validity: Validity; expi
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${v.cls}`}>
       <span aria-hidden="true">{v.icon}</span>
       {v.label}
-      {expiresOn && <span className="font-normal opacity-80">· {fmtDay(expiresOn)}</span>}
+      {expiresOn && <span className="font-normal">· {fmtDay(expiresOn)}</span>}
     </span>
   );
 }

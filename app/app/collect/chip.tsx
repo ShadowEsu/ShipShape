@@ -15,7 +15,7 @@ export function CollectChip({ state, label, expiresOn }: { state: CollectState; 
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${s.cls}`}>
       <span aria-hidden="true">{s.icon}</span>
       {label ? `${label}: ${s.label.toLowerCase()}` : s.label}
-      {expiresOn && <span className="font-normal opacity-80">· {fmtDay(expiresOn)}</span>}
+      {expiresOn && <span className="font-normal">· {fmtDay(expiresOn)}</span>}
     </span>
   );
 }

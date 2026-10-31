@@ -62,7 +62,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   return (
     <div className="space-y-6">
       <nav className="text-sm">
-        <Link href="/app/documents" className="text-ink-2 hover:underline">
+        <Link href="/app/documents" className="inline-flex min-h-6 items-center text-ink-2 hover:underline">
           ← Documents
         </Link>
       </nav>
@@ -122,7 +122,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                       {v.sha256.slice(0, 12)}
                     </span>
                   </span>
-                  <a href={`/app/documents/${doc.id}/file?v=${v.version}&mode=download`} className="text-ink-2 underline">
+                  <a href={`/app/documents/${doc.id}/file?v=${v.version}&mode=download`} className="inline-flex min-h-6 items-center text-ink-2 underline">
                     Download
                   </a>
                 </li>
@@ -216,7 +216,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           <form action={archive}>
             <input type="hidden" name="id" value={doc.id} />
             <input type="hidden" name="archived" value={doc.status === "archived" ? "0" : "1"} />
-            <button className="text-sm text-ink-2 underline">{doc.status === "archived" ? "Restore document" : "Archive document"}</button>
+            <button className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">{doc.status === "archived" ? "Restore document" : "Archive document"}</button>
           </form>
         </aside>
       </div>

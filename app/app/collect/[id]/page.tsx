@@ -38,7 +38,7 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
         </form>
       </PageHeader>
       <p className="text-sm">
-        <Link href="/app/collect" className="text-ink-2 underline">
+        <Link href="/app/collect" className="inline-flex min-h-6 items-center text-ink-2 underline">
           ← All vendors
         </Link>
         {vendor.email && <span className="ml-3 text-ink-3">{vendor.email}</span>}

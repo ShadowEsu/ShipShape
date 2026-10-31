@@ -49,7 +49,7 @@ export default async function FillPage({ params }: { params: Promise<{ template:
   return (
     <div className="max-w-3xl space-y-6">
       <nav className="text-sm">
-        <Link href="/app/make" className="text-ink-2 hover:underline">
+        <Link href="/app/make" className="inline-flex min-h-6 items-center text-ink-2 hover:underline">
           ← Make a document
         </Link>
       </nav>
