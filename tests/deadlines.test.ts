@@ -44,8 +44,8 @@ describe("reminders", () => {
   // Each reminder test has a workspace of its own: what's been sent decides what's due next.
   it("sends each due reminder once: the certificate 30 days out and the lapsed permit", async () => {
     const sample = await freshSample();
-    expect(await runReminders(today, sample.orgId)).toBe(2);
-    expect(await runReminders(today, sample.orgId)).toBe(0);
+    expect(await runReminders(today, sample.orgId)).toEqual({ sent: 2, failed: 0 });
+    expect(await runReminders(today, sample.orgId)).toEqual({ sent: 0, failed: 0 });
     const out = await listOutbox(sample);
     expect(out.map((m) => m.subject).sort()).toEqual([
       "Certificate of liability insurance (sample) expires in 21 days",
@@ -58,10 +58,10 @@ describe("reminders", () => {
 
   it("sends the next reminder when the date gets closer, and the lapse reminder after it passes", async () => {
     const sample = await freshSample();
-    expect(await runReminders(today, sample.orgId)).toBe(2); // today's: the 30-day reminder and the lapsed permit
-    expect(await runReminders(addDays(today, 15), sample.orgId)).toBe(1); // certificate: 6 days left, the 7-day reminder
-    expect(await runReminders(addDays(today, 16), sample.orgId)).toBe(0);
-    expect(await runReminders(addDays(today, 22), sample.orgId)).toBe(1); // certificate lapsed
+    expect(await runReminders(today, sample.orgId)).toEqual({ sent: 2, failed: 0 }); // today's: the 30-day reminder and the lapsed permit
+    expect(await runReminders(addDays(today, 15), sample.orgId)).toEqual({ sent: 1, failed: 0 }); // certificate: 6 days left, the 7-day reminder
+    expect(await runReminders(addDays(today, 16), sample.orgId)).toEqual({ sent: 0, failed: 0 });
+    expect(await runReminders(addDays(today, 22), sample.orgId)).toEqual({ sent: 1, failed: 0 }); // certificate lapsed
   });
 
   it("go to a Pro workspace's owners and admins, not plain members; Free workspaces get none", async () => {
@@ -76,12 +76,12 @@ describe("reminders", () => {
         owner,
       ]),
     );
-    expect(await runReminders(today, org.id)).toBe(0); // Free: the dates show in the app and calendar file only
+    expect(await runReminders(today, org.id)).toEqual({ sent: 0, failed: 0 }); // Free: the dates show in the app and calendar file only
 
     await db.root((tx) =>
       tx.query("insert into app.billing (org_id, stripe_customer_id, stripe_subscription_id, status, plan) values ($1, 'cus_R1', 'sub_R1', 'active', 'pro')", [org.id]),
     );
-    expect(await runReminders(today, org.id)).toBe(1);
+    expect(await runReminders(today, org.id)).toEqual({ sent: 1, failed: 0 });
     const sent = await db.root((tx) => tx.query<{ to_email: string; body: string }>("select to_email, body from app.outbox where org_id = $1", [org.id]));
     expect(sent.map((m) => m.to_email)).toEqual(["owner@example.com"]);
     expect(sent[0].body).toContain("Liquor license expires in 5 days");
@@ -167,6 +167,37 @@ describe("reminder job endpoint", () => {
     }
     expect((await call()).status).toBe(200);
     expect(await db.root((tx) => tx.query("select 1 from app.storage_cleanup where path = $1", [orphan]))).toEqual([]);
+    vi.unstubAllEnvs();
+  });
+
+  it("skips a reminder that can't be written, sends everyone else's, reports the run failed, and sends it next time (Security R-1tx)", async () => {
+    vi.stubEnv("CRON_SECRET", "s".repeat(40));
+    const call = () => cron(new Request("http://x/api/cron/reminders", { headers: { authorization: `Bearer ${"s".repeat(40)}` } }));
+    const blocked = await freshSample();
+    const fine = await freshSample();
+    // Any row the outbox refuses, for one workspace only, as a future bad row would be.
+    await db.root((tx) => tx.query(`alter table app.outbox add constraint test_refuse_one check (org_id <> '${blocked.orgId}'::uuid)`));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sentTo = (org: string) => db.root((tx) => tx.query("select 1 from app.outbox where org_id = $1", [org]));
+    const recorded = (org: string) => db.root((tx) => tx.query("select 1 from app.reminders_sent where org_id = $1", [org]));
+    try {
+      const run = await runReminders(today);
+      expect(run.failed).toBe(2);
+      expect(await sentTo(fine.orgId)).toHaveLength(2);
+      expect(await sentTo(blocked.orgId)).toHaveLength(0);
+      expect(await recorded(blocked.orgId)).toHaveLength(0);
+      // One line per skipped reminder: its document and the error code, never an address.
+      const logged = spy.mock.calls.map((c) => String(c[0])).filter((m) => m.startsWith("reminders: "));
+      const blockedDocs = (await listDocuments(blocked)).map((d) => d.id);
+      expect(logged).toHaveLength(2);
+      expect(logged.every((m) => blockedDocs.some((id) => m === `reminders: ${id} not sent (23514)`))).toBe(true);
+      expect((await call()).status).toBe(500);
+    } finally {
+      spy.mockRestore();
+      await db.root((tx) => tx.query("alter table app.outbox drop constraint test_refuse_one"));
+    }
+    expect(await runReminders(today, blocked.orgId)).toEqual({ sent: 2, failed: 0 });
+    expect((await call()).status).toBe(200);
     vi.unstubAllEnvs();
   });
 });

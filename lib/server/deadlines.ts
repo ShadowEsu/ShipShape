@@ -1,5 +1,5 @@
 import "server-only";
-import { asService, asUser } from "./db";
+import { asService, asUser, pgErrorCode } from "./db";
 import { DOC_KINDS, type DocKind } from "./documents";
 import type { Ctx } from "./profile";
 
@@ -130,30 +130,43 @@ function reminderText(r: DueReminder): { subject: string; body: string } {
  * through the outbox (email sending is off). Safe to run as often as you like: each reminder goes
  * out once. Runs as the service role because it works across workspaces (a scheduled job, no user);
  * `onlyOrg` limits it to one workspace (a sample workspace right after it is made).
+ * Each reminder is written in its own savepoint (Security R-1tx): one that can't be written is
+ * skipped, logged and left unsent, so the next run tries it again, and the others still go out.
  */
-export async function runReminders(today = isoToday(), onlyOrg: string | null = null): Promise<number> {
+export async function runReminders(today = isoToday(), onlyOrg: string | null = null): Promise<{ sent: number; failed: number }> {
   return asService(async (tx) => {
     const due = await tx.query<DueReminder>(DUE_SQL, [today, onlyOrg]);
+    let sent = 0;
+    let failed = 0;
     for (const r of due) {
-      // Sample workspaces' people have no email address; their reminders go to a made-up one.
-      const recipients = await tx.query<{ email: string }>(
-        `select coalesce(u.email, case when o.is_demo then 'you@sample.example' end) as email
-         from app.members m join auth.users u on u.id = m.user_id join app.organizations o on o.id = m.org_id
-         where m.org_id = $1 and m.role in ('owner', 'admin') and coalesce(u.email, case when o.is_demo then 'x' end) is not null`,
-        [r.org_id],
-      );
-      const { subject, body } = reminderText(r);
-      for (const to of recipients) {
-        await tx.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, $2, $3, $4)", [r.org_id, to.email, subject, body]);
+      try {
+        await tx.savepoint(async (sp) => {
+          // Sample workspaces' people have no email address; their reminders go to a made-up one.
+          const recipients = await sp.query<{ email: string }>(
+            `select coalesce(u.email, case when o.is_demo then 'you@sample.example' end) as email
+             from app.members m join auth.users u on u.id = m.user_id join app.organizations o on o.id = m.org_id
+             where m.org_id = $1 and m.role in ('owner', 'admin') and coalesce(u.email, case when o.is_demo then 'x' end) is not null`,
+            [r.org_id],
+          );
+          const { subject, body } = reminderText(r);
+          for (const to of recipients) {
+            await sp.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, $2, $3, $4)", [r.org_id, to.email, subject, body]);
+          }
+          await sp.query("insert into app.reminders_sent (document_id, org_id, due_on, days_before) values ($1, $2, $3, $4) on conflict do nothing", [
+            r.document_id,
+            r.org_id,
+            r.due_on,
+            r.days_before,
+          ]);
+        });
+        sent++;
+      } catch (e) {
+        failed++;
+        // The document's id and the error's code only: the message may hold addresses or query text.
+        console.error(`reminders: ${r.document_id} not sent (${pgErrorCode(e) ?? (e instanceof Error ? e.name : "error")})`);
       }
-      await tx.query("insert into app.reminders_sent (document_id, org_id, due_on, days_before) values ($1, $2, $3, $4) on conflict do nothing", [
-        r.document_id,
-        r.org_id,
-        r.due_on,
-        r.days_before,
-      ]);
     }
-    return due.length;
+    return { sent, failed };
   });
 }
 

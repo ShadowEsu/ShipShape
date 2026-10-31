@@ -1,6 +1,7 @@
 import "server-only";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import type { TransactionSql } from "postgres";
 import { migrate, type MigrationStep } from "./migrations";
 import { pgTls } from "./pg-tls";
 
@@ -16,6 +17,13 @@ import { pgTls } from "./pg-tls";
 
 export interface Tx {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
+  /**
+   * Runs `fn` in a savepoint: if it throws, only its own statements are undone, the error is
+   * rethrown and the transaction goes on. The only way to carry on after a failed statement:
+   * postgres.js fails the whole transaction for any error inside it that didn't happen in a savepoint
+   * of its own, even one the code caught.
+   */
+  savepoint<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
 }
 
 export interface Driver {
@@ -54,9 +62,24 @@ export async function createLocalDriver(dataDir?: string, { supabaseStorage = tr
   const setup = [await readFile(path.join(ROOT, "supabase/platform/plain-postgres.sql"), "utf8")];
   if (supabaseStorage) setup.push(await readFile(path.join(ROOT, "supabase/test/supabase-shim.sql"), "utf8"));
   await migrate({ ...step(pg), transaction: (fn) => pg.transaction((t) => fn(step(t))) }, setup, await sqlFiles(path.join(ROOT, "supabase/migrations")));
-  const wrap = (t: { query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }): Tx => ({
-    query: async (text, params) => (await t.query(text, params)).rows as never,
-  });
+  const wrap = (t: { query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }): Tx => {
+    const tx: Tx = {
+      query: async (text, params) => (await t.query(text, params)).rows as never,
+      // One fixed name: Postgres takes the most recent savepoint of a name, so nesting still works.
+      savepoint: async (fn) => {
+        await t.query("savepoint sp");
+        try {
+          const result = await fn(tx);
+          await t.query("release savepoint sp");
+          return result;
+        } catch (e) {
+          await t.query("rollback to savepoint sp");
+          throw e;
+        }
+      },
+    };
+    return tx;
+  };
   // PGlite has one connection whose login user is the superuser `postgres`. Its `SET LOCAL` and
   // `RESET SESSION AUTHORIZATION` don't restore the identity, so each transaction sets it explicitly.
   return {
@@ -82,8 +105,16 @@ export async function createRemoteDriver(url: string): Promise<Driver> {
   // TLS always verified (pg-tls.ts).
   const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10, ssl: pgTls() });
   return {
-    transaction: (fn) => sql.begin((s) => fn({ query: (text, params) => s.unsafe(text, (params ?? []) as never[]) as never })) as never,
+    transaction: (fn) => sql.begin((s) => fn(postgresTx(s))) as never,
     close: () => sql.end({ timeout: 5 }),
+  };
+}
+
+/** A postgres.js transaction as a `Tx` (exported for the tests' superuser connection). */
+export function postgresTx(s: TransactionSql): Tx {
+  return {
+    query: (text, params) => s.unsafe(text, (params ?? []) as never[]) as never,
+    savepoint: async (fn) => (await s.savepoint(async (sp) => ({ value: await fn(postgresTx(sp)) }))).value,
   };
 }
 

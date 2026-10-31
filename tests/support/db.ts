@@ -3,7 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import postgres from "postgres";
 import { hostProblem, serverProblem } from "./pg-test-guard";
-import { createLocalDriver, createRemoteDriver, setDriverForTests, type Driver, type Tx } from "@/lib/server/db";
+import { createLocalDriver, createRemoteDriver, postgresTx, setDriverForTests, type Driver, type Tx } from "@/lib/server/db";
 import { migrate, type MigrationStep } from "@/lib/server/migrations";
 import { pgTls } from "@/lib/server/pg-tls";
 
@@ -103,6 +103,6 @@ async function remoteDb(adminUrl: string) {
   return {
     driver: await createRemoteDriver(appUrl.toString()),
     root: <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
-      su.begin((t) => fn({ query: (text, params) => t.unsafe(text, (params ?? []) as never[]) as never })) as Promise<T>,
+      su.begin((t) => fn(postgresTx(t))) as Promise<T>,
   };
 }

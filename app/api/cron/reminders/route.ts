@@ -33,7 +33,7 @@ export async function GET(req: Request) {
   log("rate-limit purge", cleared);
   log("account deletions", deletions);
   log("stored-file cleanup", files);
-  if (sent.status === "rejected" || cleared.status === "rejected" || deletions.status === "rejected" || deletions.value.failed > 0 || files.status === "rejected") {
+  if (sent.status === "rejected" || sent.value.failed > 0 || cleared.status === "rejected" || deletions.status === "rejected" || deletions.value.failed > 0 || files.status === "rejected") {
     return fail("The daily run failed.", 500);
   }
   return Response.json({ ok: true, sent: sent.value, cleared: cleared.value, deletions: deletions.value, files: files.value }, { headers: { "Cache-Control": "no-store" } });
