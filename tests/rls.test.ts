@@ -264,7 +264,10 @@ describe("audit chain", () => {
     const rows = await asUser(a, (tx) =>
       tx.query<{ action: string; actor: string | null }>("select action, actor from app.audit_log where org_id = $1 order by seq", [orgA]),
     );
-    expect(rows.map((r) => r.action)).toEqual([
+    // The setup's rows come first, exactly; other tests in this file may add to A's history before this
+    // one runs, and the view appended above is last.
+    const setup = rows.slice(0, 9);
+    expect(setup.map((r) => r.action)).toEqual([
       "workspace.created",
       "document.created",
       "document.version_added",
@@ -274,10 +277,10 @@ describe("audit chain", () => {
       "vendor.added",
       "collect.link_created",
       "collect.received",
-      "document.viewed",
     ]);
+    expect(rows.at(-1)).toEqual({ action: "document.viewed", actor: a });
     // A vendor's upload has no signed-in actor; everything else was A.
-    expect(rows.filter((r) => r.actor !== a).map((r) => [r.action, r.actor])).toEqual([["collect.received", null]]);
+    expect(setup.filter((r) => r.actor !== a).map((r) => [r.action, r.actor])).toEqual([["collect.received", null]]);
 
     // A version's fingerprint is part of the chain: swapping it breaks that row (Security F2).
     const [version] = await db.root((tx) =>
@@ -290,8 +293,12 @@ describe("audit chain", () => {
     await setDetail(SHA);
     expect((await verify())[0].broken).toBeNull();
 
+    const [second] = await db.root((tx) => tx.query<{ object_id: string | null }>("select object_id from app.audit_log where org_id = $1 and seq = 2", [orgA]));
     await db.root((tx) => tx.query("update app.audit_log set object_id = null where org_id = $1 and seq = 2", [orgA]));
     expect(String((await verify())[0].broken)).toBe("2");
+    // Put it back, so A's history verifies again for the tests after this one.
+    await db.root((tx) => tx.query("update app.audit_log set object_id = $2 where org_id = $1 and seq = 2", [orgA, second.object_id]));
+    expect((await verify())[0].broken).toBeNull();
   });
 
   it("members can only append view-type events, never forge e-sign or data events", async () => {
@@ -311,7 +318,8 @@ describe("security review E2-E7", () => {
   it("signed-in users can only create real workspaces; sample workspaces are server-only", async () => {
     await expect(asUser(a, (tx) => tx.query("select app.create_workspace('x', true)"))).rejects.toThrow(/does not exist/);
     await expectDenied(asUser(a, (tx) => tx.query("select app.create_sample_workspace($1, 'x')", [a])));
-    const [row] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [b]));
+    const owner = await db.user("e2-sample@example.com"); // not B: B's workspaces stay just B Cafe for the visibility test
+    const [row] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [owner]));
     const [org] = await db.root((tx) => tx.query<{ is_demo: boolean }>("select is_demo from app.organizations where id = $1", [row.id]));
     expect(org.is_demo).toBe(true);
   });

@@ -52,7 +52,8 @@ afterAll(async () => {
 
 describe("sample workspace", () => {
   it("has five sample documents with expired, expiring and valid dates", async () => {
-    const docs = await listDocuments(sample);
+    // A workspace of its own: other tests here add documents to the shared one.
+    const docs = await listDocuments(await workspace("five-docs@example.com", "sample"));
     expect(docs).toHaveLength(5);
     const byKind = Object.fromEntries(docs.map((d) => [d.kind, d.validity]));
     expect(byKind).toMatchObject({ permit: "expired", coi: "expiring", license: "ok", w9: "none" });

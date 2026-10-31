@@ -22,14 +22,18 @@ const addDays = (iso: string, n: number) => {
 };
 const today = new Date().toISOString().slice(0, 10);
 
+async function freshSample(): Promise<Ctx> {
+  const userId = await db.user(null);
+  const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
+  await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner" };
+}
+
 beforeAll(async () => {
   db = await freshDb();
   blobDir = await mkdtemp(path.join(os.tmpdir(), "shipshape-deadlines-"));
   setBlobStoreForTests(localBlobStore(blobDir));
-  const userId = await db.user(null);
-  const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
-  await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
-  sample = { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner" };
+  sample = await freshSample();
 });
 
 afterAll(async () => {
@@ -37,7 +41,9 @@ afterAll(async () => {
 });
 
 describe("reminders", () => {
+  // Each reminder test has a workspace of its own: what's been sent decides what's due next.
   it("sends each due reminder once: the certificate 30 days out and the lapsed permit", async () => {
+    const sample = await freshSample();
     expect(await runReminders(today, sample.orgId)).toBe(2);
     expect(await runReminders(today, sample.orgId)).toBe(0);
     const out = await listOutbox(sample);
@@ -51,6 +57,8 @@ describe("reminders", () => {
   });
 
   it("sends the next reminder when the date gets closer, and the lapse reminder after it passes", async () => {
+    const sample = await freshSample();
+    expect(await runReminders(today, sample.orgId)).toBe(2); // today's: the 30-day reminder and the lapsed permit
     expect(await runReminders(addDays(today, 15), sample.orgId)).toBe(1); // certificate: 6 days left, the 7-day reminder
     expect(await runReminders(addDays(today, 16), sample.orgId)).toBe(0);
     expect(await runReminders(addDays(today, 22), sample.orgId)).toBe(1); // certificate lapsed
