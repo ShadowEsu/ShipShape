@@ -44,14 +44,17 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
   const toSignPath = `${ctx.orgId}/${id}/v1.pdf`;
   await asUser(ctx.userId, async (tx) => {
     await assertWithinPlan(tx, ctx.orgId, "esign");
-    const [latest] = await tx.query<{ version: number; storage_path: string; mime: AllowedMime }>(
-      "select v.version, v.storage_path, v.mime from app.document_versions v join app.documents d on d.id = v.document_id where v.document_id = $1 and d.org_id = $2 and d.status = 'active' order by v.version desc limit 1",
+    const [latest] = await tx.query<{ version: number; storage_path: string; mime: AllowedMime; sha256: string }>(
+      "select v.version, v.storage_path, v.mime, v.sha256 from app.document_versions v join app.documents d on d.id = v.document_id where v.document_id = $1 and d.org_id = $2 and d.status = 'active' order by v.version desc limit 1",
       [p.documentId, ctx.orgId],
     );
     if (!latest) throw new UserError("Document not found.");
+    const original = await blobStore().get(latest.storage_path);
+    // The certificate names the upload's fingerprint, so the file read now must be that upload (Security R3-3).
+    if (sha256Hex(original) !== latest.sha256) throw new UserError("The stored copy of this document doesn't match its fingerprint, so it can't be sent. Upload it again as a new version.");
     let toSign: Uint8Array;
     try {
-      toSign = await buildToSign(await blobStore().get(latest.storage_path), latest.mime);
+      toSign = await buildToSign(original, latest.mime);
     } catch (e) {
       if (!(e instanceof NotSignable)) throw e;
       throw new UserError(
@@ -81,15 +84,34 @@ export interface SignatureRequestRow {
   expires_at: string;
   signed_at: string | null;
   created_at: string;
+  /** The request has its own file to sign (every request since Security R2-1). */
+  has_review_file: boolean;
 }
 
 export async function listSignatureRequests(ctx: Ctx, documentId: string): Promise<SignatureRequestRow[]> {
   return asUser(ctx.userId, (tx) =>
     tx.query<SignatureRequestRow>(
-      "select id, signer_name, signer_email, status, version, signed_version, expires_at::text as expires_at, signed_at::text as signed_at, created_at::text as created_at from app.signature_requests where org_id = $1 and document_id = $2 order by created_at desc",
+      "select id, signer_name, signer_email, status, version, signed_version, expires_at::text as expires_at, signed_at::text as signed_at, created_at::text as created_at, to_sign_sha256 is not null as has_review_file from app.signature_requests where org_id = $1 and document_id = $2 order by created_at desc",
       [ctx.orgId, documentId],
     ),
   );
+}
+
+/**
+ * A 5-minute download link to exactly the file a signature request sent (Security R3-2), so the
+ * sender can check what the signer will see before sharing the link. Members of the workspace only;
+ * the file has the name the signer's download gets.
+ */
+export async function reviewFileUrl(ctx: Ctx, documentId: string, requestId: string): Promise<string> {
+  if (!z.uuid().safeParse(requestId).success || !z.uuid().safeParse(documentId).success) throw new UserError("Request not found.");
+  const [row] = await asUser(ctx.userId, (tx) =>
+    tx.query<{ title: string; version: number }>(
+      "select d.title, r.version from app.signature_requests r join app.documents d on d.id = r.document_id where r.id = $1 and r.document_id = $2 and r.org_id = $3 and r.to_sign_sha256 is not null",
+      [requestId, documentId, ctx.orgId],
+    ),
+  );
+  if (!row) throw new UserError("Request not found.");
+  return blobStore().signedUrl(`${ctx.orgId}/${requestId}/v1.pdf`, { filename: downloadName(row.title, row.version, "application/pdf"), inline: false });
 }
 
 export async function revokeSignatureRequest(ctx: Ctx, id: string) {
@@ -202,7 +224,7 @@ export async function sendSigningCode(id: string, token: string): Promise<"ok" |
   return row.result;
 }
 
-export type SignResult = "ok" | "bad_code" | "locked" | "expired_code" | "invalid" | "needs_consent" | "needs_name" | "unsupported" | "too_large";
+export type SignResult = "ok" | "bad_code" | "locked" | "expired_code" | "invalid" | "needs_consent" | "needs_name" | "unsupported" | "too_large" | "file_changed";
 
 /** The certificate page(s) appended to the reviewed file to make the signed copy. */
 function certificatePdf(rows: [string, string][]): Promise<Uint8Array> {
@@ -247,8 +269,8 @@ export async function completeSigning(
   if (!r || r.status !== "pending" || !r.to_sign_path || !r.to_sign_sha256) return "invalid";
 
   const toSign = await blobStore().get(r.to_sign_path);
-  // The signature covers what the signer downloaded; a stored file that changed since is never signed.
-  if (sha256Hex(toSign) !== r.to_sign_sha256) throw new Error("the file to sign no longer matches its fingerprint");
+  // The signature covers what the signer downloaded; a stored file that changed since is never signed (R3-4).
+  if (sha256Hex(toSign) !== r.to_sign_sha256) return "file_changed";
   const visitor = visitorId(input.ip);
   const signedAt = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
   let bytes: Uint8Array;

@@ -156,15 +156,23 @@ export function VersionForm({ id }: { id: string }) {
 export function SignRequestForm({ id, days, demo }: { id: string; days: readonly number[]; demo: boolean }) {
   const [state, action, pending] = useActionState<SignFormState, FormData>(askToSign, {});
   const [url, setUrl] = useState<string | null>(null);
+  const created = state.created;
 
   useEffect(() => {
-    if (state.created) setUrl(`${window.location.origin}/s/${state.created.id}#${state.created.token}`);
-  }, [state.created]);
+    if (created) setUrl(`${window.location.origin}/s/${created.id}#${created.token}`);
+  }, [created]);
 
-  if (url) {
+  if (url && created) {
     return (
       <div className="space-y-3">
         <p className="text-sm font-medium">Signing link ready</p>
+        <p className="text-sm text-ink-2">
+          The signer gets ShipShape&apos;s own copy of this document: form fields and notes drawn in as they show on screen, and nothing that can run.{" "}
+          <a href={`/app/documents/${id}/file?request=${created.id}`} className="underline">
+            Download that copy
+          </a>{" "}
+          and check it before you send the link.
+        </p>
         <p className="text-sm text-ink-2">
           Send it to the signer yourself; ShipShape shows it only once. They confirm their email with a code before they sign.
           {demo && " To try it, open the link in this browser; the code lands under Deadlines → Reminders sent."}

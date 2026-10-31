@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Daily: reminders, and clearing rate-limit windows that started over an hour ago (the privacy policy says
- * they're cleared within a day). The scheduler (vercel.json) sends `Authorization: Bearer
+ * they're cleared within about a day). The scheduler (vercel.json) sends `Authorization: Bearer
  * $CRON_SECRET`; nothing else may run it.
  */
 export async function GET(req: Request) {

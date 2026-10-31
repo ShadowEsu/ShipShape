@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from "pdf-lib";
@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
 import { downloadUrl, getDocument, insertDocument, listDocuments } from "@/lib/server/documents";
-import { completeSigning, openSigning, requestSignature, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
+import { completeSigning, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
+import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
@@ -101,6 +102,33 @@ describe("signing", () => {
     const code = await lastCode(a.orgId);
     await db.root((tx) => tx.query("update app.signature_requests set otp_expires_at = now() - interval '1 minute' where id = $1", [id]));
     expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("expired_code");
+  });
+
+  it("lets the sender download exactly the file the signer gets, and no other workspace (Security R3-2)", async () => {
+    const doc = await nda(a);
+    const { id, token } = await request(a);
+    const fileAt = async (url: string) => blobStore().get(verifyFileParams(new URL(url, "http://x").searchParams)!.objectPath);
+    const senders = await fileAt(await reviewFileUrl(a, doc.id, id));
+    expect(Buffer.from(senders).equals(Buffer.from(await fileAt((await signingFileUrl(id, token))!)))).toBe(true);
+    await expect(reviewFileUrl(b, doc.id, id)).rejects.toThrow(UserError);
+  });
+
+  it("never signs a file changed after it was sent, nor sends an upload changed in storage (Security R3-4, R3-3)", async () => {
+    const c = await sampleWorkspace();
+    const { id, token } = await request(c);
+    const other = await PDFDocument.create();
+    other.addPage([612, 792]);
+    await writeFile(path.join(blobDir, `${c.orgId}/${id}/v1.pdf`), await other.save());
+    await sendSigningCode(id, token);
+    expect(await completeSigning(id, token, { code: await lastCode(c.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("file_changed");
+    expect((await openSigning(id, token))?.status).toBe("pending");
+
+    const docId = (await nda(c)).id;
+    const [upload] = await db.root((tx) =>
+      tx.query<{ storage_path: string }>("select storage_path from app.document_versions where document_id = $1 order by version desc limit 1", [docId]),
+    );
+    await writeFile(path.join(blobDir, upload.storage_path), await other.save());
+    await expect(request(c)).rejects.toThrow(/doesn't match its fingerprint/);
   });
 
   it("adds the signed copy (the reviewed file + certificate) as a new version, once, and records every step", async () => {

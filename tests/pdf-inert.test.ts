@@ -87,9 +87,8 @@ describe("makeInert: a copy of someone's PDF can't run anything (Security F3-1..
 
     const copy = await inertCopy(await hostile());
     expect(findings(copy).filter((f) => !f.startsWith("annot "))).toEqual([]);
-    // Only display annotations stay: the note, the reply, the square, and the links (unsafe ones lose their action).
-    const links = Array.from({ length: 9 }, () => "annot /Link");
-    expect(findings(copy).filter((f) => f.startsWith("annot ")).sort()).toEqual([...links, "annot /Square", "annot /Text", "annot /Text"]);
+    // Only links stay (unsafe ones lose their action); the notes and the square had nothing to draw.
+    expect(findings(copy).filter((f) => f.startsWith("annot ")).sort()).toEqual(Array.from({ length: 9 }, () => "annot /Link"));
     const kept: string[] = [];
     for (const [, obj] of copy.context.enumerateIndirectObjects()) {
       const a = obj instanceof PDFDict ? obj.lookupMaybe(N("A"), PDFDict) : undefined;
@@ -145,13 +144,20 @@ const pageWith = (extra = "") => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 61
 const PAGES = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
 
 describe("the file a signer reviews (Security R2)", () => {
-  it("refuses files that viewers can show differently: hidden layers, self-redrawing forms, an object defined twice", async () => {
+  it("refuses files that viewers can show differently: hidden layers, print-only layers, self-redrawing forms, an object defined twice", async () => {
     const hiddenLayer = rawPdf([
       [1, "<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [6 0 R] /D << /OFF [6 0 R] >> >> >>"],
       [2, PAGES],
       [3, pageWith()],
       [4, text("LATE FEE")],
       [6, "<< /Type /OCG /Name (Layer) >>"],
+    ]);
+    const printOnlyLayer = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [6 0 R] /D << /AS [<< /Event /Print /OCGs [6 0 R] /Category [/Print] >>] >> >> >>"],
+      [2, PAGES],
+      [3, pageWith()],
+      [4, text("LATE FEE")],
+      [6, "<< /Type /OCG /Name (Layer) /Usage << /Print << /PrintState /ON >> /View << /ViewState /OFF >> >> >>"],
     ]);
     const redraws = rawPdf([
       [1, "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [] /NeedAppearances true >> >>"],
@@ -166,7 +172,7 @@ describe("the file a signer reviews (Security R2)", () => {
       [4, text("Fee: USD 100")],
       [4, text("Fee: USD 10000")],
     ]);
-    for (const f of [hiddenLayer, redraws, twice]) {
+    for (const f of [hiddenLayer, printOnlyLayer, redraws, twice]) {
       await expect(buildToSign(bytesOf(f.text), "application/pdf")).rejects.toMatchObject({ reason: "viewer_dependent" });
     }
   });
@@ -183,6 +189,33 @@ describe("the file a signer reviews (Security R2)", () => {
     const xrefAt = at + body.length;
     const updated = `${base.text}${body}xref\n4 1\n${String(at).padStart(10, "0")} 00000 n \ntrailer\n<< /Size 5 /Root 1 0 R /Prev ${base.xrefAt} >>\nstartxref\n${xrefAt}\n%%EOF\n`;
     expect((await PDFDocument.load(await buildToSign(bytesOf(updated), "application/pdf"))).getPageCount()).toBe(1);
+  });
+
+  it("prints what the screen shows: hidden-on-screen notes are dropped, covers that don't print are drawn (R3-1)", async () => {
+    const form = (content: string) => `<< /Type /XObject /Subtype /Form /BBox [0 0 330 40] /Resources << /Font << /F1 ${HELV} >> >> /Length ${content.length} >>\nstream\n${content}\nendstream`;
+    const e1 = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+      [2, PAGES],
+      [3, pageWith("/Annots [5 0 R 6 0 R 8 0 R]")],
+      [4, stream("BT /F1 18 Tf 72 700 Td (Seller may terminate at any time.) Tj 0 -60 Td (Fee: USD 100) Tj ET")],
+      // NoView + Print: invisible on screen, printed on paper.
+      [5, "<< /Type /Annot /Subtype /FreeText /F 36 /Rect [72 600 402 640] /DA (/F1 12 Tf 0 g) /AP << /N 7 0 R >> >>"],
+      // No Print flag: a white box over the clause on screen, gone on paper.
+      [6, "<< /Type /Annot /Subtype /Square /F 0 /Rect [70 690 400 730] /AP << /N 9 0 R >> >>"],
+      [7, form("BT /F1 12 Tf 2 10 Td (LATE FEE USD 10000 PER DAY) Tj ET")],
+      // Only a rollover appearance: viewers show nothing until the pointer is over it.
+      [8, "<< /Type /Annot /Subtype /Square /F 4 /Rect [72 500 402 540] /AP << /R 10 0 R >> >>"],
+      [9, form("1 1 1 rg 0 0 330 40 re f")],
+      [10, form("BT /F1 12 Tf 2 10 Td (ROLLOVER TEXT) Tj ET")],
+    ]);
+    const bytes = await buildToSign(bytesOf(e1.text), "application/pdf");
+    const saved = new TextDecoder("latin1").decode(bytes);
+    expect(saved).not.toContain("LATE FEE");
+    expect(saved).not.toContain("ROLLOVER");
+    expect(saved).toContain("1 1 1 rg 0 0 330 40 re f"); // still written, so the page draws it
+    const copy = await PDFDocument.load(bytes);
+    expect(findings(copy).filter((f) => f.startsWith("annot "))).toEqual([]);
+    expect(copy.getPage(0).node.lookup(N("Resources"), PDFDict).lookup(N("XObject"), PDFDict).keys()).toHaveLength(1);
   });
 
   it("signs ordinary forms: an empty signature field, a value the standard font can't draw, a field on no page (R2-3)", async () => {

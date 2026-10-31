@@ -1,5 +1,5 @@
 import { PDFDocument } from "pdf-lib";
-import { attachLinkTargets, detachLinkTargets, flattenWidgets, makeInert, viewerDependent } from "./inert";
+import { attachLinkTargets, detachLinkTargets, flattenAnnotations, makeInert, viewerDependent } from "./inert";
 
 /** Why a file can't be sent for signature. */
 export class NotSignable extends Error {
@@ -10,7 +10,8 @@ export class NotSignable extends Error {
 
 /**
  * The file a signer reviews, built once when the signature is requested (Security R2-1): the
- * upload's pages with form fields drawn in, internal links pointing at the copied pages, and nothing
+ * upload's pages with form fields and other annotations drawn in as they show on screen (so paper
+ * matches the screen, R3-1), internal links pointing at the copied pages, and nothing
  * that can run. An image becomes a page. At signing, the certificate is appended to exactly these
  * bytes (appendPages), so the signed copy starts with the file the signer saw.
  *
@@ -27,7 +28,7 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
     }
     if (viewerDependent(source, original)) throw new NotSignable("viewer_dependent");
     try {
-      flattenWidgets(source);
+      flattenAnnotations(source);
       detachLinkTargets(source);
       for (const page of await out.copyPages(source, source.getPageIndices())) out.addPage(page);
     } catch {

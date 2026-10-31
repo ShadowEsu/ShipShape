@@ -23,8 +23,8 @@ import {
  * paths, because scripts can hang off almost any object: a field's parent, a popup, presentation
  * steps, a form XObject.
  *
- * 1. Pages (and any stray copy of one) keep only annotation types that just show something (F3-2).
- *    Form fields should be drawn into the page before copying (flattenWidgets), so no widget is left.
+ * 1. Pages (and any stray copy of one) keep only Link annotations, with no appearance of their own
+ *    (F3-2, R3-1). Everything else should be drawn into the page before copying (flattenAnnotations).
  * 2. Every object loses its script and trigger keys, and any /A that isn't a jump within the
  *    document or a web/mail link (F3-1, F3-3). Unsafe action objects are emptied wherever they sit.
  * 3. Objects nothing points to any more (a dropped attachment's file, say) are deleted, so they
@@ -36,28 +36,43 @@ export function makeInert(doc: PDFDocument): void {
 }
 
 /**
- * Draws each form field's current appearance into its page and removes the form (Security R2-3).
- * Field by field: a widget with nothing to draw (no appearance, a missing state, hidden) is simply
- * left out, and the form's own logic never runs, so ordinary forms always work. What gets drawn is
- * each widget's stored appearance, which is what viewers show once /NeedAppearances is refused.
+ * Draws each annotation's on-screen appearance into its page and removes the annotation; only
+ * links stay, without an appearance (Security R2-3, R3-1). Viewers show and print annotations by
+ * their own flags (Hidden, NoView, Print) and states, so a kept annotation could print what the
+ * screen didn't show, or hide on paper what covered the page on screen. Drawn as page content,
+ * screen and paper show the same thing. What's drawn is what a viewer shows: the normal appearance
+ * (the current /AS state for check boxes and the like), never a hidden or NoView one, whether or
+ * not it prints. Only display types and form fields are drawn; anything else (a popup, media, an
+ * attachment) is left out, as are annotations with nothing to draw. The form goes too, so its own
+ * logic never runs.
  */
-export function flattenWidgets(doc: PDFDocument): void {
+export function flattenAnnotations(doc: PDFDocument): void {
   for (const page of doc.getPages()) {
     const annots = page.node.lookup(ANNOTS);
     if (!(annots instanceof PDFArray)) continue;
+    const links: PDFObject[] = [];
     for (const entry of annots.asArray()) {
-      const widget = doc.context.lookup(entry);
-      if (widget instanceof PDFDict && nameAt(widget, SUBTYPE) === WIDGET) drawWidget(page, widget);
+      const annot = doc.context.lookup(entry);
+      if (!(annot instanceof PDFDict)) continue;
+      const subtype = nameAt(annot, SUBTYPE);
+      if (subtype === LINK) {
+        annot.delete(AP);
+        annot.delete(AS);
+        links.push(entry);
+      } else if (subtype !== null && DRAWN.has(subtype)) drawAppearance(page, annot);
     }
+    if (links.length) page.node.set(ANNOTS, doc.context.obj(links));
+    else page.node.delete(ANNOTS);
   }
   doc.catalog.delete(ACROFORM);
 }
 
 /**
- * True when viewers can disagree about what the file shows (Security R2-1): a layer hidden by
- * default, a form that asks the viewer to redraw its fields, or an object defined twice in a file
- * with a single revision. The signer reviews ShipShape's own copy either way; these are refused so
- * nobody is shown one thing in their viewer and another in ShipShape's.
+ * True when viewers can disagree about what the file shows (Security R2-1, R3-1): a layer hidden by
+ * default or switched between screen and print, a form that asks the viewer to redraw its fields,
+ * or an object defined twice in a file with a single revision. The signer reviews ShipShape's own
+ * copy either way; these are refused so nobody is shown one thing in their viewer and another in
+ * ShipShape's.
  */
 export function viewerDependent(doc: PDFDocument, raw: Uint8Array): boolean {
   const oc = doc.catalog.lookup(OCPROPERTIES);
@@ -65,6 +80,7 @@ export function viewerDependent(doc: PDFDocument, raw: Uint8Array): boolean {
   if (config instanceof PDFDict) {
     const off = config.lookup(OFF);
     if ((off instanceof PDFArray && off.size() > 0) || nameAt(config, BASE_STATE) === OFF) return true;
+    if (config.has(AS)) return true; // auto states: layers that turn on or off for printing or viewing
   }
   const form = doc.catalog.lookup(ACROFORM);
   const redraw = form instanceof PDFDict ? form.lookup(NEED_APPEARANCES) : undefined;
@@ -101,9 +117,10 @@ export function attachLinkTargets(doc: PDFDocument): void {
   for (const page of pages) eachLink(page.node, (holder, key) => retarget(holder, key, toRef));
 }
 
-const ANNOTATIONS = new Set(
-  ["Link", "Text", "FreeText", "Line", "Square", "Circle", "Polygon", "PolyLine", "Highlight", "Underline", "Squiggly", "StrikeOut", "Stamp", "Caret", "Ink"].map((s) =>
-    PDFName.of(s),
+/** Annotation types that only show something; their appearance is drawn into the page (R3-1). */
+const DRAWN = new Set(
+  ["Widget", "Text", "FreeText", "Line", "Square", "Circle", "Polygon", "PolyLine", "Highlight", "Underline", "Squiggly", "StrikeOut", "Stamp", "Caret", "Ink"].map(
+    (s) => PDFName.of(s),
   ),
 );
 
@@ -146,7 +163,7 @@ const OCPROPERTIES = PDFName.of("OCProperties");
 const OFF = PDFName.of("OFF");
 const P = PDFName.of("P");
 const RECT = PDFName.of("Rect");
-const WIDGET = PDFName.of("Widget");
+const LINK = PDFName.of("Link");
 const XOBJECT = PDFName.of("XObject");
 const ACROFORM = PDFName.of("AcroForm");
 // Annotation flags: Hidden (2) and NoView (32).
@@ -165,27 +182,27 @@ function numbersAt(dict: PDFDict, key: PDFName, n: number): number[] | null {
   return out;
 }
 
-/** The widget's normal appearance stream (for check boxes and radio buttons, its current state's). */
-function normalAppearance(widget: PDFDict): { ref: PDFRef; stream: PDFStream } | null {
-  const ap = widget.lookup(AP);
+/** The annotation's normal appearance stream (for check boxes and radio buttons, its current state's). */
+function normalAppearance(annot: PDFDict): { ref: PDFRef; stream: PDFStream } | null {
+  const ap = annot.lookup(AP);
   if (!(ap instanceof PDFDict)) return null;
   let entry = ap.get(NORMAL);
-  let target = widget.context.lookup(entry);
+  let target = annot.context.lookup(entry);
   if (target instanceof PDFDict) {
-    const state = nameAt(widget, AS);
+    const state = nameAt(annot, AS);
     if (state === null) return null;
     entry = target.get(state);
-    target = widget.context.lookup(entry);
+    target = annot.context.lookup(entry);
   }
   return entry instanceof PDFRef && target instanceof PDFStream ? { ref: entry, stream: target } : null;
 }
 
-/** Draws one widget's appearance where the widget sits (PDF 32000-1 12.5.5: BBox through Matrix onto Rect). */
-function drawWidget(page: PDFPage, widget: PDFDict) {
-  const flags = widget.lookup(F);
+/** Draws one annotation's appearance where it sits (PDF 32000-1 12.5.5: BBox through Matrix onto Rect). */
+function drawAppearance(page: PDFPage, annot: PDFDict) {
+  const flags = annot.lookup(F);
   if (flags instanceof PDFNumber && (flags.asNumber() & NOT_SHOWN) !== 0) return;
-  const appearance = normalAppearance(widget);
-  const rect = numbersAt(widget, RECT, 4);
+  const appearance = normalAppearance(annot);
+  const rect = numbersAt(annot, RECT, 4);
   if (!appearance || !rect) return;
   const [x1, x2] = [Math.min(rect[0], rect[2]), Math.max(rect[0], rect[2])];
   const [y1, y2] = [Math.min(rect[1], rect[3]), Math.max(rect[1], rect[3])];
@@ -206,7 +223,7 @@ function drawWidget(page: PDFPage, widget: PDFDict) {
   const sy = (y2 - y1) / (by2 - by1);
   appearance.stream.dict.set(TYPE, XOBJECT);
   appearance.stream.dict.set(SUBTYPE, FORM);
-  const name = page.node.newXObject("FlatWidget", appearance.ref);
+  const name = page.node.newXObject("Flat", appearance.ref);
   page.pushOperators(pushGraphicsState(), concatTransformationMatrix(sx, 0, 0, sy, x1 - bx1 * sx, y1 - by1 * sy), drawObject(name), popGraphicsState());
 }
 
@@ -245,16 +262,19 @@ function nameAt(dict: PDFDict, key: PDFName): PDFName | null {
   return v instanceof PDFName ? v : null;
 }
 
+/** Keeps only Link annotations, without an appearance; anything else was drawn or is dropped (R3-1). */
 function keepSafeAnnotations(page: PDFDict) {
   const annots = page.lookup(ANNOTS);
-  const kept =
-    annots instanceof PDFArray
-      ? annots.asArray().filter((entry) => {
-          const annot = page.context.lookup(entry);
-          const subtype = annot instanceof PDFDict ? nameAt(annot, SUBTYPE) : null;
-          return subtype !== null && ANNOTATIONS.has(subtype);
-        })
-      : [];
+  const kept: PDFObject[] = [];
+  if (annots instanceof PDFArray) {
+    for (const entry of annots.asArray()) {
+      const annot = page.context.lookup(entry);
+      if (!(annot instanceof PDFDict) || nameAt(annot, SUBTYPE) !== LINK) continue;
+      annot.delete(AP);
+      annot.delete(AS);
+      kept.push(entry);
+    }
+  }
   if (kept.length) page.set(ANNOTS, page.context.obj(kept));
   else page.delete(ANNOTS);
 }

@@ -165,12 +165,21 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                           {r.status === "signed" && r.signed_at && <> · signed {fmtDateTime(r.signed_at)}</>}
                           {r.status === "pending" && !lapsed && <> · open until {fmtDay(r.expires_at)}</>}
                         </p>
-                        {r.status === "pending" && !lapsed && (
-                          <form action={withdrawSignature}>
-                            <input type="hidden" name="id" value={doc.id} />
-                            <input type="hidden" name="request" value={r.id} />
-                            <button className="text-xs text-ink-2 underline">Withdraw</button>
-                          </form>
+                        {(r.has_review_file || (r.status === "pending" && !lapsed)) && (
+                          <div className="flex flex-wrap gap-x-4">
+                            {r.has_review_file && (
+                              <a href={`/app/documents/${doc.id}/file?request=${r.id}`} className="inline-flex min-h-6 items-center text-xs text-ink-2 underline">
+                                File sent for signing
+                              </a>
+                            )}
+                            {r.status === "pending" && !lapsed && (
+                              <form action={withdrawSignature}>
+                                <input type="hidden" name="id" value={doc.id} />
+                                <input type="hidden" name="request" value={r.id} />
+                                <button className="inline-flex min-h-6 items-center text-xs text-ink-2 underline">Withdraw</button>
+                              </form>
+                            )}
+                          </div>
                         )}
                       </li>
                     );
