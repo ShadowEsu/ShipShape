@@ -13,7 +13,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const deleting = await deletionPending(ws.userId);
   return (
     <div className="min-h-dvh bg-canvas md:flex">
-      <aside className="border-b border-line bg-paper px-4 py-4 md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">
+      <aside aria-label="Workspace" className="border-b border-line bg-paper px-4 py-4 md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">
         <div className="flex items-center justify-between md:block">
           <Logo href="/app" />
           <p className="truncate text-xs text-ink-3 md:mt-3" title={ws.name}>
@@ -26,20 +26,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </form>
       </aside>
       <div className="min-w-0 flex-1">
-        {deleting && (
-          <p role="status" className="border-b border-line bg-bad-soft px-4 py-2 text-center text-xs text-bad">
-            You asked to delete your account. ShipShape finishes that by itself within two days, and anything you add before then
-            is deleted with it.{" "}
-            <Link href="/app/settings#delete" className="underline">
-              Finish it now
-            </Link>
-          </p>
-        )}
-        {ws.demo && (
-          <p className="border-b border-line bg-warn-soft px-4 py-2 text-center text-xs text-warn">
-            Sample workspace: every business, person and number here is made up. Uploading real documents is off until our
-            security review is done.
-          </p>
+        {(deleting || ws.demo) && (
+          <section aria-label="Workspace notice">
+            {deleting && (
+              <p role="status" className="border-b border-line bg-bad-soft px-4 py-2 text-center text-xs text-bad">
+                You asked to delete your account. ShipShape finishes that by itself within two days, and anything you add before then
+                is deleted with it.{" "}
+                <Link href="/app/settings#delete" className="underline">
+                  Finish it now
+                </Link>
+              </p>
+            )}
+            {ws.demo && (
+              <p className="border-b border-line bg-warn-soft px-4 py-2 text-center text-xs text-warn">
+                Sample workspace: every business, person and number here is made up. Uploading real documents is off until our
+                security review is done.
+              </p>
+            )}
+          </section>
         )}
         <main id="main" className="mx-auto max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
           {children}

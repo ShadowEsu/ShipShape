@@ -77,8 +77,9 @@ export default function PricingPage() {
         </div>
 
         <section className="mt-14">
-          <h2 className="font-serif text-2xl font-semibold">Compare</h2>
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-line bg-paper">
+          <h2 id="compare" className="font-serif text-2xl font-semibold">Compare</h2>
+          {/* Scrolls sideways on phones; focusable so the keyboard can scroll it too. */}
+          <div role="region" aria-labelledby="compare" tabIndex={0} className="mt-4 overflow-x-auto rounded-2xl border border-line bg-paper">
             <table className="w-full min-w-[28rem] text-left text-sm">
               <thead>
                 <tr className="border-b border-line">
