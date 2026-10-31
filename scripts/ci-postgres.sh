@@ -21,13 +21,14 @@ rm ca.key server.csr server.ext
 printf 'local all all trust\nhostssl all all all scram-sha-256\n' > pg_hba.conf
 
 password=$(openssl rand -hex 24)
+# The container copies the key as it starts; remove ours only once this script ends (ready or not).
+trap 'rm -f server.key' EXIT
 docker run -d --name shipshape-ci-pg -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD="$password" \
   -v "$PWD:/ci:ro" --entrypoint bash "$image" -c '
     install -o postgres -m 600 /ci/server.key /var/lib/postgresql/server.key
     install -o postgres -m 644 /ci/server.crt /ci/pg_hba.conf /var/lib/postgresql/
     exec docker-entrypoint.sh postgres -c ssl=on -c hba_file=/var/lib/postgresql/pg_hba.conf \
       -c ssl_cert_file=/var/lib/postgresql/server.crt -c ssl_key_file=/var/lib/postgresql/server.key' >/dev/null
-rm server.key
 
 # Ready once the final server (not the image's setup server, which has no TCP) answers on TCP.
 for _ in $(seq 60); do

@@ -58,8 +58,12 @@ async function remoteDb(adminUrl: string) {
   const password = createHash("sha256").update(`shipshape-test:${adminUrl}`).digest("hex");
   try {
     const databases = await admin<{ datname: string }[]>`select datname from pg_database`;
-    const rds = serverProblem(databases.map((d) => d.datname));
-    if (rds) throw new Error(rds);
+    const [{ app }] = await admin<{ app: boolean }[]>`select exists (select 1 from pg_namespace where nspname = 'app') as app`;
+    const refusedServer = serverProblem(
+      databases.map((d) => d.datname),
+      app,
+    );
+    if (refusedServer) throw new Error(refusedServer);
     // Test files run in parallel, but migrations and the password change touch server-wide roles,
     // which Postgres refuses to update concurrently ("tuple concurrently updated"): one setup at a
     // time. The lock belongs to this session, so ending it (finally) always releases the lock.
