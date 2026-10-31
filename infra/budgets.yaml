@@ -6,7 +6,7 @@ Description: >-
 Parameters:
   AlertEmail:
     Type: String
-    Description: Who gets both alarms (Preston).
+    Description: Who gets both alarms (the account owner).
     AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
 
 Resources:

@@ -28,15 +28,15 @@ Everything is in us-east-1.
 | database | `EngineVersion` | A PostgreSQL 17 minor version that RDS offers that day (see step 4) |
 | database | `InstanceIdentifier` | Default `shipshape-prod` (`PROBE_DB_INSTANCE`) |
 | database | `LogRetentionDays` | Default `30`: how long CloudWatch keeps the exported Postgres log |
-| budgets | `AlertEmail` | Preston's own address |
+| budgets | `AlertEmail` | the account owner's own address |
 
 ## Deploy order and commands
 
-Preston does these first. Agents can't (aws-plan, "What Preston does"):
+The account owner does these first. Agents can't (aws-plan, "What the owner does"):
 
 1. Create the AWS account on the **Paid plan**. Turn on MFA for the root user and create no root access keys. Set up IAM Identity Center with MFA for himself.
 2. Apply for Activate Founders with the company website and the account id. The site has to be live first, and the decision takes about 7-10 business days.
-3. Approve these steps. An agent can then run them through a short-lived Identity Center session that Preston starts (`aws sso login --profile <profile>`), never with stored keys.
+3. Approve these steps. An agent can then run them through a short-lived Identity Center session that the owner starts (`aws sso login --profile <profile>`), never with stored keys.
 
 Then, with `AWS_PROFILE` set to that session and `AWS_REGION=us-east-1`, run these in order:
 
@@ -91,7 +91,7 @@ Afterwards:
   - `shipshape_app` gets a machine-generated password of 32+ characters, kept only in Vercel Production (R-1).
 - **Acceptance:** run `scripts/probe-aws.mjs` with the values from the outputs (its header lists every variable). It must exit 0.
 
-## Not in these templates (operator or Preston, at M6)
+## Not in these templates (operator or the account owner, at M6)
 
 | Item | Why it isn't here | Source |
 | --- | --- | --- |
@@ -99,7 +99,7 @@ Afterwards:
 | CloudTrail, all regions, into a separate private bucket | aws-plan lists it under Audit. It isn't one of these five templates | aws-plan Audit row |
 | GuardDuty RDS Protection | Account-wide, and it costs money after the trial. aws-plan says to check that cost at setup | R-4 (SHOULD) |
 | SES production access | It's a support request. Production email stays off until BOSS and Security say go | aws-plan Email row |
-| IAM Identity Center, root MFA, the Paid plan, Activate | Preston only | aws-plan "What Preston does" |
+| IAM Identity Center, root MFA, the Paid plan, Activate | account owner only | aws-plan "What the owner does" |
 | The database's roles and `shipshape_app`'s password | They live in SQL (`plain-postgres.sql`, `npm run migrate`), not in AWS resources | R-1, R-2, BOSS rule 2 |
 
 ## Requirement → template
