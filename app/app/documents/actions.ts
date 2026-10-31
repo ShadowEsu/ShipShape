@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { setArchived, updateDocument, uploadDocument, uploadVersion, UserError } from "@/lib/server/documents";
+import { setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { UserError } from "@/lib/server/errors";
 import { requestSignature, revokeSignatureRequest } from "@/lib/server/esign";
 import { GateClosed } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";

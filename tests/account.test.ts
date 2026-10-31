@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deleteAccount, exportWorkspace } from "@/lib/server/account";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
-import { UserError } from "@/lib/server/documents";
+import { UserError } from "@/lib/server/errors";
 import { requestSignature } from "@/lib/server/esign";
 import { createPassport, openPassport } from "@/lib/server/passport";
 import { NeedsRecentSignIn, type Ctx } from "@/lib/server/profile";

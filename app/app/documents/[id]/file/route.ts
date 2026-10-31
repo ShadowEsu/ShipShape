@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { downloadUrl, UserError } from "@/lib/server/documents";
+import { downloadUrl } from "@/lib/server/documents";
+import { UserError } from "@/lib/server/errors";
 import { requireWorkspace } from "@/lib/server/session";
 
 export const dynamic = "force-dynamic";

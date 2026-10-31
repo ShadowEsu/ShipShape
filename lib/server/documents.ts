@@ -8,7 +8,9 @@ import { sha256Hex } from "./crypto";
 import { asUser, type Tx } from "./db";
 import { checkUpload, EXTENSION, type AllowedMime } from "./files";
 import { fillRecord, prefill, render, validate, type FieldSource, type Values } from "./fill";
+import { UserError } from "./errors";
 import { assertCanFill, assertRealData } from "./flags";
+import { assertWithinPlan } from "./plans";
 import { factsForFill, type Ctx } from "./profile";
 import { blobStore } from "./storage";
 
@@ -126,6 +128,7 @@ export async function insertDocument(
   origin: "upload" | "filled" | "sample",
   record: VersionRow["fill_record"] = null,
 ): Promise<string> {
+  await assertWithinPlan(tx, ctx.orgId, "documents");
   const id = randomUUID();
   await tx.query(
     "insert into app.documents (id, org_id, title, kind, issuer, counterparty, issued_on, expires_on, renews_on, template_id, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
@@ -201,8 +204,6 @@ export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Ar
   });
 }
 
-export class UserError extends Error {}
-
 export type FillResult = { ok: true; id: string } | { ok: false; errors: Record<string, string> };
 
 /** Fills a template from the person's reviewed values; needs the not-a-law-firm acknowledgment. */
@@ -247,9 +248,10 @@ export async function updateDocument(ctx: Ctx, id: string, meta: unknown) {
 }
 
 export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
-  const rows = await asUser(ctx.userId, (tx) =>
-    tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]),
-  );
+  const rows = await asUser(ctx.userId, async (tx) => {
+    if (!archived) await assertWithinPlan(tx, ctx.orgId, "documents");
+    return tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]);
+  });
   if (!rows.length) throw new UserError("Document not found.");
 }
 

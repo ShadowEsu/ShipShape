@@ -91,6 +91,7 @@ const DUE_SQL = `
     cross join lateral (values ('expires', d.expires_on), ('renews', d.renews_on)) as x(date_kind, due_on)
     where d.status = 'active' and x.due_on is not null and (x.due_on - $1::date) between -30 and 90
       and ($2::uuid is null or d.org_id = $2)
+      and app.org_plan(d.org_id) = 'pro' -- email reminders are part of Pro (sample workspaces included)
   ), due as (
     select *, case when days_left <= 0 then 0 when days_left <= 7 then 7 when days_left <= 30 then 30 else 90 end as days_before
     from dates

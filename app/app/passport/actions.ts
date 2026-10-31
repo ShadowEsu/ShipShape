@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { UserError } from "@/lib/server/documents";
+import { UserError } from "@/lib/server/errors";
 import { createPassport, revokePassport } from "@/lib/server/passport";
 import { requireWorkspace } from "@/lib/server/session";
 

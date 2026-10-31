@@ -57,6 +57,9 @@ beforeAll(async () => {
   await asService(async (tx) => {
     await tx.query("insert into app.reminders_sent (document_id, org_id, due_on, days_before) values ($1, $2, current_date, 30)", [docA, orgA]);
     await tx.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, 'a@example.com', 'Reminder', 'Your W-9')", [orgA]);
+    // M4: A's workspace is a Stripe customer; one webhook event was processed.
+    await tx.query("insert into app.billing (org_id, stripe_customer_id, stripe_subscription_id, status, plan) values ($1, 'cus_A1', 'sub_A1', 'active', 'pro')", [orgA]);
+    await tx.query("insert into app.stripe_events (id, type) values ('evt_A1', 'customer.subscription.updated')");
   });
   for (const [u, item] of [[a, "terms_privacy"], [b, "terms_privacy"]]) {
     await asUser(u, (tx) => tx.query("insert into app.consents (user_id, item, policy_version) values ($1, $2, 'v1')", [u, item]));
@@ -83,6 +86,8 @@ const TABLES: Record<string, string | null> = {
   reminders_sent: "org_id",
   outbox: "org_id",
   signature_requests: "org_id",
+  billing: "org_id",
+  stripe_events: null, // server only, checked below
 };
 
 describe("row level security", () => {
@@ -136,6 +141,16 @@ describe("row level security", () => {
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.waitlist (email) values ('x@example.com')")));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.rate_hits")));
     await expectDenied(asUser(a, (tx) => tx.query("select app.rate_hit('test', 'k', 60, 5)")));
+  });
+
+  it("billing is read-only to members, Stripe ids and webhook events stay server-side", async () => {
+    const [mine] = await asUser(a, (tx) => tx.query<{ plan: string }>("select plan from app.billing where org_id = $1", [orgA]));
+    expect(mine.plan).toBe("pro");
+    await expectDenied(asUser(a, (tx) => tx.query("select stripe_customer_id from app.billing")));
+    await expectDenied(asUser(a, (tx) => tx.query("update app.billing set plan = 'pro' where org_id = $1", [orgA])));
+    await expectDenied(asUser(b, (tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, plan, status) values ($1, 'cus_B9', 'pro', 'active')", [orgB])));
+    await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.stripe_events")));
+    expect((await asUser(b, (tx) => tx.query<{ plan: string | null }>("select app.org_plan($1) as plan", [orgA])))[0].plan).toBeNull();
   });
 
   it("user B can't change, delete or add to A's workspace", async () => {

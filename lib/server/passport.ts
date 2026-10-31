@@ -3,8 +3,10 @@ import { z } from "zod";
 import { isPrintable } from "@/lib/pdf/compose";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser } from "./db";
-import { DOC_KINDS, downloadName, UserError, type DocKind } from "./documents";
+import { DOC_KINDS, downloadName, type DocKind } from "./documents";
+import { UserError } from "./errors";
 import type { AllowedMime } from "./files";
+import { assertWithinPlan } from "./plans";
 import type { Ctx } from "./profile";
 import { blobStore } from "./storage";
 
@@ -36,6 +38,7 @@ export async function createPassport(ctx: Ctx, input: unknown): Promise<{ id: st
   const p = NewPassport.parse(input);
   const { token, hash } = newToken();
   const id = await asUser(ctx.userId, async (tx) => {
+    await assertWithinPlan(tx, ctx.orgId, "passports");
     const [link] = await tx.query<{ id: string }>(
       "insert into app.share_links (org_id, label, token_hash, expires_at, created_by) values ($1, $2, $3, now() + make_interval(days => $4), $5) returning id",
       [ctx.orgId, p.label, hash, p.days, ctx.userId],

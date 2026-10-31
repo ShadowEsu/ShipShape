@@ -56,7 +56,7 @@ describe("reminders", () => {
     expect(await runReminders(addDays(today, 22), sample.orgId)).toBe(1); // certificate lapsed
   });
 
-  it("goes to a real workspace's owners and admins, not to plain members", async () => {
+  it("go to a Pro workspace's owners and admins, not plain members; Free workspaces get none", async () => {
     const owner = await db.user("owner@example.com");
     const member = await db.user("member@example.com");
     const [org] = await asUser(owner, (tx) => tx.query<{ id: string }>("select app.create_workspace('Real Co') as id"));
@@ -67,6 +67,11 @@ describe("reminders", () => {
         addDays(today, 5),
         owner,
       ]),
+    );
+    expect(await runReminders(today, org.id)).toBe(0); // Free: the dates show in the app and calendar file only
+
+    await db.root((tx) =>
+      tx.query("insert into app.billing (org_id, stripe_customer_id, stripe_subscription_id, status, plan) values ($1, 'cus_R1', 'sub_R1', 'active', 'pro')", [org.id]),
     );
     expect(await runReminders(today, org.id)).toBe(1);
     const sent = await db.root((tx) => tx.query<{ to_email: string; body: string }>("select to_email, body from app.outbox where org_id = $1", [org.id]));

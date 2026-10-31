@@ -1,7 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { fillTemplate, UserError } from "@/lib/server/documents";
+import { fillTemplate } from "@/lib/server/documents";
+import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";

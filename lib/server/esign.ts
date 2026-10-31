@@ -6,10 +6,12 @@ import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import { composePdf, isPrintable } from "@/lib/pdf/compose";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser } from "./db";
-import { downloadName, UserError } from "./documents";
+import { downloadName } from "./documents";
+import { UserError } from "./errors";
 import type { AllowedMime } from "./files";
 import { GateClosed } from "./flags";
 import { visitorId } from "./passport";
+import { assertWithinPlan } from "./plans";
 import type { Ctx } from "./profile";
 import { blobStore } from "./storage";
 
@@ -34,6 +36,7 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
   const p = NewRequest.parse(input);
   const { token, hash } = newToken();
   const id = await asUser(ctx.userId, async (tx) => {
+    await assertWithinPlan(tx, ctx.orgId, "esign");
     const [latest] = await tx.query<{ version: number }>(
       "select v.version from app.document_versions v join app.documents d on d.id = v.document_id where v.document_id = $1 and d.org_id = $2 and d.status = 'active' order by v.version desc limit 1",
       [p.documentId, ctx.orgId],

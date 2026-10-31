@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { exportWorkspace } from "@/lib/server/account";
-import { UserError } from "@/lib/server/documents";
+import { UserError } from "@/lib/server/errors";
 import { fail, sameOrigin } from "@/lib/server/http";
 import { NeedsRecentSignIn } from "@/lib/server/profile";
 import { requireWorkspace } from "@/lib/server/session";

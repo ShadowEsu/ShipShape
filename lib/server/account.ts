@@ -1,7 +1,9 @@
 import "server-only";
 import type { AllowedMime } from "./files";
+import { cancelSubscriptionsBeforeDeletion } from "./billing";
 import { asUser } from "./db";
-import { downloadName, UserError } from "./documents";
+import { downloadName } from "./documents";
+import { UserError } from "./errors";
 import { loadProfile, NeedsRecentSignIn, type Ctx } from "./profile";
 import { authIsRecent } from "./session";
 import { blobStore } from "./storage";
@@ -129,6 +131,8 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
  */
 export async function deleteAccount(ctx: Ctx): Promise<void> {
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to delete your account.");
+  // Stop billing first: a deleted workspace must never keep being charged.
+  await cancelSubscriptionsBeforeDeletion(ctx.userId);
   const rows = await asUser(ctx.userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account()"));
   // After the commit: if this fails the rows are already gone, so the objects are unreachable
   // orphans in private storage; the count (never the paths) goes to the log for cleanup.
