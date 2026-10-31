@@ -48,6 +48,48 @@ export function inlineRuns(md: string): Run[] {
   );
 }
 
+/**
+ * Splits runs into words at spaces only, for laying out. A run that starts or ends without a space
+ * stays joined to the text beside it (“**Cover Page**” draws no space inside the quotes), and a
+ * joined word is never split across lines. "br" is a line break in the text (a form's text box).
+ */
+export function wordsOf(runs: Run[]): (Run[] | "br")[] {
+  const words: (Run[] | "br")[] = [];
+  let joined = false; // the next piece continues the last word: no space came between them
+  for (const r of runs) {
+    for (const [li, segment] of r.text.split("\n").entries()) {
+      if (li > 0) {
+        words.push("br");
+        joined = false;
+      }
+      for (const [i, text] of segment.split(" ").entries()) {
+        if (i > 0) joined = false;
+        if (text === "") continue;
+        const last = words.at(-1);
+        if (joined && last !== undefined && last !== "br") last.push({ ...r, text });
+        else words.push([{ ...r, text }]);
+        joined = true;
+      }
+    }
+  }
+  return words;
+}
+
+/** Wraps one-font text into lines no wider than `width`. */
+export function wrapLines(text: string, font: PDFFont, size: number, width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ").filter(Boolean)) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && font.widthOfTextAtSize(next, size) > width) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 interface Fonts {
   regular: PDFFont;
   bold: PDFFont;
@@ -76,44 +118,39 @@ class Writer {
 
   /** Lays out runs as wrapped lines starting at x; returns nothing, moves y down. */
   flow(runs: Run[], { x = PAGE.margin, width = this.width, size = 10.5, leading = 1.45, color = INK, sans = false } = {}) {
-    // A line break in the text (from a form's text box) starts a new line.
-    const words: { text: string; font: PDFFont; br?: true }[] = [];
-    for (const r of runs) {
-      const font = sans ? (r.bold ? this.f.sansBold : this.f.sans) : r.bold ? this.f.bold : this.f.regular;
-      for (const [li, segment] of r.text.split("\n").entries()) {
-        if (li > 0) words.push({ text: "", font, br: true });
-        for (const [i, w] of segment.split(" ").entries()) {
-          if (w === "" && i > 0) continue;
-          words.push({ text: w, font });
-        }
-      }
-    }
+    const fontOf = (r: Run) => (sans ? (r.bold ? this.f.sansBold : this.f.sans) : r.bold ? this.f.bold : this.f.regular);
+    const words = wordsOf(runs);
     const lineHeight = size * leading;
-    let line: typeof words = [];
+    const widthOf = (w: Run[]) => w.reduce((n, p) => n + fontOf(p).widthOfTextAtSize(p.text, size), 0);
+    const space = (w: Run[]) => fontOf(w[0]).widthOfTextAtSize(" ", size);
+    let line: Run[][] = [];
     let lineWidth = 0;
-    const space = (font: PDFFont) => font.widthOfTextAtSize(" ", size);
     const flush = () => {
       this.ensure(lineHeight);
       let cx = x;
-      for (const w of line) {
-        this.page.drawText(w.text, { x: cx, y: this.y - size, size, font: w.font, color });
-        cx += w.font.widthOfTextAtSize(w.text, size) + space(w.font);
+      for (const [wi, w] of line.entries()) {
+        if (wi > 0) cx += space(w);
+        for (const p of w) {
+          this.page.drawText(p.text, { x: cx, y: this.y - size, size, font: fontOf(p), color });
+          cx += fontOf(p).widthOfTextAtSize(p.text, size);
+        }
       }
       this.y -= lineHeight;
       line = [];
       lineWidth = 0;
     };
     for (const w of words) {
-      if (w.br) {
+      if (w === "br") {
         flush();
         continue;
       }
-      const ww = w.font.widthOfTextAtSize(w.text, size);
-      if (line.length && lineWidth + space(w.font) + ww > width) flush();
-      lineWidth += (line.length ? space(w.font) : 0) + ww;
+      const ww = widthOf(w);
+      if (line.length && lineWidth + space(w) + ww > width) flush();
+      lineWidth += (line.length ? space(w) : 0) + ww;
       line.push(w);
     }
-    if (line.length) flush();
+    // Empty text still takes one line (an empty table cell keeps its row height).
+    if (line.length || !words.length) flush();
   }
 }
 
@@ -216,7 +253,11 @@ export async function composePdf(
 
   const total = w.pages.length;
   for (const [i, page] of w.pages.entries()) {
-    page.drawText(meta.footer, { x: PAGE.margin, y: 40, size: 7.5, font: f.sans, color: MUTED, maxWidth: PAGE.w - PAGE.margin * 2 - 70 });
+    // Wrapped upwards from the page label's baseline, so a long footer never runs off the page.
+    const lines = wrapLines(meta.footer, f.sans, 7.5, PAGE.w - PAGE.margin * 2 - 70);
+    for (const [li, text] of lines.entries()) {
+      page.drawText(text, { x: PAGE.margin, y: 40 + (lines.length - 1 - li) * 9.5, size: 7.5, font: f.sans, color: MUTED });
+    }
     const label = `Page ${i + 1} of ${total}`;
     page.drawText(label, { x: PAGE.w - PAGE.margin - f.sans.widthOfTextAtSize(label, 7.5), y: 40, size: 7.5, font: f.sans, color: MUTED });
   }
