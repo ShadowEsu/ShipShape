@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const MESSAGES: Record<string, string> = {
   bad_code: "That code doesn't match. Check the latest email and try again.",
@@ -22,6 +22,9 @@ export function SignForm({ id, signerName, email, consentText, demo }: { id: str
   const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // These buttons work only with JavaScript; until the page has hydrated, a click would do nothing.
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
 
   async function post(path: string, body?: object) {
     setBusy(true);
@@ -43,7 +46,7 @@ export function SignForm({ id, signerName, email, consentText, demo }: { id: str
   }
 
   return (
-    <div className="space-y-5">
+    <fieldset disabled={!ready} className="m-0 min-w-0 space-y-5 border-0 p-0">
       <label className="flex items-start gap-3 text-sm">
         <input type="checkbox" checked={consented} onChange={(e) => setConsented(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]" />
         <span>{consentText}</span>
@@ -111,6 +114,6 @@ export function SignForm({ id, signerName, email, consentText, demo }: { id: str
           {error}
         </p>
       )}
-    </div>
+    </fieldset>
   );
 }
