@@ -1,10 +1,13 @@
 -- Local and test only: the parts of Supabase's own schema that ShipShape's migrations rely on.
 -- Hosted Supabase already has all of this; never run this file there.
 -- auth.uid() matches Supabase's definition: the `sub` claim of request.jwt.claims.
+-- One deliberate difference: service_role has no BYPASSRLS here (Supabase's has it). RDS and Aurora
+-- can't grant it, so the tests run under the stricter rule, and 0017's policies must cover every
+-- table service_role uses. Whatever passes here works on both.
 
 create role anon nologin noinherit;
 create role authenticated nologin noinherit;
-create role service_role nologin noinherit bypassrls;
+create role service_role nologin noinherit nobypassrls;
 
 create schema auth;
 grant usage on schema auth to anon, authenticated, service_role;

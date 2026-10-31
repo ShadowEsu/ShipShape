@@ -403,3 +403,25 @@ describe("rate-limit fingerprints (Security C-3 INFO)", () => {
     expect(left.map((r) => r.key)).toEqual(["fresh"]);
   });
 });
+
+describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
+  it("service_role can't bypass row level security here, so every test proves the policies, not the bypass", async () => {
+    const [role] = await db.root((tx) => tx.query<{ rolbypassrls: boolean }>("select rolbypassrls from pg_roles where rolname = 'service_role'"));
+    expect(role.rolbypassrls).toBe(false);
+  });
+
+  it("every table with row level security gives service_role full access by policy", async () => {
+    const missing = await db.root((tx) =>
+      tx.query<{ relname: string }>(
+        `select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = 'app' and c.relkind in ('r', 'p') and c.relrowsecurity
+           and not exists (
+             select 1 from pg_policies p
+             where p.schemaname = 'app' and p.tablename = c.relname and p.cmd = 'ALL' and p.permissive = 'PERMISSIVE'
+               and 'service_role' = any (p.roles) and p.qual = 'true' and p.with_check = 'true')
+         order by 1`,
+      ),
+    );
+    expect(missing.map((r) => r.relname)).toEqual([]);
+  });
+});

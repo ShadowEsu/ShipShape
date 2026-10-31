@@ -8,7 +8,7 @@ import path from "node:path";
  * `anon`, or `service_role` for the few server-only steps. Row level security therefore applies
  * to every query the app makes for a user.
  *
- * Production: DATABASE_URL (Supabase Postgres through its pooler).
+ * Production: DATABASE_URL (Supabase or RDS Postgres) with the certificate verified.
  * Local and tests: PGlite (Postgres compiled to WebAssembly) with the same migrations.
  */
 
@@ -80,7 +80,12 @@ async function createRemoteDriver(url: string): Promise<Driver> {
   // Runtime-selected driver: local runs and tests never load the network client.
   const { default: postgres } = await import("postgres");
   // prepare: false because Supabase's transaction pooler doesn't keep prepared statements.
-  const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10, ssl: "require" });
+  // TLS is verified, chain and hostname: postgres.js's `ssl: "require"` would encrypt without
+  // checking who answers. RDS and Supabase sign with their own CAs, so DATABASE_CA_CERT holds the
+  // provider's CA bundle (PEM); without it Node's built-in CAs apply. Never falls back to unverified.
+  const ca = process.env.DATABASE_CA_CERT;
+  const ssl = { rejectUnauthorized: true, ...(ca ? { ca } : {}) };
+  const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10, ssl });
   return {
     transaction: (fn) => sql.begin((s) => fn({ query: (text, params) => s.unsafe(text, (params ?? []) as never[]) as never })) as never,
     close: () => sql.end({ timeout: 5 }),
