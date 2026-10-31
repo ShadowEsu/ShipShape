@@ -5,7 +5,7 @@ export function LegalPage({ title, version, children }: { title: string; version
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-2xl px-5 pt-6 pb-16">
+      <main id="main" className="mx-auto max-w-2xl px-5 pt-6 pb-16">
         <p role="note" className="rounded-lg border border-warn/30 bg-warn-soft px-4 py-3 text-sm text-warn">
           <strong>Draft, pending lawyer review.</strong> ShipShape is in preview: only sample workspaces with made-up documents are
           open, and payments run in Stripe&apos;s test mode. This text will change before real accounts open.

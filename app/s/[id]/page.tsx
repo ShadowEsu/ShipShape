@@ -15,7 +15,7 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
   const view = token ? await openSigning(id, token) : null;
 
   return (
-    <main className="mx-auto min-h-screen max-w-2xl px-5 py-12 sm:py-16">
+    <main id="main" className="mx-auto min-h-screen max-w-2xl px-5 py-12 sm:py-16">
       <p className="eyebrow mb-6">ShipShape signature request</p>
       {view ? (
         <div className="space-y-6">

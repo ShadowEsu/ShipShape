@@ -41,11 +41,19 @@ export function AskForm() {
           <p className="mt-1 text-xs text-ink-3">The email or checklist that asks for your documents. Up to {AI_REQUEST_MAX_CHARS.toLocaleString("en-US")} characters.</p>
         </div>
         <label className="flex items-start gap-3 text-sm">
-          <input type="checkbox" name="consent" value="yes" className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]" />
+          <input
+            type="checkbox"
+            name="consent"
+            value="yes"
+            aria-required="true"
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? "ask-error" : undefined}
+            className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
+          />
           <span>{AI_REQUEST_CONSENT_TEXT}</span>
         </label>
         {state.error && (
-          <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+          <p id="ask-error" role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
             {state.error}
           </p>
         )}

@@ -71,7 +71,7 @@ export default function FaqPage() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-3xl px-5 pt-10 pb-20">
+      <main id="main" className="mx-auto max-w-3xl px-5 pt-10 pb-20">
         <p className="eyebrow">FAQ</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Questions, answered plainly.</h1>
         <div className="mt-10 divide-y divide-line border-y border-line">
@@ -79,7 +79,7 @@ export default function FaqPage() {
             <details key={q} className="group py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium">
                 {q}
-                <span aria-hidden="true" className="text-ink-3 transition-transform group-open:rotate-45">
+                <span aria-hidden="true" className="text-ink-3 transition-transform group-open:rotate-45 motion-reduce:transition-none">
                   +
                 </span>
               </summary>

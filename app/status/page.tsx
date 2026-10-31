@@ -30,7 +30,7 @@ export default async function StatusPage() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-3xl px-5 pt-10 pb-20">
+      <main id="main" className="mx-auto max-w-3xl px-5 pt-10 pb-20">
         <p className="eyebrow">Status</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">{db ? "Everything is running." : "Something is wrong."}</h1>
         <p className="mt-2 text-sm text-ink-3">Checked {fmtDateTime(checkedAt)} · revision {process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "local"}</p>

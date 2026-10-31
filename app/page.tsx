@@ -66,7 +66,7 @@ export default function Home() {
   return (
     <>
       <SiteHeader />
-      <main>
+      <main id="main">
         <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pt-10 pb-20 lg:grid-cols-[1.1fr_1fr] lg:pt-16">
           <div className="space-y-6">
             <p className="eyebrow">Business paperwork, in one place</p>

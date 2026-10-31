@@ -17,7 +17,15 @@ export function SignInForm({ allowEmail }: { allowEmail: boolean }) {
         </div>
       )}
       <label className="flex items-start gap-2 text-sm text-ink-2">
-        <input type="checkbox" name="terms" required className="mt-0.5 size-4 accent-[var(--accent)]" />
+        <input
+          type="checkbox"
+          name="terms"
+          required
+          aria-required="true"
+          aria-invalid={state.error ? true : undefined}
+          aria-describedby={state.error ? "signin-error" : undefined}
+          className="mt-0.5 size-4 accent-[var(--accent)]"
+        />
         <span>
           I agree to the{" "}
           <Link href="/terms" className="underline" target="_blank">
@@ -31,7 +39,7 @@ export function SignInForm({ allowEmail }: { allowEmail: boolean }) {
         </span>
       </label>
       {state.error && (
-        <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+        <p id="signin-error" role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
           {state.error}
         </p>
       )}

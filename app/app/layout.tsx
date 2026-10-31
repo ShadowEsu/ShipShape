@@ -29,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             security review is done.
           </p>
         )}
-        <main className="mx-auto max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+        <main id="main" className="mx-auto max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
           {children}
           <NotLegalAdvice className="pt-6" />
         </main>

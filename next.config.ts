@@ -24,6 +24,9 @@ const SECRET_LINK_HEADERS = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Development logs every server action's arguments and result by default; ours carry pasted
+  // requests, business facts and form values, which must never reach a log line (Security R4, G4 §4).
+  logging: { serverFunctions: false },
   env: { SHIPSHAPE_BUILT_AT: BUILT_AT },
   serverExternalPackages: ["@electric-sql/pglite"],
   // Uploads go through server actions: 10 MB files plus form overhead.

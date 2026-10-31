@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Sign in", robots: { index: false } }
 export default async function SignInPage({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
   const { deleted } = await searchParams;
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-12">
+    <main id="main" className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-12">
       <div className="w-full max-w-sm space-y-6">
         <Logo />
         {deleted === "1" && (

@@ -20,7 +20,7 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
   const passport = token && !(await rateLimited("passport-view", ip, 60, 600)) ? await openPassport(id, token, ip) : null;
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-5 py-12 sm:py-16">
+    <main id="main" className="mx-auto min-h-screen max-w-3xl px-5 py-12 sm:py-16">
       <p className="eyebrow mb-6">ShipShape passport</p>
       {passport ? (
         <div className="space-y-8">

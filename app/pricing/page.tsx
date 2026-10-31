@@ -30,7 +30,7 @@ export default function PricingPage() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-5xl px-5 pt-10 pb-20">
+      <main id="main" className="mx-auto max-w-5xl px-5 pt-10 pb-20">
         <p className="eyebrow">Pricing</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Free to start. Pro when you need more.</h1>
         <p className="mt-3 max-w-2xl text-ink-2">Prices in US dollars. Payments are in test mode during the preview: no real charges.</p>
