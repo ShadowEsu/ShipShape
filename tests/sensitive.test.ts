@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { PROFILE_FIELDS } from "@/lib/profile-fields";
 import { decryptField, encryptField, newToken, sha256Hex } from "@/lib/server/crypto";
 import { installLogScrubber, scrub } from "@/lib/server/log";
+import { EinInput, ProfileInput } from "@/lib/server/profile";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -40,6 +42,25 @@ describe("link tokens (R5)", () => {
     expect(Buffer.from(token, "base64url").length).toBe(32);
     expect(hash).toBe(sha256Hex(token));
     expect(newToken().token).not.toBe(token);
+  });
+});
+
+describe("business facts and the EIN as typed (R4)", () => {
+  const blank = { ...Object.fromEntries(PROFILE_FIELDS.map((f) => [f.key, ""])), entity_type: "" };
+
+  it("takes each business fact up to its length limit, and refuses one character more", () => {
+    for (const f of PROFILE_FIELDS) {
+      expect(ProfileInput.safeParse({ ...blank, [f.key]: "x".repeat(f.max) }).success).toBe(true);
+      expect(ProfileInput.safeParse({ ...blank, [f.key]: "x".repeat(f.max + 1) }).success).toBe(false);
+    }
+  });
+
+  // IRS-invalid sample values (EINs starting 00 are never issued).
+  it("takes an EIN of exactly 9 digits, with or without the dash; 8 or 10 digits are refused", () => {
+    expect(EinInput.parse("00-1234567")).toBe("001234567");
+    expect(EinInput.parse(" 001234567 ")).toBe("001234567");
+    expect(EinInput.safeParse("00-123456").success).toBe(false);
+    expect(EinInput.safeParse("00-12345678").success).toBe(false);
   });
 });
 

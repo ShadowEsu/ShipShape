@@ -7,10 +7,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { deleteAccount } from "@/lib/server/account";
 import { billingConfig, billingView, handleStripeWebhook, openPortal, setStripeForTests, startCheckout, type StripePort, type SubscriptionState } from "@/lib/server/billing";
 import { asUser } from "@/lib/server/db";
-import { uploadDocument } from "@/lib/server/documents";
+import { setArchived, uploadDocument } from "@/lib/server/documents";
 import { PlanLimit, UserError } from "@/lib/server/errors";
 import { requestSignature } from "@/lib/server/esign";
-import { createPassport } from "@/lib/server/passport";
+import { createPassport, revokePassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { freshDb, type TestDb } from "./support/db";
@@ -233,6 +233,21 @@ describe("checkout", () => {
     fake.price = { ...fake.price, unit_amount: 1200 };
     await expect(startCheckout(ctx, true)).rejects.toThrow(UserError);
     expect(fake.customersCreated).toBe(0);
+  });
+
+  it("refuses checkout and the billing portal while payments are switched off", async () => {
+    const ctx = await realWorkspace();
+    vi.stubEnv("STRIPE_SECRET_KEY", "");
+    await expect(startCheckout(ctx, true)).rejects.toThrow(/aren't switched on/);
+    await expect(openPortal(ctx)).rejects.toThrow(/aren't switched on/);
+    expect(fake.customersCreated).toBe(0);
+  });
+
+  it("refuses checkout when the Stripe price is in another currency than the site's", async () => {
+    const ctx = await realWorkspace();
+    fake.price = { ...fake.price, currency: "eur" };
+    await expect(startCheckout(ctx, true)).rejects.toThrow(/price mismatch/);
+    expect(fake.checkouts).toEqual([]);
   });
 
   it("reuses one Stripe customer, records the agreement, and the success redirect grants nothing", async () => {
@@ -488,5 +503,33 @@ describe("plan limits, enforced by the server", () => {
     await uploadDocument(ctx, { title: "Doc 11", kind: "other" }, bytes);
     await createPassport(ctx, { label: "Two", days: 7, documentIds: [ids[1]] });
     await requestSignature(ctx, { documentId: ids[0], signerName: "Jordan Lee", signerEmail: "jordan@example.com", days: 7 });
+  });
+
+  it("Free counts only active documents: archiving one of ten makes room for another, and it can't come back over the limit", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await realWorkspace();
+    const pdf = await PDFDocument.create();
+    pdf.addPage();
+    const bytes = await pdf.save();
+    const ids: string[] = [];
+    for (let i = 0; i < 10; i++) ids.push(await uploadDocument(ctx, { title: `Doc ${i}`, kind: "other" }, bytes));
+    await setArchived(ctx, ids[0], true);
+    await uploadDocument(ctx, { title: "Doc 11", kind: "other" }, bytes);
+    await expect(setArchived(ctx, ids[0], false)).rejects.toThrow(PlanLimit);
+  });
+
+  it("Free counts only open passport links: an expired or a revoked link makes room for a new one", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await realWorkspace();
+    const pdf = await PDFDocument.create();
+    pdf.addPage();
+    const doc = await uploadDocument(ctx, { title: "Licence", kind: "other" }, await pdf.save());
+    const link = () => createPassport(ctx, { label: "For a client", days: 7, documentIds: [doc] });
+    const expired = await link();
+    await db.root((tx) => tx.query("update app.share_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 day' where id = $1", [expired.id]));
+    const revoked = await link();
+    await revokePassport(ctx, revoked.id);
+    await link();
+    await expect(link()).rejects.toThrow(PlanLimit);
   });
 });

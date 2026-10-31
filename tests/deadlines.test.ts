@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { GET as cron } from "@/app/api/cron/reminders/route";
 import { asService, asUser } from "@/lib/server/db";
-import { deadlinesIcs, listDeadlines, listOutbox, runReminders } from "@/lib/server/deadlines";
+import { deadlinesIcs, listDeadlines, listOutbox, runReminders, type Deadline } from "@/lib/server/deadlines";
 import { listDocuments } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
@@ -28,6 +28,29 @@ async function freshSample(): Promise<Ctx> {
   await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
   return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner" };
 }
+
+/** A real Pro workspace with one owner, and a way to add documents that expire in so many days. */
+async function proWorkspace(email: string) {
+  const owner = await db.user(email);
+  const [org] = await asUser(owner, (tx) => tx.query<{ id: string }>("select app.create_workspace('Pro Co') as id"));
+  await db.root((tx) =>
+    tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, $2, 'active', 'pro')", [org.id, `cus_${org.id.replaceAll("-", "")}`]),
+  );
+  const expiresIn = (title: string, days: number) =>
+    asUser(owner, (tx) =>
+      tx.query("insert into app.documents (org_id, title, kind, expires_on, created_by) values ($1, $2, 'permit', $3, $4)", [org.id, title, addDays(today, days), owner]),
+    );
+  return { owner, orgId: org.id, expiresIn };
+}
+
+const event = (title: string, days_left: number): Deadline => ({
+  document_id: "00000000-0000-4000-8000-000000000002",
+  title,
+  kind: "permit",
+  date_kind: "expires",
+  due_on: addDays("2026-10-31", days_left),
+  days_left,
+});
 
 beforeAll(async () => {
   db = await freshDb();
@@ -107,6 +130,42 @@ describe("reminders", () => {
     const sent = await db.root((tx) => tx.query<{ org_id: string; to_email: string }>("select org_id, to_email from app.outbox where org_id = any($1::uuid[])", [[longOrg, otherOrg]]));
     expect(sent.map((m) => [m.org_id, m.to_email]).sort()).toEqual([[longOrg, long], [otherOrg, "short@example.com"]].sort());
   });
+
+  it("start 90 days out: a date 90 days away gets its first reminder, one 91 days away doesn't yet", async () => {
+    const pro = await proWorkspace("window@example.com");
+    await pro.expiresIn("Permit at 90", 90);
+    await pro.expiresIn("Permit at 91", 91);
+    expect(await runReminders(today, pro.orgId)).toEqual({ sent: 1, failed: 0 });
+    const sent = await db.root((tx) => tx.query<{ subject: string }>("select subject from app.outbox where org_id = $1", [pro.orgId]));
+    expect(sent.map((m) => m.subject)).toEqual(["Permit at 90 expires in 90 days"]);
+  });
+
+  it("a date exactly 7 days out gets the 7-day reminder; 8 days out still gets the 30-day one", async () => {
+    const pro = await proWorkspace("seven@example.com");
+    await pro.expiresIn("Permit at 7", 7);
+    await pro.expiresIn("Permit at 8", 8);
+    expect(await runReminders(today, pro.orgId)).toEqual({ sent: 2, failed: 0 });
+    const rows = await db.root((tx) =>
+      tx.query<{ title: string; days_before: number }>(
+        "select d.title, r.days_before from app.reminders_sent r join app.documents d on d.id = r.document_id where r.org_id = $1 order by d.title",
+        [pro.orgId],
+      ),
+    );
+    expect(rows).toEqual([
+      { title: "Permit at 7", days_before: 7 },
+      { title: "Permit at 8", days_before: 30 },
+    ]);
+  });
+
+  it("go to an admin as well as the owner", async () => {
+    const pro = await proWorkspace("boss@example.com");
+    const admin = await db.user("admin@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'admin')", [pro.orgId, admin]));
+    await pro.expiresIn("Dumpster permit", 5);
+    expect(await runReminders(today, pro.orgId)).toEqual({ sent: 1, failed: 0 });
+    const sent = await db.root((tx) => tx.query<{ to_email: string }>("select to_email from app.outbox where org_id = $1 order by to_email", [pro.orgId]));
+    expect(sent.map((m) => m.to_email)).toEqual(["admin@example.com", "boss@example.com"]);
+  });
 });
 
 describe("calendar file", () => {
@@ -134,6 +193,20 @@ describe("calendar file", () => {
     expect(ics).toContain("X-WR-CALNAME:A\\, B\\; C deadlines");
     expect(ics).toContain("Permit\\; zone A\\, lot 7");
     expect(ics.split("\r\n").every((l) => Buffer.byteLength(l) <= 75)).toBe(true);
+  });
+
+  it("keeps a date that falls today and drops one that passed yesterday", () => {
+    const ics = deadlinesIcs("W", [event("Due today", 0), event("Lapsed yesterday", -1)]);
+    expect(ics).toContain("SUMMARY:Due today expires");
+    expect(ics).not.toContain("Lapsed yesterday");
+  });
+
+  it("sets the 30-day alarm from 30 days out and the 7-day alarm from 7 days out, not later", () => {
+    const alarms = (daysLeft: number) => deadlinesIcs("W", [event("Permit", daysLeft)]).match(/TRIGGER:-P\d+D/g) ?? [];
+    expect(alarms(30)).toEqual(["TRIGGER:-P30D", "TRIGGER:-P7D"]);
+    expect(alarms(29)).toEqual(["TRIGGER:-P7D"]);
+    expect(alarms(7)).toEqual(["TRIGGER:-P7D"]);
+    expect(alarms(6)).toEqual([]);
   });
 });
 

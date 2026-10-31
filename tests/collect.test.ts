@@ -2,6 +2,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 import { deleteAccount } from "@/lib/server/account";
 import {
   addVendor,
@@ -190,6 +191,19 @@ describe("a vendor sending files", () => {
     expect(await storedFiles()).toBe(before);
   });
 
+  it("takes a file of exactly the 10 MiB maximum; one byte more is too big", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner-max@example.com");
+    const vendorId = await addVendor(ctx, { name: "Max Size Co", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    const exact = new Uint8Array(MAX_UPLOAD_BYTES);
+    exact.set(PDF);
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "w9.pdf", bytes: exact } })).toBe("sent");
+    const over = new Uint8Array(MAX_UPLOAD_BYTES + 1);
+    over.set(PDF);
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "w9.pdf", bytes: over } })).toBe("too_big");
+  });
+
   it("gets the same nothing from a wrong token, a turned-off link, an expired link and an archived vendor", async () => {
     withRealDocs();
     const ctx = await realWorkspace("owner3@example.com");
@@ -241,6 +255,23 @@ describe("a vendor sending files", () => {
     ).rejects.toThrow(/check constraint/);
   });
 
+  it("links last 7, 30 or 90 days: 90 is taken, 91 is a form error", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner-days@example.com");
+    const vendorId = await addVendor(ctx, { name: "Ninety Co", requested: ["w9"] });
+    await createVendorLink(ctx, { vendorId, days: 90 });
+    await expect(createVendorLink(ctx, { vendorId, days: 91 })).rejects.toThrow(ZodError);
+  });
+
+  it("turning off a link that's already off says so", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner-off@example.com");
+    const vendorId = await addVendor(ctx, { name: "Twice Off Co", requested: ["w9"] });
+    const link = await createVendorLink(ctx, { vendorId, days: 7 });
+    await revokeVendorLink(ctx, link.id);
+    await expect(revokeVendorLink(ctx, link.id)).rejects.toThrow(/already off/);
+  });
+
   it("if the database can't record a received file, the stored copy is removed again", async () => {
     withRealDocs();
     const ctx = await realWorkspace("owner-orphan@example.com");
@@ -255,6 +286,47 @@ describe("a vendor sending files", () => {
     }
     expect(await storedFiles()).toBe(before);
     expect((await getVendor(ctx, vendorId))?.files).toEqual([]);
+  });
+});
+
+describe("adding a vendor", () => {
+  it("needs a name: a blank one is a form error", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("vendor-blank@example.com");
+    await expect(addVendor(ctx, { name: "   ", requested: ["w9"] })).rejects.toThrow(ZodError);
+    expect(await listVendors(ctx)).toEqual([]);
+  });
+
+  it("takes a name of up to 120 characters; 121 is a form error", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("vendor-long@example.com");
+    await addVendor(ctx, { name: "V".repeat(120), requested: ["w9"] });
+    await expect(addVendor(ctx, { name: "V".repeat(121), requested: ["w9"] })).rejects.toThrow(ZodError);
+  });
+
+  it("takes an email address of up to 254 characters; 255 is a form error", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("vendor-email@example.com");
+    const email = (length: number) => `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(length - 197)}.com`;
+    expect(email(254)).toHaveLength(254);
+    await addVendor(ctx, { name: "Long Mail Co", email: email(254), requested: ["w9"] });
+    await expect(addVendor(ctx, { name: "Longer Mail Co", email: email(255), requested: ["w9"] })).rejects.toThrow(ZodError);
+  });
+
+  it("needs at least one document to ask for", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("vendor-none@example.com");
+    await expect(addVendor(ctx, { name: "Nothing Co", requested: [] })).rejects.toThrow(ZodError);
+    expect(await listVendors(ctx)).toEqual([]);
+  });
+
+  it("can't archive another workspace's vendor: it's 'not found'", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("vendor-mine@example.com");
+    const other = await realWorkspace("vendor-theirs@example.com");
+    const vendorId = await addVendor(other, { name: "Not Yours Co", requested: ["w9"] });
+    await expect(setVendorArchived(ctx, vendorId, true)).rejects.toThrow(/Vendor not found/);
+    expect((await listVendors(other)).map((v) => v.id)).toEqual([vendorId]);
   });
 });
 

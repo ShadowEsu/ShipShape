@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import { asService, asUser } from "@/lib/server/db";
 import { listDocuments, setArchived } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
@@ -88,6 +89,34 @@ describe("passport links", () => {
         ]),
       ),
     ).rejects.toThrow(/check constraint/);
+  });
+
+  it("lasts 7, 30 or 90 days: 90 is taken, 91 is a form error", async () => {
+    const [w9] = await docIds(a);
+    await createPassport(a, { label: "Ninety", days: 90, documentIds: [w9] });
+    await expect(createPassport(a, { label: "Ninety-one", days: 91, documentIds: [w9] })).rejects.toThrow(ZodError);
+  });
+
+  it("takes a label of up to 120 characters; 121 is a form error", async () => {
+    const [w9] = await docIds(a);
+    await createPassport(a, { label: "L".repeat(120), days: 7, documentIds: [w9] });
+    await expect(createPassport(a, { label: "L".repeat(121), days: 7, documentIds: [w9] })).rejects.toThrow(ZodError);
+  });
+
+  it("takes up to 50 documents in one request; 51 is a form error", async () => {
+    const [w9] = await docIds(a);
+    await createPassport(a, { label: "Fifty", days: 7, documentIds: Array(50).fill(w9) });
+    await expect(createPassport(a, { label: "Fifty-one", days: 7, documentIds: Array(51).fill(w9) })).rejects.toThrow(ZodError);
+  });
+
+  it("needs at least one document, and makes no link without one", async () => {
+    const before = (await listPassports(a)).length;
+    await expect(createPassport(a, { label: "Empty", days: 7, documentIds: [] })).rejects.toThrow(ZodError);
+    expect(await listPassports(a)).toHaveLength(before);
+  });
+
+  it("answers 'not found' for a malformed link id when turning a link off", async () => {
+    await expect(revokePassport(a, "not-a-uuid")).rejects.toThrow(UserError);
   });
 
   it("can't include another workspace's documents, and others can't see or revoke the link", async () => {

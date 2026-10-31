@@ -4,7 +4,7 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { deleteAccount, exportWorkspace, retryStorageCleanup } from "@/lib/server/account";
+import { deleteAccount, EXPORT_MAX_BYTES, exportWorkspace, retryStorageCleanup } from "@/lib/server/account";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
@@ -12,7 +12,7 @@ import { requestSignature } from "@/lib/server/esign";
 import { createPassport, openPassport } from "@/lib/server/passport";
 import { NeedsRecentSignIn, type Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
-import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { blobStore, localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { freshDb, type TestDb } from "./support/db";
 
 /** Export and account deletion (Security R10). */
@@ -81,6 +81,39 @@ describe("export", () => {
     const ctx = await sampleWorkspace();
     await expect(exportWorkspace({ ...ctx, role: "member" })).rejects.toThrow(UserError);
     await expect(exportWorkspace({ ...ctx, demo: false, authAt: Math.floor(Date.now() / 1000) - 3600 })).rejects.toThrow(NeedsRecentSignIn);
+  });
+
+  it("in a sample workspace, needs no recent sign-in: its visitors have no password to re-enter", async () => {
+    const ctx = await sampleWorkspace();
+    const { bytes } = await exportWorkspace({ ...ctx, authAt: Math.floor(Date.now() / 1000) - 3600 });
+    expect(bytes.length).toBeGreaterThan(0);
+  });
+
+  it("takes a workspace whose files add up to exactly 200 MB, and refuses one byte more", async () => {
+    const ctx = await sampleWorkspace();
+    const [{ n }] = await db.root((tx) =>
+      tx.query<{ n: number }>(
+        "select ((select coalesce(sum(size_bytes), 0) from app.document_versions where org_id = $1) + (select coalesce(sum(size_bytes), 0) from app.vendor_files where org_id = $1))::int as n",
+        [ctx.orgId],
+      ),
+    );
+    const [doc] = await db.root((tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1 limit 1", [ctx.orgId]));
+    // Records whose sizes fill the rest of the limit (10 MB each at most), each with a small stored file.
+    const addVersion = async (version: number, size: number) => {
+      const storagePath = `${ctx.orgId}/${doc.id}/v${version}.pdf`;
+      await db.root((tx) =>
+        tx.query(
+          "insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin) values ($1, $2, $3, $4, 'application/pdf', $5, repeat('a', 64), 'upload')",
+          [doc.id, version, ctx.orgId, storagePath, size],
+        ),
+      );
+      await blobStore().put(storagePath, new TextEncoder().encode("%PDF-1.7\n%%EOF\n"), "application/pdf");
+    };
+    let version = 100;
+    for (let missing = EXPORT_MAX_BYTES - n; missing > 0; missing -= 10485760) await addVersion(version++, Math.min(missing, 10485760));
+    expect((await exportWorkspace(ctx)).bytes.length).toBeGreaterThan(0);
+    await addVersion(version, 1);
+    await expect(exportWorkspace(ctx)).rejects.toThrow("This workspace is too large to export in one file.");
   });
 
   it("refuses a workspace whose files add up to more than 200 MB, vendors' files included, and records no export", async () => {

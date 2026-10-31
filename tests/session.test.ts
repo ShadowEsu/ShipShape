@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { sameOrigin } from "@/lib/server/http";
 import {
+  authIsRecent,
   createLocalUser,
   decodeSession,
   encodeSession,
@@ -9,6 +10,7 @@ import {
   endSession,
   finishSignIn,
   localSignInAllowed,
+  RECENT_AUTH_SECONDS,
   requireWorkspace,
   sessionSecret,
   startSession,
@@ -64,6 +66,29 @@ describe("session cookie", () => {
     vi.stubEnv("SHIPSHAPE_SESSION_SECRET", "short");
     expect(() => encodeSession({ userId: USER, demo: false })).toThrow(/at least 32/);
     vi.unstubAllEnvs();
+  });
+
+  it("takes a secret of exactly 32 characters and refuses 31", () => {
+    vi.stubEnv("SHIPSHAPE_SESSION_SECRET", "s".repeat(31));
+    expect(() => sessionSecret()).toThrow(/at least 32/);
+    vi.stubEnv("SHIPSHAPE_SESSION_SECRET", "s".repeat(32));
+    expect(sessionSecret()).toBe("s".repeat(32));
+    vi.unstubAllEnvs();
+  });
+
+  it("lasts 12 hours: still valid the millisecond before, gone at the expiry itself", () => {
+    const issued = Date.UTC(2026, 9, 31, 12, 0, 0);
+    const value = encodeSession({ userId: USER, demo: false }, issued);
+    const expiry = issued + 12 * 3600 * 1000;
+    expect(decodeSession(value, expiry - 1)?.userId).toBe(USER);
+    expect(decodeSession(value, expiry)).toBeNull();
+  });
+
+  it("counts a sign-in as recent for 10 minutes to the second, and not one second more", () => {
+    const authAt = 1_800_000_000;
+    const s = { userId: USER, demo: false, authAt };
+    expect(authIsRecent(s, (authAt + RECENT_AUTH_SECONDS) * 1000)).toBe(true);
+    expect(authIsRecent(s, (authAt + RECENT_AUTH_SECONDS + 1) * 1000)).toBe(false);
   });
 });
 
