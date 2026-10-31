@@ -210,6 +210,12 @@ export async function deleteAccount(ctx: Ctx): Promise<void> {
   }
 }
 
+/** The person asked to delete their account and it hasn't finished yet: the app says so on every page (Security CG-I1). */
+export async function deletionPending(userId: string): Promise<boolean> {
+  const rows = await asService((tx) => tx.query("select 1 from app.deletion_requests where user_id = $1", [userId]));
+  return rows.length > 0;
+}
+
 /**
  * The daily run (Security CG-3): finishes every recorded deletion older than PENDING_AFTER. Each
  * one that fails stays recorded for the next run; only error names are logged.

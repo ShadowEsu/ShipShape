@@ -13,6 +13,7 @@ const PROBLEMS: Record<SignInProblem, string> = {
   failed: "We couldn't finish signing you in. Start again.",
   terms: "Our Terms or Privacy Policy changed while you were signing in. Read them, tick the box again and start again.",
   taken: "This email already belongs to another ShipShape account, so we didn't sign you in.",
+  deleting: "The account that used this email is still being deleted. Once that finishes, within two days, you can sign up with it again.",
   busy: "Too many attempts. Try again in a little while.",
 };
 

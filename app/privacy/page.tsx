@@ -43,7 +43,7 @@ export default function PrivacyPage() {
           an upload link. ShipShape keeps the vendor&apos;s name and, if the workspace adds one, their email address (shown only to
           the workspace; ShipShape doesn&apos;t email vendors), the files they send, which can include tax IDs (on a W-9, for
           example), with their dates, a SHA-256 fingerprint and when each arrived. A sender&apos;s network address is used only as a
-          short keyed fingerprint to limit how often a link can be used, cleared within about a day, and is never stored with the file.
+          short keyed fingerprint to limit how often a link can be used, cleared within two days, and is never stored with the file.
           Vendor files are never sent to AI. They stay until the workspace deletes them (owners and admins can delete any file) or
           the workspace is deleted.
         </li>

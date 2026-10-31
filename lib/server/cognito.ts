@@ -66,7 +66,7 @@ export function cognitoConfig(env: Env): CognitoConfig | null {
 }
 
 /** Why a sign-in didn't finish; the sign-in page shows a fixed message for each. */
-export type SignInProblem = "expired" | "cancelled" | "failed" | "terms" | "taken" | "busy";
+export type SignInProblem = "expired" | "cancelled" | "failed" | "terms" | "taken" | "deleting" | "busy";
 
 export class SignInFailed extends Error {
   readonly reason: SignInProblem;
@@ -259,8 +259,12 @@ export async function userForIdentity(id: Pick<VerifiedIdentity, "sub" | "email"
   return asService(async (tx) => {
     const [known] = await tx.query<{ user_id: string }>("select user_id from app.identities where provider = 'cognito' and subject = $1", [id.sub]);
     if (known) return known.user_id;
-    const [taken] = await tx.query("select 1 from auth.users where email = $1", [id.email]);
-    if (taken) throw new SignInFailed("taken");
+    const [taken] = await tx.query<{ deleting: boolean }>(
+      "select exists (select 1 from app.deletion_requests r where r.user_id = u.id) as deleting from auth.users u where u.email = $1",
+      [id.email],
+    );
+    // An account with this email that is still being deleted gets its own message (Security CG-I2).
+    if (taken) throw new SignInFailed(taken.deleting ? "deleting" : "taken");
     const [user] = await tx.query<{ id: string }>("insert into auth.users (email, is_anonymous) values ($1, false) returning id", [id.email]);
     await tx.query("insert into app.identities (provider, subject, user_id) values ('cognito', $1, $2)", [id.sub, user.id]);
     return user.id;

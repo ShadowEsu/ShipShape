@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Logo, NotLegalAdvice } from "@/components/ui";
+import { deletionPending } from "@/lib/server/account";
 import { requireWorkspace } from "@/lib/server/session";
 import { signOut } from "../signin/actions";
 import { NavLinks } from "./nav";
@@ -8,6 +10,7 @@ export const metadata: Metadata = { robots: { index: false } };
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ws = await requireWorkspace();
+  const deleting = await deletionPending(ws.userId);
   return (
     <div className="min-h-dvh bg-canvas md:flex">
       <aside className="border-b border-line bg-paper px-4 py-4 md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">
@@ -23,6 +26,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </form>
       </aside>
       <div className="min-w-0 flex-1">
+        {deleting && (
+          <p role="status" className="border-b border-line bg-bad-soft px-4 py-2 text-center text-xs text-bad">
+            You asked to delete your account. ShipShape finishes that by itself within two days, and anything you add before then
+            is deleted with it.{" "}
+            <Link href="/app/settings#delete" className="underline">
+              Finish it now
+            </Link>
+          </p>
+        )}
         {ws.demo && (
           <p className="border-b border-line bg-warn-soft px-4 py-2 text-center text-xs text-warn">
             Sample workspace: every business, person and number here is made up. Uploading real documents is off until our

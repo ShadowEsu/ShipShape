@@ -104,7 +104,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         )}
       </section>
 
-      <section className="card space-y-3 border-bad/30">
+      <section id="delete" className="card space-y-3 border-bad/30">
         <h2 className="font-semibold text-bad">Delete your account</h2>
         <div className="space-y-2 text-sm text-ink-2">
           <p>This can&apos;t be undone. Right away, ShipShape deletes:</p>

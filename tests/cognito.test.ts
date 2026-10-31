@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { AdminDeleteUserCommand, CognitoIdentityProviderClient, NotAuthorizedException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { deleteAccount, finishDeletions } from "@/lib/server/account";
+import { deleteAccount, deletionPending, finishDeletions } from "@/lib/server/account";
 import { type CallbackParams, type CognitoConfig, cognitoAdmin, cognitoClient, cognitoConfig, completeSignIn, setSignInAdminForTests, startSignIn } from "@/lib/server/cognito";
 import { asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
@@ -362,6 +362,10 @@ describe("deleting the account", () => {
     });
     await expect(deleteAccount(owner.ctx)).rejects.toBeInstanceOf(UserError);
     expect(await recorded(owner.userId)).toBe(true);
+    // Every app page says so (CG-I1), and a new sign-up with the same email is told why it's refused (CG-I2).
+    expect(await deletionPending(owner.userId)).toBe(true);
+    const [{ email }] = await db.root((tx) => tx.query<{ email: string }>("select email from auth.users where id = $1", [owner.userId]));
+    await expect(signInWith({ sub: randomUUID(), email }).result).rejects.toMatchObject({ reason: "deleting" });
     down = false;
     await finishDeletions(); // under 15 minutes old: possibly still finishing in the person's own request
     expect(await exists(owner.userId)).toBe(true);
@@ -370,6 +374,9 @@ describe("deleting the account", () => {
     expect(asked).toContain(owner.sub);
     expect(await exists(owner.userId)).toBe(false);
     expect(await recorded(owner.userId)).toBe(false);
+    expect(await deletionPending(owner.userId)).toBe(false);
+    const fresh = await signInWith({ sub: randomUUID(), email }).result;
+    expect(fresh.userId).not.toBe(owner.userId);
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [owner.ctx.orgId]))).toHaveLength(0);
   });
 
