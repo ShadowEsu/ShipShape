@@ -9,6 +9,7 @@ import {
   createVendorLink,
   deleteVendorFile,
   getVendor,
+  listArchivedVendors,
   listVendors,
   openCollect,
   receiveFile,
@@ -181,6 +182,12 @@ describe("a vendor sending files", () => {
     expect(await openCollect(live.id, live.token)).toBeNull();
     expect(await send(live.id, live.token)).toBe("closed");
     await expect(createVendorLink(ctx, { vendorId, days: 7 })).rejects.toThrow(/Vendor not found/);
+    // Archived vendors leave the main list for the archived one, and come back when restored.
+    expect((await listVendors(ctx)).map((v) => v.id)).not.toContain(vendorId);
+    expect((await listArchivedVendors(ctx)).map((v) => v.id)).toContain(vendorId);
+    await setVendorArchived(ctx, vendorId, false);
+    expect((await listVendors(ctx)).map((v) => v.id)).toContain(vendorId);
+    expect((await listArchivedVendors(ctx)).map((v) => v.id)).not.toContain(vendorId);
   });
 
   it("links never last more than 90 days", async () => {
@@ -198,6 +205,22 @@ describe("a vendor sending files", () => {
         ]),
       ),
     ).rejects.toThrow(/check constraint/);
+  });
+
+  it("if the database can't record a received file, the stored copy is removed again", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner-orphan@example.com");
+    const vendorId = await addVendor(ctx, { name: "Orphan Co", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    const before = await storedFiles();
+    await db.root((tx) => tx.query("alter function app.collect_receive rename to collect_receive_unavailable"));
+    try {
+      await expect(receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "w9.pdf", bytes: PDF } })).rejects.toThrow();
+    } finally {
+      await db.root((tx) => tx.query("alter function app.collect_receive_unavailable rename to collect_receive"));
+    }
+    expect(await storedFiles()).toBe(before);
+    expect((await getVendor(ctx, vendorId))?.files).toEqual([]);
   });
 });
 
