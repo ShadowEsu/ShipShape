@@ -39,6 +39,12 @@ export function contactEmail(env: Env = process.env): string | null {
   return z.email().safeParse(address).success ? address : null;
 }
 
+/** The site's own origin (SHIPSHAPE_APP_URL), for absolute links in the sitemap and link previews. Null while unset or not an http(s) URL. */
+export function appUrl(env: Env = process.env): URL | null {
+  const parsed = z.url({ protocol: /^https?$/ }).safeParse(env.SHIPSHAPE_APP_URL?.trim() ?? "");
+  return parsed.success ? new URL(new URL(parsed.data).origin) : null;
+}
+
 /**
  * Checked when the server starts (instrumentation.ts): production with real documents open must
  * have a contact address, which /privacy promises and every shared page's "Report this page" uses.
