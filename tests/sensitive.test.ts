@@ -71,13 +71,40 @@ describe("log scrubber (R4)", () => {
     for (const s of samples) expect(scrub(`profile saved ${s} ok`)).toBe("profile saved [redacted-id] ok");
   });
 
-  it("leaves dates, amounts, ids and phone numbers readable", () => {
-    const keep = "2026-10-30 $1,250.00 seq 12 (415) 555-0100 order 12345678 uuid 3f2a9c1e call 415 555 0100 at 10:30";
+  // Security G4-1b: a tax ID next to other digits, or split by invisible characters.
+  const touching = [
+    "W-9 900-12-3456",
+    "Send the W-9 900-12-3456 today",
+    "1. 900-12-3456",
+    "Line 1 900-12-3456",
+    "dated 10/31 900-12-3456",
+    "Ref 12 900123456",
+    "SSN: 900-12-3456 9",
+    "900\u200b-12-3456",
+    "900\u00ad12\u00ad3456",
+  ];
+
+  it("redacts a tax ID that touches other digits or hides invisible characters", () => {
+    for (const s of touching) {
+      const out = scrub(s);
+      expect(out.replace(/\D/g, "")).not.toContain("900123456");
+      expect(out).toContain("[redacted-id]");
+    }
+  });
+
+  it("keeps IRS form names while removing the number next to them", () => {
+    expect(scrub("Send the W-9 900-12-3456 today")).toBe("Send the W-9 [redacted-id] today");
+    expect(scrub("W9 00-1234567, Form W-8BEN 900123456")).toBe("W9 [redacted-id], Form W-8BEN [redacted-id]");
+  });
+
+  it("leaves dates, amounts, ids and bracketed phone numbers readable", () => {
+    const keep =
+      "2026-10-30 $1,250.00 seq 12 (415) 555-0100 order 12345678 uuid 3f2a9c1e at 10:30. Need W-9 by 2026-11-15, license 12345678, Policy GL-2026-0042, limits $1,000,000 / $2,000,000";
     expect(scrub(keep)).toBe(keep);
   });
 
-  it("doesn't cut 9 digits out of a longer number", () => {
-    for (const s of ["4155550100", "415-555-0100", "1234 5678 9012 3456", "9 0 0 1 2 3 4 5 6 7"]) expect(scrub(`n ${s} n`)).toBe(`n ${s} n`);
+  it("redacts the whole of a longer number, never leaving 9 of its digits", () => {
+    for (const s of ["4155550100", "415-555-0100", "1234 5678 9012 3456", "9 0 0 1 2 3 4 5 6 7"]) expect(scrub(`n ${s} n`)).toBe("n [redacted-id] n");
   });
 
   it("redacts share and signing tokens in paths", () => {

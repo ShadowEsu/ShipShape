@@ -7,18 +7,29 @@ import { formatWithOptions } from "node:util";
  * any library logging go through the same scrubber as ours.
  */
 
+// Invisible format characters (zero-width space, soft hyphen, direction marks...) are dropped, so
+// they can't split a number. NFKC turns full-width digits into ASCII ones.
+const FORMAT_CHARS = /\p{Cf}/gu;
 // Unicode dashes and minus signs (hyphen, non-breaking hyphen, figure/en/em dash, minus, small and
-// full-width hyphen-minus), read as "-". NFKC first turns full-width digits into ASCII ones.
+// full-width hyphen-minus), read as "-".
 const DASHES = /[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g;
-// 9 digits with up to three separators (space, - . / _) between any two of them: SSN 3-2-4, EIN 2-7,
-// ungrouped, or spaced digit by digit. Never 9 digits taken out of a longer number.
+// Any run of 9 or more digits with up to three separators (space, - . / _) between each pair: SSN
+// 3-2-4, EIN 2-7, ungrouped, spaced digit by digit, or touching other digits ("1. 900-12-3456").
+// The whole run goes, so a tax ID never survives inside a longer number; a 10-digit phone number
+// written with those separators goes too. IRS form names (W-9, W-8BEN...) match first and stay, so
+// "W-9 900-12-3456" keeps its "W-9" and loses the number.
 const SEP = String.raw`[\s\-./_]{0,3}`;
-const TAX_ID = new RegExp(String.raw`(?<!\d${SEP})\d(?:${SEP}\d){8}(?!${SEP}\d)`, "g");
+const TAX_ID = new RegExp(String.raw`\bW-?(?:9|8(?:BEN-E|BEN|ECI|EXP|IMY)?)(?![\dA-Za-z])|\d(?:${SEP}\d){8,}`, "gi");
 // Share, signing and upload links' ids or tokens in paths or query strings.
 const LINK_TOKEN = /\/(p|s|c)\/[A-Za-z0-9_-]{20,}/g;
 
 export function scrub(text: string): string {
-  return text.normalize("NFKC").replace(DASHES, "-").replace(TAX_ID, "[redacted-id]").replace(LINK_TOKEN, "/$1/[redacted-token]");
+  return text
+    .normalize("NFKC")
+    .replace(FORMAT_CHARS, "")
+    .replace(DASHES, "-")
+    .replace(TAX_ID, (m) => (/^\d/.test(m) ? "[redacted-id]" : m))
+    .replace(LINK_TOKEN, "/$1/[redacted-token]");
 }
 
 const METHODS = ["log", "info", "warn", "error", "debug", "trace"] as const;
