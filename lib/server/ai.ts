@@ -49,12 +49,15 @@ async function apiKey(): Promise<string> {
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
   const file = process.env.NODE_ENV !== "production" ? process.env.ANTHROPIC_API_KEY_FILE : undefined;
   const match = file ? /^[A-Z0-9_]+=["']?([^"'\s]+)["']?\s*$/m.exec(await readFile(file, "utf8")) : null;
-  if (!match) throw new AiFailed("no key");
+  if (!match) throw new AiKeyRefused("no key");
   return match[1];
 }
 
 /** A model call that didn't produce a usable reply. The message never includes request or reply text. */
 export class AiFailed extends Error {}
+
+/** The API key was turned away (expired, revoked or missing): no tokens were processed, so nothing was billed. */
+export class AiKeyRefused extends AiFailed {}
 
 export interface AiRequest {
   model: string;
@@ -88,6 +91,8 @@ const anthropic: AiProvider = async (req) => {
     });
     // A rotated local key: the file is read again on the next attempt.
     if (res.status === 401 && attempt === 1) continue;
+    // Refused again, or not allowed: turned away before any tokens were processed.
+    if (res.status === 401 || res.status === 403) throw new AiKeyRefused(`provider status ${res.status}`);
     if (!res.ok) throw new AiFailed(`provider status ${res.status}`);
     const parsed = MessagesReply.safeParse(await res.json());
     if (!parsed.success) throw new AiFailed("provider reply shape");
@@ -223,6 +228,13 @@ export async function readRequest(ctx: Ctx, input: RequestInput, network: string
   try {
     reply = await provider({ model: AI_MODEL, system: SYSTEM, user, maxTokens: MAX_TOKENS });
   } catch (e) {
+    if (e instanceof AiKeyRefused) {
+      // No tokens, no charge. Every call fails until the key is replaced, so this says AI is paused
+      // rather than "try again", and logs it as an error for whoever runs ShipShape.
+      await settle("failed", null, null, 0);
+      console.error(`ai request_match: the provider refused the API key (${e.message})`);
+      throw new GateClosed("Reading requests with AI is paused right now. Everything else in ShipShape works as usual.");
+    }
     // Whether the provider billed it is unknown, so it keeps counting at the reserved worst case.
     await settle("failed", null, null, reserve);
     console.warn(`ai request_match failed: ${e instanceof AiFailed ? e.message : "network or timeout"}`);
