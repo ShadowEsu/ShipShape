@@ -24,8 +24,8 @@
 // PUBLIC (F2-1); a made-up login without TLS is refused for the missing encryption.
 // Sign-in (Cognito): the pool and the app client are set up as Security's M6 list says.
 // Credentials (IAM/STS): the app role trusts exactly this account's Vercel provider, its audience and
-// the production sub (StringEquals only); its only policy is inline and allows each action on its one
-// resource; a preview's token is refused.
+// the production sub (StringEquals only); its only policy is inline and allows each action it needs,
+// every one and nothing more, on its one resource; a preview's token is refused.
 // The canary and all its versions are removed at the end. Exits 1 on any failure.
 //
 // PROBE_LOCAL_ENDPOINT points every AWS call at a local stand-in (moto) to try the probe itself;
@@ -342,7 +342,9 @@ await attempt("the app role trusts exactly this account's Vercel provider, its a
     equals[`${issuer}:sub`] === env.PROBE_PRODUCTION_SUB;
   return [ok, JSON.stringify(statements)];
 });
-await attempt("the app role allows each action on its one resource only: the bucket's objects, the key, the pool (no wildcards, no managed policies; PR-2)", async () => {
+// Exactly these: one more is a wider grant; one fewer breaks the app where it matters least visibly (a missing
+// s3:DeleteObject or kms:Decrypt strands a deleted account's files, Security N-091a).
+await attempt("the app role allows each action it needs, every one, on its one resource only: the bucket's objects, the key, the pool (no wildcards, no managed policies; PR-2)", async () => {
   if (!poolArn) return [false, "no pool ARN to compare AdminDeleteUser with"];
   const objects = `arn:aws:s3:::${bucket}/*`;
   const resourceOf = new Map([
@@ -356,6 +358,7 @@ await attempt("the app role allows each action on its one resource only: the buc
   const attached = (await iam.send(new ListAttachedRolePoliciesCommand({ RoleName: env.PROBE_ROLE_NAME }))).AttachedPolicies ?? [];
   const names = (await iam.send(new ListRolePoliciesCommand({ RoleName: env.PROBE_ROLE_NAME }))).PolicyNames ?? [];
   const problems = attached.map((p) => `managed policy ${p.PolicyName}`);
+  const granted = new Set();
   for (const name of names) {
     const doc = JSON.parse(decodeURIComponent((await iam.send(new GetRolePolicyCommand({ RoleName: env.PROBE_ROLE_NAME, PolicyName: name }))).PolicyDocument ?? "{}"));
     for (const s of list(doc.Statement)) {
@@ -365,12 +368,14 @@ await attempt("the app role allows each action on its one resource only: the buc
       const resources = list(s.Resource);
       if (!resources.length) problems.push(`${name}: no resource`);
       for (const a of list(s.Action)) {
+        granted.add(a);
         const only = resourceOf.get(a);
         if (!only) problems.push(`${name}: action ${a}`);
         else for (const r of resources) if (r !== only) problems.push(`${name}: ${a} on ${r}`);
       }
     }
   }
+  for (const a of resourceOf.keys()) if (!granted.has(a)) problems.push(`missing ${a}`);
   return [names.length > 0 && problems.length === 0, problems.join("; ") || names.join(", ")];
 });
 await attempt("STS refuses a preview deployment's token for the app role", async () => {
