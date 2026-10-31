@@ -26,6 +26,10 @@ jobs:
           node-version: 24.22.1
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run lint
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
       - name: Tests on PGlite
         run: npm test
       - name: Start PostgreSQL 17 (TLS only over TCP)
