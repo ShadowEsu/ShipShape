@@ -45,15 +45,39 @@ describe("link tokens (R5)", () => {
 
 describe("log scrubber (R4)", () => {
   // IRS-invalid sample values: SSNs starting 9xx/000 and EINs starting 00 are never issued.
-  const samples = ["900-12-3456", "000123456", "900 12 3456", "00-1234567", "001234567", "900.12.3456"];
+  const samples = [
+    "900-12-3456",
+    "000123456",
+    "900 12 3456",
+    "00-1234567",
+    "001234567",
+    "900.12.3456",
+    // Security G4-1: Unicode dashes, spaced dashes, other separators, full-width digits, digit by digit.
+    "900–12–3456",
+    "00–1234567",
+    "900—12—3456",
+    "900−12−3456",
+    "900 - 12 - 3456",
+    "00 - 1234567",
+    "900/12/3456",
+    "900_12_3456",
+    "００－１２３４５６７",
+    "９００１２３４５６",
+    "9 0 0 1 2 3 4 5 6",
+    "9-0-0-1-2-3-4-5-6",
+  ];
 
   it("redacts every SSN, EIN and ITIN shape", () => {
     for (const s of samples) expect(scrub(`profile saved ${s} ok`)).toBe("profile saved [redacted-id] ok");
   });
 
   it("leaves dates, amounts, ids and phone numbers readable", () => {
-    const keep = "2026-10-30 $1,250.00 seq 12 (415) 555-0100 order 12345678 uuid 3f2a9c1e";
+    const keep = "2026-10-30 $1,250.00 seq 12 (415) 555-0100 order 12345678 uuid 3f2a9c1e call 415 555 0100 at 10:30";
     expect(scrub(keep)).toBe(keep);
+  });
+
+  it("doesn't cut 9 digits out of a longer number", () => {
+    for (const s of ["4155550100", "415-555-0100", "1234 5678 9012 3456", "9 0 0 1 2 3 4 5 6 7"]) expect(scrub(`n ${s} n`)).toBe(`n ${s} n`);
   });
 
   it("redacts share and signing tokens in paths", () => {

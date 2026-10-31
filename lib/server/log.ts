@@ -7,13 +7,18 @@ import { formatWithOptions } from "node:util";
  * any library logging go through the same scrubber as ours.
  */
 
-// 9 digits, alone or grouped as SSN (3-2-4) or EIN (2-7), with dashes, spaces or dots.
-const TAX_ID = /(?<![0-9])(?:[0-9]{3}[-\s.]?[0-9]{2}[-\s.]?[0-9]{4}|[0-9]{2}[-\s.]?[0-9]{7})(?![0-9])/g;
-// Share and signing tokens in paths or query strings.
-const LINK_TOKEN = /\/(p|s)\/[A-Za-z0-9_-]{20,}/g;
+// Unicode dashes and minus signs (hyphen, non-breaking hyphen, figure/en/em dash, minus, small and
+// full-width hyphen-minus), read as "-". NFKC first turns full-width digits into ASCII ones.
+const DASHES = /[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g;
+// 9 digits with up to three separators (space, - . / _) between any two of them: SSN 3-2-4, EIN 2-7,
+// ungrouped, or spaced digit by digit. Never 9 digits taken out of a longer number.
+const SEP = String.raw`[\s\-./_]{0,3}`;
+const TAX_ID = new RegExp(String.raw`(?<!\d${SEP})\d(?:${SEP}\d){8}(?!${SEP}\d)`, "g");
+// Share, signing and upload links' ids or tokens in paths or query strings.
+const LINK_TOKEN = /\/(p|s|c)\/[A-Za-z0-9_-]{20,}/g;
 
 export function scrub(text: string): string {
-  return text.replace(TAX_ID, "[redacted-id]").replace(LINK_TOKEN, "/$1/[redacted-token]");
+  return text.normalize("NFKC").replace(DASHES, "-").replace(TAX_ID, "[redacted-id]").replace(LINK_TOKEN, "/$1/[redacted-token]");
 }
 
 const METHODS = ["log", "info", "warn", "error", "debug", "trace"] as const;

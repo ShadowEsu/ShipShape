@@ -116,9 +116,14 @@ describe("what reaches the model", () => {
   it("tax IDs are removed and nothing from the vault is included", async () => {
     const ctx = await workspace();
     await addDoc(ctx, "Elm Plumbing W-9 signed copy", "w9", null);
-    await ask(ctx, `${REQUEST} Our records show your EIN as 00-1234567 and the owner's SSN 900-12-3456 (or 900123456).`);
+    await ask(
+      ctx,
+      `${REQUEST} Our records show your EIN as 00-1234567 (also written 00–7654321 and ００－１１２２３３４) and the owner's SSN 900-12-3456 (or 900123456, 9 0 0 6 5 4 3 2 1).`,
+    );
     const prompt = sent[0].system + sent[0].user;
-    for (const leaked of ["1234567", "900-12-3456", "900123456", "Elm Plumbing W-9 signed copy"]) expect(prompt).not.toContain(leaked);
+    const digits = prompt.replace(/\D/g, "");
+    for (const leaked of ["1234567", "7654321", "1122334", "900123456", "900654321"]) expect(digits).not.toContain(leaked);
+    expect(prompt).not.toContain("Elm Plumbing W-9 signed copy");
     expect(prompt).toContain("[redacted-id]");
   });
 
