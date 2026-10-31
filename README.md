@@ -22,6 +22,8 @@ The app runs as a preview: sample workspaces with a made-up business and documen
 
 ## Run it
 
+Needs Node 24, the version production runs on (`engines` in `package.json`).
+
 ```bash
 npm install
 cp .env.example .env.local   # fill in the three secrets (commands are in the file); set SHIPSHAPE_REAL_DOCS=1 locally
