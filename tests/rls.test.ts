@@ -484,6 +484,28 @@ describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
       await root.exec("alter function public.runs_as_app() owner to shipshape_app");
       await root.exec("alter role anon login");
       expect(await roleProblems(root)).toEqual(["shipshape_app owns 1 functions", "anon can log in"]);
+
+      // Security S-PG1: no table forces row level security, so the app's login holding any role but
+      // the three request roles (here the owner, through another role) or ADMIN on one is a problem.
+      for (const s of ["drop function public.runs_as_app()", "alter role anon nologin"]) await root.exec(s);
+      expect(await roleProblems(root)).toEqual([]);
+      const run = async (...statements: string[]) => {
+        for (const s of statements) await root.exec(s);
+      };
+      // Through another role into the owner: the owner's own grants come with it, ADMIN included.
+      await run("create role middle nologin", "grant shipshape_owner to middle", "grant middle to shipshape_app");
+      expect(await roleProblems(root)).toEqual([
+        "shipshape_app is a member of middle",
+        "shipshape_app is a member of shipshape_owner",
+        "shipshape_app has ADMIN on anon",
+        "shipshape_app has ADMIN on authenticated",
+        "shipshape_app has ADMIN on service_role",
+      ]);
+      await run("revoke middle from shipshape_app");
+      expect(await roleProblems(root)).toEqual([]);
+      // A request role missing, another held with ADMIN.
+      await run("revoke service_role from shipshape_app granted by shipshape_owner", "grant authenticated to shipshape_app with admin option");
+      expect(await roleProblems(root)).toEqual(["shipshape_app isn't a member of service_role", "shipshape_app has ADMIN on authenticated"]);
     } finally {
       await plain.close();
     }

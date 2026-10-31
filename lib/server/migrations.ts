@@ -65,11 +65,36 @@ export async function migrate(conn: MigrationConn, setup: string[], migrations: 
   return done;
 }
 
+/** The request roles the app's login switches to (`set local role`), and nothing else. */
+const APP_ROLES = ["anon", "authenticated", "service_role"];
+
+/**
+ * Every role shipshape_app is a member of, directly or through another role, and whether any grant
+ * on the way carries ADMIN. Printed in the migrate log (Security S-PG1).
+ */
+export async function appMemberships(conn: MigrationStep): Promise<{ role: string; admin: boolean }[]> {
+  const rows = await conn.query(
+    `with recursive m (roleid, admin) as (
+       select am.roleid, am.admin_option
+         from pg_catalog.pg_auth_members am join pg_catalog.pg_roles r on r.oid = am.member
+        where r.rolname = 'shipshape_app'
+       union
+       select am.roleid, am.admin_option from pg_catalog.pg_auth_members am join m on am.member = m.roleid
+     )
+     select r.rolname as role, bool_or(m.admin) as admin
+       from m join pg_catalog.pg_roles r on r.oid = m.roleid
+      group by r.rolname order by r.rolname`,
+  );
+  return rows.map((r) => ({ role: String(r.role), admin: r.admin === true }));
+}
+
 /**
  * What Security R-2 requires of the roles once migrations ran, one line per problem (none: fine).
  * The app's login is no superuser, can't bypass row level security and owns nothing at all (a
- * security definer function it owned would run with its rights, MG-3); every other ShipShape role
- * can't log in (MG-2: `create role if not exists` leaves an existing role as it was).
+ * security definer function it owned would run with its rights, MG-3); it is a member of exactly
+ * the three request roles, none with ADMIN (S-PG1: no table forces row level security, so
+ * membership in the owner, or any other role, would let it read everything); every other
+ * ShipShape role can't log in (MG-2: `create role if not exists` leaves an existing role as it was).
  */
 export async function roleProblems(conn: MigrationStep): Promise<string[]> {
   const [app] = await conn.query(
@@ -84,10 +109,15 @@ export async function roleProblems(conn: MigrationStep): Promise<string[]> {
     "select rolname from pg_catalog.pg_roles where rolname in ('shipshape_owner', 'anon', 'authenticated', 'service_role') and rolcanlogin order by rolname",
   );
   if (!app) return ["shipshape_app doesn't exist"];
+  const memberships = await appMemberships(conn);
+  const roles = memberships.map((m) => m.role);
   const problems = [
     app.rolsuper === true && "shipshape_app is a superuser",
     app.rolbypassrls === true && "shipshape_app can bypass row level security",
     ...["relations", "functions", "schemas", "types"].map((kind) => Number(app[kind]) > 0 && `shipshape_app owns ${Number(app[kind])} ${kind}`),
+    ...roles.filter((r) => !APP_ROLES.includes(r)).map((r) => `shipshape_app is a member of ${r}`),
+    ...APP_ROLES.filter((r) => !roles.includes(r)).map((r) => `shipshape_app isn't a member of ${r}`),
+    ...memberships.filter((m) => m.admin).map((m) => `shipshape_app has ADMIN on ${m.role}`),
     ...logins.map((r) => `${String(r.rolname)} can log in`),
   ];
   return problems.filter((p): p is string => typeof p === "string");

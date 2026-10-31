@@ -8,13 +8,15 @@
  *
  * First run: the platform file (roles, auth schema), then every migration as shipshape_owner, each
  * in its own transaction (lib/server/migrations.ts). Later runs apply only new migrations. Ends by
- * checking BOSS's rule 2: shipshape_app isn't a superuser, can't bypass row level security and owns
- * nothing. Its login (password or IAM auth) is set separately (aws-plan.md).
+ * checking BOSS's rule 2: shipshape_app isn't a superuser, can't bypass row level security, owns
+ * nothing and is a member of exactly anon, authenticated and service_role (no ADMIN; Security S-PG1).
+ * Its login (password or IAM auth) is set separately (aws-plan.md); IAM auth would add rds_iam,
+ * which this check refuses until that choice is made here too.
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import postgres from "postgres";
-import { migrate, roleProblems, type MigrationStep } from "../lib/server/migrations.ts";
+import { appMemberships, migrate, roleProblems, type MigrationStep } from "../lib/server/migrations.ts";
 import { pgTls } from "../lib/server/pg-tls.ts";
 
 const url = process.env.MIGRATE_DATABASE_URL;
@@ -49,15 +51,20 @@ try {
   console.log(applied.length ? `Applied ${applied.length}: ${applied.join(", ")}` : "Up to date.");
 
   const problems = await roleProblems(step(sql));
+  const memberships = await appMemberships(step(sql));
   const [app] = await sql`select rolcanlogin from pg_roles where rolname = 'shipshape_app'`;
   // Recorded in the run log (Security R-3): SCRAM only, TLS forced (an RDS parameter; empty elsewhere).
   const [settings] = await sql`select current_setting('password_encryption') as pe, coalesce(current_setting('rds.force_ssl', true), '') as force_ssl`;
   console.log(`password_encryption=${settings.pe} rds.force_ssl=${settings.force_ssl || "(not RDS)"}`);
+  // Security S-PG1: exactly anon, authenticated and service_role, none with ADMIN.
+  console.log(`shipshape_app is a member of: ${memberships.map((m) => (m.admin ? `${m.role} (ADMIN)` : m.role)).join(", ") || "(nothing)"}`);
   if (problems.length) {
     console.error(`FAIL: ${problems.join("; ")}`);
     process.exitCode = 1;
   } else {
-    console.log(`Roles OK: shipshape_app is no superuser, has no BYPASSRLS and owns nothing; the other roles can't log in. shipshape_app's login is ${app?.rolcanlogin ? "set" : "not set yet (see aws-plan.md)"}.`);
+    console.log(
+      `Roles OK: shipshape_app is no superuser, has no BYPASSRLS, owns nothing and holds only the three request roles (no ADMIN); the other roles can't log in. shipshape_app's login is ${app?.rolcanlogin ? "set" : "not set yet (see aws-plan.md)"}.`,
+    );
   }
 } catch (e) {
   // One line, no stack: a refused certificate (DEPTH_ZERO_SELF_SIGNED_CERT, ERR_TLS_CERT_ALTNAME_INVALID)
