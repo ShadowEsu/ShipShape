@@ -45,21 +45,26 @@ export function sessionSecret(): string {
 // Labelled, so no other MAC made with this secret (the sign-in cookie's is `signin:`) can pass as a session (Security CG-4).
 const sign = (payload: string) => createHmac("sha256", sessionSecret()).update(`session:${payload}`).digest("base64url");
 
+/** A session as read from its cookie, with when it was issued (ms since epoch), which "Sign out on every device" compares against. */
+export interface IssuedSession extends Session {
+  issuedAt: number;
+}
+
 /** `authAt` defaults to now; account sign-in passes the moment Cognito says the person authenticated. */
 export function encodeSession(s: Pick<Session, "userId" | "demo"> & { authAt?: number }, now = Date.now()): string {
   const at = Math.floor(now / 1000);
-  const payload = Buffer.from(JSON.stringify({ u: s.userId, d: s.demo, a: s.authAt ?? at, e: at + TTL_SECONDS })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ u: s.userId, d: s.demo, a: s.authAt ?? at, e: at + TTL_SECONDS, i: now })).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 
-export function decodeSession(value: string | undefined, now = Date.now()): Session | null {
+export function decodeSession(value: string | undefined, now = Date.now()): IssuedSession | null {
   if (!value) return null;
   const [payload, mac] = value.split(".");
   if (!payload || !mac || !safeEqual(mac, sign(payload))) return null;
   try {
-    const { u, d, a, e } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    if (typeof u !== "string" || typeof a !== "number" || typeof e !== "number" || e * 1000 <= now) return null;
-    return { userId: u, demo: d === true, authAt: a };
+    const { u, d, a, e, i } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (typeof u !== "string" || typeof a !== "number" || typeof e !== "number" || typeof i !== "number" || e * 1000 <= now) return null;
+    return { userId: u, demo: d === true, authAt: a, issuedAt: i };
   } catch {
     return null;
   }
@@ -69,7 +74,7 @@ export const authIsRecent = (s: Session, now = Date.now()) => now / 1000 - s.aut
 
 export const localSignInAllowed = () => process.env.NODE_ENV !== "production";
 
-export async function getSession(): Promise<Session | null> {
+export async function getSession(): Promise<IssuedSession | null> {
   return decodeSession((await cookies()).get(COOKIE)?.value);
 }
 
@@ -87,18 +92,30 @@ export async function endSession() {
   (await cookies()).delete(COOKIE);
 }
 
-/** The signed-in user's workspace, or a redirect to sign-in. */
+/**
+ * The signed-in user's workspace, or a redirect to sign-in. A session issued before the person
+ * last chose "Sign out on every device" is refused here, in the same query (Security E9).
+ */
 export async function requireWorkspace(): Promise<Session & Workspace> {
   const session = await getSession();
   if (!session) redirect("/signin");
   const [ws] = await asUser(session.userId, (tx) =>
     tx.query<{ org_id: string; name: string; role: Workspace["role"]; is_demo: boolean }>(
-      "select m.org_id, o.name, m.role, o.is_demo from app.members m join app.organizations o on o.id = m.org_id where m.user_id = $1 order by m.created_at limit 1",
-      [session.userId],
+      `select m.org_id, o.name, m.role, o.is_demo from app.members m join app.organizations o on o.id = m.org_id
+       where m.user_id = $1
+         and not exists (select 1 from app.session_revocations r where r.user_id = $1 and r.valid_after > to_timestamp($2::double precision / 1000))
+       order by m.created_at limit 1`,
+      [session.userId, session.issuedAt],
     ),
   );
   if (!ws) redirect("/signin");
-  return { ...session, orgId: ws.org_id, name: ws.name, role: ws.role, demo: ws.is_demo };
+  return { userId: session.userId, authAt: session.authAt, orgId: ws.org_id, name: ws.name, role: ws.role, demo: ws.is_demo };
+}
+
+/** Ends every session this person has, on every device, this one included (Security E9). */
+export async function endAllSessions(userId: string): Promise<void> {
+  await asUser(userId, (tx) => tx.query("select app.end_my_sessions()"));
+  await endSession();
 }
 
 /** Creates the auth user (local mode) and records the Terms and Privacy agreement. */

@@ -122,6 +122,7 @@ const TABLES: Record<string, string | null> = {
   identities: null, // server only: which Cognito user is which user, checked below
   deletion_requests: null, // server only: accounts the daily run finishes deleting, checked below
   storage_cleanup: null, // server only: stored files a deletion couldn't remove yet, checked below
+  session_revocations: null, // each person's own row only: when they last signed out everywhere, checked below
 };
 
 describe("row level security", () => {
@@ -186,6 +187,18 @@ describe("row level security", () => {
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.storage_cleanup (path) values ($1)", [`${orgB}/x/v1.pdf`])));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.storage_cleanup")));
     await expectDenied(asUser(a, (tx) => tx.query("delete from app.storage_cleanup")));
+  });
+
+  it("sign-out-everywhere times: each person reads only their own, and only moves it themselves (Security E9)", async () => {
+    await asUser(a, (tx) => tx.query("select app.end_my_sessions()"));
+    await asUser(b, (tx) => tx.query("select app.end_my_sessions()"));
+    const seen = await asUser(a, (tx) => tx.query<{ user_id: string }>("select user_id from app.session_revocations"));
+    expect(seen.map((r) => r.user_id)).toEqual([a]);
+    // Nobody writes a row directly: setting someone else's would sign them out, or an old time would revive copies.
+    await expectDenied(asUser(a, (tx) => tx.query("insert into app.session_revocations (user_id, valid_after) values ($1, now())", [b])));
+    await expectDenied(asUser(a, (tx) => tx.query("update app.session_revocations set valid_after = '-infinity'")));
+    await expectDenied(asUser(a, (tx) => tx.query("delete from app.session_revocations")));
+    await expectDenied(asAnon((tx) => tx.query("select app.end_my_sessions()")));
   });
 
   it("billing is read-only to members, Stripe ids and webhook events stay server-side", async () => {

@@ -5,6 +5,7 @@ import {
   createLocalUser,
   decodeSession,
   encodeSession,
+  endAllSessions,
   endSession,
   finishSignIn,
   localSignInAllowed,
@@ -37,7 +38,7 @@ const USER = "11111111-1111-4111-8111-111111111111";
 
 describe("session cookie", () => {
   it("round-trips", () => {
-    expect(decodeSession(encodeSession({ userId: USER, demo: true }))).toEqual({ userId: USER, demo: true, authAt: expect.any(Number) });
+    expect(decodeSession(encodeSession({ userId: USER, demo: true }))).toEqual({ userId: USER, demo: true, authAt: expect.any(Number), issuedAt: expect.any(Number) });
   });
 
   it("rejects a changed payload, a changed signature, junk and expiry", () => {
@@ -126,5 +127,32 @@ describe("signing in and out", () => {
     await expect(requireWorkspace()).rejects.toThrow("redirect /signin");
     jar.set("ss_session", { value: `${Buffer.from(JSON.stringify({ u: USER, a: 0, e: 9e9 })).toString("base64url")}.forged` });
     await expect(requireWorkspace()).rejects.toThrow("redirect /signin");
+  });
+
+  it("signing out on every device ends that person's earlier sessions, copies included, and nobody else's (Security E9)", async () => {
+    const use = async (value: string) => {
+      jar.set("ss_session", { value });
+      return requireWorkspace();
+    };
+    const me = await createLocalUser("everywhere@example.com", false);
+    const someoneElse = await createLocalUser("bystander@example.com", false);
+    await finishSignIn(me, { demo: false });
+    await finishSignIn(someoneElse, { demo: false });
+    // Sessions issued a minute ago: a laptop, a phone, and a copy someone took; and another person's.
+    const earlier = Date.now() - 60_000;
+    const laptop = encodeSession({ userId: me, demo: false }, earlier);
+    const phone = encodeSession({ userId: me, demo: false }, earlier + 1);
+    const theirs = encodeSession({ userId: someoneElse, demo: false }, earlier);
+    expect(await use(laptop)).toMatchObject({ userId: me });
+
+    await endAllSessions(me);
+    expect(jar.has("ss_session")).toBe(false);
+    await expect(use(laptop)).rejects.toThrow("redirect /signin");
+    await expect(use(phone)).rejects.toThrow("redirect /signin");
+    expect(await use(theirs)).toMatchObject({ userId: someoneElse });
+
+    // Signing in again afterwards works; the old copies stay dead.
+    expect(await use(encodeSession({ userId: me, demo: false }, Date.now() + 1_000))).toMatchObject({ userId: me });
+    await expect(use(laptop)).rejects.toThrow("redirect /signin");
   });
 });

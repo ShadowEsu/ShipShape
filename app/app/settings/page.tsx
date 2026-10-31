@@ -4,6 +4,7 @@ import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
 import { requireWorkspace } from "@/lib/server/session";
 import { signOut } from "../../signin/actions";
+import { signOutEverywhere } from "./actions";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
 import { DeleteAccountForm, RenameWorkspaceForm } from "./forms";
 
@@ -106,14 +107,31 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </section>
 
       {/* The sidebar's Sign out is desktop-only; on a phone this is the way out. */}
-      <section className="card flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-semibold">Sign out</h2>
-          <p className="text-sm text-ink-2">Ends your session in this browser.</p>
+      <section className="card space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Sign out</h2>
+            <p className="text-sm text-ink-2">Ends your session in this browser.</p>
+          </div>
+          <form action={signOut}>
+            <button className="btn-ghost">Sign out</button>
+          </form>
         </div>
-        <form action={signOut}>
-          <button className="btn-ghost">Sign out</button>
-        </form>
+        {/* A sample workspace's visitor has no password to come back with, so this would only lose the sample. */}
+        {!ctx.demo && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 sm:flex-nowrap">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-semibold">Sign out on every device</h3>
+              <p className="text-sm text-ink-2">
+                Lost a laptop or phone, or see a sign-in you don&apos;t recognise? This ends every session, here and everywhere
+                else. Then change your password.
+              </p>
+            </div>
+            <form action={signOutEverywhere} className="shrink-0">
+              <button className="btn-ghost">Sign out everywhere</button>
+            </form>
+          </div>
+        )}
       </section>
 
       <section id="delete" className="card space-y-3 border-bad/30">

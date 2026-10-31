@@ -6,7 +6,7 @@ import { deleteAccount } from "@/lib/server/account";
 import { openPortal, startCheckout } from "@/lib/server/billing";
 import { UserError } from "@/lib/server/errors";
 import { NeedsRecentSignIn, renameWorkspace } from "@/lib/server/profile";
-import { endSession, requireWorkspace } from "@/lib/server/session";
+import { endAllSessions, endSession, requireWorkspace } from "@/lib/server/session";
 
 export interface RenameState {
   error?: string;
@@ -43,6 +43,13 @@ export async function deleteMyAccount(_prev: DeleteState, data: FormData): Promi
   }
   await endSession();
   redirect("/signin?deleted=1");
+}
+
+/** Lost a device or saw a sign-in you don't recognise: ends every session, this one included (Security E9). */
+export async function signOutEverywhere() {
+  const ctx = await requireWorkspace();
+  await endAllSessions(ctx.userId);
+  redirect("/signin?signed_out=everywhere");
 }
 
 export interface BillingState {

@@ -19,8 +19,8 @@ const PROBLEMS: Record<SignInProblem, string> = {
 
 const problem = (error: string | undefined) => Object.entries(PROBLEMS).find(([reason]) => reason === error)?.[1];
 
-export default async function SignInPage({ searchParams }: { searchParams: Promise<{ deleted?: string; error?: string }> }) {
-  const { deleted, error } = await searchParams;
+export default async function SignInPage({ searchParams }: { searchParams: Promise<{ deleted?: string; error?: string; signed_out?: string }> }) {
+  const { deleted, error, signed_out } = await searchParams;
   const accounts = cognitoConfig(process.env) !== null;
   const message = problem(error);
   return (
@@ -30,6 +30,11 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
         {deleted === "1" && (
           <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
             Your account and its workspaces were deleted.
+          </p>
+        )}
+        {signed_out === "everywhere" && (
+          <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
+            You&apos;re signed out on every device. If you think someone else signed in, change your password now.
           </p>
         )}
         {message && (
