@@ -13,12 +13,12 @@ const FORMAT_CHARS = /\p{Cf}/gu;
 // Unicode dashes and minus signs (hyphen, non-breaking hyphen, figure/en/em dash, minus, small and
 // full-width hyphen-minus), read as "-".
 const DASHES = /[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g;
-// Any run of 9 or more digits with up to three separators (space, - . / _) between each pair: SSN
+// Any run of 9 or more digits with up to four separators (space, - . / _) between each pair: SSN
 // 3-2-4, EIN 2-7, ungrouped, spaced digit by digit, or touching other digits ("1. 900-12-3456").
 // The whole run goes, so a tax ID never survives inside a longer number; a 10-digit phone number
 // written with those separators goes too. IRS form names (W-9, W-8BEN...) match first and stay, so
 // "W-9 900-12-3456" keeps its "W-9" and loses the number.
-const SEP = String.raw`[\s\-./_]{0,3}`;
+const SEP = String.raw`[\s\-./_]{0,4}`;
 const TAX_ID = new RegExp(String.raw`\bW-?(?:9|8(?:BEN-E|BEN|ECI|EXP|IMY)?)(?![\dA-Za-z])|\d(?:${SEP}\d){8,}`, "gi");
 // Share, signing and upload links' ids or tokens in paths or query strings.
 const LINK_TOKEN = /\/(p|s|c)\/[A-Za-z0-9_-]{20,}/g;
