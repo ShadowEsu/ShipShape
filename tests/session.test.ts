@@ -1,7 +1,37 @@
 import { createHmac } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { sameOrigin } from "@/lib/server/http";
-import { decodeSession, encodeSession, localSignInAllowed, sessionSecret } from "@/lib/server/session";
+import {
+  createLocalUser,
+  decodeSession,
+  encodeSession,
+  endSession,
+  finishSignIn,
+  localSignInAllowed,
+  requireWorkspace,
+  sessionSecret,
+  startSession,
+} from "@/lib/server/session";
+import { freshDb, type TestDb } from "./support/db";
+
+// The request's cookies, as Next.js would hold them, with the options each was set with.
+const jar = vi.hoisted(() => new Map<string, { value: string; options?: Record<string, unknown> }>());
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) => {
+      const c = jar.get(name);
+      return c && { name, value: c.value };
+    },
+    set: (name: string, value: string, options?: Record<string, unknown>) => void jar.set(name, { value, options }),
+    delete: (name: string) => void jar.delete(name),
+  }),
+}));
+// Like Next.js, redirect() never returns.
+vi.mock("next/navigation", () => ({
+  redirect: (to: string) => {
+    throw new Error(`redirect ${to}`);
+  },
+}));
 
 const USER = "11111111-1111-4111-8111-111111111111";
 
@@ -54,5 +84,47 @@ describe("same-origin guard (CSRF)", () => {
     expect(sameOrigin(h({ host: "shipshape.example" }))).toBe(false);
     expect(sameOrigin(h({ host: "shipshape.example", origin: "null" }))).toBe(false);
     expect(sameOrigin(h({ host: "shipshape.example", origin: "https://shipshape.example", "sec-fetch-site": "cross-site" }))).toBe(false);
+  });
+});
+
+describe("signing in and out", () => {
+  let db: TestDb;
+  beforeAll(async () => {
+    db = await freshDb();
+  });
+  afterEach(() => {
+    jar.clear();
+    vi.unstubAllEnvs();
+  });
+  const rows = async (sql: string, userId: string) => (await db.root((tx) => tx.query(sql, [userId]))).length;
+
+  it("records the agreement each time, makes one workspace, and keeps the session in a cookie scripts can't read", async () => {
+    const userId = await createLocalUser("owner@example.com", false);
+    expect(await createLocalUser("owner@example.com", false)).toBe(userId);
+
+    await finishSignIn(userId, { demo: false });
+    expect(jar.get("ss_session")?.options).toEqual({ httpOnly: true, secure: false, sameSite: "lax", path: "/", maxAge: 12 * 60 * 60 });
+    expect(await requireWorkspace()).toMatchObject({ userId, demo: false, name: "My business", role: "owner", orgId: expect.any(String) });
+
+    await finishSignIn(userId, { demo: false });
+    expect(await rows("select 1 from app.members where user_id = $1", userId)).toBe(1);
+    expect(await rows("select 1 from app.consents where user_id = $1 and item = 'terms_privacy'", userId)).toBe(2);
+
+    await endSession();
+    expect(jar.has("ss_session")).toBe(false);
+    await expect(requireWorkspace()).rejects.toThrow("redirect /signin");
+  });
+
+  it("sends the cookie only over HTTPS in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    await startSession({ userId: USER, demo: false });
+    expect(jar.get("ss_session")?.options).toMatchObject({ secure: true, httpOnly: true });
+  });
+
+  it("sends a valid session whose account is gone to sign-in, and a forged one too", async () => {
+    await startSession({ userId: USER, demo: false }); // signed by us, but no such account
+    await expect(requireWorkspace()).rejects.toThrow("redirect /signin");
+    jar.set("ss_session", { value: `${Buffer.from(JSON.stringify({ u: USER, a: 0, e: 9e9 })).toString("base64url")}.forged` });
+    await expect(requireWorkspace()).rejects.toThrow("redirect /signin");
   });
 });
