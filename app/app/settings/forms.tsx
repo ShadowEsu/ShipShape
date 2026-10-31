@@ -11,7 +11,7 @@ export function RenameWorkspaceForm({ name }: { name: string }) {
         <label htmlFor="workspace-name" className="label">
           Name
         </label>
-        <input id="workspace-name" name="name" defaultValue={name} required maxLength={120} autoComplete="organization" className="input" aria-describedby="workspace-name-hint" />
+        <input id="workspace-name" name="name" defaultValue={state.name ?? name} required maxLength={120} autoComplete="organization" className="input" aria-describedby="workspace-name-hint" />
         <p id="workspace-name-hint" className="mt-1 text-xs text-ink-3">
           People you share with see this name on your passport links, signature requests and upload links.
         </p>

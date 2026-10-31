@@ -14,6 +14,7 @@ export interface PickableDoc {
 
 export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc[]; days: readonly number[]; preselected: string[] }) {
   const [state, action, pending] = useActionState<PassportFormState, FormData>(makePassport, {});
+  const typed = state.values;
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -42,7 +43,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
         <label htmlFor="label" className="label">
           Who is it for?
         </label>
-        <input id="label" name="label" required maxLength={120} placeholder="e.g. Northwind Builders onboarding" className="input" />
+        <input id="label" name="label" required maxLength={120} placeholder="e.g. Northwind Builders onboarding" defaultValue={typed?.label} className="input" />
       </div>
       <fieldset>
         <legend className="label">Documents to include</legend>
@@ -63,7 +64,13 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
             {docs.map((d) => (
               <li key={d.id}>
                 <label className="flex items-start gap-3 rounded-lg border border-line px-3 py-2 text-sm has-[:checked]:border-ink">
-                  <input type="checkbox" name="doc" value={d.id} defaultChecked={preselected.includes(d.id)} className="mt-0.5 size-4 accent-[var(--accent)]" />
+                  <input
+                    type="checkbox"
+                    name="doc"
+                    value={d.id}
+                    defaultChecked={(typed?.docs ?? preselected).includes(d.id)}
+                    className="mt-0.5 size-4 accent-[var(--accent)]"
+                  />
                   <span className="min-w-0">
                     <span className="block font-medium">{d.title}</span>
                     <span className="block text-xs text-ink-3">
@@ -82,7 +89,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
         <div className="mt-1 flex flex-wrap gap-2">
           {days.map((d, i) => (
             <label key={d} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm has-[:checked]:border-ink">
-              <input type="radio" name="days" value={d} defaultChecked={i === 1} className="accent-[var(--accent)]" />
+              <input type="radio" name="days" value={d} defaultChecked={typed ? typed.days === String(d) : i === 1} className="accent-[var(--accent)]" />
               {d} days
             </label>
           ))}

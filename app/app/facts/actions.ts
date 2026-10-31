@@ -11,6 +11,8 @@ export interface FactsState {
   error?: string;
   saved?: boolean;
   ein?: string;
+  /** What was typed, sent back with an error so the form shows it again after React resets it. */
+  values?: Record<ProfileKey, string>;
 }
 
 function message(e: unknown): string {
@@ -25,7 +27,7 @@ export async function saveFacts(_prev: FactsState, data: FormData): Promise<Fact
   try {
     await saveProfile(ctx, input);
   } catch (e) {
-    return { error: message(e) };
+    return { error: message(e), values: input };
   }
   revalidatePath("/app/facts");
   return { saved: true };

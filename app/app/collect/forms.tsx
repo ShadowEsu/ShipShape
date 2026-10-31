@@ -15,26 +15,33 @@ function FormError({ error }: { error?: string }) {
 
 export function NewVendorForm({ kinds }: { kinds: { key: string; label: string }[] }) {
   const [state, action, pending] = useActionState<CollectFormState, FormData>(addVendorAction, {});
+  const typed = state.values;
   return (
     <form action={action} className="space-y-5">
       <div>
         <label htmlFor="vendor-name" className="label">
           Vendor or subcontractor
         </label>
-        <input id="vendor-name" name="name" required maxLength={120} placeholder="e.g. Rivera Electric" className="input" />
+        <input id="vendor-name" name="name" required maxLength={120} placeholder="e.g. Rivera Electric" defaultValue={typed?.name} className="input" />
       </div>
       <div>
         <label htmlFor="vendor-email" className="label">
           Email <span className="font-normal text-ink-3">(optional, only for you; ShipShape doesn&apos;t email vendors)</span>
         </label>
-        <input id="vendor-email" name="email" type="email" maxLength={254} autoComplete="off" className="input" />
+        <input id="vendor-email" name="email" type="email" maxLength={254} autoComplete="off" defaultValue={typed?.email} className="input" />
       </div>
       <fieldset>
         <legend className="label">Documents to ask for</legend>
         <div className="mt-1 flex flex-wrap gap-2">
           {kinds.map((k) => (
             <label key={k.key} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm has-[:checked]:border-ink">
-              <input type="checkbox" name="kind" value={k.key} defaultChecked={k.key === "w9" || k.key === "coi"} className="size-4 accent-[var(--accent)]" />
+              <input
+                type="checkbox"
+                name="kind"
+                value={k.key}
+                defaultChecked={typed ? typed.kinds.includes(k.key) : k.key === "w9" || k.key === "coi"}
+                className="size-4 accent-[var(--accent)]"
+              />
               {k.label}
             </label>
           ))}

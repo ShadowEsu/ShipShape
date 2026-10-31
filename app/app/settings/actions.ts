@@ -11,6 +11,8 @@ import { endSession, requireWorkspace } from "@/lib/server/session";
 export interface RenameState {
   error?: string;
   saved?: boolean;
+  /** The name that was refused, so the field keeps it after React resets the form. */
+  name?: string;
 }
 
 export async function renameMyWorkspace(_prev: RenameState, data: FormData): Promise<RenameState> {
@@ -18,7 +20,7 @@ export async function renameMyWorkspace(_prev: RenameState, data: FormData): Pro
   try {
     await renameWorkspace(ctx, data.get("name"));
   } catch (e) {
-    if (e instanceof UserError) return { error: e.message };
+    if (e instanceof UserError) return { error: e.message, name: String(data.get("name") ?? "") };
     throw e;
   }
   // The name shows in the header of every app page.

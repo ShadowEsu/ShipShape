@@ -12,6 +12,8 @@ export interface CollectFormState {
   error?: string;
   /** A new upload link, shown once. */
   link?: { id: string; token: string };
+  /** What was typed into the new-vendor form, sent back with an error so the form shows it again. */
+  values?: { name: string; email: string; kinds: string[] };
 }
 
 function problem(e: unknown): CollectFormState {
@@ -26,7 +28,7 @@ export async function addVendorAction(_prev: CollectFormState, data: FormData): 
   try {
     vendorId = await addVendor(ctx, { name: data.get("name"), email: data.get("email") ?? "", requested: data.getAll("kind") });
   } catch (e) {
-    return problem(e);
+    return { ...problem(e), values: { name: String(data.get("name") ?? ""), email: String(data.get("email") ?? ""), kinds: data.getAll("kind").map(String) } };
   }
   revalidatePath("/app/collect");
   redirect(`/app/collect/${vendorId}`);

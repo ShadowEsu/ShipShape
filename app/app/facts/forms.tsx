@@ -6,6 +6,7 @@ import { reveal, saveFacts, saveTaxId, type FactsState } from "./actions";
 
 export function FactsForm({ values, readOnly }: { values: Record<ProfileKey, string>; readOnly: boolean }) {
   const [state, action, pending] = useActionState<FactsState, FormData>(saveFacts, {});
+  const v = state.values ?? values;
   return (
     <form action={action} className="space-y-4">
       <fieldset disabled={readOnly} className="grid gap-4 sm:grid-cols-2">
@@ -13,7 +14,8 @@ export function FactsForm({ values, readOnly }: { values: Record<ProfileKey, str
           <label htmlFor="entity_type" className="label">
             Business type
           </label>
-          <select id="entity_type" name="entity_type" defaultValue={values.entity_type} className="input">
+          {/* Keyed: React applies a select's defaultValue only when it mounts, and resets the form to that after each action. */}
+          <select key={v.entity_type} id="entity_type" name="entity_type" defaultValue={v.entity_type} className="input">
             <option value="">Choose…</option>
             {Object.entries(ENTITY_TYPES).map(([k, l]) => (
               <option key={k} value={k}>
@@ -27,7 +29,7 @@ export function FactsForm({ values, readOnly }: { values: Record<ProfileKey, str
             <label htmlFor={f.key} className="label">
               {f.label}
             </label>
-            <input id={f.key} name={f.key} defaultValue={values[f.key]} maxLength={f.max} autoComplete={f.autoComplete} className="input" aria-describedby={f.hint ? `${f.key}-hint` : undefined} />
+            <input id={f.key} name={f.key} defaultValue={v[f.key]} maxLength={f.max} autoComplete={f.autoComplete} className="input" aria-describedby={f.hint ? `${f.key}-hint` : undefined} />
             {f.hint && (
               <p id={`${f.key}-hint`} className="mt-1 text-xs text-ink-3">
                 {f.hint}

@@ -9,6 +9,8 @@ import { requireWorkspace } from "@/lib/server/session";
 export interface PassportFormState {
   error?: string;
   created?: { id: string; token: string };
+  /** What was chosen, sent back with an error so the form shows it again after React resets it. */
+  values?: { label: string; days: string; docs: string[] };
 }
 
 export async function makePassport(_prev: PassportFormState, data: FormData): Promise<PassportFormState> {
@@ -22,8 +24,9 @@ export async function makePassport(_prev: PassportFormState, data: FormData): Pr
     revalidatePath("/app/passport");
     return { created };
   } catch (e) {
-    if (e instanceof UserError) return { error: e.message };
-    if (e instanceof z.ZodError) return { error: e.issues[0]?.message ?? "Check the form and try again." };
+    const values = { label: String(data.get("label") ?? ""), days: String(data.get("days") ?? ""), docs: data.getAll("doc").map(String) };
+    if (e instanceof UserError) return { error: e.message, values };
+    if (e instanceof z.ZodError) return { error: e.issues[0]?.message ?? "Check the form and try again.", values };
     throw e;
   }
 }
