@@ -7,7 +7,7 @@ import { collectOpen } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { archiveVendor, turnOffVendorLink } from "../actions";
 import { CollectChip } from "../chip";
-import { VendorLinkForm } from "../forms";
+import { DeleteVendorFileForm, VendorLinkForm } from "../forms";
 
 export const metadata: Metadata = { title: "Vendor" };
 
@@ -72,8 +72,8 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
               {files.map((f) => (
-                <li key={f.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="min-w-0">
+                <li key={f.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+                  <span className="min-w-0 flex-1 basis-64">
                     <span className="block font-mono text-xs tracking-wide text-ink-3 uppercase">{f.label}</span>
                     <span className="block truncate font-medium">{f.filename}</span>
                     <span className="block text-sm text-ink-2">
@@ -82,9 +82,12 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
                       {f.sample && " · sample"}
                     </span>
                   </span>
-                  <a href={`/app/collect/file/${f.id}`} className="btn-ghost shrink-0 self-start sm:self-center">
-                    Download
-                  </a>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <a href={`/app/collect/file/${f.id}`} className="btn-ghost">
+                      Download
+                    </a>
+                    {ctx.role !== "member" && <DeleteVendorFileForm fileId={f.id} filename={f.filename} />}
+                  </span>
                 </li>
               ))}
             </ul>

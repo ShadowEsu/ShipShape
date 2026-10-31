@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { addVendor, createVendorLink, revokeVendorLink, setVendorArchived } from "@/lib/server/collect";
+import { addVendor, createVendorLink, deleteVendorFile, revokeVendorLink, setVendorArchived } from "@/lib/server/collect";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
@@ -47,6 +47,18 @@ export async function turnOffVendorLink(data: FormData) {
   const ctx = await requireWorkspace();
   await revokeVendorLink(ctx, String(data.get("id") ?? ""));
   revalidatePath(`/app/collect/${String(data.get("vendor") ?? "")}`);
+}
+
+export async function deleteVendorFileAction(_prev: CollectFormState, data: FormData): Promise<CollectFormState> {
+  const ctx = await requireWorkspace();
+  try {
+    const vendorId = await deleteVendorFile(ctx, String(data.get("id") ?? ""));
+    revalidatePath("/app/collect");
+    revalidatePath(`/app/collect/${vendorId}`);
+    return {};
+  } catch (e) {
+    return problem(e);
+  }
 }
 
 export async function archiveVendor(data: FormData) {

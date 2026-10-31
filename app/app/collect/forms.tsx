@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { CopyLink } from "@/components/copy-link";
-import { addVendorAction, makeVendorLink, type CollectFormState } from "./actions";
+import { addVendorAction, deleteVendorFileAction, makeVendorLink, type CollectFormState } from "./actions";
 
 function FormError({ error }: { error?: string }) {
   if (!error) return null;
@@ -90,6 +90,33 @@ export function VendorLinkForm({ vendorId, vendorName, days }: { vendorId: strin
       <button className="btn" disabled={pending}>
         {pending ? "Making the link…" : "Make an upload link"}
       </button>
+    </form>
+  );
+}
+
+/** Delete asks once more in place: the file and its stored copy go for good. */
+export function DeleteVendorFileForm({ fileId, filename }: { fileId: string; filename: string }) {
+  const [state, action, pending] = useActionState<CollectFormState, FormData>(deleteVendorFileAction, {});
+  const [confirming, setConfirming] = useState(false);
+
+  if (!confirming) {
+    return (
+      <button type="button" className="btn-ghost" onClick={() => setConfirming(true)} aria-label={`Delete ${filename}`}>
+        Delete
+      </button>
+    );
+  }
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="id" value={fileId} />
+      <span className="text-sm text-ink-2">Delete this file for good?</span>
+      <button className="btn-danger" disabled={pending}>
+        {pending ? "Deleting…" : "Delete file"}
+      </button>
+      <button type="button" className="btn-ghost" onClick={() => setConfirming(false)} disabled={pending}>
+        Keep
+      </button>
+      <FormError error={state.error} />
     </form>
   );
 }

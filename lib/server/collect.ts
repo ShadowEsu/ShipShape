@@ -290,7 +290,7 @@ export async function openCollect(id: string, token: string): Promise<PublicColl
 }
 
 /** Why an upload didn't go through; the page turns each into a sentence. */
-export type ReceiveOutcome = "sent" | "closed" | "gate" | "kind" | "date" | "empty" | "too_big" | "type";
+export type ReceiveOutcome = "sent" | "closed" | "gate" | "kind" | "date" | "empty" | "too_big" | "type" | "link_full" | "workspace_full";
 
 const ExpiresOn = z.union([z.literal(""), z.iso.date()]).transform((s) => s || null);
 
@@ -336,7 +336,7 @@ export async function receiveFile(
       if (!mime) return "type";
       file = { name: cleanFilename(input.file.name, mime), bytes: input.file.bytes, mime };
     }
-    return (await storeVendorFile(tx, id, hash, rows[0].org_id, kind, expires.data, file, rows[0].is_demo)) ? "sent" : "closed";
+    return storeVendorFile(tx, id, hash, rows[0].org_id, kind, expires.data, file, rows[0].is_demo);
   });
 }
 
@@ -355,9 +355,12 @@ async function sampleFile(kind: DocKind, vendor: string, org: string, expires: s
   return { name: `${label} (sample).pdf`, bytes, mime: "application/pdf" };
 }
 
+/** What app.collect_receive answers, as the page's outcome codes. */
+const RECEIVED: Record<string, ReceiveOutcome> = { ok: "sent", closed: "closed", link_full: "link_full", workspace_full: "workspace_full" };
+
 /**
- * Stores the object, then records it through app.collect_receive, which checks the link, the kind
- * and the workspace again. If the database says no, the object is removed.
+ * Stores the object, then records it through app.collect_receive, which checks the link, the kind,
+ * the workspace and the caps (Security C-2) again. Unless the database takes it, the object is removed.
  */
 async function storeVendorFile(
   tx: Tx,
@@ -368,13 +371,14 @@ async function storeVendorFile(
   expiresOn: string | null,
   file: { name: string; bytes: Uint8Array; mime: AllowedMime },
   sample: boolean,
-): Promise<boolean> {
+): Promise<ReceiveOutcome> {
   const fileId = randomUUID();
   const path = `${orgId}/${fileId}/v1.${EXTENSION[file.mime]}`;
   const store = blobStore();
   await store.put(path, file.bytes, file.mime);
+  let answer: string | undefined;
   try {
-    const [row] = await tx.query<{ ok: boolean }>("select app.collect_receive($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) as ok", [
+    const [row] = await tx.query<{ answer: string }>("select app.collect_receive($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) as answer", [
       linkId,
       hash,
       fileId,
@@ -387,13 +391,34 @@ async function storeVendorFile(
       expiresOn,
       sample,
     ]);
-    if (row?.ok) return true;
+    answer = row?.answer;
   } catch (e) {
     await store.remove([path]);
     throw e;
   }
-  await store.remove([path]);
-  return false;
+  const outcome = answer !== undefined && Object.hasOwn(RECEIVED, answer) ? RECEIVED[answer] : "closed";
+  if (outcome !== "sent") await store.remove([path]);
+  return outcome;
+}
+
+/**
+ * Deletes a file a vendor sent (owners and admins; Security C-1). The row goes first and the stored
+ * object is removed inside the same transaction, so if storage fails the row stays and the person
+ * can try again. The history records the deletion with the file's fingerprint. Returns the vendor id.
+ */
+export async function deleteVendorFile(ctx: Ctx, fileId: string): Promise<string> {
+  if (ctx.role === "member") throw new UserError("Ask an owner or admin to delete files.");
+  if (!VendorId.safeParse(fileId).success) throw new UserError("That file is already gone.");
+  const store = blobStore();
+  return asUser(ctx.userId, async (tx) => {
+    const [row] = await tx.query<{ vendor_id: string; storage_path: string }>(
+      "delete from app.vendor_files where id = $1 and org_id = $2 returning vendor_id, storage_path",
+      [fileId, ctx.orgId],
+    );
+    if (!row) throw new UserError("That file is already gone.");
+    await store.remove([row.storage_path]);
+    return row.vendor_id;
+  });
 }
 
 // Sample workspace --------------------------------------------------------------------------------

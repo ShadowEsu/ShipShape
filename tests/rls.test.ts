@@ -73,7 +73,7 @@ beforeAll(async () => {
   });
   const vendorFile = "00000000-0000-4000-8000-0000000000f1";
   const [received] = await asAnon((tx) =>
-    tx.query<{ ok: boolean }>("select app.collect_receive($1, $2, $3, 'w9', 'w9.pdf', $4, 'application/pdf', 100, $5, null, false) as ok", [
+    tx.query<{ answer: string }>("select app.collect_receive($1, $2, $3, 'w9', 'w9.pdf', $4, 'application/pdf', 100, $5, null, false) as answer", [
       vendorLinkA,
       vendorHash,
       vendorFile,
@@ -81,7 +81,7 @@ beforeAll(async () => {
       SHA,
     ]),
   );
-  expect(received.ok).toBe(true);
+  expect(received.answer).toBe("ok");
   for (const [u, item] of [[a, "terms_privacy"], [b, "terms_privacy"]]) {
     await asUser(u, (tx) => tx.query("insert into app.consents (user_id, item, policy_version) values ($1, $2, 'v1')", [u, item]));
   }

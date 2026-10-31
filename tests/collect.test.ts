@@ -7,6 +7,7 @@ import {
   addVendor,
   cleanFilename,
   createVendorLink,
+  deleteVendorFile,
   getVendor,
   listVendors,
   openCollect,
@@ -228,7 +229,7 @@ describe("the database enforces Collect on its own", () => {
     const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
     const receive = (fileId: string, kind: string, storagePath: string, sampleFlag: boolean) =>
       asAnon((tx) =>
-        tx.query<{ ok: boolean }>("select app.collect_receive($1, $2, $3, $4, 'f.pdf', $5, 'application/pdf', 10, $6, null, $7) as ok", [
+        tx.query<{ answer: string }>("select app.collect_receive($1, $2, $3, $4, 'f.pdf', $5, 'application/pdf', 10, $6, null, $7) as answer", [
           id,
           sha256Hex(token),
           fileId,
@@ -239,10 +240,10 @@ describe("the database enforces Collect on its own", () => {
         ]),
       );
     const f1 = "00000000-0000-4000-8000-0000000000a1";
-    expect((await receive(f1, "coi", `${ctx.orgId}/${f1}/v1.pdf`, false))[0].ok).toBe(false);
-    expect((await receive(f1, "w9", `${ctx.orgId}/${f1}/v1.pdf`, true))[0].ok).toBe(false);
+    expect((await receive(f1, "coi", `${ctx.orgId}/${f1}/v1.pdf`, false))[0].answer).toBe("closed");
+    expect((await receive(f1, "w9", `${ctx.orgId}/${f1}/v1.pdf`, true))[0].answer).toBe("closed");
     await expect(receive(f1, "w9", `${other.orgId}/${f1}/v1.pdf`, false)).rejects.toThrow(/check constraint/);
-    expect((await receive(f1, "w9", `${ctx.orgId}/${f1}/v1.pdf`, false))[0].ok).toBe(true);
+    expect((await receive(f1, "w9", `${ctx.orgId}/${f1}/v1.pdf`, false))[0].answer).toBe("ok");
 
     await expect(
       asUser(ctx.userId, (tx) =>
@@ -261,6 +262,80 @@ describe("the database enforces Collect on its own", () => {
         other.userId,
       ])),
     ).rejects.toThrow(/vendor not in this workspace/);
+  });
+});
+
+describe("deleting a file a vendor sent (Security C-1)", () => {
+  it("owners and admins remove the row and the stored file, and the history keeps its fingerprint; members can't", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner8@example.com");
+    const vendorId = await addVendor(ctx, { name: "Delete Co", requested: ["w9", "coi"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "w9.pdf", bytes: PDF } })).toBe("sent");
+    expect(await receiveFile(id, token, { kind: "coi", expiresOn: "", file: { name: "coi.pdf", bytes: PDF } })).toBe("sent");
+    const [w9, coi] = (await getVendor(ctx, vendorId))?.files.sort((a, b) => a.kind.localeCompare(b.kind)).reverse() ?? [];
+    const before = await storedFiles();
+
+    // A member: refused by the app, and by the database if asked directly.
+    const memberId = await db.user("member8@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, memberId]));
+    const member: Ctx = { ...ctx, userId: memberId, role: "member" };
+    await expect(deleteVendorFile(member, w9.id)).rejects.toThrow(/owner or admin/);
+    expect(await asUser(memberId, (tx) => tx.query("delete from app.vendor_files where id = $1 returning 1", [w9.id]))).toEqual([]);
+
+    expect(await deleteVendorFile(ctx, w9.id)).toBe(vendorId);
+    expect(await storedFiles()).toBe(before - 1);
+    expect((await getVendor(ctx, vendorId))?.files.map((f) => f.id)).toEqual([coi.id]);
+    expect((await listVendors(ctx))[0].items.find((i) => i.kind === "w9")?.state).toBe("missing");
+    await expect(deleteVendorFile(ctx, w9.id)).rejects.toThrow(/already gone/);
+
+    const [entry] = await asUser(ctx.userId, (tx) =>
+      tx.query<{ actor: string; detail_sha256: string }>("select actor, detail_sha256 from app.audit_log where org_id = $1 and action = 'collect.file_deleted'", [ctx.orgId]),
+    );
+    expect(entry).toEqual({ actor: ctx.userId, detail_sha256: sha256Hex(PDF) });
+    const [chain] = await asUser(ctx.userId, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [ctx.orgId]));
+    expect(chain.broken).toBeNull();
+
+    // An admin may too.
+    const adminId = await db.user("admin8@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'admin')", [ctx.orgId, adminId]));
+    await deleteVendorFile({ ...ctx, userId: adminId, role: "admin" }, coi.id);
+    expect(await storedFiles()).toBe(before - 2);
+  });
+});
+
+describe("upload caps, enforced by the database (Security C-2)", () => {
+  it("a link takes 25 files, then refuses and keeps nothing", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner9@example.com");
+    const vendorId = await addVendor(ctx, { name: "Busy Co", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    for (let i = 0; i < 25; i++) expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: `w9-${i}.pdf`, bytes: PDF } })).toBe("sent");
+    const before = await storedFiles();
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "w9-26.pdf", bytes: PDF } })).toBe("link_full");
+    expect(await storedFiles()).toBe(before);
+    // A new link for the same vendor works.
+    const fresh = await createVendorLink(ctx, { vendorId, days: 7 });
+    expect(await receiveFile(fresh.id, fresh.token, { kind: "w9", expiresOn: "", file: { name: "w9-new.pdf", bytes: PDF } })).toBe("sent");
+  });
+
+  it("a workspace holds 250 MiB of vendor files, then refuses and keeps nothing", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner10@example.com");
+    const vendorId = await addVendor(ctx, { name: "Big Co", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    // 25 rows of 10 MiB fill it exactly (rows only; the cap counts recorded sizes).
+    await db.root((tx) =>
+      tx.query(
+        `insert into app.vendor_files (id, org_id, vendor_id, kind, filename, storage_path, mime, size_bytes, sha256)
+         select g, $1::uuid, $2::uuid, 'w9', 'big.pdf', $1::uuid::text || '/' || g::text || '/v1.pdf', 'application/pdf', 10485760, $3
+         from (select gen_random_uuid() as g from generate_series(1, 25)) s`,
+        [ctx.orgId, vendorId, "b".repeat(64)],
+      ),
+    );
+    const before = await storedFiles();
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "one-more.pdf", bytes: PDF } })).toBe("workspace_full");
+    expect(await storedFiles()).toBe(before);
   });
 });
 

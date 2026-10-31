@@ -15,6 +15,8 @@ const PROBLEMS: Record<Exclude<ReceiveOutcome, "sent">, string> = {
   empty: "Choose a file first.",
   too_big: "That file is over 10 MB. Send a smaller copy, such as a PDF scan at a lower resolution.",
   type: "That file isn't a PDF, PNG or JPEG. Save it as one of those and send it again.",
+  link_full: "This link has taken all the files it can (25). Nothing was sent; ask for a new link.",
+  workspace_full: "This workspace has no room left for files from vendors. Nothing was sent; let them know.",
 };
 
 const isProblem = (r: string): r is Exclude<ReceiveOutcome, "sent"> => Object.hasOwn(PROBLEMS, r);
