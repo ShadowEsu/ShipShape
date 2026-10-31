@@ -45,6 +45,7 @@ interface ExportEvent {
   actor: string | null;
   action: string;
   object_id: string | null;
+  detail_sha256: string | null;
 }
 
 interface ExportVendor {
@@ -103,7 +104,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     }
     await tx.query("select app.audit_append($1, 'workspace.exported', $1)", [ctx.orgId]);
     const history = await tx.query<ExportEvent>(
-      "select a.seq::text as seq, a.at::text as at, a.actor::text as actor, a.action, a.object_id::text as object_id from app.audit_log a where a.org_id = $1 order by a.seq",
+      "select a.seq::text as seq, a.at::text as at, a.actor::text as actor, a.action, a.object_id::text as object_id, a.detail_sha256 from app.audit_log a where a.org_id = $1 order by a.seq",
       [ctx.orgId],
     );
     return { docs, versions, vendors, vendorFiles, history };
@@ -165,7 +166,12 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
           data: enc.encode(JSON.stringify({ ...profile.values, ein: profile.einLast4 ? `ending ${profile.einLast4}` : null, confirmed: profile.confirmed }, null, 2)),
         },
         { name: "vendors.json", data: enc.encode(JSON.stringify(listedVendors, null, 2)) },
-        { name: "history.csv", data: enc.encode(["seq,at,actor,action,object_id", ...history.map((h) => [h.seq, h.at, h.actor, h.action, h.object_id].map(csvCell).join(","))].join("\n")) },
+        {
+          name: "history.csv",
+          data: enc.encode(
+            ["seq,at,actor,action,object_id,sha256", ...history.map((h) => [h.seq, h.at, h.actor, h.action, h.object_id, h.detail_sha256].map(csvCell).join(","))].join("\n"),
+          ),
+        },
         ...files,
       ],
       now,

@@ -67,7 +67,9 @@ describe("export", () => {
     expect(facts).toContain("ending 4567");
     expect(facts).not.toContain("1234567");
     const history = execFileSync("unzip", ["-p", file, "history.csv"]).toString().trim().split("\n");
-    expect(history[0]).toBe("seq,at,actor,action,object_id");
+    expect(history[0]).toBe("seq,at,actor,action,object_id,sha256");
+    // Every version's fingerprint is in the hash-chained history too (Security F2).
+    for (const v of versionFiles) expect(history.some((h) => h.includes("version_added") && h.endsWith(`,${v.sha256}`))).toBe(true);
     expect(history.at(-1)).toContain(",workspace.exported,");
   });
 

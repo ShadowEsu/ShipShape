@@ -264,6 +264,17 @@ describe("audit chain", () => {
     // A vendor's upload has no signed-in actor; everything else was A.
     expect(rows.filter((r) => r.actor !== a).map((r) => [r.action, r.actor])).toEqual([["collect.received", null]]);
 
+    // A version's fingerprint is part of the chain: swapping it breaks that row (Security F2).
+    const [version] = await db.root((tx) =>
+      tx.query<{ seq: string; detail_sha256: string }>("select seq::text as seq, detail_sha256 from app.audit_log where org_id = $1 and action = 'document.version_added'", [orgA]),
+    );
+    expect(version.detail_sha256).toBe(SHA);
+    const setDetail = (sha: string) => db.root((tx) => tx.query("update app.audit_log set detail_sha256 = $2 where org_id = $1 and seq = $3", [orgA, sha, version.seq]));
+    await setDetail("f".repeat(64));
+    expect(String((await verify())[0].broken)).toBe(version.seq);
+    await setDetail(SHA);
+    expect((await verify())[0].broken).toBeNull();
+
     await db.root((tx) => tx.query("update app.audit_log set object_id = null where org_id = $1 and seq = 2", [orgA]));
     expect(String((await verify())[0].broken)).toBe("2");
   });

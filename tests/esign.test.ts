@@ -133,6 +133,14 @@ describe("signing", () => {
     expect(actions.slice(-5)).toEqual(["esign.requested", "esign.opened", "esign.code_sent", "document.signed_version_added", "esign.signed"]);
     const [chain] = await asUser(a.userId, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [a.orgId]));
     expect(chain.broken).toBeNull();
+    // The signed copy's fingerprint is in the hash-chained history itself (Security F2).
+    const [entry] = await asUser(a.userId, (tx) =>
+      tx.query<{ detail_sha256: string }>("select detail_sha256 from app.audit_log where org_id = $1 and action = 'document.signed_version_added' and object_id = $2", [
+        a.orgId,
+        doc.id,
+      ]),
+    );
+    expect(entry.detail_sha256).toBe(signed.sha256);
 
     // Done means done: no second signature, and the link now hands out the signed copy.
     expect(await completeSigning(id, token, { code, typedName: "Someone Else", consented: true, ip: IP })).toBe("invalid");
