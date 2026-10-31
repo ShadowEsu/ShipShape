@@ -72,7 +72,7 @@ aws cloudformation deploy --region us-east-1 --stack-name shipshape-database --t
 
 # 5. Budgets.
 aws cloudformation deploy --region us-east-1 --stack-name shipshape-budgets --template-file infra/budgets.yaml \
-  --parameter-overrides AlertEmail=<preston's address>
+  --parameter-overrides AlertEmail=<the owner's address>
 
 # Then: stop a stack delete from reaching the retained resources by accident.
 for s in shipshape-storage shipshape-signin shipshape-app-role shipshape-database; do
