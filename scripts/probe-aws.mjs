@@ -15,7 +15,7 @@
 // PR-4): the operator's credentials can do more than the app role.
 //
 // Files (S3): the canary can't be fetched anonymously, nor the bucket or its listing; Block Public
-// Access is fully on, the policy isn't public, denies non-TLS and grants nothing outside the account,
+// Access is fully on, the policy isn't public, denies non-TLS (and nothing else), grants nothing outside the account,
 // ACLs are off (BucketOwnerEnforced), versioning is on with old versions and delete markers expiring
 // within 7 days, and SSE-KMS uses the key.
 // Database (RDS): encrypted, deletion protection on, 7 days of backups, no manual snapshot older than
@@ -25,7 +25,8 @@
 // Sign-in (Cognito): the pool and the app client are set up as Security's M6 list says.
 // Credentials (IAM/STS): the app role trusts exactly this account's Vercel provider, its audience and
 // the production sub (StringEquals only); its only policy is inline and allows each action it needs,
-// every one and nothing more, on its one resource; a preview's token is refused.
+// every one and nothing more, unconditionally, on its one resource, with no permissions boundary; a
+// preview's token is refused.
 // The canary and all its versions are removed at the end. Exits 1 on any failure.
 //
 // PROBE_LOCAL_ENDPOINT points every AWS call at a local stand-in (moto) to try the probe itself;
@@ -160,6 +161,12 @@ await attempt("the bucket policy denies every request that isn't TLS", async () 
       String(s.Condition?.Bool?.["aws:SecureTransport"]) === "false",
   );
   return [denies, JSON.stringify(policy.Statement)];
+});
+await attempt("the bucket policy denies nothing else: its only Deny is the one for requests without TLS (a Deny on deletes would strand files; P-b0a)", async () => {
+  const policy = JSON.parse((await s3.send(new GetBucketPolicyCommand({ Bucket: bucket }))).Policy ?? "{}");
+  const tlsOnly = (s) => same(Object.keys(s.Condition ?? {}), ["Bool"]) && same(Object.keys(s.Condition.Bool), ["aws:SecureTransport"]) && String(s.Condition.Bool["aws:SecureTransport"]) === "false";
+  const other = list(policy.Statement).filter((s) => s.Effect === "Deny" && !tlsOnly(s));
+  return [other.length === 0, JSON.stringify(other)];
 });
 await attempt("the bucket policy grants nothing to anyone outside this account", async () => {
   const policy = JSON.parse((await s3.send(new GetBucketPolicyCommand({ Bucket: bucket }))).Policy ?? "{}");
@@ -319,9 +326,11 @@ await attempt("the app client: a secret, code flow only, scopes openid email, on
 
 // 4. Credentials.
 let roleArn = "";
+let roleBoundary = "";
 await attempt("the app role trusts exactly this account's Vercel provider, its audience and the production sub (StringEquals only; PR-3)", async () => {
   const role = (await iam.send(new GetRoleCommand({ RoleName: env.PROBE_ROLE_NAME }))).Role;
   roleArn = role?.Arn ?? "";
+  roleBoundary = role?.PermissionsBoundary?.PermissionsBoundaryArn ?? "";
   const provider = env.PROBE_OIDC_PROVIDER_ARN;
   const issuer = provider.split(":oidc-provider/")[1] ?? "";
   const trust = JSON.parse(decodeURIComponent(role?.AssumeRolePolicyDocument ?? "{}"));
@@ -343,8 +352,9 @@ await attempt("the app role trusts exactly this account's Vercel provider, its a
   return [ok, JSON.stringify(statements)];
 });
 // Exactly these: one more is a wider grant; one fewer breaks the app where it matters least visibly (a missing
-// s3:DeleteObject or kms:Decrypt strands a deleted account's files, Security N-091a).
-await attempt("the app role allows each action it needs, every one, on its one resource only: the bucket's objects, the key, the pool (no wildcards, no managed policies; PR-2)", async () => {
+// s3:DeleteObject or kms:Decrypt strands a deleted account's files, Security N-091a). And nothing that could
+// quietly take one away again: no permissions boundary, no condition on a grant (P-b0a).
+await attempt("the app role allows each action it needs, every one, unconditionally, on its one resource only: the bucket's objects, the key, the pool (no wildcards, no managed policies, no permissions boundary; PR-2)", async () => {
   if (!poolArn) return [false, "no pool ARN to compare AdminDeleteUser with"];
   const objects = `arn:aws:s3:::${bucket}/*`;
   const resourceOf = new Map([
@@ -358,13 +368,14 @@ await attempt("the app role allows each action it needs, every one, on its one r
   const attached = (await iam.send(new ListAttachedRolePoliciesCommand({ RoleName: env.PROBE_ROLE_NAME }))).AttachedPolicies ?? [];
   const names = (await iam.send(new ListRolePoliciesCommand({ RoleName: env.PROBE_ROLE_NAME }))).PolicyNames ?? [];
   const problems = attached.map((p) => `managed policy ${p.PolicyName}`);
+  if (roleBoundary) problems.push(`permissions boundary ${roleBoundary}`);
   const granted = new Set();
   for (const name of names) {
     const doc = JSON.parse(decodeURIComponent((await iam.send(new GetRolePolicyCommand({ RoleName: env.PROBE_ROLE_NAME, PolicyName: name }))).PolicyDocument ?? "{}"));
     for (const s of list(doc.Statement)) {
       if (s.Effect !== "Allow") problems.push(`${name}: ${s.Effect}`);
       if (s.NotAction || s.NotResource || s.NotPrincipal) problems.push(`${name}: NotAction/NotResource/NotPrincipal`);
-      for (const op of Object.keys(s.Condition ?? {})) if (/ForAnyValue|IfExists/.test(op)) problems.push(`${name}: condition ${op}`);
+      if (Object.keys(s.Condition ?? {}).length) problems.push(`${name}: condition ${Object.keys(s.Condition).join(", ")}`);
       const resources = list(s.Resource);
       if (!resources.length) problems.push(`${name}: no resource`);
       for (const a of list(s.Action)) {
