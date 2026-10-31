@@ -77,7 +77,9 @@ export default function Home() {
               Keep your W-9, insurance certificate, licenses and agreements together. Fill new forms from facts you confirmed once, share
               an always-current packet with one link, and hear about renewals before they lapse.
             </p>
-            <div className="flex flex-wrap items-center gap-3">
+            {/* The two buttons need ~356px in Geist, but its fallback font fits them in 350: at 390 wide they
+                wrapped only when Geist loaded, shifting the page (CLS 0.1). Stack them below 400px from the start. */}
+            <div className="flex flex-col items-start gap-3 min-[400px]:flex-row min-[400px]:flex-wrap min-[400px]:items-center">
               <Link href="/signin" className="btn-accent">
                 Try the sample workspace
               </Link>
