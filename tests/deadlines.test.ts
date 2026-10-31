@@ -86,6 +86,27 @@ describe("reminders", () => {
     expect(sent.map((m) => m.to_email)).toEqual(["owner@example.com"]);
     expect(sent[0].body).toContain("Liquor license expires in 5 days");
   });
+
+  it("an owner with a long but valid address (up to 254 characters) gets theirs, and stops nobody else's", async () => {
+    const long = `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(48)}.com`;
+    expect(long.length).toBe(245);
+    const proWithDueLicense = async (email: string) => {
+      const owner = await db.user(email);
+      const [org] = await asUser(owner, (tx) => tx.query<{ id: string }>("select app.create_workspace('Pro Co') as id"));
+      await asUser(owner, (tx) =>
+        tx.query("insert into app.documents (org_id, title, kind, expires_on, created_by) values ($1, 'Contractor license', 'license', $2, $3)", [org.id, addDays(today, 5), owner]),
+      );
+      await db.root((tx) =>
+        tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, $2, 'active', 'pro')", [org.id, `cus_${org.id.replaceAll("-", "")}`]),
+      );
+      return org.id;
+    };
+    const longOrg = await proWithDueLicense(long);
+    const otherOrg = await proWithDueLicense("short@example.com");
+    await runReminders(today); // every workspace in one run, as the daily job does
+    const sent = await db.root((tx) => tx.query<{ org_id: string; to_email: string }>("select org_id, to_email from app.outbox where org_id = any($1::uuid[])", [[longOrg, otherOrg]]));
+    expect(sent.map((m) => [m.org_id, m.to_email]).sort()).toEqual([[longOrg, long], [otherOrg, "short@example.com"]].sort());
+  });
 });
 
 describe("calendar file", () => {
