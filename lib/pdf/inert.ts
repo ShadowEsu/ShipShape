@@ -416,6 +416,13 @@ function joint(before: Uint8Array, after: Uint8Array): "join" | "space" | "refus
   if (!OPERATORS.has(left) || !OPERATORS.has(right) || left === "EI") return "refuse";
   const extended = left + right[0];
   for (const op of OPERATORS) if (op.startsWith(extended)) return "refuse";
+  // pdf.js ends inline image data only at an "EI" + SP/LF/CR followed by 15 bytes of text; when it
+  // rejects the real EI (a tab, % or binary after it) it reads on across the split. A space added here
+  // would shift a stray "EI "'s window by a byte and could change where pdf.js ends the image (R11-1).
+  const tail = before.subarray(Math.max(0, before.length - 18));
+  for (let j = 0; j + 2 < tail.length; j++) {
+    if (tail[j] === 69 && tail[j + 1] === 73 && (tail[j + 2] === 32 || tail[j + 2] === 10 || tail[j + 2] === 13)) return "refuse";
+  }
   return "space";
 }
 
