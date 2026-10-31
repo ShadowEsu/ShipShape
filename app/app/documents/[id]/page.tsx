@@ -9,6 +9,7 @@ import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequest
 import { realDocsEnabled } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
+import type { TemplateInfo } from "@/lib/templates/types";
 import { archive, withdrawSignature } from "../actions";
 import { DetailsForm, SignRequestForm, VersionForm } from "../forms";
 
@@ -47,6 +48,25 @@ const SOURCE: Record<string, string> = {
 };
 
 const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/**
+ * Each filled field with the label the form showed, in the form's order: the stored record's keys
+ * come back from jsonb sorted by length, and a key like `tin_kind` means nothing on its own.
+ */
+function fieldSources(fields: Record<string, string>, template: TemplateInfo | undefined) {
+  const defs = template?.fields ?? [];
+  const rank = (key: string) => {
+    const i = defs.findIndex((f) => f.key === key);
+    return i === -1 ? defs.length : i;
+  };
+  return Object.entries(fields)
+    .sort(([a], [b]) => rank(a) - rank(b))
+    .map(([key, src]) => ({
+      key,
+      label: defs.find((f) => f.key === key)?.label ?? FACT_LABELS[key] ?? key.replaceAll("_", " "),
+      source: SOURCE[src] ?? src,
+    }));
+}
 
 export default async function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireWorkspace();
@@ -99,11 +119,11 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             {latest?.fill_record?.fields && (
               <div className="mt-8">
                 <h2 className="text-sm font-semibold">Where each field came from</h2>
-                <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                  {Object.entries(latest.fill_record.fields).map(([k, src]) => (
-                    <div key={k} className="flex justify-between gap-3 border-b border-line py-1">
-                      <dt className="text-ink-2">{FACT_LABELS[k] ?? k.replaceAll("_", " ")}</dt>
-                      <dd className="text-right font-mono text-xs leading-5 text-ink-3">{SOURCE[src] ?? src}</dd>
+                <dl className="mt-2 grid gap-y-1 text-sm">
+                  {fieldSources(latest.fill_record.fields, template).map(({ key, label, source }) => (
+                    <div key={key} className="flex justify-between gap-3 border-b border-line py-1">
+                      <dt className="text-ink-2">{label}</dt>
+                      <dd className="shrink-0 whitespace-nowrap text-right font-mono text-xs leading-5 text-ink-3">{source}</dd>
                     </div>
                   ))}
                 </dl>

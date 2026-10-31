@@ -23,7 +23,7 @@ const W9: TemplateInfo = {
     {
       section: "Federal tax classification (line 3a)",
       key: "tax_class",
-      label: "Check one",
+      label: "Line 3a: Tax classification (check one)",
       hint: "The IRS instructions explain which box fits. A single-member LLC that's disregarded checks the owner's box.",
       kind: "radio",
       required: true,
