@@ -14,13 +14,18 @@ const SECURITY_HEADERS = [
   },
 ];
 
-// Shared passports (/p/…) and signing pages (/s/…) carry a secret in the path: never indexed,
+// Shared passports (/p/…), signing pages (/s/…) and upload links (/c/…) carry a secret in the path: never indexed,
 // never sent on as a referrer, never cached by shared caches.
 const SECRET_LINK_HEADERS = [
   { key: "Referrer-Policy", value: "no-referrer" },
   { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
   { key: "Cache-Control", value: "private, no-store" },
 ];
+
+// Upload pages post a plain form, and under no-referrer a browser sends "Origin: null" with it,
+// which the same-origin check rightly refuses. same-origin still sends nothing to other sites (and
+// the link's token is only ever in the fragment or its cookie, never in a Referer).
+const UPLOAD_LINK_HEADERS = SECRET_LINK_HEADERS.map((h) => (h.key === "Referrer-Policy" ? { ...h, value: "same-origin" } : h));
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -38,6 +43,7 @@ const nextConfig: NextConfig = {
       { source: "/:path*", headers: SECURITY_HEADERS },
       { source: "/p/:path*", headers: SECRET_LINK_HEADERS },
       { source: "/s/:path*", headers: SECRET_LINK_HEADERS },
+      { source: "/c/:path*", headers: UPLOAD_LINK_HEADERS },
       { source: "/app/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }, { key: "X-Robots-Tag", value: "noindex" }] },
     ];
   },

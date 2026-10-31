@@ -63,11 +63,11 @@ export default function PricingPage() {
           <section className="card flex flex-col gap-4 bg-canvas">
             <div className="flex items-start justify-between gap-3">
               <h2 className="text-lg font-semibold">Collect</h2>
-              <StatusLabel status="Planned" />
+              <StatusLabel status="Works today" />
             </div>
             <p className="text-sm text-ink-2">
-              For businesses that gather documents from many vendors or subcontractors: request packets and see who&apos;s current. Not
-              built yet, so not for sale.
+              For businesses that gather documents from many vendors or subcontractors: send each one an upload link and see who&apos;s
+              current. Try it in the sample workspace. It isn&apos;t in a plan yet, so it isn&apos;t for sale.
             </p>
           </section>
         </div>

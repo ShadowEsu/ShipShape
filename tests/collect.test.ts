@@ -1,0 +1,290 @@
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { deleteAccount } from "@/lib/server/account";
+import {
+  addVendor,
+  cleanFilename,
+  createVendorLink,
+  getVendor,
+  listVendors,
+  openCollect,
+  receiveFile,
+  revokeVendorLink,
+  setVendorArchived,
+} from "@/lib/server/collect";
+import { sha256Hex } from "@/lib/server/crypto";
+import { asAnon, asService, asUser } from "@/lib/server/db";
+import { listDocuments } from "@/lib/server/documents";
+import { MAX_UPLOAD_BYTES } from "@/lib/server/files";
+import { collectOpen, GateClosed } from "@/lib/server/flags";
+import type { Ctx } from "@/lib/server/profile";
+import { seedSampleWorkspace } from "@/lib/server/sample";
+import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { freshDb, type TestDb } from "./support/db";
+
+/** Collect: vendors send documents through upload links (secret in the fragment, hashed, expiring, revocable). */
+
+let db: TestDb;
+let blobDir: string;
+let sample: Ctx;
+
+const now = () => Math.floor(Date.now() / 1000);
+const PDF = new TextEncoder().encode("%PDF-1.7\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n");
+const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10);
+
+async function realWorkspace(email: string): Promise<Ctx> {
+  const userId = await db.user(email);
+  const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Harbor Test Co') as id"));
+  return { userId, demo: false, authAt: now(), orgId: org.id, name: "Harbor Test Co", role: "owner" };
+}
+
+async function sampleWorkspace(): Promise<Ctx> {
+  const userId = await db.user(null);
+  const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
+  await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+  return { userId, demo: true, authAt: now(), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner" };
+}
+
+const storedFiles = async () => (await readdir(blobDir, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length;
+
+beforeAll(async () => {
+  db = await freshDb();
+  blobDir = await mkdtemp(path.join(os.tmpdir(), "shipshape-collect-"));
+  setBlobStoreForTests(localBlobStore(blobDir));
+  sample = await sampleWorkspace();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+afterAll(async () => {
+  await rm(blobDir, { recursive: true, force: true });
+});
+
+const withRealDocs = () => vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+
+describe("the sample workspace", () => {
+  it("starts with three made-up vendors: one lapsed, one missing a file, one current", async () => {
+    const vendors = await listVendors(sample);
+    expect(vendors.map((v) => [v.name, v.state])).toEqual([
+      ["Bayside Drywall (sample)", "expired"],
+      ["Rivera Electric (sample)", "missing"],
+      ["Summit Supply Co. (sample)", "ok"],
+    ]);
+    const rivera = vendors[1];
+    expect(rivera.items.map((i) => [i.kind, i.state])).toEqual([
+      ["w9", "ok"],
+      ["coi", "expiring"],
+      ["license", "missing"],
+    ]);
+    const detail = await getVendor(sample, rivera.id);
+    expect(detail?.files.every((f) => f.sample && f.filename.endsWith("(sample).pdf"))).toBe(true);
+  });
+
+  it("its upload links never keep an uploaded file: they store a generated SAMPLE PDF instead", async () => {
+    const [vendor] = await listVendors(sample);
+    const { id, token } = await createVendorLink(sample, { vendorId: vendor.id, days: 7 });
+    expect((await openCollect(id, token))?.sample).toBe(true);
+    const real = new Uint8Array([...PDF, ...new TextEncoder().encode("real document 900-12-3456")]);
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "my real w9.pdf", bytes: real } })).toBe("sent");
+    const [latest] = (await getVendor(sample, vendor.id))!.files;
+    expect(latest.sample).toBe(true);
+    expect(latest.filename).toBe("W-9 (sample).pdf");
+    const [row] = await asUser(sample.userId, (tx) => tx.query<{ sha256: string; storage_path: string }>("select sha256, storage_path from app.vendor_files where id = $1", [latest.id]));
+    expect(row.sha256).not.toBe(sha256Hex(real));
+    const stored = await readFile(path.join(blobDir, row.storage_path));
+    expect(new TextDecoder().decode(stored.subarray(0, 5))).toBe("%PDF-");
+    expect(Buffer.from(stored).includes("real document")).toBe(false);
+  });
+});
+
+describe("a vendor sending files", () => {
+  it("lands in the vendor's files, never the workspace's own documents, and shows on the dashboard", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner1@example.com");
+    const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9", "coi", "coi"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 30 });
+
+    const open = await openCollect(id, token);
+    expect(open).toMatchObject({ orgName: "Harbor Test Co", vendorName: "Rivera Electric", sample: false });
+    expect(open?.items.map((i) => [i.kind, i.receivedAt])).toEqual([
+      ["w9", null],
+      ["coi", null],
+    ]);
+
+    const expires = inDays(200);
+    expect(await receiveFile(id, token, { kind: "coi", expiresOn: expires, file: { name: "../../etc/COI 2026.pdf", bytes: PDF } })).toBe("sent");
+    const [vendor] = await listVendors(ctx);
+    expect(vendor.items.map((i) => [i.kind, i.state, i.expiresOn])).toEqual([
+      ["w9", "missing", null],
+      ["coi", "ok", expires],
+    ]);
+    const detail = await getVendor(ctx, vendorId);
+    expect(detail?.files.map((f) => [f.filename, f.sample, f.size_bytes])).toEqual([["COI 2026.pdf", false, PDF.length]]);
+    expect(await listDocuments(ctx)).toEqual([]);
+
+    const [audit] = await asUser(ctx.userId, (tx) =>
+      tx.query<{ actor: string | null }>("select actor from app.audit_log where org_id = $1 and action = 'collect.received'", [ctx.orgId]),
+    );
+    expect(audit.actor).toBeNull();
+  });
+
+  it("refuses an unrequested kind, a bad date, a non-PDF/image, an oversized file or no file, and stores nothing", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner2@example.com");
+    const vendorId = await addVendor(ctx, { name: "Bayside Drywall", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    const before = await storedFiles();
+    const send = (kind: string, expiresOn: string, bytes: Uint8Array | null) =>
+      receiveFile(id, token, { kind, expiresOn, file: bytes ? { name: "x.pdf", bytes } : null });
+
+    expect(await send("coi", "", PDF)).toBe("kind");
+    expect(await send("w9", "2026-13-45", PDF)).toBe("date");
+    expect(await send("w9", "", new TextEncoder().encode("<html><script>alert(1)</script>"))).toBe("type");
+    const big = new Uint8Array(MAX_UPLOAD_BYTES + 1);
+    big.set(PDF);
+    expect(await send("w9", "", big)).toBe("too_big");
+    expect(await send("w9", "", null)).toBe("empty");
+
+    expect((await getVendor(ctx, vendorId))?.files).toEqual([]);
+    expect(await storedFiles()).toBe(before);
+  });
+
+  it("gets the same nothing from a wrong token, a turned-off link, an expired link and an archived vendor", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner3@example.com");
+    const vendorId = await addVendor(ctx, { name: "Summit Supply", requested: ["w9"] });
+    const send = (id: string, token: string) => receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "w9.pdf", bytes: PDF } });
+
+    const wrong = await createVendorLink(ctx, { vendorId, days: 7 });
+    const flipped = wrong.token.replace(/.$/, (c) => (c === "A" ? "B" : "A"));
+    expect(await openCollect(wrong.id, flipped)).toBeNull();
+    expect(await send(wrong.id, flipped)).toBe("closed");
+    expect(await openCollect("not-a-uuid", wrong.token)).toBeNull();
+
+    const revoked = await createVendorLink(ctx, { vendorId, days: 7 });
+    await revokeVendorLink(ctx, revoked.id);
+    expect(await openCollect(revoked.id, revoked.token)).toBeNull();
+    expect(await send(revoked.id, revoked.token)).toBe("closed");
+
+    const expired = await createVendorLink(ctx, { vendorId, days: 7 });
+    await db.root((tx) => tx.query("update app.vendor_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 day' where id = $1", [expired.id]));
+    expect(await send(expired.id, expired.token)).toBe("closed");
+
+    const live = await createVendorLink(ctx, { vendorId, days: 7 });
+    await setVendorArchived(ctx, vendorId, true);
+    expect(await openCollect(live.id, live.token)).toBeNull();
+    expect(await send(live.id, live.token)).toBe("closed");
+    await expect(createVendorLink(ctx, { vendorId, days: 7 })).rejects.toThrow(/Vendor not found/);
+  });
+
+  it("links never last more than 90 days", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner4@example.com");
+    const vendorId = await addVendor(ctx, { name: "Long Link Co", requested: ["w9"] });
+    await expect(createVendorLink(ctx, { vendorId, days: 365 })).rejects.toThrow();
+    await expect(
+      asUser(ctx.userId, (tx) =>
+        tx.query("insert into app.vendor_links (org_id, vendor_id, token_hash, expires_at, created_by) values ($1, $2, $3, now() + interval '120 days', $4)", [
+          ctx.orgId,
+          vendorId,
+          "e".repeat(64),
+          ctx.userId,
+        ]),
+      ),
+    ).rejects.toThrow(/check constraint/);
+  });
+});
+
+describe("who may use Collect", () => {
+  it("real workspaces only with the G3 gate open, and never in production yet", async () => {
+    const ctx = await realWorkspace("owner5@example.com");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    expect(collectOpen(ctx)).toBe(false);
+    await expect(addVendor(ctx, { name: "Too Early", requested: ["w9"] })).rejects.toThrow(GateClosed);
+
+    withRealDocs();
+    const vendorId = await addVendor(ctx, { name: "Gate Test", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "w9.pdf", bytes: PDF } })).toBe("gate");
+
+    withRealDocs();
+    vi.stubEnv("NODE_ENV", "production");
+    expect(collectOpen(ctx)).toBe(false);
+    expect(collectOpen({ demo: true })).toBe(true);
+  });
+});
+
+describe("the database enforces Collect on its own", () => {
+  it("checks link, kind, workspace path and sample flag, and members can't write vendor files or read link hashes", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner6@example.com");
+    const other = await realWorkspace("owner7@example.com");
+    const vendorId = await addVendor(ctx, { name: "Direct Co", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    const receive = (fileId: string, kind: string, storagePath: string, sampleFlag: boolean) =>
+      asAnon((tx) =>
+        tx.query<{ ok: boolean }>("select app.collect_receive($1, $2, $3, $4, 'f.pdf', $5, 'application/pdf', 10, $6, null, $7) as ok", [
+          id,
+          sha256Hex(token),
+          fileId,
+          kind,
+          storagePath,
+          "a".repeat(64),
+          sampleFlag,
+        ]),
+      );
+    const f1 = "00000000-0000-4000-8000-0000000000a1";
+    expect((await receive(f1, "coi", `${ctx.orgId}/${f1}/v1.pdf`, false))[0].ok).toBe(false);
+    expect((await receive(f1, "w9", `${ctx.orgId}/${f1}/v1.pdf`, true))[0].ok).toBe(false);
+    await expect(receive(f1, "w9", `${other.orgId}/${f1}/v1.pdf`, false)).rejects.toThrow(/check constraint/);
+    expect((await receive(f1, "w9", `${ctx.orgId}/${f1}/v1.pdf`, false))[0].ok).toBe(true);
+
+    await expect(
+      asUser(ctx.userId, (tx) =>
+        tx.query(
+          "insert into app.vendor_files (id, org_id, vendor_id, kind, filename, storage_path, mime, size_bytes, sha256) values (gen_random_uuid(), $1, $2, 'w9', 'x.pdf', 'x', 'application/pdf', 1, $3)",
+          [ctx.orgId, vendorId, "a".repeat(64)],
+        ),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(asUser(ctx.userId, (tx) => tx.query("select token_hash from app.vendor_links where id = $1", [id]))).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(other.userId, (tx) => tx.query("insert into app.vendor_links (org_id, vendor_id, token_hash, expires_at, created_by) values ($1, $2, $3, now() + interval '1 day', $4)", [
+        other.orgId,
+        vendorId,
+        "f".repeat(64),
+        other.userId,
+      ])),
+    ).rejects.toThrow(/vendor not in this workspace/);
+  });
+});
+
+describe("account deletion", () => {
+  it("removes the files vendors sent along with the workspace", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("leaving@example.com");
+    const vendorId = await addVendor(ctx, { name: "Gone Co", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 7 });
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "w9.pdf", bytes: PDF } })).toBe("sent");
+    const [row] = await db.root((tx) => tx.query<{ storage_path: string }>("select storage_path from app.vendor_files where org_id = $1", [ctx.orgId]));
+    await readFile(path.join(blobDir, row.storage_path));
+
+    await deleteAccount(ctx);
+    await expect(readFile(path.join(blobDir, row.storage_path))).rejects.toThrow(/ENOENT/);
+    expect(await db.root((tx) => tx.query("select 1 from app.vendor_files where org_id = $1", [ctx.orgId]))).toEqual([]);
+  });
+});
+
+describe("file names from vendors", () => {
+  it("keep a readable name with the extension that matches the content, never a path", () => {
+    expect(cleanFilename("../../etc/COI 2026.pdf", "application/pdf")).toBe("COI 2026.pdf");
+    expect(cleanFilename("C:\\Users\\x\\<script>alert(1)</script>.png", "image/png")).toBe("script.png");
+    expect(cleanFilename("license.exe", "image/jpeg")).toBe("license.jpg");
+    expect(cleanFilename("", "application/pdf")).toBe("document.pdf");
+  });
+});

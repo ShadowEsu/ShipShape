@@ -61,6 +61,27 @@ beforeAll(async () => {
     await tx.query("insert into app.billing (org_id, stripe_customer_id, stripe_subscription_id, status, plan) values ($1, 'cus_A1', 'sub_A1', 'active', 'pro')", [orgA]);
     await tx.query("insert into app.stripe_events (id, type) values ('evt_A1', 'customer.subscription.updated')");
   });
+  // Collect: a vendor of A's, its upload link, and one file received through it (as a vendor would).
+  const vendorHash = "d".repeat(64);
+  const vendorLinkA = await asUser(a, async (tx) => {
+    const [v] = await tx.query<{ id: string }>("insert into app.vendors (org_id, name, requested, created_by) values ($1, 'Rivera Electric', array['w9'], $2) returning id", [orgA, a]);
+    const [l] = await tx.query<{ id: string }>(
+      "insert into app.vendor_links (org_id, vendor_id, token_hash, expires_at, created_by) values ($1, $2, $3, now() + interval '7 days', $4) returning id",
+      [orgA, v.id, vendorHash, a],
+    );
+    return l.id;
+  });
+  const vendorFile = "00000000-0000-4000-8000-0000000000f1";
+  const [received] = await asAnon((tx) =>
+    tx.query<{ ok: boolean }>("select app.collect_receive($1, $2, $3, 'w9', 'w9.pdf', $4, 'application/pdf', 100, $5, null, false) as ok", [
+      vendorLinkA,
+      vendorHash,
+      vendorFile,
+      `${orgA}/${vendorFile}/v1.pdf`,
+      SHA,
+    ]),
+  );
+  expect(received.ok).toBe(true);
   for (const [u, item] of [[a, "terms_privacy"], [b, "terms_privacy"]]) {
     await asUser(u, (tx) => tx.query("insert into app.consents (user_id, item, policy_version) values ($1, $2, 'v1')", [u, item]));
   }
@@ -89,6 +110,9 @@ const TABLES: Record<string, string | null> = {
   billing: "org_id",
   stripe_events: null, // server only, checked below
   ai_calls: null, // server only, checked in ai.test.ts
+  vendors: "org_id",
+  vendor_links: "org_id",
+  vendor_files: "org_id",
 };
 
 describe("row level security", () => {
@@ -232,9 +256,13 @@ describe("audit chain", () => {
       "document.acknowledged",
       "passport.created",
       "esign.requested",
+      "vendor.added",
+      "collect.link_created",
+      "collect.received",
       "document.viewed",
     ]);
-    expect(rows.every((r) => r.actor === a)).toBe(true);
+    // A vendor's upload has no signed-in actor; everything else was A.
+    expect(rows.filter((r) => r.actor !== a).map((r) => [r.action, r.actor])).toEqual([["collect.received", null]]);
 
     await db.root((tx) => tx.query("update app.audit_log set object_id = null where org_id = $1 and seq = 2", [orgA]));
     expect(String((await verify())[0].broken)).toBe("2");

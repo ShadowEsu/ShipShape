@@ -1,8 +1,9 @@
 import "server-only";
-import { composePdf, type Block } from "@/lib/pdf/compose";
+import { samplePdf } from "@/lib/pdf/sample-pdf";
 import type { ProfileKey } from "@/lib/profile-fields";
 import { templateById } from "@/lib/templates/catalog";
 import type { Facts, TemplateInfo } from "@/lib/templates/types";
+import { seedSampleVendors } from "./collect";
 import { encryptField } from "./crypto";
 import type { Tx } from "./db";
 import { insertDocument } from "./documents";
@@ -37,18 +38,6 @@ const day = (offset: number) => {
   d.setUTCDate(d.getUTCDate() + offset);
   return d.toISOString().slice(0, 10);
 };
-
-const FOOTER = "SAMPLE DOCUMENT made by ShipShape for its demo. The business, people and numbers are fictional.";
-
-async function samplePdf(title: string, rows: [string, string][], note: string): Promise<Uint8Array> {
-  const blocks: Block[] = [
-    { type: "title", text: title },
-    { type: "para", muted: true, runs: [{ text: note }] },
-    { type: "rows", rows },
-    { type: "stamp", text: "SAMPLE" },
-  ];
-  return composePdf(blocks, { title: `${title} (sample)`, footer: FOOTER });
-}
 
 async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides: Record<string, string>) {
   const start = prefill(t, facts);
@@ -131,4 +120,5 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string)
       "sample",
     );
   }
+  await seedSampleVendors(tx, ctx, day);
 }

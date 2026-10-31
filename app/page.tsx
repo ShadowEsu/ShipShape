@@ -23,12 +23,12 @@ const CAPABILITIES: { title: string; body: string; status: Status }[] = [
   { title: "Deadlines and calendar file", body: "Lapsed, due soon and later, with an .ics download.", status: "Works today" },
   { title: "Signature requests", body: "Consent, a one-time code and a certificate page on the signed copy.", status: "Works today" },
   { title: "Export and account deletion", body: "One ZIP of everything; deletion removes files and links.", status: "Works today" },
+  { title: "Collect", body: "Ask your own vendors for W-9s and certificates through an upload link and see who's current. Not in a plan yet.", status: "Works today" },
   { title: "Accounts for real documents", body: "Pending our security review and the production database.", status: "Awaiting setup" },
   { title: "Email reminders and signing codes", body: "Pending an email provider; they show inside the app meanwhile.", status: "Awaiting setup" },
-  { title: "Payments", body: "Built and tested in Stripe's test mode; no real charges yet.", status: "Awaiting setup" },
+  { title: "Payments", body: "Checkout, billing portal and webhooks, checked against a simulated Stripe; the Stripe sandbox run is pending. No real charges.", status: "Awaiting setup" },
   { title: "“What are they asking for?”", body: "Paste a request and see which documents it asks for and which you have. Built; opt-in per request, switched on after our security review.", status: "Awaiting setup" },
   { title: "Dates read off certificates", body: "Expiry dates filled in from an uploaded certificate, with your OK. Opt-in AI.", status: "Planned" },
-  { title: "Collect", body: "Request documents from your own vendors and see who's current.", status: "Planned" },
 ];
 
 function SamplePassport() {

@@ -8,12 +8,12 @@ export const LINK_COOKIE_SECONDS = 30 * 60;
 const Body = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
 
 /**
- * POST handler for /<base>/<id>/open (passport and signing links, Security E1). The page posts the
+ * POST handler for /<base>/<id>/open (passport, signing and upload links, Security E1). The page posts the
  * token from its URL fragment once; it comes back as an HttpOnly cookie scoped to /<base>/<id>, so
  * it never sits in a URL that could reach logs or a Referer header. The answer is the same whether
  * or not the token is right; the page checks it when it renders.
  */
-export function openLinkHandler(base: "p" | "s", cookie: string) {
+export function openLinkHandler(base: "p" | "s" | "c", cookie: string) {
   return async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     if (!sameOrigin(req.headers)) return fail("Forbidden", 403);
     const { id } = await params;

@@ -9,6 +9,7 @@ const NAV = [
   ["/app/make", "Make a document"],
   ["/app/ask", "Read a request"],
   ["/app/passport", "Passport"],
+  ["/app/collect", "Collect"],
   ["/app/deadlines", "Deadlines"],
   ["/app/facts", "Business facts"],
   ["/app/settings", "Settings"],

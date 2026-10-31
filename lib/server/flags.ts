@@ -21,3 +21,11 @@ export function assertRealData(ws: { demo: boolean }) {
 export function assertCanFill(ws: { demo: boolean }) {
   if (!ws.demo && !realDocsEnabled()) throw new GateClosed("Real documents aren't open yet. They open after our security review.");
 }
+
+/**
+ * Collect (asking vendors for documents) isn't sold yet: sample workspaces show it with made-up
+ * files; real workspaces get it only outside production, and only with the G3 gate open.
+ */
+export function collectOpen(ws: { demo: boolean }): boolean {
+  return ws.demo || (realDocsEnabled() && process.env.NODE_ENV !== "production");
+}

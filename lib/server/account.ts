@@ -47,6 +47,29 @@ interface ExportEvent {
   object_id: string | null;
 }
 
+interface ExportVendor {
+  id: string;
+  name: string;
+  email: string | null;
+  requested: string[];
+  status: string;
+  created_at: string;
+}
+
+interface ExportVendorFile {
+  id: string;
+  vendor_id: string;
+  kind: string;
+  filename: string;
+  mime: AllowedMime;
+  size_bytes: number;
+  sha256: string;
+  expires_on: string | null;
+  sample: boolean;
+  received_at: string;
+  storage_path: string;
+}
+
 const csvCell = (v: string | null) => (v === null ? "" : /[",\n]/.test(v) ? `"${v.replaceAll('"', '""')}"` : v);
 
 /**
@@ -58,7 +81,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
   if (ctx.role === "member") throw new UserError("Only owners and admins can export the workspace.");
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to export.");
 
-  const { docs, versions, history } = await asUser(ctx.userId, async (tx) => {
+  const { docs, versions, vendors, vendorFiles, history } = await asUser(ctx.userId, async (tx) => {
     const docs = await tx.query<ExportDoc>(
       "select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on, d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.created_at::text as created_at from app.documents d where d.org_id = $1 order by d.created_at, d.id",
       [ctx.orgId],
@@ -67,7 +90,15 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
       "select v.document_id, v.version, v.mime, v.size_bytes, v.sha256, v.origin, v.created_at::text as created_at, v.storage_path from app.document_versions v join app.documents d on d.id = v.document_id where v.org_id = $1 order by d.created_at, d.id, v.version",
       [ctx.orgId],
     );
-    if (versions.reduce((n, v) => n + v.size_bytes, 0) > EXPORT_MAX_BYTES) {
+    const vendors = await tx.query<ExportVendor>(
+      "select id, name, email, requested, status, created_at::text as created_at from app.vendors where org_id = $1 order by created_at, id",
+      [ctx.orgId],
+    );
+    const vendorFiles = await tx.query<ExportVendorFile>(
+      "select id, vendor_id, kind, filename, mime, size_bytes, sha256, expires_on::text as expires_on, sample, received_at::text as received_at, storage_path from app.vendor_files where org_id = $1 order by received_at, id",
+      [ctx.orgId],
+    );
+    if ([...versions, ...vendorFiles].reduce((n, v) => n + v.size_bytes, 0) > EXPORT_MAX_BYTES) {
       throw new UserError("This workspace is too large to export in one file. Write to us and we'll send it another way.");
     }
     await tx.query("select app.audit_append($1, 'workspace.exported', $1)", [ctx.orgId]);
@@ -75,7 +106,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
       "select a.seq::text as seq, a.at::text as at, a.actor::text as actor, a.action, a.object_id::text as object_id from app.audit_log a where a.org_id = $1 order by a.seq",
       [ctx.orgId],
     );
-    return { docs, versions, history };
+    return { docs, versions, vendors, vendorFiles, history };
   });
 
   const profile = await loadProfile(ctx);
@@ -93,6 +124,20 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     doc.versions.push({ version: v.version, mime: v.mime, size_bytes: v.size_bytes, sha256: v.sha256, origin: v.origin, created_at: v.created_at, file });
   }
 
+  const listedVendors: (ExportVendor & { files: (Omit<ExportVendorFile, "storage_path" | "vendor_id"> & { file: string })[] })[] = vendors.map((v) => ({
+    ...v,
+    files: [],
+  }));
+  const vendorById = new Map(listedVendors.map((v) => [v.id, v]));
+  for (const f of vendorFiles) {
+    const vendor = vendorById.get(f.vendor_id);
+    if (!vendor) continue;
+    const { storage_path, vendor_id: _vendor, ...details } = f;
+    const file = `vendor-files/${f.id.slice(0, 8)} ${f.filename}`;
+    files.push({ name: file, data: await store.get(storage_path) });
+    vendor.files.push({ ...details, file });
+  }
+
   const now = new Date();
   const enc = new TextEncoder();
   const readme = [
@@ -102,6 +147,8 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     "documents/       every version of every document, as stored",
     "documents.json   each document's details, versions and SHA-256 fingerprints",
     "facts.json       your business facts (the tax ID appears only as its last 4 digits; see it in full in Business facts)",
+    "vendor-files/    files your vendors sent through Collect upload links",
+    "vendors.json     your vendors, what you asked each for, and the files they sent with SHA-256 fingerprints",
     "history.csv      the workspace history, oldest first",
     "",
     "Check a file against its fingerprint with: shasum -a 256 <file>",
@@ -117,6 +164,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
           name: "facts.json",
           data: enc.encode(JSON.stringify({ ...profile.values, ein: profile.einLast4 ? `ending ${profile.einLast4}` : null, confirmed: profile.confirmed }, null, 2)),
         },
+        { name: "vendors.json", data: enc.encode(JSON.stringify(listedVendors, null, 2)) },
         { name: "history.csv", data: enc.encode(["seq,at,actor,action,object_id", ...history.map((h) => [h.seq, h.at, h.actor, h.action, h.object_id].map(csvCell).join(","))].join("\n")) },
         ...files,
       ],

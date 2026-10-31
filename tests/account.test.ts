@@ -49,12 +49,19 @@ describe("export", () => {
     await writeFile(file, bytes);
     expect(execFileSync("unzip", ["-tq", file]).toString()).toMatch(/No errors detected/);
     const names = execFileSync("unzip", ["-Z1", file]).toString().trim().split("\n");
-    expect(names.slice(0, 4)).toEqual(["README.txt", "documents.json", "facts.json", "history.csv"]);
+    expect(names.slice(0, 5)).toEqual(["README.txt", "documents.json", "facts.json", "vendors.json", "history.csv"]);
 
     const docs: { title: string; versions: { file: string; sha256: string }[] }[] = JSON.parse(execFileSync("unzip", ["-p", file, "documents.json"]).toString());
     const versionFiles = docs.flatMap((d) => d.versions);
     expect(names.filter((n) => n.startsWith("documents/"))).toEqual(versionFiles.map((v) => v.file));
     for (const v of versionFiles) expect(sha256Hex(execFileSync("unzip", ["-p", file, v.file]))).toBe(v.sha256);
+
+    // Files vendors sent through Collect, with their own fingerprints.
+    const vendors: { name: string; files: { file: string; sha256: string }[] }[] = JSON.parse(execFileSync("unzip", ["-p", file, "vendors.json"]).toString());
+    const vendorFiles = vendors.flatMap((v) => v.files);
+    expect(vendorFiles.length).toBeGreaterThan(0);
+    expect(names.filter((n) => n.startsWith("vendor-files/")).sort()).toEqual(vendorFiles.map((f) => f.file).sort());
+    for (const f of vendorFiles) expect(sha256Hex(execFileSync("unzip", ["-p", file, f.file]))).toBe(f.sha256);
 
     const facts = execFileSync("unzip", ["-p", file, "facts.json"]).toString();
     expect(facts).toContain("ending 4567");
@@ -86,6 +93,14 @@ describe("account deletion", () => {
     const other = await db.user("partner@example.com");
     const [shared] = await asUser(other, (tx) => tx.query<{ id: string }>("select app.create_workspace('Shared Co') as id"));
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'owner')", [shared.id, me.userId]));
+    // A link I made there and turned off: deleting me must not trip its one-way revocation (Security F1).
+    const [sharedLink] = await asUser(me.userId, (tx) =>
+      tx.query<{ id: string }>(
+        "insert into app.share_links (org_id, label, token_hash, expires_at, created_by) values ($1, 'Old link', $2, now() + interval '7 days', $3) returning id",
+        [shared.id, "9".repeat(64), me.userId],
+      ),
+    );
+    await asUser(me.userId, (tx) => tx.query("update app.share_links set revoked_at = now() where id = $1", [sharedLink.id]));
 
     await deleteAccount(me);
 
@@ -100,6 +115,13 @@ describe("account deletion", () => {
 
     const left = await db.root((tx) => tx.query<{ user_id: string }>("select user_id from app.members where org_id = $1", [shared.id]));
     expect(left.map((m) => m.user_id)).toEqual([other]);
+    const [kept] = await db.root((tx) =>
+      tx.query<{ created_by: string | null; revoked: boolean }>("select created_by, revoked_at is not null as revoked from app.share_links where id = $1", [sharedLink.id]),
+    );
+    expect(kept).toEqual({ created_by: null, revoked: true });
+    // Any other change to a revoked link is still refused, even below the app.
+    await expect(db.root((tx) => tx.query("update app.share_links set label = 'changed' where id = $1", [sharedLink.id]))).rejects.toThrow(/already revoked/);
+    await expect(db.root((tx) => tx.query("update app.share_links set revoked_at = now() where id = $1", [sharedLink.id]))).rejects.toThrow(/already revoked/);
   });
 
   it("needs a recent sign-in in a real workspace, and only ever deletes the caller", async () => {

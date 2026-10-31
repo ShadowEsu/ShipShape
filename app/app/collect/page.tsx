@@ -1,0 +1,120 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { EmptyState, Notice, PageHeader } from "@/components/app-ui";
+import { listArchivedVendors, listVendors, type CollectState } from "@/lib/server/collect";
+import { DOC_KINDS } from "@/lib/server/documents";
+import { collectOpen } from "@/lib/server/flags";
+import { requireWorkspace } from "@/lib/server/session";
+import { CollectChip } from "./chip";
+import { NewVendorForm } from "./forms";
+
+export const metadata: Metadata = { title: "Collect" };
+
+// "All current" counts vendors whose every document is current; the others count vendors with at
+// least one document in that state, so one vendor can appear under two of them.
+const SUMMARY: { state: CollectState; title: string }[] = [
+  { state: "ok", title: "All current" },
+  { state: "expiring", title: "Expiring within 30 days" },
+  { state: "missing", title: "Missing something" },
+  { state: "expired", title: "Something lapsed" },
+];
+
+export default async function CollectPage() {
+  const ctx = await requireWorkspace();
+
+  if (!collectOpen(ctx)) {
+    return (
+      <div className="space-y-8">
+        <PageHeader eyebrow="Collect" title="Paperwork from your vendors" />
+        <Notice tone="info">
+          Collect is in preview and isn&apos;t open for real workspaces yet. You can try it in the sample workspace: sign out, then
+          choose &ldquo;Try the sample workspace&rdquo;.
+        </Notice>
+      </div>
+    );
+  }
+
+  const [vendors, archived] = await Promise.all([listVendors(ctx), listArchivedVendors(ctx)]);
+  const counts = Object.fromEntries(
+    SUMMARY.map((s) => [s.state, vendors.filter((v) => (s.state === "ok" ? v.state === "ok" : v.items.some((i) => i.state === s.state))).length]),
+  );
+
+  return (
+    <div className="space-y-8">
+      <PageHeader eyebrow="Collect" title="Paperwork from your vendors" />
+      <p className="max-w-2xl text-ink-2">
+        List who works for you and what you need from each of them. Send each one an upload link; their W-9s and insurance certificates
+        land here, kept apart from your own documents, and you see who is missing something or about to lapse.
+      </p>
+      {ctx.demo && (
+        <Notice tone="info">
+          Sample workspace: these vendors are made up, and upload links here send made-up sample files instead of taking real ones.
+        </Notice>
+      )}
+
+      {vendors.length > 0 && (
+        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {SUMMARY.map((s) => (
+            <div key={s.state} className="card py-4">
+              <dt className="text-sm text-ink-2">{s.title}</dt>
+              <dd className="mt-1 flex items-center gap-2">
+                <span className="font-serif text-3xl font-semibold tabular-nums">{counts[s.state]}</span>
+                <CollectChip state={s.state} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <section className="space-y-3" aria-labelledby="vendors-heading">
+          <h2 id="vendors-heading" className="font-semibold">
+            Vendors
+          </h2>
+          {vendors.length === 0 ? (
+            <EmptyState title="No vendors yet" body="Add the first company you need paperwork from, then send them an upload link." />
+          ) : (
+            <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
+              {vendors.map((v) => (
+                <li key={v.id}>
+                  <Link href={`/app/collect/${v.id}`} className="flex flex-col gap-2 px-4 py-3 hover:bg-canvas">
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="truncate font-medium">{v.name}</span>
+                      <span className="shrink-0 text-xs text-ink-3">
+                        {v.openLinks} open {v.openLinks === 1 ? "link" : "links"}
+                      </span>
+                    </span>
+                    <span className="flex flex-wrap gap-1.5">
+                      {v.items.map((i) => (
+                        <CollectChip key={i.kind} state={i.state} label={i.label} />
+                      ))}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {archived.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-ink-2">Archived vendors ({archived.length})</summary>
+              <ul className="mt-2 space-y-1">
+                {archived.map((v) => (
+                  <li key={v.id}>
+                    <Link href={`/app/collect/${v.id}`} className="underline">
+                      {v.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+
+        <section className="card h-fit">
+          <h2 className="mb-4 font-semibold">Add a vendor</h2>
+          <NewVendorForm kinds={Object.entries(DOC_KINDS).map(([key, label]) => ({ key, label }))} />
+        </section>
+      </div>
+    </div>
+  );
+}
