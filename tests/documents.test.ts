@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { PDFPage } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { downloadUrl, fillTemplate, getDocument, listDocuments, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { downloadUrl, fillTemplate, getDocument, listDocuments, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import { checkUpload } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
@@ -329,5 +330,17 @@ describe("workspace name", () => {
     expect(await renameWorkspace(ctx, "Relationship Shaper Co")).toBe("Relationship Shaper Co");
     expect(await renameWorkspace(ctx, "Friendship Shapes")).toBe("Friendship Shapes");
     vi.unstubAllEnvs();
+  });
+});
+
+describe("document details", () => {
+  it("saves real calendar dates and refuses ISO-shaped ones the database can't store, as a form error", async () => {
+    const [doc] = await listDocuments(sample);
+    await updateDocument(sample, doc.id, { title: "Lease", kind: "agreement", issued_on: "2024-02-29", expires_on: "9999-12-31" });
+    expect((await getDocument(sample, doc.id))?.doc).toMatchObject({ title: "Lease", issued_on: "2024-02-29", expires_on: "9999-12-31" });
+    for (const bad of ["0000-01-01", "2026-02-29"]) {
+      await expect(updateDocument(sample, doc.id, { title: "Lease", kind: "agreement", expires_on: bad })).rejects.toThrow(z.ZodError);
+    }
+    expect((await getDocument(sample, doc.id))?.doc.expires_on).toBe("9999-12-31");
   });
 });

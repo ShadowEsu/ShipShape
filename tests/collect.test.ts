@@ -144,6 +144,7 @@ describe("a vendor sending files", () => {
 
     expect(await send("coi", "", PDF)).toBe("kind");
     expect(await send("w9", "2026-13-45", PDF)).toBe("date");
+    expect(await send("w9", "0000-01-01", PDF)).toBe("date"); // ISO-shaped, but Postgres has no year 0
     expect(await send("w9", "", new TextEncoder().encode("<html><script>alert(1)</script>"))).toBe("type");
     const big = new Uint8Array(MAX_UPLOAD_BYTES + 1);
     big.set(PDF);

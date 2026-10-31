@@ -5,7 +5,7 @@ import { isPrintable } from "@/lib/pdf/compose";
 import { samplePdf } from "@/lib/pdf/sample-pdf";
 import { newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser, type Tx } from "./db";
-import { DOC_KINDS, type DocKind } from "./documents";
+import { CalendarDate, DOC_KINDS, type DocKind } from "./documents";
 import { UserError } from "./errors";
 import { EXTENSION, MAX_UPLOAD_BYTES, sniffMime, type AllowedMime } from "./files";
 import { collectOpen, GateClosed } from "./flags";
@@ -292,7 +292,7 @@ export async function openCollect(id: string, token: string): Promise<PublicColl
 /** Why an upload didn't go through; the page turns each into a sentence. */
 export type ReceiveOutcome = "sent" | "closed" | "gate" | "kind" | "date" | "empty" | "too_big" | "type" | "link_full" | "workspace_full";
 
-const ExpiresOn = z.union([z.literal(""), z.iso.date()]).transform((s) => s || null);
+const ExpiresOn = z.union([z.literal(""), CalendarDate]).transform((s) => s || null);
 
 /** Keeps a readable name with the right extension; never a path. */
 export function cleanFilename(name: string, mime: AllowedMime): string {

@@ -164,8 +164,10 @@ const optionalText = (max: number) =>
     .refine(isPrintable, "Use letters, numbers and common punctuation.")
     .optional()
     .transform((s) => s || null);
+/** A YYYY-MM-DD date the database can store: a real calendar date (zod) in year 1 or later (Postgres has no year 0). */
+export const CalendarDate = z.iso.date().refine((s) => !s.startsWith("0000-"), "Use a real date.");
 const optionalDate = z
-  .union([z.literal(""), z.iso.date()])
+  .union([z.literal(""), CalendarDate])
   .optional()
   .transform((s) => s || null);
 
