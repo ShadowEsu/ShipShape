@@ -380,6 +380,34 @@ describe("deleting the account", () => {
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [owner.ctx.orgId]))).toHaveLength(0);
   });
 
+  it("one deletion the daily run can't finish doesn't hold up the others; it is counted, logged without who, and finished next time", async () => {
+    for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
+    const stuck = await cognitoOwner();
+    const fine = await cognitoOwner();
+    let refuse: string | null = stuck.sub;
+    setSignInAdminForTests({
+      deleteUser: async (sub) => {
+        if (sub === refuse) throw new Error(`Cognito refused ${sub}`);
+      },
+    });
+    await db.root((tx) =>
+      tx.query("insert into app.deletion_requests (user_id, requested_at) values ($1, now() - interval '1 hour'), ($2, now() - interval '1 hour')", [stuck.userId, fine.userId]),
+    );
+    const logged: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void logged.push(a.join(" ")));
+    expect(await finishDeletions()).toEqual({ finished: 1, failed: 1 });
+    expect(await exists(fine.userId)).toBe(false);
+    expect(await exists(stuck.userId)).toBe(true);
+    expect(await recorded(stuck.userId)).toBe(true);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).not.toContain(stuck.sub);
+    expect(logged[0]).not.toContain(stuck.userId);
+    refuse = null;
+    expect(await finishDeletions()).toEqual({ finished: 1, failed: 0 });
+    expect(await exists(stuck.userId)).toBe(false);
+    vi.mocked(console.error).mockRestore();
+  });
+
   describe("through the AWS SDK", () => {
     /** A real Cognito client whose requests are answered here, never sent. */
     function offline(answer: () => never | undefined) {

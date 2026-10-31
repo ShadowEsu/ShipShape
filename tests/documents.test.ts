@@ -344,10 +344,11 @@ describe("document details", () => {
     expect((await getDocument(sample, doc.id))?.doc.expires_on).toBe("9999-12-31");
   });
 
-  it("keeps a title to one line of text in any language; a line break or control character is a form error", async () => {
+  it("keeps a title to one line of text in any language; a line break, control or reordering character is a form error", async () => {
     const [doc] = await listDocuments(sample);
     await updateDocument(sample, doc.id, { title: "Bail commercial – Société Générale 東京", kind: "agreement" });
-    for (const bad of ["Lease\nAddendum", "Lease\u0000", "Lease\tA", "Lease\u0085"]) {
+    // Line breaks and controls, the Unicode line/paragraph separators, and bidi overrides/isolates (Security N-88a).
+    for (const bad of ["Lease\nAddendum", "Lease\u0000", "Lease\tA", "Lease\u0085", "Lease\u2028A", "Lease\u2029A", "Invoice\u202Efdp.exe", "A\u2066B\u2069"]) {
       await expect(updateDocument(sample, doc.id, { title: bad, kind: "agreement" })).rejects.toThrow(z.ZodError);
     }
     expect((await getDocument(sample, doc.id))?.doc.title).toBe("Bail commercial – Société Générale 東京");

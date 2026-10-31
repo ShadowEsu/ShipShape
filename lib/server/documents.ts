@@ -67,14 +67,18 @@ const LIST_SQL =
     order by coalesce(d.expires_on, '9999-12-31') asc, d.created_at desc`;
 const GET_SQL = DOC_SELECT + " where d.id = $1 and d.org_id = $2";
 
-/** C0 and C1 control characters: line breaks, tabs and NUL, which Postgres can't store in text. */
-function isControl(c: string): boolean {
+/**
+ * Characters that don't belong in one line of text: C0 and C1 controls (line breaks, tabs, NUL,
+ * which Postgres can't store in text), the Unicode line and paragraph separators, and the bidi
+ * embedding, override and isolate controls that make text display in another order (Security N-88a).
+ */
+function breaksOneLine(c: string): boolean {
   const n = c.codePointAt(0) ?? 0;
-  return n < 0x20 || (n >= 0x7f && n < 0xa0);
+  return n < 0x20 || (n >= 0x7f && n < 0xa0) || (n >= 0x2028 && n <= 0x202e) || (n >= 0x2066 && n <= 0x2069);
 }
 
 export async function listDocuments(ctx: Ctx, opts: { q?: string; kind?: string; archived?: boolean } = {}): Promise<DocRow[]> {
-  const q = Array.from(opts.q ?? "", (c) => (isControl(c) ? " " : c)).join("").trim().slice(0, 100);
+  const q = Array.from(opts.q ?? "", (c) => (breaksOneLine(c) ? " " : c)).join("").trim().slice(0, 100);
   const kind = opts.kind && opts.kind in DOC_KINDS ? opts.kind : null;
   return asUser(ctx.userId, (tx) => tx.query<DocRow>(LIST_SQL, [ctx.orgId, opts.archived ? "archived" : "active", kind, q]));
 }
@@ -179,7 +183,7 @@ const optionalDate = z
 
 export const DocMeta = z.object({
   // Any language (uploads keep their own titles; the certificate draws what its font can), one line.
-  title: z.string().trim().min(1, "Give it a title.").max(200).refine((s) => !Array.from(s).some(isControl), "Keep the title to one line of ordinary text."),
+  title: z.string().trim().min(1, "Give it a title.").max(200).refine((s) => !Array.from(s).some(breaksOneLine), "Keep the title to one line of ordinary text."),
   kind: z.enum(Object.keys(DOC_KINDS) as [DocKind, ...DocKind[]]),
   issuer: optionalText(200),
   counterparty: optionalText(200),
