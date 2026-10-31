@@ -1,5 +1,6 @@
+import { readdir } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
-import { asAnon, asService, asUser, type Tx } from "@/lib/server/db";
+import { asAnon, asService, asUser, createLocalDriver, type Tx } from "@/lib/server/db";
 import { rateLimited } from "@/lib/server/http";
 import { freshDb, type TestDb } from "./support/db";
 
@@ -431,5 +432,32 @@ describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
       ),
     );
     expect(missing.map((r) => r.relname)).toEqual([]);
+  });
+
+  it("migrations set up plain Postgres (no Supabase schemas) as a non-superuser owner; the app's login owns nothing", async () => {
+    const plain = await createLocalDriver(undefined, { supabaseStorage: false });
+    try {
+      const q = <T>(text: string) => plain.root((tx) => tx.query<T>(text));
+      const files = (await readdir("supabase/migrations")).filter((n) => n.endsWith(".sql"));
+      expect((await q<{ n: number }>("select count(*)::int as n from meta.migrations"))[0].n).toBe(files.length);
+      const roles = await q<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>(
+        "select rolname, rolsuper, rolbypassrls from pg_roles where rolname in ('shipshape_owner', 'shipshape_app') order by 1",
+      );
+      expect(roles).toEqual([
+        { rolname: "shipshape_app", rolsuper: false, rolbypassrls: false },
+        { rolname: "shipshape_owner", rolsuper: false, rolbypassrls: false },
+      ]);
+      // Everything in app is the owner's: no object the superuser made, none the app could alter.
+      const owners = await q<{ owner: string }>(
+        `select distinct pg_get_userbyid(c.relowner) as owner from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'app'
+         union select distinct pg_get_userbyid(p.proowner) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'app'`,
+      );
+      expect(owners).toEqual([{ owner: "shipshape_owner" }]);
+      expect((await q<{ n: number }>("select count(*)::int as n from pg_tables where tableowner = 'shipshape_app'"))[0].n).toBe(0);
+      expect(await q("select to_regnamespace('storage') as s")).toEqual([{ s: null }]);
+      expect(await q("select * from app.storage_lockdown_problems()")).toEqual([]);
+    } finally {
+      await plain.close();
+    }
   });
 });

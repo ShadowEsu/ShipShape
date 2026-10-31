@@ -28,12 +28,20 @@ cp .env.example .env.local   # fill in the three secrets (commands are in the fi
 npm run dev                  # http://localhost:3000: website at /, app at /app ("Try the sample workspace")
 ```
 
-With `DATABASE_URL` empty, the app uses PGlite (Postgres in WebAssembly) under `.data/pglite` and stores files under `.data/blobs`. Migrations in `supabase/migrations/` apply on start.
+With `DATABASE_URL` empty, the app uses PGlite (Postgres in WebAssembly) under `.data/pglite` and stores files under `.data/blobs`. On start it sets the database up the way a production one is set up (below) and applies any new migration from `supabase/migrations/`.
 
 ```bash
 npm test        # vitest against PGlite: row level security matrix, documents, passport, collect, deadlines, e-sign, account, billing, AI, log redaction
 npm run lint    # typecheck, plus a check that no SQL is built by string interpolation
 ```
+
+### Database setup on plain Postgres (Amazon RDS)
+
+```bash
+MIGRATE_DATABASE_URL=postgres://<master>@<host>/shipshape DATABASE_CA_CERT="$(cat rds-ca.pem)" npm run migrate
+```
+
+`scripts/migrate.ts` (Node 22.18 or later) runs `supabase/platform/plain-postgres.sql` once (the request roles, `auth.users`, `auth.uid()`), then each new migration in its own transaction as `shipshape_owner`, a role that can't log in and isn't a superuser. It ends by checking that `shipshape_app`, the only login the app uses, isn't a superuser, can't bypass row level security and owns nothing. The master credentials are for that run only; give `shipshape_app` its login separately. The certificate is always verified. Local databases and the tests are built by the same code (`lib/server/migrations.ts`).
 
 ## How it's built
 
@@ -49,6 +57,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 | `lib/templates/`, `templates/` | Template catalog and the source files (IRS fw9.pdf, Common Paper Mutual NDA 1.0, CC BY 4.0) |
 | `lib/plans.ts` | Free and Pro limits and price; the site, terms and checkout all read from here |
 | `supabase/migrations/` | Schema, row level security and the few `security definer` functions public links need |
+| `supabase/platform/` | What plain Postgres needs before the migrations (Supabase has it built in) |
 | `tests/` | One file per area; `tests/rls.test.ts` checks every table with a second workspace |
 
 ## Security model
@@ -66,7 +75,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 ## Before launch
 
 - [ ] Security review GO (gates for real documents, AI and payments)
-- [ ] Production Postgres and storage (Supabase), connecting as the `shipshape_app` role
+- [ ] Production Postgres and file storage, connecting as the `shipshape_app` role (Amazon RDS + S3 is the plan; `npm run migrate` sets up the database)
 - [ ] Supabase Data API switched off, or serving `public` only (never `app`); `node scripts/probe-supabase.mjs` passes against the project (Data API, bucket privacy, anonymous list/download/upload refused)
 - [ ] Email provider for reminders and signing codes
 - [ ] A lawyer reviews `/terms` and `/privacy` (drafts), the e-sign flow, and which states ShipShape serves

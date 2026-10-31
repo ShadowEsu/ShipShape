@@ -1,32 +1,8 @@
--- Local and test only: the parts of Supabase's own schema that ShipShape's migrations rely on.
--- Hosted Supabase already has all of this; never run this file there.
--- auth.uid() matches Supabase's definition: the `sub` claim of request.jwt.claims.
--- One deliberate difference: service_role has no BYPASSRLS here (Supabase's has it). RDS and Aurora
--- can't grant it, so the tests run under the stricter rule, and 0017's policies must cover every
--- table service_role uses. Whatever passes here works on both.
+-- Local and test only: Supabase Storage's two tables, as far as ShipShape's lockdown migration (0013)
+-- touches them, so the tests cover the Supabase path too. Runs after supabase/platform/plain-postgres.sql
+-- and before the migrations. Hosted Supabase ships these with row level security on and no
+-- policies; plain Postgres (RDS) has no `storage` schema at all, and 0013 then does nothing.
 
-create role anon nologin noinherit;
-create role authenticated nologin noinherit;
-create role service_role nologin noinherit nobypassrls;
-
-create schema auth;
-grant usage on schema auth to anon, authenticated, service_role;
-
-create table auth.users (
-  id uuid primary key default gen_random_uuid(),
-  email text unique,
-  is_anonymous boolean not null default false,
-  created_at timestamptz not null default now()
-);
-grant select, insert, delete on auth.users to service_role;
-
-create function auth.uid() returns uuid language sql stable as $$
-  select (nullif(current_setting('request.jwt.claims', true), '')::json ->> 'sub')::uuid
-$$;
-grant execute on function auth.uid() to anon, authenticated, service_role;
-
--- Supabase Storage's two tables, as far as ShipShape's lockdown migration (0013) touches them.
--- Hosted Supabase ships them with row level security on and no policies.
 create schema storage;
 create table storage.buckets (
   id text primary key,
@@ -45,3 +21,8 @@ create table storage.objects (
   created_at timestamptz default now()
 );
 alter table storage.objects enable row level security;
+
+-- Migrations run as shipshape_owner; 0013 creates the private bucket and reads both tables.
+grant usage on schema storage to shipshape_owner;
+grant select, insert, update on storage.buckets to shipshape_owner;
+grant select on storage.objects to shipshape_owner;

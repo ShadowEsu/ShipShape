@@ -1,6 +1,8 @@
 import "server-only";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { migrate, type MigrationStep } from "./migrations";
+import { pgTls } from "./pg-tls";
 
 /**
  * One way into Postgres. Every request runs inside a transaction with a Postgres role:
@@ -34,28 +36,24 @@ export interface LocalDriver extends Driver {
 }
 
 /**
- * Local/test database: the Supabase shim once, then each migration not applied yet (tracked in
- * public.local_migrations, like Supabase's own migration table). App transactions run as the
- * login role `shipshape_app` (like production), never as the superuser.
+ * Local/test database, set up exactly as on RDS (lib/server/migrations.ts): the platform roles, then
+ * each migration as shipshape_owner. `supabaseStorage` (default) adds Supabase Storage's tables so
+ * 0013's lockdown runs too; without it the database is plain Postgres, like RDS. App transactions run
+ * as the login role `shipshape_app` (like production), never as the superuser.
  */
-export async function createLocalDriver(dataDir?: string): Promise<LocalDriver> {
+export async function createLocalDriver(dataDir?: string, { supabaseStorage = true }: { supabaseStorage?: boolean } = {}): Promise<LocalDriver> {
   // Runtime-selected driver: production never loads the PGlite WebAssembly bundle.
   const { PGlite } = await import("@electric-sql/pglite");
   const pg = await PGlite.create(dataDir ? { dataDir } : undefined);
-  const fresh = (await pg.query<{ n: number }>("select count(*)::int as n from pg_namespace where nspname = 'app'")).rows[0].n === 0;
-  if (fresh) await pg.exec(await readFile(path.join(ROOT, "supabase/test/supabase-shim.sql"), "utf8"));
-  await pg.exec("create table if not exists public.local_migrations (name text primary key, applied_at timestamptz not null default now())");
-  const applied = new Set((await pg.query<{ name: string }>("select name from public.local_migrations")).rows.map((r) => r.name));
-  if (!fresh && applied.size === 0) {
-    throw new Error("This local database predates migration tracking. Delete .data/pglite (sample data only) and restart.");
-  }
-  for (const f of await sqlFiles(path.join(ROOT, "supabase/migrations"))) {
-    if (applied.has(f.name)) continue;
-    await pg.transaction(async (t) => {
-      await t.exec(f.sql);
-      await t.query("insert into public.local_migrations (name) values ($1)", [f.name]);
-    });
-  }
+  const step = (t: { exec(sql: string): Promise<unknown>; query<R>(text: string, params?: unknown[]): Promise<{ rows: R[] }> }): MigrationStep => ({
+    exec: async (sql) => {
+      await t.exec(sql);
+    },
+    query: async (text, params) => (await t.query<Record<string, unknown>>(text, params)).rows,
+  });
+  const setup = [await readFile(path.join(ROOT, "supabase/platform/plain-postgres.sql"), "utf8")];
+  if (supabaseStorage) setup.push(await readFile(path.join(ROOT, "supabase/test/supabase-shim.sql"), "utf8"));
+  await migrate({ ...step(pg), transaction: (fn) => pg.transaction((t) => fn(step(t))) }, setup, await sqlFiles(path.join(ROOT, "supabase/migrations")));
   const wrap = (t: { query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }): Tx => ({
     query: async (text, params) => (await t.query(text, params)).rows as never,
   });
@@ -80,12 +78,8 @@ async function createRemoteDriver(url: string): Promise<Driver> {
   // Runtime-selected driver: local runs and tests never load the network client.
   const { default: postgres } = await import("postgres");
   // prepare: false because Supabase's transaction pooler doesn't keep prepared statements.
-  // TLS is verified, chain and hostname: postgres.js's `ssl: "require"` would encrypt without
-  // checking who answers. RDS and Supabase sign with their own CAs, so DATABASE_CA_CERT holds the
-  // provider's CA bundle (PEM); without it Node's built-in CAs apply. Never falls back to unverified.
-  const ca = process.env.DATABASE_CA_CERT;
-  const ssl = { rejectUnauthorized: true, ...(ca ? { ca } : {}) };
-  const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10, ssl });
+  // TLS always verified (pg-tls.ts).
+  const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10, ssl: pgTls() });
   return {
     transaction: (fn) => sql.begin((s) => fn({ query: (text, params) => s.unsafe(text, (params ?? []) as never[]) as never })) as never,
     close: () => sql.end({ timeout: 5 }),

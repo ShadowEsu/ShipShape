@@ -1,0 +1,72 @@
+#!/usr/bin/env node
+/**
+ * Brings a plain-Postgres database (Amazon RDS) up to date: `node scripts/migrate.ts`.
+ *
+ * MIGRATE_DATABASE_URL  the master user's connection string, from Secrets Manager for this run only;
+ *                       never stored in Vercel or the repo. The app itself connects as shipshape_app.
+ * DATABASE_CA_CERT      the provider's CA bundle (PEM); the certificate is always verified.
+ *
+ * First run: the platform file (roles, auth schema), then every migration as shipshape_owner, each
+ * in its own transaction (lib/server/migrations.ts). Later runs apply only new migrations. Ends by
+ * checking BOSS's rule 2: shipshape_app isn't a superuser, can't bypass row level security and owns
+ * nothing. Its login (password or IAM auth) is set separately (aws-plan.md).
+ */
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import postgres from "postgres";
+import { migrate, type MigrationStep } from "../lib/server/migrations.ts";
+import { pgTls } from "../lib/server/pg-tls.ts";
+
+const url = process.env.MIGRATE_DATABASE_URL;
+if (!url) {
+  console.error("Set MIGRATE_DATABASE_URL to the master user's connection string.");
+  process.exit(1);
+}
+
+const sql = postgres(url, { max: 1, connect_timeout: 10, ssl: pgTls(), onnotice: () => {} });
+const step = (s: postgres.Sql | postgres.TransactionSql): MigrationStep => ({
+  exec: async (text) => {
+    await s.unsafe(text);
+  },
+  query: async (text, params) => s.unsafe(text, params ?? []),
+});
+
+try {
+  const root = path.resolve(import.meta.dirname, "..");
+  const dir = path.join(root, "supabase/migrations");
+  const files = (await readdir(dir)).filter((n) => n.endsWith(".sql"));
+  const migrations = await Promise.all(files.map(async (name) => ({ name, sql: await readFile(path.join(dir, name), "utf8") })));
+  const applied = await migrate(
+    {
+      ...step(sql),
+      transaction: async (fn) => {
+        await sql.begin((t) => fn(step(t)));
+      },
+    },
+    [await readFile(path.join(root, "supabase/platform/plain-postgres.sql"), "utf8")],
+    migrations,
+  );
+  console.log(applied.length ? `Applied ${applied.length}: ${applied.join(", ")}` : "Up to date.");
+
+  const [role] = await sql`select rolsuper, rolbypassrls, rolcanlogin from pg_roles where rolname = 'shipshape_app'`;
+  const [owned] = await sql`select count(*)::int as n from pg_tables where tableowner = 'shipshape_app'`;
+  const problems = [
+    role.rolsuper && "shipshape_app is a superuser",
+    role.rolbypassrls && "shipshape_app can bypass row level security",
+    owned.n > 0 && `shipshape_app owns ${owned.n} table(s)`,
+  ].filter(Boolean);
+  if (problems.length) {
+    console.error(`FAIL: ${problems.join("; ")}`);
+    process.exitCode = 1;
+  } else {
+    console.log(`shipshape_app: no superuser, no BYPASSRLS, owns nothing; login ${role.rolcanlogin ? "set" : "not set yet (see aws-plan.md)"}.`);
+  }
+} catch (e) {
+  // One line, no stack: a refused certificate (DEPTH_ZERO_SELF_SIGNED_CERT, ERR_TLS_CERT_ALTNAME_INVALID)
+  // or a failed migration (rolled back; nothing recorded) both stop here.
+  const code = e instanceof Error && "code" in e ? ` [${String(e.code)}]` : "";
+  console.error(`FAIL${code}: ${e instanceof Error ? e.message : String(e)}`);
+  process.exitCode = 1;
+} finally {
+  await sql.end({ timeout: 5 });
+}

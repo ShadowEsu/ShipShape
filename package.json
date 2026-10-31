@@ -2,11 +2,13 @@
   "name": "shipshape",
   "version": "0.2.0",
   "private": true,
+  "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "next dev",
+    "migrate": "node scripts/migrate.ts",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
