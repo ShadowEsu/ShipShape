@@ -1,7 +1,8 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from "pdf-lib";
+import { inflateSync } from "node:zlib";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
@@ -221,6 +222,31 @@ describe("signing", () => {
     const file = verifyFileParams(new URL((await signingFileUrl(id, token))!, "http://x").searchParams);
     expect(file?.objectPath).toBe(`${a.orgId}/${doc.id}/v${signed.version}.pdf`);
     expect(file?.inline).toBe(false);
+  });
+
+  it("keeps the sender's name as it was when the request was sent: the signing page, the code and the certificate (Security RN-1)", async () => {
+    const ctx = await sampleWorkspace();
+    const { id, token } = await request(ctx);
+    await db.root((tx) => tx.query("update app.organizations set name = 'Renamed Co' where id = $1", [ctx.orgId]));
+    expect((await openSigning(id, token))?.orgName).toBe("Sample");
+    await sendSigningCode(id, token);
+    const [m] = await db.root((tx) => tx.query<{ body: string }>("select body from app.outbox where org_id = $1 order by created_at desc limit 1", [ctx.orgId]));
+    expect(m.body).toContain(" for Sample is ");
+    expect(await completeSigning(id, token, { code: await lastCode(ctx.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
+    const docId = (await nda(ctx)).id;
+    const { versions } = (await getDocument(ctx, docId))!;
+    const signed = await PDFDocument.load(await blobStore().get(`${ctx.orgId}/${docId}/v${versions[0].version}.pdf`));
+    // pdf-lib writes the certificate's text a word at a time as hex strings, in compressed streams, over one or two pages.
+    const pageText = (i: number) => {
+      const contents = signed.getPage(i).node.Contents();
+      const streams = contents instanceof PDFArray ? contents.asArray().map((r) => signed.context.lookup(r)) : [contents];
+      return streams.map((s) => (s instanceof PDFRawStream ? inflateSync(s.contents).toString("latin1") : "")).join("\n");
+    };
+    const certificate = signed.getPages().map((_, i) => pageText(i)).join("\n");
+    const word = (s: string) => `<${Buffer.from(s, "latin1").toString("hex").toUpperCase()}>`;
+    expect(certificate).toContain(word("Sent"));
+    expect(certificate).toContain(word("Sample"));
+    expect(certificate).not.toContain(word("Renamed"));
   });
 
   it("can't be pointed at another document's storage path", async () => {
