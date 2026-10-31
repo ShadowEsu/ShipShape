@@ -488,7 +488,9 @@ function inlineImageEnd(b: Uint8Array, imageAt: number, idAt: number): number {
  * (pdf.js findDefaultInlineStreamEnd), then reads the rest of the pixels as content.
  */
 function pdfjsEndsEarly(b: Uint8Array, start: number, end: number): boolean {
-  const text = (k: number) => b[k] === 10 || b[k] === 13 || (b[k] >= 32 && b[k] <= 127) || (b[k] === 0 && b[k + 1] !== 0);
+  // pdf.js counts a NUL as text unless another NUL follows it inside its window, so at the window's end
+  // it's always text; every NUL counts here (R10-2).
+  const text = (k: number) => b[k] === 0 || b[k] === 10 || b[k] === 13 || (b[k] >= 32 && b[k] <= 127);
   for (let j = start; j + 1 < end && j + 2 < b.length; j++) {
     if (b[j] !== 69 || b[j + 1] !== 73 || (b[j + 2] !== 32 && b[j + 2] !== 10 && b[j + 2] !== 13)) continue;
     let allText = true;
@@ -500,8 +502,10 @@ function pdfjsEndsEarly(b: Uint8Array, start: number, end: number): boolean {
 
 /** Bytes of image data an inline image dictionary describes, if it is unfiltered and plainly sized; null otherwise. */
 function inlineImageSize(dict: string): number | null {
-  // Viewers decode #xx in names (/#46 is /F), which this reader doesn't; no real producer writes one here (R9-4).
-  if (dict.includes("#")) return null;
+  // Only printable ASCII and the white space viewers and the tokenizer below agree on: JS \s leaves out NUL
+  // (white to viewers: "/F\0" is the key /F, R10-3) and takes VT and 0xA0 (regular to viewers). And no #:
+  // viewers decode #xx in names (/#46 is /F), which this reader doesn't (R9-4). No real producer writes either.
+  if (!/^[\t\n\f\r\x20-\x7e]*$/.test(dict) || dict.includes("#")) return null;
   const tokens = dict.match(/\/[^\s/[\]<>(){}%]*|[[\]<>(){}%]|[^\s/[\]<>(){}%]+/g) ?? [];
   const entries = new Map<string, string>();
   for (let k = 0; k < tokens.length; k += 2) {

@@ -437,6 +437,10 @@ describe("the file a signer reviews (Security R2)", () => {
         const padded = (s: string, n: number) => s + " ".repeat(n - s.length);
         await refusedSplit([`q 200 0 0 100 72 300 cm BI /W 64 /H 1 /BPC 8 /CS /G ID ${padded("\x00EI Q BT /F1 18 Tf 72 400 Td (LATE FEE USD", 64)} EI Q BT ET`, "Q 1000) Tj ET"]);
         await refusedSplit([`q 200 0 0 100 72 300 cm BI /W 48 /H 1 /BPC 8 /CS /G /#46 /AHx ID ${padded("00> EI Q\x01 BT /F1 18 Tf 72 400 Td (LATE FEE USD", 48)} EI Q BT ET`, "Q 1000) Tj ET"]);
+        // A NUL as the last byte of pdf.js's 15-byte window is text to it, even when another NUL follows (R10-2, T1).
+        await refusedSplit([`q 200 0 0 100 72 300 cm BI /W 64 /H 1 /BPC 8 /CS /G ID ${padded("\x00EI Q BT /F1 18 Tf\x00\x00 72 400 Td (LATE FEE USD", 64)} EI Q BT ET`, "Q 1000) Tj ET"]);
+        // NUL is white space to viewers, so "/F\0" is the filter key /F (R10-3, T2: a binary byte after the EI).
+        await refusedSplit([`q 200 0 0 100 72 300 cm BI /W 48 /H 1 /BPC 8 /CS /G /F\x00 /AHx ID ${padded("00> EI Q \x01\x01 BT /F1 18 Tf 72 400 Td (LATE FEE USD", 48)} EI Q BT ET`, "Q 1000) Tj ET"]);
         // An EI that binary follows doesn't end the data for pdf.js either: still read to its size.
         const binaryAfterEi = `q BI /W 8 /H 1 /BPC 8 /CS /G ID ${bytes([0x45, 0x49, 0x20, 0x01, 0x02, 0x03, 0x04, 0x05])} EI Q`;
         expect(await content([binaryAfterEi, "q Q"])).toBe(`${binaryAfterEi} q Q`);
