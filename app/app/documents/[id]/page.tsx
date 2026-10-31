@@ -29,6 +29,7 @@ const ACTIONS: Record<string, string> = {
   "esign.code_sent": "Signing code sent",
   "esign.signed": "Signed",
   "esign.revoked": "Signature request withdrawn",
+  "esign.review_downloaded": "File sent for signing downloaded",
 };
 
 const REQUEST_STATUS: Record<SignatureRequestRow["status"], string> = {

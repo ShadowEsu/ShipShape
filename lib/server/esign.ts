@@ -100,16 +100,19 @@ export async function listSignatureRequests(ctx: Ctx, documentId: string): Promi
 /**
  * A 5-minute download link to exactly the file a signature request sent (Security R3-2), so the
  * sender can check what the signer will see before sharing the link. Members of the workspace only;
- * the file has the name the signer's download gets.
+ * the file has the name the signer's download gets. The download lands in the document's history
+ * (R4-5).
  */
 export async function reviewFileUrl(ctx: Ctx, documentId: string, requestId: string): Promise<string> {
   if (!z.uuid().safeParse(requestId).success || !z.uuid().safeParse(documentId).success) throw new UserError("Request not found.");
-  const [row] = await asUser(ctx.userId, (tx) =>
-    tx.query<{ title: string; version: number }>(
+  const [row] = await asUser(ctx.userId, async (tx) => {
+    const rows = await tx.query<{ title: string; version: number }>(
       "select d.title, r.version from app.signature_requests r join app.documents d on d.id = r.document_id where r.id = $1 and r.document_id = $2 and r.org_id = $3 and r.to_sign_sha256 is not null",
       [requestId, documentId, ctx.orgId],
-    ),
-  );
+    );
+    if (rows.length) await tx.query("select app.audit_append($1, 'esign.review_downloaded', $2)", [ctx.orgId, documentId]);
+    return rows;
+  });
   if (!row) throw new UserError("Request not found.");
   return blobStore().signedUrl(`${ctx.orgId}/${requestId}/v1.pdf`, { filename: downloadName(row.title, row.version, "application/pdf"), inline: false });
 }

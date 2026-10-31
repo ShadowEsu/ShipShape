@@ -1,5 +1,6 @@
 import {
   concatTransformationMatrix,
+  decodePDFRawStream,
   drawObject,
   PDFArray,
   PDFBool,
@@ -7,6 +8,7 @@ import {
   PDFHexString,
   PDFName,
   PDFNumber,
+  PDFRawStream,
   PDFRef,
   PDFStream,
   PDFString,
@@ -51,15 +53,19 @@ export function flattenAnnotations(doc: PDFDocument): void {
     const annots = page.node.lookup(ANNOTS);
     if (!(annots instanceof PDFArray)) continue;
     const links: PDFObject[] = [];
+    const drawn: PDFDict[] = [];
     for (const entry of annots.asArray()) {
       const annot = doc.context.lookup(entry);
       if (!(annot instanceof PDFDict)) continue;
       const subtype = nameAt(annot, SUBTYPE);
       if (subtype === LINK) {
-        annot.delete(AP);
-        annot.delete(AS);
+        plainLink(annot);
         links.push(entry);
-      } else if (subtype !== null && DRAWN.has(subtype)) drawAppearance(page, annot);
+      } else if (subtype !== null && DRAWN.has(subtype)) drawn.push(annot);
+    }
+    if (drawn.length) {
+      isolateContent(page);
+      for (const annot of drawn) drawAppearance(page, annot);
     }
     if (links.length) page.node.set(ANNOTS, doc.context.obj(links));
     else page.node.delete(ANNOTS);
@@ -82,6 +88,8 @@ export function viewerDependent(doc: PDFDocument, raw: Uint8Array): boolean {
     if ((off instanceof PDFArray && off.size() > 0) || nameAt(config, BASE_STATE) === OFF) return true;
     if (config.has(AS)) return true; // auto states: layers that turn on or off for printing or viewing
   }
+  // Membership rules (/OCMD) decide visibility by expression; refused rather than evaluated (R4-4).
+  if (hasOcmd(doc)) return true;
   const form = doc.catalog.lookup(ACROFORM);
   const redraw = form instanceof PDFDict ? form.lookup(NEED_APPEARANCES) : undefined;
   if (redraw instanceof PDFBool && redraw.asBoolean()) return true;
@@ -164,6 +172,15 @@ const OFF = PDFName.of("OFF");
 const P = PDFName.of("P");
 const RECT = PDFName.of("Rect");
 const LINK = PDFName.of("Link");
+const CONTENTS = PDFName.of("Contents");
+const EXTGSTATE = PDFName.of("ExtGState");
+const OCMD = PDFName.of("OCMD");
+const BORDER = PDFName.of("Border");
+// What makes a link draw something itself: appearance, border style and colour, click highlight.
+const LINK_LOOK = ["AP", "AS", "BS", "C", "H", "BE", "IC"].map((k) => PDFName.of(k));
+// Graphics-state keys whose effect depends on the output device and renderer (Security R4-2):
+// transfer functions, black generation, undercolour removal, halftones.
+const DEVICE_KEYS = ["TR", "TR2", "BG", "BG2", "UCR", "UCR2", "HT"].map((k) => PDFName.of(k));
 const XOBJECT = PDFName.of("XObject");
 const ACROFORM = PDFName.of("AcroForm");
 // Annotation flags: Hidden (2) and NoView (32).
@@ -262,7 +279,63 @@ function nameAt(dict: PDFDict, key: PDFName): PDFName | null {
   return v instanceof PDFName ? v : null;
 }
 
-/** Keeps only Link annotations, without an appearance; anything else was drawn or is dropped (R3-1). */
+/**
+ * A kept link draws nothing of its own (Security R3-1, R4-1): no appearance, no colour, and a border
+ * of width 0 whatever its flags say. Viewers otherwise draw link borders on screen and decide
+ * differently whether they print, which can cover or uncover text.
+ */
+function plainLink(annot: PDFDict) {
+  for (const key of LINK_LOOK) annot.delete(key);
+  annot.set(BORDER, annot.context.obj([0, 0, 0]));
+}
+
+/**
+ * Moves the page's own content into a form XObject drawn inside q…Q (Security R4-3), so whatever
+ * graphics state it leaves open (an unclosed q with a clip or a shift) can't reach the annotations
+ * drawn after it. Viewers draw annotations in a fresh state; this keeps that true once they are
+ * page content. A content stream ShipShape can't decode makes the file unreadable for signing.
+ */
+function isolateContent(page: PDFPage) {
+  const ctx = page.node.context;
+  const contents = page.node.lookup(CONTENTS);
+  const streams = contents instanceof PDFArray ? contents.asArray().map((r) => ctx.lookup(r)) : contents === undefined ? [] : [contents];
+  const parts: Uint8Array[] = [];
+  for (const s of streams) {
+    if (!(s instanceof PDFRawStream)) throw new Error("page content isn't a stream ShipShape can read");
+    parts.push(decodePDFRawStream(s).decode(), NEWLINE);
+  }
+  const bytes = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    bytes.set(p, at);
+    at += p.length;
+  }
+  const { x, y, width, height } = page.getMediaBox();
+  const resources = page.node.Resources();
+  const original = ctx.flateStream(bytes, { Type: "XObject", Subtype: "Form", BBox: [x, y, x + width, y + height], ...(resources ? { Resources: resources } : {}) });
+  const name = page.node.newXObject("Page", ctx.register(original));
+  page.node.set(CONTENTS, ctx.obj([]));
+  page.pushOperators(pushGraphicsState(), drawObject(name), popGraphicsState());
+}
+const NEWLINE = new Uint8Array([10]);
+
+/** True if any object in the file is an optional-content membership dictionary (/Type /OCMD). */
+function hasOcmd(doc: PDFDocument): boolean {
+  const visit = (o: PDFObject): boolean => {
+    const d = o instanceof PDFStream ? o.dict : o;
+    if (d instanceof PDFArray) return d.asArray().some(visit);
+    if (!(d instanceof PDFDict)) return false;
+    if (nameAt(d, TYPE) === OCMD) return true;
+    return d.values().some((v) => !(v instanceof PDFRef) && visit(v));
+  };
+  return doc.context.enumerateIndirectObjects().some(([, o]) => visit(o));
+}
+
+function stripDeviceKeys(state: PDFDict) {
+  for (const key of DEVICE_KEYS) state.delete(key);
+}
+
+/** Keeps only Link annotations, drawing nothing of their own; anything else was drawn or is dropped (R3-1, R4-1). */
 function keepSafeAnnotations(page: PDFDict) {
   const annots = page.lookup(ANNOTS);
   const kept: PDFObject[] = [];
@@ -270,8 +343,7 @@ function keepSafeAnnotations(page: PDFDict) {
     for (const entry of annots.asArray()) {
       const annot = page.context.lookup(entry);
       if (!(annot instanceof PDFDict) || nameAt(annot, SUBTYPE) !== LINK) continue;
-      annot.delete(AP);
-      annot.delete(AS);
+      plainLink(annot);
       kept.push(entry);
     }
   }
@@ -300,6 +372,16 @@ function sweep(obj: PDFObject) {
   // Every holder of annotations, not just the pages in the page tree: copyPages also copies a page a
   // link's destination names, annotations and all, as a stray object.
   if (dict.has(ANNOTS)) keepSafeAnnotations(dict);
+  // Graphics states: a /Type /ExtGState dict, and each state a resource dictionary lists (an SMask's
+  // own /TR is a different key and stays).
+  if (nameAt(dict, TYPE) === EXTGSTATE) stripDeviceKeys(dict);
+  const states = dict.lookup(EXTGSTATE);
+  if (states instanceof PDFDict) {
+    for (const value of states.values()) {
+      const state = dict.context.lookup(value);
+      if (state instanceof PDFDict) stripDeviceKeys(state);
+    }
+  }
   for (const key of DROP_KEYS) dict.delete(key);
   if (dict.has(A)) {
     const action = dict.lookup(A);

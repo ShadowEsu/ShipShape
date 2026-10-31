@@ -104,13 +104,17 @@ describe("signing", () => {
     expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("expired_code");
   });
 
-  it("lets the sender download exactly the file the signer gets, and no other workspace (Security R3-2)", async () => {
+  it("lets the sender download exactly the file the signer gets, and no other workspace; the download is in the history (Security R3-2, R4-5)", async () => {
     const doc = await nda(a);
     const { id, token } = await request(a);
     const fileAt = async (url: string) => blobStore().get(verifyFileParams(new URL(url, "http://x").searchParams)!.objectPath);
+    const previews = async () => (await getDocument(a, doc.id))?.audit.filter((e) => e.action === "esign.review_downloaded").length;
+    expect(await previews()).toBe(0);
     const senders = await fileAt(await reviewFileUrl(a, doc.id, id));
     expect(Buffer.from(senders).equals(Buffer.from(await fileAt((await signingFileUrl(id, token))!)))).toBe(true);
+    expect(await previews()).toBe(1);
     await expect(reviewFileUrl(b, doc.id, id)).rejects.toThrow(UserError);
+    expect(await previews()).toBe(1);
   });
 
   it("never signs a file changed after it was sent, nor sends an upload changed in storage (Security R3-4, R3-3)", async () => {

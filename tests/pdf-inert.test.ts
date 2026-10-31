@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStream, PDFString, type PDFObject } from "pdf-lib";
+import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, PDFString, type PDFObject } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { appendPages } from "@/lib/pdf/append";
 import { makeInert } from "@/lib/pdf/inert";
@@ -144,7 +144,7 @@ const pageWith = (extra = "") => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 61
 const PAGES = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
 
 describe("the file a signer reviews (Security R2)", () => {
-  it("refuses files that viewers can show differently: hidden layers, print-only layers, self-redrawing forms, an object defined twice", async () => {
+  it("refuses files that viewers can show differently: hidden layers, print-only layers, layer expressions, self-redrawing forms, an object defined twice", async () => {
     const hiddenLayer = rawPdf([
       [1, "<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [6 0 R] /D << /OFF [6 0 R] >> >> >>"],
       [2, PAGES],
@@ -159,6 +159,14 @@ describe("the file a signer reviews (Security R2)", () => {
       [4, text("LATE FEE")],
       [6, "<< /Type /OCG /Name (Layer) /Usage << /Print << /PrintState /ON >> /View << /ViewState /OFF >> >> >>"],
     ]);
+    const byExpression = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [6 0 R] /D << >> >> >>"],
+      [2, PAGES],
+      [3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 ${HELV} >> /Properties << /MC0 7 0 R >> >> >>`],
+      [4, stream("/OC /MC0 BDC BT /F1 18 Tf 72 700 Td (LATE FEE) Tj ET EMC")],
+      [6, "<< /Type /OCG /Name (Layer) >>"],
+      [7, "<< /Type /OCMD /OCGs [6 0 R] /P /AllOff >>"],
+    ]);
     const redraws = rawPdf([
       [1, "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [] /NeedAppearances true >> >>"],
       [2, PAGES],
@@ -172,7 +180,7 @@ describe("the file a signer reviews (Security R2)", () => {
       [4, text("Fee: USD 100")],
       [4, text("Fee: USD 10000")],
     ]);
-    for (const f of [hiddenLayer, printOnlyLayer, redraws, twice]) {
+    for (const f of [hiddenLayer, printOnlyLayer, byExpression, redraws, twice]) {
       await expect(buildToSign(bytesOf(f.text), "application/pdf")).rejects.toMatchObject({ reason: "viewer_dependent" });
     }
   });
@@ -215,7 +223,69 @@ describe("the file a signer reviews (Security R2)", () => {
     expect(saved).toContain("1 1 1 rg 0 0 330 40 re f"); // still written, so the page draws it
     const copy = await PDFDocument.load(bytes);
     expect(findings(copy).filter((f) => f.startsWith("annot "))).toEqual([]);
-    expect(copy.getPage(0).node.lookup(N("Resources"), PDFDict).lookup(N("XObject"), PDFDict).keys()).toHaveLength(1);
+    // Two drawings: the page's own content (kept apart, R4-3) and the cover.
+    expect(copy.getPage(0).node.lookup(N("Resources"), PDFDict).lookup(N("XObject"), PDFDict).keys()).toHaveLength(2);
+  });
+
+  it("keeps links but never their borders, colours or highlights, whatever their flags (R4-1)", async () => {
+    const link = (extra: string) => `<< /Type /Annot /Subtype /Link /Rect [60 690 420 720] /A << /S /URI /URI (https://example.com) >> ${extra} >>`;
+    const file = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+      [2, PAGES],
+      [3, pageWith("/Annots [5 0 R 6 0 R 7 0 R]")],
+      [4, stream("BT /F1 18 Tf 72 700 Td (Seller may terminate at any time.) Tj 0 -60 Td (Fee: USD 100) Tj ET")],
+      [5, link("/Border [0 0 30] /C [1 1 1]")], // L7: a white border over the clause on screen
+      [6, link("/Border [0 0 30] /C [1 1 1] /F 36")], // L10: the same, printed only
+      [7, link("/BS << /W 15 /S /S >> /C [1 1 1] /H /I /BE << /S /C /I 2 >> /IC [1 1 1]")], // L8
+    ]);
+    const copy = await PDFDocument.load(await buildToSign(bytesOf(file.text), "application/pdf"));
+    const links = copy.getPage(0).node.lookup(N("Annots"), PDFArray).asArray().map((r) => copy.context.lookup(r, PDFDict));
+    expect(links).toHaveLength(3);
+    for (const l of links) {
+      expect(l.lookup(N("Border"), PDFArray).asArray().map((n) => (n instanceof PDFNumber ? n.asNumber() : NaN))).toEqual([0, 0, 0]);
+      for (const key of ["AP", "BS", "C", "H", "BE", "IC"]) expect(l.has(N(key))).toBe(false);
+      expect(l.lookup(N("A"), PDFDict).lookup(N("URI"), PDFString).decodeText()).toBe("https://example.com");
+    }
+  });
+
+  it("drops device-dependent graphics-state keys, keeping a soft mask's own transfer function (R4-2)", async () => {
+    const file = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+      [2, PAGES],
+      [
+        3,
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 ${HELV} >> /ExtGState << /G1 << /TR << /FunctionType 2 /Domain [0 1] /C0 [1] /C1 [1] /N 1 >> /CA 0.5 /SMask << /Type /Mask /S /Luminosity /G 8 0 R /TR /Identity >> >> /G2 7 0 R >> >> >>`,
+      ],
+      [4, stream("q /G1 gs /G2 gs BT /F1 18 Tf 72 640 Td (LATE FEE USD 10000 PER DAY) Tj ET Q")],
+      [7, "<< /Type /ExtGState /TR2 /Default /BG2 /Default /UCR2 /Default /HT /Default /BG << /FunctionType 2 /Domain [0 1] /C0 [0] /C1 [1] /N 1 >> >>"],
+      [8, "<< /Type /XObject /Subtype /Form /BBox [0 0 612 792] /Length 0 >>\nstream\n\nendstream"],
+    ]);
+    const copy = await PDFDocument.load(await buildToSign(bytesOf(file.text), "application/pdf"));
+    const states = copy.getPage(0).node.lookup(N("Resources"), PDFDict).lookup(N("ExtGState"), PDFDict);
+    const [g1, g2] = ["G1", "G2"].map((k) => states.lookup(N(k), PDFDict));
+    for (const g of [g1, g2]) for (const key of ["TR", "TR2", "BG", "BG2", "UCR", "UCR2", "HT"]) expect(g.has(N(key))).toBe(false);
+    expect(g1.lookup(N("CA"), PDFNumber).asNumber()).toBe(0.5);
+    expect(g1.lookup(N("SMask"), PDFDict).lookup(N("TR"))).toBe(N("Identity"));
+  });
+
+  it("draws annotations in a fresh graphics state even if the page leaves some open (R4-3)", async () => {
+    const box = `<< /Type /XObject /Subtype /Form /BBox [0 0 330 40] /Length 24 >>\nstream\n1 1 1 rg 0 0 330 40 re f\nendstream`;
+    const file = rawPdf([
+      [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+      [2, PAGES],
+      [3, pageWith("/Annots [5 0 R]")],
+      // V7d: two unclosed q, the inner one shifting everything after it up by 140.
+      [4, stream("BT /F1 18 Tf 72 700 Td (Seller may terminate at any time.) Tj ET q 1 0 0 1 0 140 cm q")],
+      [5, "<< /Type /Annot /Subtype /Square /Rect [70 550 400 590] /AP << /N 6 0 R >> >>"],
+      [6, box],
+    ]);
+    const copy = await PDFDocument.load(await buildToSign(bytesOf(file.text), "application/pdf"));
+    const contents = copy.getPage(0).node.lookup(N("Contents"));
+    const streams = contents instanceof PDFArray ? contents.asArray().map((r) => copy.context.lookup(r)) : [contents];
+    const content = streams.map((s) => (s instanceof PDFRawStream ? new TextDecoder("latin1").decode(decodePDFRawStream(s).decode()) : "")).join("\n");
+    const count = (op: string) => content.split(/\s+/).filter((t) => t === op).length;
+    expect(count("q")).toBe(count("Q")); // whatever the page left open stays inside its own drawing
+    expect(content).not.toContain("0 140 cm");
   });
 
   it("signs ordinary forms: an empty signature field, a value the standard font can't draw, a field on no page (R2-3)", async () => {
