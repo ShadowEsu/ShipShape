@@ -17,7 +17,7 @@
 // Files (S3): the canary can't be fetched anonymously, nor the bucket or its listing; Block Public
 // Access is fully on, the policy isn't public, denies non-TLS (and nothing else), grants nothing outside the account,
 // ACLs are off (BucketOwnerEnforced), versioning is on with old versions and delete markers expiring
-// within 7 days, and SSE-KMS uses the key.
+// within 7 days, Object Lock is off, and SSE-KMS uses the key.
 // Database (RDS): encrypted, deletion protection on, 7 days of backups, no manual snapshot older than
 // 7 days; over verified TLS the app's role isn't the master user, a superuser or BYPASSRLS, owns no
 // table in app, every app table has row level security, and no function in app is executable by
@@ -50,6 +50,7 @@ import {
   GetBucketPolicyCommand,
   GetBucketPolicyStatusCommand,
   GetBucketVersioningCommand,
+  GetObjectLockConfigurationCommand,
   GetPublicAccessBlockCommand,
   ListObjectVersionsCommand,
   PutObjectCommand,
@@ -193,6 +194,16 @@ await attempt("default encryption is SSE-KMS with the key", async () => {
   const by = rules[0]?.ApplyServerSideEncryptionByDefault;
   return [rules.length === 1 && by?.SSEAlgorithm === "aws:kms" && by.KMSMasterKeyID === env.PROBE_KMS_KEY_ARN, JSON.stringify(rules)];
 });
+await attempt("Object Lock is off: no retention can keep a deleted or old version past its 7 days (BOSS rule 1)", async () => {
+  try {
+    const c = (await s3.send(new GetObjectLockConfigurationCommand({ Bucket: bucket }))).ObjectLockConfiguration;
+    return [!c?.ObjectLockEnabled && !c?.Rule, JSON.stringify(c)];
+  } catch (e) {
+    // S3's answer for a bucket that never had Object Lock.
+    if (e?.name === "ObjectLockConfigurationNotFoundError") return [true, "none"];
+    throw e;
+  }
+});
 
 // 2. Database.
 let master = "";
@@ -327,10 +338,12 @@ await attempt("the app client: a secret, code flow only, scopes openid email, on
 // 4. Credentials.
 let roleArn = "";
 let roleBoundary = "";
+let roleRead = false;
 await attempt("the app role trusts exactly this account's Vercel provider, its audience and the production sub (StringEquals only; PR-3)", async () => {
   const role = (await iam.send(new GetRoleCommand({ RoleName: env.PROBE_ROLE_NAME }))).Role;
   roleArn = role?.Arn ?? "";
   roleBoundary = role?.PermissionsBoundary?.PermissionsBoundaryArn ?? "";
+  roleRead = Boolean(role);
   const provider = env.PROBE_OIDC_PROVIDER_ARN;
   const issuer = provider.split(":oidc-provider/")[1] ?? "";
   const trust = JSON.parse(decodeURIComponent(role?.AssumeRolePolicyDocument ?? "{}"));
@@ -356,6 +369,7 @@ await attempt("the app role trusts exactly this account's Vercel provider, its a
 // quietly take one away again: no permissions boundary, no condition on a grant (P-b0a).
 await attempt("the app role allows each action it needs, every one, unconditionally, on its one resource only: the bucket's objects, the key, the pool (no wildcards, no managed policies, no permissions boundary; PR-2)", async () => {
   if (!poolArn) return [false, "no pool ARN to compare AdminDeleteUser with"];
+  if (!roleRead) return [false, "couldn't read the role, so its permissions boundary is unknown"];
   const objects = `arn:aws:s3:::${bucket}/*`;
   const resourceOf = new Map([
     ["s3:PutObject", objects],
