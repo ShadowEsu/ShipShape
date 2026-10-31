@@ -7,7 +7,7 @@ import { BuildBusy, BuildCrashed, buildToSignIsolated } from "@/lib/pdf/build-is
 import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
 import { NotSignable } from "@/lib/pdf/to-sign";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
-import { asAnon, asUser, type Tx } from "./db";
+import { asAnon, asUser, pgErrorCode, type Tx } from "./db";
 import { downloadName } from "./documents";
 import { UserError } from "./errors";
 import { MAX_UPLOAD_BYTES, type AllowedMime } from "./files";
@@ -323,22 +323,35 @@ export async function completeSigning(
   }
   // Every stored version is at most 10 MiB; a signed copy over that is refused up front, not by the database.
   if (bytes.length > MAX_UPLOAD_BYTES) return "too_large";
-  const path = `${r.org_id}/${r.document_id}/v${r.next_version}.pdf`;
-  return asAnon(async (tx) => {
-    const [row] = await tx.query<{ result: SignResult }>("select app.esign_complete($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) as result", [
-      id,
-      sha256Hex(token),
-      codeHash(id, input.code),
-      ESIGN_CONSENT_VERSION,
-      sha256Hex(ESIGN_CONSENT_TEXT),
-      typedName,
-      visitor,
-      path,
-      sha256Hex(bytes),
-      bytes.length,
-    ]);
-    // Stored last, inside the transaction: if storing fails, the signature rolls back with it.
-    if (row.result === "ok") await blobStore().put(path, bytes, "application/pdf");
-    return row.result;
-  });
+  // The signed copy becomes the document's next version. If one landed between the signer's open
+  // and now (an upload, or another request on the same document), the database refuses the stale
+  // number (22023) and the signing is tried once more with the current one.
+  let next = r.next_version;
+  for (let attempt = 1; ; attempt++) {
+    const path = `${r.org_id}/${r.document_id}/v${next}.pdf`;
+    try {
+      return await asAnon(async (tx) => {
+        const [row] = await tx.query<{ result: SignResult }>("select app.esign_complete($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) as result", [
+          id,
+          sha256Hex(token),
+          codeHash(id, input.code),
+          ESIGN_CONSENT_VERSION,
+          sha256Hex(ESIGN_CONSENT_TEXT),
+          typedName,
+          visitor,
+          path,
+          sha256Hex(bytes),
+          bytes.length,
+        ]);
+        // Stored last, inside the transaction: if storing fails, the signature rolls back with it.
+        if (row.result === "ok") await blobStore().put(path, bytes, "application/pdf");
+        return row.result;
+      });
+    } catch (e) {
+      if (pgErrorCode(e) !== "22023" || attempt > 1) throw e;
+      const again = await open(id, token, false);
+      if (!again || again.status !== "pending") return "invalid";
+      next = again.next_version;
+    }
+  }
 }

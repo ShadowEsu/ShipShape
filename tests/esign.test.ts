@@ -212,6 +212,43 @@ describe("signing", () => {
     expect(await files()).toBe(before + 2); // the two uploads themselves, nothing for a request
   });
 
+  it("still signs when a new version landed between the signer's open and the signing: the copy takes the number after it (schema sweep row 41)", async () => {
+    const c = await sampleWorkspace(); // its own: the other tests count this document's history
+    const doc = await nda(c);
+    const { id, token } = await request(c);
+    expect(await openSigning(id, token)).not.toBeNull();
+    await sendSigningCode(id, token);
+    const code = await lastCode(c.orgId);
+    // A member's upload lands after the signing read the next version number and while it fetches
+    // the reviewed file (the window in which the number can go stale).
+    const store = localBlobStore(blobDir);
+    let landed = false;
+    setBlobStoreForTests({
+      ...store,
+      get: async (p) => {
+        if (!landed) {
+          landed = true;
+          await db.root((tx) =>
+            tx.query(
+              "insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin) values ($1, 2, $2, $3, 'application/pdf', 100, repeat('b', 64), 'upload')",
+              [doc.id, c.orgId, `${c.orgId}/${doc.id}/v2.pdf`],
+            ),
+          );
+        }
+        return store.get(p);
+      },
+    });
+    try {
+      expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
+    } finally {
+      setBlobStoreForTests(store);
+    }
+    expect(landed).toBe(true);
+    const versions = (await getDocument(c, doc.id))!.versions;
+    expect(versions.map((v) => [v.version, v.origin])).toEqual([[3, "signed"], [2, "upload"], [1, "sample"]]);
+    expect(await blobStore().get(`${c.orgId}/${doc.id}/v3.pdf`)).toHaveLength(versions[0].size_bytes);
+  });
+
   it("adds the signed copy (the reviewed file + certificate) as a new version, once, and records every step", async () => {
     const doc = await nda(a);
     const before = (await getDocument(a, doc.id))!.versions;

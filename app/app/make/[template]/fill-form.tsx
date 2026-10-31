@@ -159,6 +159,8 @@ function Field({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           maxLength={f.max}
+          min={f.kind === "date" ? "1900-01-01" : undefined}
+          max={f.kind === "date" ? "2200-12-31" : undefined}
           className={`input ${f.kind === "number" ? "w-24" : ""}`}
           aria-invalid={Boolean(error)}
           aria-describedby={describedBy}

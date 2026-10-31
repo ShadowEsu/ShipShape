@@ -209,11 +209,11 @@ export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Ar
   const check = checkUpload(bytes);
   if (!check.ok) throw new UserError(check.error);
   return asUser(ctx.userId, async (tx) => {
-    const [row] = await tx.query<{ next: number }>(
-      "select coalesce(max(v.version), 0) + 1 as next from app.documents d left join app.document_versions v on v.document_id = d.id where d.id = $1 and d.org_id = $2 group by d.id",
-      [documentId, ctx.orgId],
-    );
-    if (!row) throw new UserError("Document not found.");
+    // Locks the document (no key update: it doesn't block readers or the version rows' key-share
+    // locks) so two uploads at once get consecutive numbers instead of the same one.
+    const [doc] = await tx.query("select 1 from app.documents where id = $1 and org_id = $2 for no key update", [documentId, ctx.orgId]);
+    if (!doc) throw new UserError("Document not found.");
+    const [row] = await tx.query<{ next: number }>("select coalesce(max(v.version), 0) + 1 as next from app.document_versions v where v.document_id = $1", [documentId]);
     await insertVersion(tx, ctx, documentId, row.next, { bytes, mime: check.mime }, "upload", null);
     return row.next;
   });

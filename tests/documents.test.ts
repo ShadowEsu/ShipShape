@@ -90,6 +90,19 @@ describe("real documents gate (Security G3)", () => {
     vi.unstubAllEnvs();
   });
 
+  // Real Postgres only: PGlite has one connection, so two uploads never overlap there.
+  it.skipIf(!process.env.SHIPSHAPE_PG_TEST_URL)("people adding a version at the same moment get consecutive numbers, not an error (schema sweep row 35)", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const id = await uploadDocument(real, { title: "Permit", kind: "permit" }, PDF);
+    // Opens the pool's three connections first, so the uploads below really run side by side.
+    await Promise.all([1, 2, 3].map(() => asService((tx) => tx.query("select pg_sleep(0.1)"))));
+    const versions: number[] = [];
+    for (let round = 0; round < 3; round++) versions.push(...(await Promise.all([1, 2, 3].map(() => uploadVersion(real, id, PDF)))));
+    expect(versions.sort((x, y) => x - y)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect((await getDocument(real, id))?.versions.map((v) => v.version)).toEqual([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+    vi.unstubAllEnvs();
+  });
+
   it("production with the gate open won't start without a contact address (RN-2: /privacy and Report this page need one)", () => {
     const prod = { NODE_ENV: "production", SHIPSHAPE_REAL_DOCS: "1" };
     expect(() => assertLaunchConfig(prod)).toThrow(/CONTACT_EMAIL/);
@@ -229,6 +242,19 @@ describe("Mutual NDA fill", () => {
     expect(made.ok).toBe(true);
     const doc = (await getDocument(sample, made.ok ? made.id : ""))!.doc;
     expect(doc).toMatchObject({ kind: "nda", counterparty: "Acme Sample Co", issued_on: "2026-11-01", expires_on: "2028-11-01" });
+  });
+
+  it("refuses an Effective Date that isn't a real day or is outside 1900-2200, which would have failed in the database (schema sweep row 29-30)", async () => {
+    const t = templateById("common-paper-mnda")!;
+    const values = { ...prefill(t, await factsForFill(sample)), ...typed };
+    for (const bad of ["2026-02-30", "2026-13-01", "0000-01-01", "1899-12-31", "9999-12-31", "2026-1-1"]) {
+      const res = await fillTemplate(sample, t.id, { ...values, effective_date: bad }, true);
+      expect(res.ok ? {} : res.errors, bad).toEqual({ effective_date: "Enter a date between 1900 and 2200." });
+    }
+    for (const ok of ["1900-01-01", "2200-12-31", "2024-02-29"]) {
+      const res = await fillTemplate(sample, t.id, { ...values, effective_date: ok }, true);
+      expect(res.ok, ok).toBe(true);
+    }
   });
 
   it("takes a text box's line breaks as browsers post them (CRLF) and draws each line on its own (Security R2-6)", async () => {

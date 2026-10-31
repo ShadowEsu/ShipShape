@@ -2,6 +2,7 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { z } from "zod";
 import { composePdf, inlineRuns, isPrintable, isPrintableText, type Block } from "@/lib/pdf/compose";
 import type { EntityType, ProfileKey } from "@/lib/profile-fields";
 import { isVisible as visible, NDA_DEFAULT_PURPOSE } from "@/lib/templates/catalog";
@@ -79,12 +80,18 @@ export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<strin
     else if (f.max && f.kind !== "number" && value.length > f.max) errors[f.key] = `Up to ${f.max} characters.`;
     else if (!(f.kind === "textarea" ? isPrintableText(value) : isPrintable(value))) errors[f.key] = "Use letters, numbers and common punctuation.";
     else if (f.options && value && !f.options.some((o) => o.value === value)) errors[f.key] = "Choose one of the options.";
-    else if (f.kind === "date" && value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) errors[f.key] = "Enter a date.";
+    else if (f.kind === "date" && value && !realDate(value)) errors[f.key] = "Enter a date between 1900 and 2200.";
     else if (f.kind === "number" && value && !/^[1-9][0-9]?$/.test(value)) errors[f.key] = "Enter a whole number from 1 to 99.";
     else if (f.key === "ssn" && value && !/^[0-9]{9}$/.test(value.replace(/[\s-]/g, ""))) errors[f.key] = "An SSN has 9 digits.";
   }
   return errors;
 }
+
+/**
+ * A real calendar date in 1900-2200: the database refuses 2026-02-30, and "+N years" past 9999
+ * can't be written as YYYY-MM-DD. 2200 leaves room for the longest term (99 years).
+ */
+const realDate = (s: string) => z.iso.date().safeParse(s).success && s >= "1900-01-01" && s <= "2200-12-31";
 
 /** Where each field's value came from. Never the values themselves (they may be tax ids). */
 export function fillRecord(t: TemplateInfo, v: Values, start: Values): Record<string, FieldSource> {
