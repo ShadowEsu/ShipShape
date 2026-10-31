@@ -309,7 +309,7 @@ describe("workspace name", () => {
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, memberId]));
     await expect(renameWorkspace({ ...ctx, userId: memberId, role: "member" }, "Taken Over")).rejects.toBeInstanceOf(UserError);
     await expect(renameWorkspace(sample, "Real Co")).rejects.toBeInstanceOf(GateClosed);
-    const lookalikes = ["ShipShape Support", "Ship-Shape Co", "Ship.Shape", "Acme https://acme.example", "help@acme.example"];
+    const lookalikes = ["ShipShape Support", "Ship-Shape Co", "Ship.Shape", "ShipShapeSupport", "MyShipShape", "ShipShapes", "Acme https://acme.example", "help@acme.example"];
     for (const bad of ["   ", "Harbor\nSupply", "x".repeat(121), 42, ...lookalikes]) {
       await expect(renameWorkspace(ctx, bad)).rejects.toBeInstanceOf(UserError);
     }
@@ -323,6 +323,7 @@ describe("workspace name", () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     const ctx = await workspace("relationship@example.com", "real");
     expect(await renameWorkspace(ctx, "Relationship Shaper Co")).toBe("Relationship Shaper Co");
+    expect(await renameWorkspace(ctx, "Friendship Shapes")).toBe("Friendship Shapes");
     vi.unstubAllEnvs();
   });
 });

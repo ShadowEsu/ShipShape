@@ -75,13 +75,19 @@ export async function saveProfile(ctx: Ctx, input: Record<ProfileKey, string>) {
 
 // Pages people outside the workspace open show its name under ShipShape's own (Security RN-2, RN-3):
 // it can't claim to be ShipShape or carry a web or email address.
+// ShipShape at a word edge ("ShipShapes", "MyShipShape"), or CamelCased into others ("ShipShapeHQ") (RN-4).
+const POSES_AS_SHIPSHAPE = [
+  /(?:^|[^a-z])ship[\s._-]*shape|ship[\s._-]*shape(?:$|[^a-z])/i,
+  /(?:^|[a-z0-9])Ship[\s._-]*Shape/,
+  /Ship[\s._-]*Shape(?=[A-Z0-9]|$)/,
+];
 const WorkspaceName = z
   .string()
   .trim()
   .min(1, "Give your workspace a name.")
   .max(120, "Use 120 characters or fewer.")
   .refine(isPrintable, "Use letters, numbers and common punctuation.")
-  .refine((s) => !/\bship[\s._-]*shape\b/i.test(s), "Use your own business's name; it can't include ShipShape.")
+  .refine((s) => !POSES_AS_SHIPSHAPE.some((re) => re.test(s)), "Use your own business's name; it can't include ShipShape.")
   .refine((s) => !s.includes("://") && !s.includes("@"), "Leave web and email addresses out of the name.");
 
 /**
