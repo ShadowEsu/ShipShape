@@ -46,6 +46,8 @@ describe("reminders", () => {
       "City business license (sample) has lapsed",
     ]);
     expect(out.every((m) => m.to_email === "you@sample.example")).toBe(true);
+    // Titles and dates only: no business facts or tax IDs in a message that leaves ShipShape.
+    expect(out.some((m) => /\d{2}-?\d{7}|Harbor Plumbing LLC/.test(m.subject + m.body))).toBe(false);
   });
 
   it("sends the next reminder when the date gets closer, and the lapse reminder after it passes", async () => {
@@ -86,6 +88,7 @@ describe("calendar file", () => {
     const coi = docs.find((d) => d.kind === "coi")!;
     expect(ics).toContain(`DTSTART;VALUE=DATE:${coi.expires_on!.replaceAll("-", "")}`);
     expect(ics).toContain("TRIGGER:-P7D");
+    expect(ics).not.toMatch(/\d{2}-?\d{7}|Harbor Plumbing LLC/);
   });
 
   it("escapes calendar syntax in titles and keeps lines within 75 bytes", () => {
