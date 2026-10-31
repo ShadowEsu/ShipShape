@@ -111,7 +111,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </ul>
           <p>
             Copies other people already downloaded stay with them. Export first if you want to keep anything. If deleting can&apos;t
-            finish straight away, ShipShape finishes it by itself within a day.
+            finish straight away, ShipShape finishes it by itself within two days.
           </p>
         </div>
         <Notice>There&apos;s no undo: once deleted, ShipShape can&apos;t bring a workspace back for you.</Notice>

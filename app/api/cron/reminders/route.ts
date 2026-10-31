@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 /**
  * Daily: reminders, clearing rate-limit windows that started over an hour ago (the privacy policy says
  * they're cleared within about a day), and finishing account deletions that didn't finish when they
- * were asked for (Security CG-3; the privacy policy says within a day). The scheduler (vercel.json)
+ * were asked for (Security CG-3; the privacy policy says within two days: Vercel runs a daily cron
+ * anywhere in its hour, and a failed run leaves the request for the next, CG-6). The scheduler (vercel.json)
  * sends `Authorization: Bearer $CRON_SECRET`; nothing else may run it.
  */
 export async function GET(req: Request) {

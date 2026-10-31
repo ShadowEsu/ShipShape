@@ -205,7 +205,7 @@ export async function deleteAccount(ctx: Ctx): Promise<void> {
   } catch (e) {
     console.error(`account deletion: didn't finish, left for the daily run (${e instanceof Error ? e.name : "unknown"})`);
     throw new UserError(
-      "Deleting your account didn't finish just now. It will finish by itself within a day, so there's nothing more you need to do; pressing Delete my account again finishes it now.",
+      "Deleting your account didn't finish just now. It will finish by itself within two days, so there's nothing more you need to do; pressing Delete my account again finishes it now.",
     );
   }
 }
