@@ -39,6 +39,25 @@ beforeAll(async () => {
   });
   await asService((tx) => tx.query("insert into app.waitlist (email) values ('w@example.com')"));
   await asService((tx) => tx.query("select app.rate_hit('test', 'k', 60, 5)"));
+  // M3 tables: a passport link (opened once), a signature request, a sent reminder, an outbox message.
+  const linkHash = "b".repeat(64);
+  const linkA = await asUser(a, async (tx) => {
+    const [l] = await tx.query<{ id: string }>(
+      "insert into app.share_links (org_id, label, token_hash, expires_at, created_by) values ($1, 'For Northwind', $2, now() + interval '7 days', $3) returning id",
+      [orgA, linkHash, a],
+    );
+    await tx.query("insert into app.share_link_documents (link_id, document_id, org_id) values ($1, $2, $3)", [l.id, docA, orgA]);
+    await tx.query(
+      "insert into app.signature_requests (org_id, document_id, version, signer_name, signer_email, token_hash, expires_at, created_by) values ($1, $2, 1, 'Sam Signer', 'sam@example.com', $3, now() + interval '7 days', $4)",
+      [orgA, docA, "c".repeat(64), a],
+    );
+    return l.id;
+  });
+  await asAnon((tx) => tx.query("select * from app.passport_open($1, $2, $3)", [linkA, linkHash, "0".repeat(16)]));
+  await asService(async (tx) => {
+    await tx.query("insert into app.reminders_sent (document_id, org_id, due_on, days_before) values ($1, $2, current_date, 30)", [docA, orgA]);
+    await tx.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, 'a@example.com', 'Reminder', 'Your W-9')", [orgA]);
+  });
   for (const [u, item] of [[a, "terms_privacy"], [b, "terms_privacy"]]) {
     await asUser(u, (tx) => tx.query("insert into app.consents (user_id, item, policy_version) values ($1, $2, 'v1')", [u, item]));
   }
@@ -58,6 +77,12 @@ const TABLES: Record<string, string | null> = {
   waitlist: null,
   rate_hits: null,
   consents: null, // keyed by person, checked separately below
+  share_links: "org_id",
+  share_link_documents: "org_id",
+  share_access: "org_id",
+  reminders_sent: "org_id",
+  outbox: "org_id",
+  signature_requests: "org_id",
 };
 
 describe("row level security", () => {
@@ -189,6 +214,8 @@ describe("audit chain", () => {
       "document.created",
       "document.version_added",
       "document.acknowledged",
+      "passport.created",
+      "esign.requested",
       "document.viewed",
     ]);
     expect(rows.every((r) => r.actor === a)).toBe(true);

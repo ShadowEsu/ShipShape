@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
+import { connection } from "next/server";
 import "./globals.css";
 
 const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-newsreader", display: "swap", style: ["normal", "italic"] });
@@ -14,7 +15,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { themeColor: "#ffffff" };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Every page renders per request so Next.js can stamp the proxy's CSP nonce on its scripts.
+  // A prerendered page has no nonce, and the strict CSP would block all of its JavaScript.
+  await connection();
   return (
     <html lang="en" className={`${newsreader.variable} ${geist.variable} ${geistMono.variable}`}>
       <body>{children}</body>

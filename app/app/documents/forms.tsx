@@ -41,9 +41,10 @@ function Status({ state, savedText }: { state: FormState; savedText: string }) {
   return null;
 }
 
+// Container queries: the same fields sit in the wide add form and the narrow document rail.
 function DetailFields({ v }: { v?: DetailValues }) {
   return (
-    <>
+    <div className="@container space-y-3">
       <div>
         <label htmlFor="title" className="label">
           Title
@@ -62,7 +63,7 @@ function DetailFields({ v }: { v?: DetailValues }) {
           ))}
         </select>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 @md:grid-cols-2">
         <div>
           <label htmlFor="issuer" className="label">
             Issued by
@@ -76,7 +77,7 @@ function DetailFields({ v }: { v?: DetailValues }) {
           <input id="counterparty" name="counterparty" maxLength={200} defaultValue={v?.counterparty ?? ""} className="input" />
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 @md:grid-cols-3">
         <div>
           <label htmlFor="issued_on" className="label">
             Issued
@@ -96,7 +97,7 @@ function DetailFields({ v }: { v?: DetailValues }) {
           <input id="renews_on" name="renews_on" type="date" defaultValue={v?.renews_on ?? ""} className="input" />
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

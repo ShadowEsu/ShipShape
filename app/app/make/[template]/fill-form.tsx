@@ -42,11 +42,14 @@ export function FillForm({
         const fields = template.fields.filter((f) => f.section === section && visible(f, values));
         if (!fields.length) return null;
         return (
-          <fieldset key={section} className="card space-y-4">
-            <legend className="float-left mb-2 w-full font-semibold">{section}</legend>
-            {fields.map((f) => (
-              <Field key={f.key} f={f} value={values[f.key] ?? ""} onChange={(v) => set(f.key, v)} error={errors[f.key]} chip={f.fact ? chips[f.key] : undefined} initial={initial[f.key] ?? ""} />
-            ))}
+          <fieldset key={section} className="card">
+            {/* A floated legend sits inside the card instead of on its border; fields clear it. */}
+            <legend className="float-left mb-4 w-full font-semibold">{section}</legend>
+            <div className="clear-both space-y-4">
+              {fields.map((f) => (
+                <Field key={f.key} f={f} value={values[f.key] ?? ""} onChange={(v) => set(f.key, v)} error={errors[f.key]} chip={f.fact ? chips[f.key] : undefined} initial={initial[f.key] ?? ""} />
+              ))}
+            </div>
           </fieldset>
         );
       })}

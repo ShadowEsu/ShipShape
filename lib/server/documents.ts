@@ -252,6 +252,11 @@ export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
   if (!rows.length) throw new UserError("Document not found.");
 }
 
+/** The name a downloaded file gets: the title, cut to safe characters, plus its version. */
+export function downloadName(title: string, version: number, mime: AllowedMime): string {
+  return `${title.replace(/[^\w .()-]+/g, "").slice(0, 100).trim() || "document"} v${version}.${EXTENSION[mime]}`;
+}
+
 /**
  * A 5-minute link to one version, minted only after the database (under RLS) confirmed this
  * person may see it. Files the person uploaded always download; PDFs ShipShape made may open inline.
@@ -266,8 +271,6 @@ export async function downloadUrl(ctx: Ctx, id: string, version: number, mode: "
     return rows;
   });
   if (!row) throw new UserError("Document not found.");
-  const ext = EXTENSION[row.mime];
-  const filename = `${row.title.replace(/[^\w .()-]+/g, "").slice(0, 100).trim() || "document"} v${version}.${ext}`;
   const inline = mode === "view" && row.origin !== "upload";
-  return blobStore().signedUrl(row.storage_path, { filename, inline });
+  return blobStore().signedUrl(row.storage_path, { filename: downloadName(row.title, version, row.mime), inline });
 }

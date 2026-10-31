@@ -1,0 +1,75 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { EmptyState, PageHeader, fmtDay } from "@/components/app-ui";
+import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { listPassports, PASSPORT_DAYS } from "@/lib/server/passport";
+import { requireWorkspace } from "@/lib/server/session";
+import { NewPassportForm } from "./forms";
+
+export const metadata: Metadata = { title: "Passport" };
+
+function status(l: { revoked_at: string | null; expires_at: string }) {
+  if (l.revoked_at) return { label: "Turned off", cls: "bg-canvas text-ink-3", icon: "○" };
+  if (new Date(l.expires_at).getTime() < Date.now()) return { label: "Expired", cls: "bg-bad-soft text-bad", icon: "!" };
+  return { label: "Working", cls: "bg-ok-soft text-ok", icon: "✓" };
+}
+
+export default async function PassportPage() {
+  const ctx = await requireWorkspace();
+  const [links, docs] = await Promise.all([listPassports(ctx), listDocuments(ctx)]);
+
+  return (
+    <div className="space-y-8">
+      <PageHeader eyebrow="Passport" title="Share your paperwork" />
+      <p className="max-w-2xl text-ink-2">
+        One link with exactly the documents someone asked for. It stops working on the date you choose, you can turn it off any time,
+        and you see each time it&apos;s opened.
+      </p>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <section className="card">
+          <h2 className="mb-4 font-semibold">New link</h2>
+          <NewPassportForm
+            days={PASSPORT_DAYS}
+            docs={docs.map((d) => ({
+              id: d.id,
+              title: d.title,
+              kindLabel: DOC_KINDS[d.kind],
+              note: d.validity === "expired" ? "expired" : d.validity === "expiring" ? "expires soon" : null,
+            }))}
+          />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="font-semibold">Your links</h2>
+          {links.length === 0 ? (
+            <EmptyState title="No links yet" body="Links you make show up here with how often they were opened." />
+          ) : (
+            <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
+              {links.map((l) => {
+                const s = status(l);
+                return (
+                  <li key={l.id}>
+                    <Link href={`/app/passport/${l.id}`} className="flex flex-col gap-1 px-4 py-3 hover:bg-canvas">
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="truncate font-medium">{l.label}</span>
+                        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>
+                          <span aria-hidden="true">{s.icon}</span>
+                          {s.label}
+                        </span>
+                      </span>
+                      <span className="text-sm text-ink-2">
+                        {l.documents} {l.documents === 1 ? "document" : "documents"} · opened {l.opens} {l.opens === 1 ? "time" : "times"} · until{" "}
+                        {fmtDay(l.expires_at)}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
