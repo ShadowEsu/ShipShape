@@ -308,7 +308,7 @@ function isolateContent(page: PDFPage, read: ContentReader) {
     const part = read.stream(s);
     if (!part.length) continue;
     const before = parts.at(-1);
-    const how = before ? joint(before, part) : "join";
+    const how = before ? joint(before, part, tailOf(parts, WINDOW_REACH)) : "join";
     if (how === "refuse") throw new Error("page content splits a comment, string, inline image or token across streams");
     if (how === "space") parts.push(SPACE);
     parts.push(part);
@@ -325,6 +325,18 @@ function isolateContent(page: PDFPage, read: ContentReader) {
   const name = page.node.newXObject("Page", ctx.register(original));
   page.node.set(CONTENTS, ctx.obj([]));
   page.pushOperators(pushGraphicsState(), drawObject(name), popGraphicsState());
+}
+
+/** The last `n` bytes of everything joined so far: the parts and the spaces between them. */
+function tailOf(parts: Uint8Array[], n: number): Uint8Array {
+  const out = new Uint8Array(n);
+  let free = n;
+  for (let i = parts.length - 1; i >= 0 && free > 0; i--) {
+    const take = Math.min(free, parts[i].length);
+    out.set(parts[i].subarray(parts[i].length - take), free - take);
+    free -= take;
+  }
+  return out.subarray(free);
 }
 
 const SPACE = new Uint8Array([32]);
@@ -399,7 +411,7 @@ function contentReader(): ContentReader {
  *   any operator. pdf.js also ends inline image data only at EI followed by white space, so EI|Q is
  *   refused too.
  */
-function joint(before: Uint8Array, after: Uint8Array): "join" | "space" | "refuse" {
+function joint(before: Uint8Array, after: Uint8Array, joined: Uint8Array): "join" | "space" | "refuse" {
   if (endsInside(before)) return "refuse";
   const last = before[before.length - 1];
   const first = after[0];
@@ -419,12 +431,16 @@ function joint(before: Uint8Array, after: Uint8Array): "join" | "space" | "refus
   // pdf.js ends inline image data only at an "EI" + SP/LF/CR followed by 15 bytes of text; when it
   // rejects the real EI (a tab, % or binary after it) it reads on across the split. A space added here
   // would shift a stray "EI "'s window by a byte and could change where pdf.js ends the image (R11-1).
-  const tail = before.subarray(Math.max(0, before.length - 18));
-  for (let j = 0; j + 2 < tail.length; j++) {
-    if (tail[j] === 69 && tail[j + 1] === 73 && (tail[j + 2] === 32 || tail[j + 2] === 10 || tail[j + 2] === 13)) return "refuse";
+  // The window can reach back across earlier, shorter streams, so `joined` is the tail of everything
+  // joined so far, spaces included, not just `before` (R12-1).
+  for (let j = 0; j + 2 < joined.length; j++) {
+    if (joined[j] === 69 && joined[j + 1] === 73 && (joined[j + 2] === 32 || joined[j + 2] === 10 || joined[j + 2] === 13)) return "refuse";
   }
   return "space";
 }
+
+/** How far back a split can matter: "EI", its white space and the 15 bytes pdf.js checks after it. */
+const WINDOW_REACH = 18;
 
 const latin1 = (b: Uint8Array) => String.fromCharCode(...b.subarray(0, 8));
 

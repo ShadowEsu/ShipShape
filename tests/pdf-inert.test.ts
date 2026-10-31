@@ -450,6 +450,14 @@ describe("the file a signer reviews (Security R2)", () => {
           `q 200 0 0 100 72 300 cm BI /W 4 /H 1 /BPC 8 /CS /G ID ${bytes([1, 2, 3, 4])} EI\tEI Q 0 0 0 00 ET`,
           "Q\t BT /F1 18 Tf 72 400 Td (LATE FEE USD 10000 PER DAY) Tj ET EI Q BT ET q Q q Q q Q",
         ]);
+        // The same window can reach back across a short stream that joined with no added byte (R12-1, V1), or
+        // across two spaces ShipShape would add (V2): the check reads everything joined so far, not one stream.
+        const strayIn = (tail: string) => `q 200 0 0 100 72 300 cm BI /W 4 /H 1 /BPC 8 /CS /G ID ${bytes([1, 2, 3, 4])}${tail}`;
+        const fee = "Q\t BT /F1 18 Tf 72 400 Td (LATE FEE USD 10000 PER DAY) Tj ET EI Q BT ET q Q q Q q Q";
+        await refusedSplit([strayIn(" EI\tEI Q "), "0 0 0 00 ET", fee]);
+        await refusedSplit([strayIn(" EI\tEI "), "Q", "q 0 0 000 ET", fee]);
+        // White space at that split adds nothing, so the streams join as they are (V4).
+        expect(await content([strayIn(" EI\tEI Q "), "0 0 0 00 ET ", fee])).toBe(`${strayIn(" EI\tEI Q ")}0 0 0 00 ET ${fee}`);
         // An EI that binary follows doesn't end the data for pdf.js either: still read to its size.
         const binaryAfterEi = `q BI /W 8 /H 1 /BPC 8 /CS /G ID ${bytes([0x45, 0x49, 0x20, 0x01, 0x02, 0x03, 0x04, 0x05])} EI Q`;
         expect(await content([binaryAfterEi, " q Q"])).toBe(`${binaryAfterEi} q Q`);
