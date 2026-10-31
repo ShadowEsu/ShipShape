@@ -4,6 +4,7 @@ import { ENTITY_TYPES, PROFILE_FIELDS, type EntityType, type ProfileKey } from "
 import { isPrintable } from "@/lib/pdf/compose";
 import { decryptField, encryptField } from "./crypto";
 import { asUser } from "./db";
+import { UserError } from "./errors";
 import { assertRealData } from "./flags";
 import type { Session, Workspace } from "./session";
 import { authIsRecent } from "./session";
@@ -70,6 +71,26 @@ export async function saveProfile(ctx: Ctx, input: Record<ProfileKey, string>) {
     );
     await tx.query("select app.confirm_facts($1, $2)", [ctx.orgId, keys.filter((k) => values[k])]);
   });
+}
+
+const WorkspaceName = z
+  .string()
+  .trim()
+  .min(1, "Give your workspace a name.")
+  .max(120, "Use 120 characters or fewer.")
+  .refine(isPrintable, "Use letters, numbers and common punctuation.");
+
+/**
+ * Renames the workspace: the name people outside it see on its passport links, signature requests
+ * and Collect pages. Owners and admins; the rename goes into the workspace history (0024).
+ */
+export async function renameWorkspace(ctx: Ctx, raw: unknown): Promise<string> {
+  assertRealData(ctx);
+  const parsed = WorkspaceName.safeParse(raw);
+  if (!parsed.success) throw new UserError(parsed.error.issues[0].message);
+  const rows = await asUser(ctx.userId, (tx) => tx.query("update app.organizations set name = $2 where id = $1 returning 1", [ctx.orgId, parsed.data]));
+  if (!rows.length) throw new UserError("Only owners and admins can rename the workspace.");
+  return parsed.data;
 }
 
 /** EIN: 9 digits, saved encrypted; only the last 4 are kept in clear for display. */

@@ -113,12 +113,15 @@ export async function createLocalUser(email: string | null, demo: boolean): Prom
   });
 }
 
+/** A new account's workspace, until its owner names it (Settings; the first step on Home). */
+export const DEFAULT_WORKSPACE_NAME = "My business";
+
 /** The last step of every sign-in: records the Terms and Privacy agreement, makes sure there's a workspace, starts the session. */
 export async function finishSignIn(userId: string, { demo, authAt }: { demo: boolean; authAt?: number }) {
   await asUser(userId, async (tx) => {
     await tx.query("insert into app.consents (user_id, item, policy_version) values ($1, 'terms_privacy', $2)", [userId, TERMS_VERSION]);
     const [has] = await tx.query("select 1 from app.members where user_id = $1", [userId]);
-    if (!has) await tx.query("select app.create_workspace('My business')");
+    if (!has) await tx.query("select app.create_workspace($1)", [DEFAULT_WORKSPACE_NAME]);
   });
   await startSession({ userId, demo, authAt });
 }

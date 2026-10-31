@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { makePassport, type PassportFormState } from "./actions";
@@ -46,7 +47,17 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
       <fieldset>
         <legend className="label">Documents to include</legend>
         {docs.length === 0 ? (
-          <p className="text-sm text-ink-3">Add or make a document first.</p>
+          <p className="text-sm text-ink-3">
+            Nothing to share yet.{" "}
+            <Link href="/app/documents/new" className="underline">
+              Add a document
+            </Link>{" "}
+            or{" "}
+            <Link href="/app/make" className="underline">
+              make one
+            </Link>{" "}
+            first.
+          </p>
         ) : (
           <ul className="mt-1 grid gap-2">
             {docs.map((d) => (

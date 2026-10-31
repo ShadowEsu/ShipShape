@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Notice, PageHeader } from "@/components/app-ui";
 import { aiEnabled } from "@/lib/server/ai";
 import { requireWorkspace } from "@/lib/server/session";
@@ -19,7 +20,17 @@ export default async function AskPage() {
       {aiEnabled() ? (
         <AskForm />
       ) : (
-        <Notice tone="info">Reading requests with AI is switched off right now. Everything else in ShipShape works as usual.</Notice>
+        <Notice tone="info">
+          Reading requests with AI is switched off right now. You can still check the request against{" "}
+          <Link href="/app/documents" className="underline">
+            your documents
+          </Link>{" "}
+          yourself and send what they asked for with a{" "}
+          <Link href="/app/passport" className="underline">
+            passport link
+          </Link>
+          .
+        </Notice>
       )}
     </div>
   );

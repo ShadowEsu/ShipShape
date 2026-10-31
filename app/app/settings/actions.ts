@@ -1,11 +1,30 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { deleteAccount } from "@/lib/server/account";
 import { openPortal, startCheckout } from "@/lib/server/billing";
 import { UserError } from "@/lib/server/errors";
-import { NeedsRecentSignIn } from "@/lib/server/profile";
+import { NeedsRecentSignIn, renameWorkspace } from "@/lib/server/profile";
 import { endSession, requireWorkspace } from "@/lib/server/session";
+
+export interface RenameState {
+  error?: string;
+  saved?: boolean;
+}
+
+export async function renameMyWorkspace(_prev: RenameState, data: FormData): Promise<RenameState> {
+  const ctx = await requireWorkspace();
+  try {
+    await renameWorkspace(ctx, data.get("name"));
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    throw e;
+  }
+  // The name shows in the header of every app page.
+  revalidatePath("/app", "layout");
+  return { saved: true };
+}
 
 export interface DeleteState {
   error?: string;

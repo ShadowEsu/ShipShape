@@ -1,7 +1,37 @@
 "use client";
 
 import { useActionState } from "react";
-import { deleteMyAccount, type DeleteState } from "./actions";
+import { deleteMyAccount, renameMyWorkspace, type DeleteState, type RenameState } from "./actions";
+
+export function RenameWorkspaceForm({ name }: { name: string }) {
+  const [state, action, pending] = useActionState<RenameState, FormData>(renameMyWorkspace, {});
+  return (
+    <form action={action} className="space-y-3">
+      <div>
+        <label htmlFor="workspace-name" className="label">
+          Name
+        </label>
+        <input id="workspace-name" name="name" defaultValue={name} required maxLength={120} autoComplete="organization" className="input" aria-describedby="workspace-name-hint" />
+        <p id="workspace-name-hint" className="mt-1 text-xs text-ink-3">
+          People you share with see this name on your passport links, signature requests and upload links.
+        </p>
+      </div>
+      {state.error && (
+        <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+          {state.error}
+        </p>
+      )}
+      {state.saved && (
+        <p role="status" className="text-sm text-ok">
+          Saved.
+        </p>
+      )}
+      <button className="btn" disabled={pending}>
+        {pending ? "Saving…" : "Save name"}
+      </button>
+    </form>
+  );
+}
 
 export function DeleteAccountForm() {
   const [state, action, pending] = useActionState<DeleteState, FormData>(deleteMyAccount, {});

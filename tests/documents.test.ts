@@ -9,7 +9,8 @@ import { UserError } from "@/lib/server/errors";
 import { checkUpload } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
 import { GateClosed } from "@/lib/server/flags";
-import { factsForFill, NeedsRecentSignIn, revealEin, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
+import { createPassport, openPassport } from "@/lib/server/passport";
+import { factsForFill, NeedsRecentSignIn, renameWorkspace, revealEin, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { templateById } from "@/lib/templates/catalog";
@@ -260,5 +261,41 @@ describe("business facts", () => {
     const theirs = await factsForFill({ ...other, orgId: real.orgId });
     expect(theirs.values.legal_name).toBe("");
     expect(theirs.ein).toBeNull();
+  });
+});
+
+describe("workspace name", () => {
+  const renames = async (orgId: string) =>
+    db.root((tx) => tx.query<{ actor: string }>("select actor from app.audit_log where org_id = $1 and action = 'workspace.renamed'", [orgId]));
+
+  it("is what people opening a passport link see; an owner renames it and the rename is in the history", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await workspace("rename@example.com", "real");
+    const docId = await uploadDocument(ctx, { title: "W-9", kind: "w9" }, PDF);
+    const { id, token } = await createPassport(ctx, { label: "For Northwind", days: 7, documentIds: [docId] });
+    await renameWorkspace(ctx, "  Harbor Supply Co  ");
+    expect((await openPassport(id, token, "203.0.113.9"))?.orgName).toBe("Harbor Supply Co");
+    expect(await renames(ctx.orgId)).toEqual([{ actor: ctx.userId }]);
+    await renameWorkspace(ctx, "Harbor Supply Co"); // the same name again isn't a change
+    expect(await renames(ctx.orgId)).toHaveLength(1);
+    const [chain] = await asUser(ctx.userId, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [ctx.orgId]));
+    expect(chain.broken).toBeNull();
+    vi.unstubAllEnvs();
+  });
+
+  it("can't be changed by a member, in a sample workspace, or to an empty, multi-line or overlong name", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await workspace("rename-owner@example.com", "real");
+    const memberId = await db.user("rename-member@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, memberId]));
+    await expect(renameWorkspace({ ...ctx, userId: memberId, role: "member" }, "Taken Over")).rejects.toBeInstanceOf(UserError);
+    await expect(renameWorkspace(sample, "Real Co")).rejects.toBeInstanceOf(GateClosed);
+    for (const bad of ["   ", "Harbor\nSupply", "x".repeat(121), 42]) {
+      await expect(renameWorkspace(ctx, bad)).rejects.toBeInstanceOf(UserError);
+    }
+    const names = await db.root((tx) => tx.query<{ name: string }>("select name from app.organizations where id = any($1)", [[ctx.orgId, sample.orgId]]));
+    expect(names.map((n) => n.name).sort()).toEqual(["Real", "Sample"]);
+    expect(await renames(ctx.orgId)).toEqual([]);
+    vi.unstubAllEnvs();
   });
 });

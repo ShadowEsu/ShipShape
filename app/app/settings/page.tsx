@@ -4,7 +4,7 @@ import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
 import { requireWorkspace } from "@/lib/server/session";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
-import { DeleteAccountForm } from "./forms";
+import { DeleteAccountForm, RenameWorkspaceForm } from "./forms";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -26,11 +26,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <div className="max-w-2xl space-y-6">
       <PageHeader eyebrow="Settings" title="Account and workspace" />
 
-      <section className="card space-y-2">
+      <section id="workspace" className="card space-y-3">
         <h2 className="font-semibold">Workspace</h2>
+        {!ctx.demo && ctx.role !== "member" && <RenameWorkspaceForm name={ctx.name} />}
         <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
-          <dt className="text-ink-2">Name</dt>
-          <dd>{ctx.name}</dd>
+          {(ctx.demo || ctx.role === "member") && (
+            <>
+              <dt className="text-ink-2">Name</dt>
+              <dd>{ctx.name}</dd>
+            </>
+          )}
           <dt className="text-ink-2">Your role</dt>
           <dd>{ROLE[ctx.role]}</dd>
           <dt className="text-ink-2">Kind</dt>

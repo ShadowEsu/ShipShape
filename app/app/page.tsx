@@ -3,7 +3,7 @@ import { ValidityChip } from "@/components/app-ui";
 import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
 import { listPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
-import { requireWorkspace } from "@/lib/server/session";
+import { DEFAULT_WORKSPACE_NAME, requireWorkspace } from "@/lib/server/session";
 
 const TASKS = [
   { href: "/app/make/irs-w9", title: "Send a W-9", body: "Filled from your business facts in a minute." },
@@ -19,6 +19,12 @@ export default async function AppHome() {
 
   // First-run checklist, worked out from what's actually in the workspace.
   const setup = [
+    {
+      done: ctx.name !== DEFAULT_WORKSPACE_NAME || ctx.role === "member",
+      href: "/app/settings#workspace",
+      title: "Name your workspace",
+      body: "People you share with see this name on your links.",
+    },
     { done: Object.keys(profile.confirmed).length > 0, href: "/app/facts", title: "Confirm your business facts", body: "Name, address, EIN: typed once, used everywhere." },
     { done: docs.length > 0, href: "/app/documents/new", title: "Add a document you already have", body: "A certificate, license or signed agreement." },
     { done: docs.some((d) => d.template_id === "irs-w9"), href: "/app/make/irs-w9", title: "Make a W-9", body: "The official IRS form, filled from your facts." },
@@ -86,9 +92,11 @@ export default async function AppHome() {
       <section className="space-y-3">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="font-serif text-2xl font-semibold">Needs attention</h2>
-          <p className="text-sm text-ink-2">
-            {current} of {docs.length} documents current
-          </p>
+          {docs.length > 0 && (
+            <p className="text-sm text-ink-2">
+              {current} of {docs.length} documents current
+            </p>
+          )}
         </div>
         {attention.length === 0 ? (
           <p className="card text-sm text-ink-2">Nothing has expired or expires in the next 30 days.</p>
