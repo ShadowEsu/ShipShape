@@ -10,6 +10,7 @@ const MESSAGES: Record<string, string> = {
   needs_consent: "Tick the box to agree to sign electronically.",
   needs_name: "Type your name as your signature.",
   unsupported: "This file can't be signed here (it may be password-protected). Ask the sender for another copy.",
+  too_large: "The signed copy would be over 10 MB, which ShipShape can't store. Ask the sender for a smaller copy.",
   too_many: "You've asked for the most codes this request allows. Ask the sender for a new signing link.",
   invalid: "This signing link isn't available any more.",
 };

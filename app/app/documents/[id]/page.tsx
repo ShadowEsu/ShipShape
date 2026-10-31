@@ -84,9 +84,12 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             )}
             {latest && (
               <div className="mt-6 flex flex-wrap gap-2">
-                <a href={`/app/documents/${doc.id}/file?v=${latest.version}&mode=view`} target="_blank" rel="noopener" className="btn">
-                  Open
-                </a>
+                {/* Only PDFs ShipShape made open in the browser; uploads and signed copies download. */}
+                {(latest.origin === "filled" || latest.origin === "sample") && (
+                  <a href={`/app/documents/${doc.id}/file?v=${latest.version}&mode=view`} target="_blank" rel="noopener" className="btn">
+                    Open
+                  </a>
+                )}
                 <a href={`/app/documents/${doc.id}/file?v=${latest.version}&mode=download`} className="btn-ghost">
                   Download
                 </a>

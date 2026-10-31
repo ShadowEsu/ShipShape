@@ -24,8 +24,12 @@ const MUTED = rgb(0.4, 0.4, 0.4);
 
 // Characters the standard PDF fonts can draw (WinAnsi). Inputs outside this set are refused with a
 // clear message rather than silently dropped.
-const PRINTABLE = /^[\x20-\x7E\u00A0-\u00FF\u2018\u2019\u201C\u201D\u2013\u2014\u2022\u2026\u20AC\n]*$/;
+const PRINTABLE_SET = String.raw`\x20-\x7E\u00A0-\u00FF\u2018\u2019\u201C\u201D\u2013\u2014\u2022\u2026\u20AC\n`;
+const PRINTABLE = new RegExp(`^[${PRINTABLE_SET}]*$`, "u");
+const UNPRINTABLE = new RegExp(`[^${PRINTABLE_SET}]`, "gu");
 export const isPrintable = (s: string) => PRINTABLE.test(s);
+/** For text that must be drawn whatever it holds (a certificate row): each character the fonts can't draw becomes "?". */
+export const printableOnly = (s: string) => s.replace(UNPRINTABLE, "?");
 
 /** Parses the inline markdown used in the Common Paper source: **bold**, [links](…), <span> tags. */
 export function inlineRuns(md: string): Run[] {

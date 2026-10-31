@@ -1,11 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PDFDocument } from "pdf-lib";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { getDocument, listDocuments } from "@/lib/server/documents";
+import { downloadUrl, getDocument, insertDocument, listDocuments } from "@/lib/server/documents";
 import { completeSigning, openSigning, requestSignature, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
 import { GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
@@ -161,5 +161,51 @@ describe("signing", () => {
     ).resolves.toEqual([{ esign_complete: "bad_code" }]); // the hash above isn't the keyed one, so it never reaches the insert
     const [row] = await db.root((tx) => tx.query<{ n: number }>("select count(*)::int as n from app.document_versions where org_id = $1 and origin = 'signed'", [b.orgId]));
     expect(row.n).toBe(0);
+  });
+
+  it("signs an upload with scripts and an unprintable title into a copy that runs nothing and always downloads (Security F3, F4)", async () => {
+    // An upload that runs JavaScript on open, on page view and from a link, and chains a script after a web link.
+    const hostile = await PDFDocument.create();
+    const page = hostile.addPage([612, 792]);
+    const ctx = hostile.context;
+    const js = ctx.register(ctx.obj({ Type: "Action", S: "JavaScript", JS: PDFString.of("app.alert('hi')") }));
+    hostile.catalog.set(PDFName.of("OpenAction"), js);
+    hostile.catalog.set(PDFName.of("Names"), ctx.obj({ JavaScript: ctx.obj({ Names: [PDFString.of("x"), js] }) }));
+    page.node.set(PDFName.of("AA"), ctx.obj({ O: js }));
+    const jsLink = ctx.register(ctx.obj({ Type: "Annot", Subtype: "Link", Rect: [0, 0, 10, 10], A: js }));
+    const webLink = ctx.register(
+      ctx.obj({ Type: "Annot", Subtype: "Link", Rect: [20, 0, 30, 10], A: ctx.obj({ S: "URI", URI: PDFString.of("https://example.com/terms"), Next: js }) }),
+    );
+    page.node.set(PDFName.of("Annots"), ctx.obj([jsLink, webLink]));
+    const bytes = await hostile.save();
+    const documentId = await asUser(a.userId, (tx) =>
+      insertDocument(tx, a, { title: "Lease → 2027 🏠", kind: "agreement" }, { bytes, mime: "application/pdf" }, "upload"),
+    );
+
+    const { id, token } = await requestSignature(a, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    await sendSigningCode(id, token);
+    expect(await completeSigning(id, token, { code: await lastCode(a.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
+
+    const [signed] = (await getDocument(a, documentId))!.versions;
+    const copy = await PDFDocument.load(await blobStore().get(`${a.orgId}/${documentId}/v${signed.version}.pdf`));
+    expect(copy.catalog.get(PDFName.of("OpenAction"))).toBeUndefined();
+    expect(copy.catalog.get(PDFName.of("Names"))).toBeUndefined();
+    const kinds: string[] = [];
+    for (const [, obj] of copy.context.enumerateIndirectObjects()) {
+      if (!(obj instanceof PDFDict)) continue;
+      expect(obj.get(PDFName.of("JS"))).toBeUndefined();
+      expect(obj.get(PDFName.of("AA"))).toBeUndefined();
+      const action = obj.lookupMaybe(PDFName.of("A"), PDFDict);
+      if (action) {
+        kinds.push(action.lookup(PDFName.of("S"), PDFName).asString());
+        expect(action.get(PDFName.of("Next"))).toBeUndefined();
+      }
+    }
+    expect(kinds).toEqual(["/URI"]); // the web link stays, the script link lost its action
+    const annots = copy.getPage(0).node.lookup(PDFName.of("Annots"), PDFArray);
+    expect(annots.size()).toBe(2);
+
+    const file = verifyFileParams(new URL(await downloadUrl(a, documentId, signed.version, "view"), "http://x").searchParams);
+    expect(file?.inline).toBe(false);
   });
 });

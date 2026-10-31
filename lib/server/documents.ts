@@ -262,7 +262,8 @@ export function downloadName(title: string, version: number, mime: AllowedMime):
 
 /**
  * A 5-minute link to one version, minted only after the database (under RLS) confirmed this
- * person may see it. Files the person uploaded always download; PDFs ShipShape made may open inline.
+ * person may see it. Only PDFs ShipShape made from its own templates (filled, sample) may open inline;
+ * uploads and signed copies, which carry pages from an upload, always download (Security F3).
  */
 export async function downloadUrl(ctx: Ctx, id: string, version: number, mode: "view" | "download"): Promise<string> {
   const [row] = await asUser(ctx.userId, async (tx) => {
@@ -274,6 +275,6 @@ export async function downloadUrl(ctx: Ctx, id: string, version: number, mode: "
     return rows;
   });
   if (!row) throw new UserError("Document not found.");
-  const inline = mode === "view" && row.origin !== "upload";
+  const inline = mode === "view" && (row.origin === "filled" || row.origin === "sample");
   return blobStore().signedUrl(row.storage_path, { filename: downloadName(row.title, version, row.mime), inline });
 }

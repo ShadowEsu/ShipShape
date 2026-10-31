@@ -1,14 +1,14 @@
 import "server-only";
 import { randomInt } from "node:crypto";
-import { PDFDocument } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, type PDFPage } from "pdf-lib";
 import { z } from "zod";
 import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
-import { composePdf, isPrintable } from "@/lib/pdf/compose";
+import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser } from "./db";
 import { downloadName } from "./documents";
 import { UserError } from "./errors";
-import type { AllowedMime } from "./files";
+import { MAX_UPLOAD_BYTES, type AllowedMime } from "./files";
 import { GateClosed } from "./flags";
 import { visitorId } from "./passport";
 import { assertWithinPlan } from "./plans";
@@ -177,12 +177,45 @@ export async function sendSigningCode(id: string, token: string): Promise<"ok" |
   return row.result;
 }
 
-export type SignResult = "ok" | "bad_code" | "locked" | "expired_code" | "invalid" | "needs_consent" | "needs_name" | "unsupported";
+export type SignResult = "ok" | "bad_code" | "locked" | "expired_code" | "invalid" | "needs_consent" | "needs_name" | "unsupported" | "too_large";
 
-/** The signed copy: the original pages (or the image on a page), then a signature certificate page. */
+// Link actions a signed copy may keep: jumps within the document and plain web links. Anything else
+// (JavaScript, launching files, submitting or importing form data, other documents) is removed.
+const SAFE_ACTIONS = new Set([PDFName.of("GoTo"), PDFName.of("URI")]);
+
+/**
+ * Removes what could run when the copy is opened: the page's own actions, and every annotation's
+ * actions except safe links (a safe link's chained /Next actions go too).
+ */
+function makeInert(page: PDFPage) {
+  page.node.delete(PDFName.of("AA"));
+  const annots = page.node.Annots();
+  if (!annots) return;
+  for (let i = 0; i < annots.size(); i++) {
+    const annot = annots.lookupMaybe(i, PDFDict);
+    if (!annot) continue;
+    annot.delete(PDFName.of("AA"));
+    const action = annot.lookupMaybe(PDFName.of("A"), PDFDict);
+    if (!action) continue;
+    const kind = action.lookupMaybe(PDFName.of("S"), PDFName);
+    if (kind && SAFE_ACTIONS.has(kind)) action.delete(PDFName.of("Next"));
+    else annot.delete(PDFName.of("A"));
+  }
+}
+
+/**
+ * The signed copy: the original's pages (or the image on a page), then a signature certificate page.
+ * Only pages are copied into a new document, so the upload's document-level parts (open actions,
+ * named scripts, form logic, attachments) never reach the copy, and the pages lose their actions
+ * before the copy, so no script is even carried along unreferenced (Security F3).
+ */
 async function signedCopy(original: Uint8Array, mime: AllowedMime, rows: [string, string][]): Promise<Uint8Array> {
-  const out = mime === "application/pdf" ? await PDFDocument.load(original, { updateMetadata: false }) : await PDFDocument.create();
-  if (mime !== "application/pdf") {
+  const out = await PDFDocument.create();
+  if (mime === "application/pdf") {
+    const source = await PDFDocument.load(original, { updateMetadata: false });
+    for (const page of source.getPages()) makeInert(page);
+    for (const page of await out.copyPages(source, source.getPageIndices())) out.addPage(page);
+  } else {
     const img = mime === "image/png" ? await out.embedPng(original) : await out.embedJpg(original);
     const scale = Math.min(540 / img.width, 720 / img.height, 1);
     const page = out.addPage([612, 792]);
@@ -194,7 +227,8 @@ async function signedCopy(original: Uint8Array, mime: AllowedMime, rows: [string
         { type: "title", text: "Signature certificate" },
         { type: "para", muted: true, runs: [{ text: "Added by ShipShape to the signed copy. ShipShape is document software, not a law firm; it records how this document was signed and doesn't vouch for what it says." }] },
         { type: "space", height: 8 },
-        { type: "rows", rows },
+        // Names and titles can hold characters the certificate's font can't draw (Security F4).
+        { type: "rows", rows: rows.map(([k, v]) => [k, printableOnly(v)]) },
         { type: "space", height: 12 },
         { type: "heading", text: "What the signer agreed to" },
         { type: "para", runs: [{ text: ESIGN_CONSENT_TEXT }] },
@@ -241,6 +275,8 @@ export async function completeSigning(
   } catch {
     return "unsupported"; // e.g. a password-protected PDF
   }
+  // Every stored version is at most 10 MiB; a signed copy over that is refused up front, not by the database.
+  if (bytes.length > MAX_UPLOAD_BYTES) return "too_large";
   const path = `${r.org_id}/${r.document_id}/v${r.next_version}.pdf`;
   return asAnon(async (tx) => {
     const [row] = await tx.query<{ result: SignResult }>("select app.esign_complete($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) as result", [
