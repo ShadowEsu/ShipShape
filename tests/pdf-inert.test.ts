@@ -431,6 +431,15 @@ describe("the file a signer reviews (Security R2)", () => {
         expect(await content([bits, "q Q"])).toBe(`${bits} q Q`);
         await refusedSplit(["q BI /W 4 /H 1 /BPC 8 /CS /G /F /AHx ID abc> EI Q", "q Q"]); // filtered: the 4 bytes decode to 2
         await refusedSplit(["BT /F1 18 Tf 72 700 Td <4G> Tj ET", "Q"]); // not a hex string
+        // pdf.js ignores the size and ends the data at an EI followed by text (R9-3, S12). Viewers decode
+        // #46 to F, a filter this reader can't see (R9-4; S14, with a binary byte after the EI so only the
+        // # refusal can catch it). Both refused.
+        const padded = (s: string, n: number) => s + " ".repeat(n - s.length);
+        await refusedSplit([`q 200 0 0 100 72 300 cm BI /W 64 /H 1 /BPC 8 /CS /G ID ${padded("\x00EI Q BT /F1 18 Tf 72 400 Td (LATE FEE USD", 64)} EI Q BT ET`, "Q 1000) Tj ET"]);
+        await refusedSplit([`q 200 0 0 100 72 300 cm BI /W 48 /H 1 /BPC 8 /CS /G /#46 /AHx ID ${padded("00> EI Q\x01 BT /F1 18 Tf 72 400 Td (LATE FEE USD", 48)} EI Q BT ET`, "Q 1000) Tj ET"]);
+        // An EI that binary follows doesn't end the data for pdf.js either: still read to its size.
+        const binaryAfterEi = `q BI /W 8 /H 1 /BPC 8 /CS /G ID ${bytes([0x45, 0x49, 0x20, 0x01, 0x02, 0x03, 0x04, 0x05])} EI Q`;
+        expect(await content([binaryAfterEi, "q Q"])).toBe(`${binaryAfterEi} q Q`);
       });
 
       it("inline image data isn't read as syntax: a ( in the pixels doesn't open a string", async () => {

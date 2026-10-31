@@ -467,21 +467,41 @@ function operatorAt(b: Uint8Array, i: number, op: string): boolean {
  * The index of the I in the EI that ends inline image data whose BI is at `imageAt` and ID at
  * `idAt`, or -1 if the data runs to the end or its length can't be known (Security R8-1). Viewers
  * read the data by its size (poppler) or reject an EI followed by binary (pdf.js), so an " EI "
- * among the pixels doesn't end it: only an unfiltered image of known size is read, and white space
- * then EI must follow exactly there.
+ * among the pixels doesn't end it: only an unfiltered image of known size is read, white space
+ * then EI must follow exactly there, and no EI inside may look like an end to pdf.js (R9-3).
  */
 function inlineImageEnd(b: Uint8Array, imageAt: number, idAt: number): number {
   if (imageAt < 0 || idAt - imageAt > 1024 || !WHITE.has(b[idAt + 2])) return -1;
   const size = inlineImageSize(String.fromCharCode(...b.subarray(imageAt + 2, idAt)));
   if (size === null) return -1;
-  let at = idAt + 3 + size; // ID, one white-space byte, the data
+  const start = idAt + 3; // ID, one white-space byte, the data
+  if (pdfjsEndsEarly(b, start, start + size)) return -1;
+  let at = start + size;
   if (at >= b.length || !WHITE.has(b[at])) return -1;
   while (at < b.length && WHITE.has(b[at])) at++;
   return operatorAt(b, at, "EI") ? at + 1 : -1;
 }
 
+/**
+ * True if pdf.js would end the unfiltered inline data in b[start, end) early (Security R9-3): it
+ * ignores the size and stops at the first EI followed by white space and 15 bytes it counts as text
+ * (pdf.js findDefaultInlineStreamEnd), then reads the rest of the pixels as content.
+ */
+function pdfjsEndsEarly(b: Uint8Array, start: number, end: number): boolean {
+  const text = (k: number) => b[k] === 10 || b[k] === 13 || (b[k] >= 32 && b[k] <= 127) || (b[k] === 0 && b[k + 1] !== 0);
+  for (let j = start; j + 1 < end && j + 2 < b.length; j++) {
+    if (b[j] !== 69 || b[j + 1] !== 73 || (b[j + 2] !== 32 && b[j + 2] !== 10 && b[j + 2] !== 13)) continue;
+    let allText = true;
+    for (let k = j + 3; k < Math.min(j + 18, b.length); k++) if (!text(k)) allText = false;
+    if (allText) return true;
+  }
+  return false;
+}
+
 /** Bytes of image data an inline image dictionary describes, if it is unfiltered and plainly sized; null otherwise. */
 function inlineImageSize(dict: string): number | null {
+  // Viewers decode #xx in names (/#46 is /F), which this reader doesn't; no real producer writes one here (R9-4).
+  if (dict.includes("#")) return null;
   const tokens = dict.match(/\/[^\s/[\]<>(){}%]*|[[\]<>(){}%]|[^\s/[\]<>(){}%]+/g) ?? [];
   const entries = new Map<string, string>();
   for (let k = 0; k < tokens.length; k += 2) {
