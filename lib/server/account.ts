@@ -255,11 +255,30 @@ async function finishDeletion(userId: string, handled: string[]): Promise<void> 
     if (pgErrorCode(e) !== BILLING_NOT_HANDLED) throw e;
     rows = await deleteRows(await cancelSubscriptionsBeforeDeletion(userId));
   }
-  // After the commit: if this fails the rows are already gone, so the objects are unreachable
-  // orphans in private storage; the count (never the paths) goes to the log for cleanup.
+  // After the commit. The deletion queued these paths (app.storage_cleanup, 0028), so if storage
+  // fails now they stay queued and the daily run retries them (Security N-091a); only the count is
+  // logged.
   try {
-    await blobStore().remove(rows.map((r) => r.storage_path));
+    await removeQueued(rows.map((r) => r.storage_path));
   } catch {
-    console.error(`account deletion: ${rows.length} stored files could not be removed`);
+    console.error(`account deletion: ${rows.length} stored files could not be removed yet; queued for the daily run`);
   }
+}
+
+/** Removes stored files whose rows are gone, then their queue entries. Removal is idempotent, so a retry is safe. */
+async function removeQueued(paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  await blobStore().remove(paths);
+  await asService((tx) => tx.query("delete from app.storage_cleanup where path = any($1::text[])", [paths]));
+}
+
+/**
+ * The daily run: removes stored files an account deletion couldn't remove (Security N-091a), up to
+ * 1,000 a day. Returns how many; a storage failure throws, so the run reports it (error name only).
+ */
+export async function retryStorageCleanup(): Promise<number> {
+  const queued = await asService((tx) => tx.query<{ path: string }>("select path from app.storage_cleanup order by queued_at, path limit 1000"));
+  const paths = queued.map((q) => q.path);
+  await removeQueued(paths);
+  return paths.length;
 }

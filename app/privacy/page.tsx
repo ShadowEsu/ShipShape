@@ -105,9 +105,9 @@ export default function PrivacyPage() {
         <li>
           <strong>Delete:</strong> Settings → Delete your account removes, straight away, every workspace you own alone with its
           documents, files, links and history, your membership elsewhere, and your sign-in. A running subscription is cancelled
-          first. If a step can&apos;t finish straight away, we keep a note of your account&apos;s ID and when you asked, and finish
-          the deletion by ourselves within two days; the note goes with it. Copies other people already downloaded stay with them, and
-          Stripe keeps payment records as the law requires.
+          first. If a step can&apos;t finish straight away, we keep a note of your account&apos;s ID and when you asked (for stored
+          files, a list of the files still to remove, which names no one), and finish the deletion by ourselves within two days; the
+          note goes with it. Copies other people already downloaded stay with them, and Stripe keeps payment records as the law requires.
         </li>
         <li>
           Deleted data can remain in our providers&apos; backups until those backups expire; the exact period will be stated here

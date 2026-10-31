@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { deleteAccount, exportWorkspace } from "@/lib/server/account";
+import { deleteAccount, exportWorkspace, retryStorageCleanup } from "@/lib/server/account";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
@@ -29,6 +29,10 @@ async function sampleWorkspace(): Promise<Ctx> {
 
 const count = async (table: string, orgId: string) =>
   (await db.root((tx) => tx.query<{ n: number }>(`select count(*)::int as n from app.${table} where org_id = $1`, [orgId])))[0].n;
+
+/** Stored files queued for removal (0028) under one workspace's prefix. */
+const queued = async (orgId: string) =>
+  (await db.root((tx) => tx.query<{ path: string }>("select path from app.storage_cleanup where path like $1 order by path", [`${orgId}/%`]))).map((r) => r.path);
 
 beforeAll(async () => {
   db = await freshDb();
@@ -113,6 +117,7 @@ describe("account deletion", () => {
     }
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [me.orgId]))).toEqual([]);
     expect(paths.some((p) => existsSync(path.join(blobDir, p.storage_path)))).toBe(false);
+    expect(await queued(me.orgId)).toEqual([]);
     expect(await openPassport(passport.id, passport.token, "198.51.100.9")).toBeNull();
     expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [me.userId]))).toEqual([]);
     expect(await db.root((tx) => tx.query("select 1 from app.consents where user_id = $1", [me.userId]))).toEqual([]);
@@ -142,7 +147,7 @@ describe("account deletion", () => {
     expect(await count("documents", ctx.orgId)).toBeGreaterThan(0);
   });
 
-  it("finishes even if storage can't remove the files, and logs one line without any path", async () => {
+  it("if storage can't remove the files, the deletion still finishes and the next daily run removes them (Security N-091a)", async () => {
     const me = await sampleWorkspace();
     const local = localBlobStore(blobDir);
     setBlobStoreForTests({ ...local, remove: () => Promise.reject(new Error("S3 unavailable")) });
@@ -158,5 +163,17 @@ describe("account deletion", () => {
     expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [me.userId]))).toEqual([]);
     expect(logged).toHaveLength(1);
     expect(logged[0]).not.toContain(me.orgId); // every storage path starts with the workspace id
+
+    // Every file the deletion orphaned is queued (none lost), and still in storage.
+    const left = await queued(me.orgId);
+    expect(left.length).toBeGreaterThan(0);
+    expect(left.every((p) => existsSync(path.join(blobDir, p)))).toBe(true);
+    const onDisk = (await readdir(path.join(blobDir, me.orgId), { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length;
+    expect(left).toHaveLength(onDisk);
+
+    // The daily run, with storage working again, removes them and empties the queue.
+    expect(await retryStorageCleanup()).toBeGreaterThanOrEqual(left.length);
+    expect(left.some((p) => existsSync(path.join(blobDir, p)))).toBe(false);
+    expect(await queued(me.orgId)).toEqual([]);
   });
 });

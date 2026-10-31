@@ -129,4 +129,23 @@ describe("reminder job endpoint", () => {
     expect(await ok.json()).toMatchObject({ ok: true });
     vi.unstubAllEnvs();
   });
+
+  it("reports a failed run while files a deletion left can't be removed, and clears them once they can (Security N-091a)", async () => {
+    vi.stubEnv("CRON_SECRET", "s".repeat(40));
+    const call = () => cron(new Request("http://x/api/cron/reminders", { headers: { authorization: `Bearer ${"s".repeat(40)}` } }));
+    const orphan = `${crypto.randomUUID()}/${crypto.randomUUID()}/v1.pdf`;
+    await db.root((tx) => tx.query("insert into app.storage_cleanup (path) values ($1)", [orphan]));
+    const local = localBlobStore(blobDir);
+    setBlobStoreForTests({ ...local, remove: () => Promise.reject(new Error("AccessDenied")) });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect((await call()).status).toBe(500);
+    } finally {
+      spy.mockRestore();
+      setBlobStoreForTests(local);
+    }
+    expect((await call()).status).toBe(200);
+    expect(await db.root((tx) => tx.query("select 1 from app.storage_cleanup where path = $1", [orphan]))).toEqual([]);
+    vi.unstubAllEnvs();
+  });
 });
