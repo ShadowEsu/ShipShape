@@ -1,0 +1,132 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { SiteFooter, SiteHeader, StatusLabel } from "@/components/site";
+import { PLANS } from "@/lib/plans";
+
+export const metadata: Metadata = { title: "Pricing", description: "ShipShape is free for up to 10 documents. Pro is $15 a month." };
+
+const { free, pro } = PLANS;
+
+const ROWS: [feature: string, free: string, pro: string][] = [
+  ["Active documents", `${free.documents}`, "No limit"],
+  ["Passport links open at once", `${free.passports}`, "No limit"],
+  ["Versions, history, search", "✓", "✓"],
+  ["W-9 and NDA from your business facts", "✓", "✓"],
+  ["Deadlines and calendar file", "✓", "✓"],
+  ["Email reminders 90, 30 and 7 days ahead", "—", "✓"],
+  ["Signature requests", "—", "✓"],
+  ["Export and account deletion", "✓", "✓"],
+];
+
+const BILLING: [q: string, a: string][] = [
+  ["Can I cancel any time?", "Yes, from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free."],
+  ["What happens to my documents if I go back to Free?", "Nothing is deleted. You just can't add more than Free allows until you're under its limits."],
+  ["What if a payment fails?", "Pro stays on for 7 days after the paid period while the payment is retried, then the workspace moves to Free."],
+  ["Refunds?", "A full refund, or a disputed charge, ends Pro straight away. Our refund policy is being finalised with the rest of the terms."],
+  ["Am I charged now?", "No. During the preview, payments run in Stripe's test mode and no real money moves."],
+];
+
+export default function PricingPage() {
+  return (
+    <>
+      <SiteHeader />
+      <main className="mx-auto max-w-5xl px-5 pt-10 pb-20">
+        <p className="eyebrow">Pricing</p>
+        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Free to start. Pro when you need more.</h1>
+        <p className="mt-3 max-w-2xl text-ink-2">Prices in US dollars. Payments are in test mode during the preview: no real charges.</p>
+
+        <div className="mt-10 grid gap-4 md:grid-cols-3">
+          <section className="card flex flex-col gap-4">
+            <h2 className="text-lg font-semibold">{free.name}</h2>
+            <p>
+              <span className="font-serif text-4xl font-semibold">$0</span>
+            </p>
+            <p className="text-sm text-ink-2">
+              For getting your papers in order: {free.documents} active documents and {free.passports} passport link open at a time.
+            </p>
+            <Link href="/signin" className="btn-ghost mt-auto">
+              Try the sample
+            </Link>
+          </section>
+          <section className="card flex flex-col gap-4 border-ink">
+            <h2 className="text-lg font-semibold">{pro.name}</h2>
+            <p>
+              <span className="font-serif text-4xl font-semibold">${pro.price}</span>
+              <span className="text-ink-2"> / month</span>
+            </p>
+            <p className="text-sm text-ink-2">No limits on documents or links, plus email reminders and signature requests.</p>
+            <Link href="/signin" className="btn-accent mt-auto">
+              Try the sample
+            </Link>
+            <p className="text-xs text-ink-3">Sample workspaces include every Pro feature.</p>
+          </section>
+          <section className="card flex flex-col gap-4 bg-canvas">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-lg font-semibold">Collect</h2>
+              <StatusLabel status="Planned" />
+            </div>
+            <p className="text-sm text-ink-2">
+              For businesses that gather documents from many vendors or subcontractors: request packets and see who&apos;s current. Not
+              built yet, so not for sale.
+            </p>
+          </section>
+        </div>
+
+        <section className="mt-14">
+          <h2 className="font-serif text-2xl font-semibold">Compare</h2>
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-line bg-paper">
+            <table className="w-full min-w-[28rem] text-left text-sm">
+              <thead>
+                <tr className="border-b border-line">
+                  <th scope="col" className="px-4 py-3 font-medium text-ink-2">
+                    Feature
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-semibold">
+                    {free.name}
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-semibold">
+                    {pro.name}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {ROWS.map(([feature, f, p]) => (
+                  <tr key={feature}>
+                    <th scope="row" className="px-4 py-3 font-normal">
+                      {feature}
+                    </th>
+                    <td className="px-4 py-3">{f === "—" ? <span aria-label="Not included">—</span> : f}</td>
+                    <td className="px-4 py-3">{p}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-sm text-ink-3">
+            Email reminders and signing codes go out once ShipShape has an email provider; until then they appear inside the app.
+          </p>
+        </section>
+
+        <section className="mt-14 max-w-3xl">
+          <h2 className="font-serif text-2xl font-semibold">Billing questions</h2>
+          <dl className="mt-4 divide-y divide-line">
+            {BILLING.map(([q, a]) => (
+              <div key={q} className="py-4">
+                <dt className="font-medium">{q}</dt>
+                <dd className="mt-1 text-ink-2">{a}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-4 text-sm text-ink-2">
+            The full terms, including billing, are in the{" "}
+            <Link href="/terms" className="underline">
+              terms
+            </Link>
+            .
+          </p>
+        </section>
+      </main>
+      <SiteFooter />
+    </>
+  );
+}
