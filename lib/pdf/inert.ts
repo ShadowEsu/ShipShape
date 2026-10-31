@@ -49,6 +49,7 @@ export function makeInert(doc: PDFDocument): void {
  * logic never runs.
  */
 export function flattenAnnotations(doc: PDFDocument): void {
+  const read = contentReader();
   for (const page of doc.getPages()) {
     const annots = page.node.lookup(ANNOTS);
     if (!(annots instanceof PDFArray)) continue;
@@ -64,7 +65,7 @@ export function flattenAnnotations(doc: PDFDocument): void {
       } else if (subtype !== null && DRAWN.has(subtype)) drawn.push(annot);
     }
     if (drawn.length) {
-      isolateContent(page);
+      isolateContent(page, read);
       for (const annot of drawn) drawAppearance(page, annot);
     }
     if (links.length) page.node.set(ANNOTS, doc.context.obj(links));
@@ -173,6 +174,7 @@ const P = PDFName.of("P");
 const RECT = PDFName.of("Rect");
 const LINK = PDFName.of("Link");
 const CONTENTS = PDFName.of("Contents");
+const DECODE_PARMS = PDFName.of("DecodeParms");
 const EXTGSTATE = PDFName.of("ExtGState");
 const OCMD = PDFName.of("OCMD");
 const BORDER = PDFName.of("Border");
@@ -293,18 +295,23 @@ function plainLink(annot: PDFDict) {
  * Moves the page's own content into a form XObject drawn inside q…Q (Security R4-3), so whatever
  * graphics state it leaves open (an unclosed q with a clip or a shift) can't reach the annotations
  * drawn after it. Viewers draw annotations in a fresh state; this keeps that true once they are
- * page content. A content stream ShipShape can't decode makes the file unreadable for signing.
+ * page content. The streams are joined byte for byte, as viewers read them (R5-1). Content
+ * ShipShape can't read exactly as viewers do throws, which makes the file unreadable for signing.
  */
-function isolateContent(page: PDFPage) {
+function isolateContent(page: PDFPage, read: ContentReader) {
   const ctx = page.node.context;
   const contents = page.node.lookup(CONTENTS);
   const streams = contents instanceof PDFArray ? contents.asArray().map((r) => ctx.lookup(r)) : contents === undefined ? [] : [contents];
   const parts: Uint8Array[] = [];
   for (const s of streams) {
     if (!(s instanceof PDFRawStream)) throw new Error("page content isn't a stream ShipShape can read");
-    parts.push(decodePDFRawStream(s).decode(), NEWLINE);
+    const part = read.stream(s);
+    if (!part.length) continue;
+    const before = parts.at(-1);
+    if (before && !cleanBoundary(before, part)) throw new Error("page content splits a comment, string or token across streams");
+    parts.push(part);
   }
-  const bytes = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  const bytes = new Uint8Array(read.take(parts.reduce((n, p) => n + p.length, 0)));
   let at = 0;
   for (const p of parts) {
     bytes.set(p, at);
@@ -317,7 +324,77 @@ function isolateContent(page: PDFPage) {
   page.node.set(CONTENTS, ctx.obj([]));
   page.pushOperators(pushGraphicsState(), drawObject(name), popGraphicsState());
 }
-const NEWLINE = new Uint8Array([10]);
+
+/**
+ * The most page content one file may make ShipShape decode and rewrite (Security R5-2): a small
+ * upload can inflate to far more, or repeat one large stream on every page.
+ */
+const MAX_CONTENT_BYTES = 50 * 1024 * 1024;
+
+interface ContentReader {
+  /** A content stream's decoded bytes, decoded once per file however many pages share it. */
+  stream(s: PDFRawStream): Uint8Array;
+  /** Counts `bytes` of page content against the file's allowance; throws past it. */
+  take(bytes: number): number;
+}
+
+function contentReader(): ContentReader {
+  const decoded = new Map<PDFRawStream, Uint8Array>();
+  let left = MAX_CONTENT_BYTES;
+  const take = (bytes: number) => {
+    if (bytes > left) throw new Error("too much page content to rewrite");
+    left -= bytes;
+    return bytes;
+  };
+  return {
+    take,
+    stream(s) {
+      const known = decoded.get(s);
+      if (known) return known;
+      // pdf-lib ignores predictors and other decode parameters, so such content would come out wrong (R5-1).
+      if (s.dict.has(DECODE_PARMS)) throw new Error("page content uses decode parameters");
+      // Decoding stops one byte past the allowance, whatever the filters would expand to.
+      const out = decodePDFRawStream(s).getBytes(left + 1);
+      const bytes = new Uint8Array(out.buffer, out.byteOffset, take(out.length));
+      decoded.set(s, bytes);
+      return bytes;
+    },
+  };
+}
+
+/**
+ * Viewers join a page's content streams into one; the format only allows a split between tokens.
+ * A stream that ends inside a comment or a string, or a split through a token, reads differently
+ * from one viewer to the next (and differently once joined), so it's refused (Security R5-1).
+ */
+function cleanBoundary(before: Uint8Array, after: Uint8Array): boolean {
+  if (endsInside(before)) return false;
+  return !(regular(before[before.length - 1]) && regular(after[0]));
+}
+
+/** True if the content ends inside a comment or a literal string. */
+function endsInside(b: Uint8Array): boolean {
+  let depth = 0;
+  let comment = false;
+  for (let i = 0; i < b.length; i++) {
+    const c = b[i];
+    if (comment) comment = c !== 10 && c !== 13;
+    else if (depth > 0) {
+      if (c === 92) i++; // backslash: the next byte is escaped
+      else if (c === 40) depth++;
+      else if (c === 41) depth--;
+    } else if (c === 37) comment = true;
+    else if (c === 40) depth = 1;
+  }
+  return comment || depth > 0;
+}
+
+/** A byte that is neither white space nor a delimiter, so it belongs to the token beside it. */
+function regular(c: number): boolean {
+  return !WHITE_OR_DELIMITER.has(c);
+}
+// NUL, tab, line feed, form feed, carriage return, space, and ( ) < > [ ] { } / %.
+const WHITE_OR_DELIMITER = new Set([0, 9, 10, 12, 13, 32, 40, 41, 60, 62, 91, 93, 123, 125, 47, 37]);
 
 /** True if any object in the file is an optional-content membership dictionary (/Type /OCMD). */
 function hasOcmd(doc: PDFDocument): boolean {

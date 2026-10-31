@@ -41,7 +41,7 @@ npm run lint    # typecheck, plus a check that no SQL is built by string interpo
 MIGRATE_DATABASE_URL=postgres://<master>@<host>/shipshape DATABASE_CA_CERT="$(cat rds-ca.pem)" npm run migrate
 ```
 
-`scripts/migrate.ts` (Node 22.18 or later) runs `supabase/platform/plain-postgres.sql` once (the request roles, `auth.users`, `auth.uid()`), then each new migration in its own transaction as `shipshape_owner`, a role that can't log in and isn't a superuser. It ends by checking that `shipshape_app`, the only login the app uses, isn't a superuser, can't bypass row level security and owns nothing. The master credentials are for that run only; give `shipshape_app` its login separately. The certificate is always verified. Local databases and the tests are built by the same code (`lib/server/migrations.ts`).
+`scripts/migrate.ts` (Node 22.18 or later) runs `supabase/platform/plain-postgres.sql` once (the request roles, `auth.users`, `auth.uid()`), then each new migration in its own transaction as `shipshape_owner`, a role that can't log in and isn't a superuser. The master user needn't be a superuser (RDS's isn't). The run ends by checking that `shipshape_app`, the only login the app uses, isn't a superuser, can't bypass row level security and owns nothing (no table, function, schema or type), and that no other ShipShape role can log in; it also prints `password_encryption` and `rds.force_ssl`. The master credentials are for that run only; give `shipshape_app` its login separately. The certificate is always verified. Local databases and the tests are built by the same code (`lib/server/migrations.ts`).
 
 ## How it's built
 

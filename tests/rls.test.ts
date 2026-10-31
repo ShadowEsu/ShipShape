@@ -1,7 +1,9 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { asAnon, asService, asUser, createLocalDriver, type Tx } from "@/lib/server/db";
 import { rateLimited } from "@/lib/server/http";
+import { migrate, roleProblems, type MigrationStep } from "@/lib/server/migrations";
 import { freshDb, type TestDb } from "./support/db";
 
 /**
@@ -456,8 +458,41 @@ describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
       expect((await q<{ n: number }>("select count(*)::int as n from pg_tables where tableowner = 'shipshape_app'"))[0].n).toBe(0);
       expect(await q("select to_regnamespace('storage') as s")).toEqual([{ s: null }]);
       expect(await q("select * from app.storage_lockdown_problems()")).toEqual([]);
+
+      // npm run migrate's end-of-run check (Security MG-2, MG-3) passes here, and catches the app
+      // owning something other than a table, or another ShipShape role able to log in.
+      const root: MigrationStep = { exec: async (s) => void (await q(s)), query: (text) => q(text) };
+      expect(await roleProblems(root)).toEqual([]);
+      await root.exec("create function public.runs_as_app() returns int language sql security definer as 'select 1'");
+      await root.exec("alter function public.runs_as_app() owner to shipshape_app");
+      await root.exec("alter role anon login");
+      expect(await roleProblems(root)).toEqual(["shipshape_app owns 1 functions", "anon can log in"]);
     } finally {
       await plain.close();
+    }
+  });
+
+  it("a master user that isn't a superuser (RDS) sets the database up, and re-runs (Security MG-1)", async () => {
+    const pg = await PGlite.create();
+    try {
+      // Like RDS's master: can log in, create roles and databases, owns the database, no superuser.
+      await pg.exec(
+        "create role rds_master login createrole createdb; do $$ begin execute format('alter database %I owner to rds_master', current_database()); end $$; set session authorization rds_master",
+      );
+      const step = (t: Pick<PGlite, "exec" | "query">): MigrationStep => ({
+        exec: async (s) => void (await t.exec(s)),
+        query: async (text, params) => (await t.query<Record<string, unknown>>(text, params)).rows,
+      });
+      const conn = { ...step(pg), transaction: (fn: (t: MigrationStep) => Promise<void>) => pg.transaction((t) => fn(step(t))) };
+      const names = (await readdir("supabase/migrations")).filter((n) => n.endsWith(".sql")).sort();
+      const files = await Promise.all(names.map(async (name) => ({ name, sql: await readFile(`supabase/migrations/${name}`, "utf8") })));
+      const setup = [await readFile("supabase/platform/plain-postgres.sql", "utf8")];
+      expect(await migrate(conn, setup, files)).toEqual(names);
+      expect(await migrate(conn, setup, files)).toEqual([]);
+      expect((await pg.query("select current_user as u, (select rolsuper from pg_roles where rolname = current_user) as s")).rows).toEqual([{ u: "rds_master", s: false }]);
+      expect(await roleProblems(step(pg))).toEqual([]);
+    } finally {
+      await pg.close();
     }
   });
 });

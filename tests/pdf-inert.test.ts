@@ -1,3 +1,4 @@
+import { deflateSync } from "node:zlib";
 import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, PDFString, type PDFObject } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { appendPages } from "@/lib/pdf/append";
@@ -286,6 +287,69 @@ describe("the file a signer reviews (Security R2)", () => {
     const count = (op: string) => content.split(/\s+/).filter((t) => t === op).length;
     expect(count("q")).toBe(count("Q")); // whatever the page left open stays inside its own drawing
     expect(content).not.toContain("0 140 cm");
+  });
+
+  describe("keeps the page's own content exactly as viewers read it (R5)", () => {
+    // A page with one drawn annotation (so its content is moved into a form), content streams from object 10 on.
+    const pageObjects = (streams: string[]): [number, string][] => [
+      [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+      [2, PAGES],
+      [3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${HELV} >> >> /Contents [${streams.map((_, i) => `${10 + i} 0 R`).join(" ")}] /Annots [5 0 R] >>`],
+      [5, "<< /Type /Annot /Subtype /Square /Rect [400 100 420 120] /AP << /N 6 0 R >> >>"],
+      [6, "<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length 21 >>\nstream\n0 0 1 rg 0 0 20 20 re f\nendstream"],
+      ...streams.map((s, i): [number, string] => [10 + i, stream(s)]),
+    ];
+    const withContent = (streams: string[]) => rawPdf(pageObjects(streams));
+    // The page with its one content stream (object 10) given whole, dictionary and all.
+    const withStream = (obj: string) => rawPdf([...pageObjects(["q Q"]).filter(([n]) => n !== 10), [10, obj]]);
+    const refused = (text: string) => expect(buildToSign(bytesOf(text), "application/pdf")).rejects.toMatchObject({ reason: "unreadable" });
+
+    it("joins the page's content streams byte for byte", async () => {
+      const parts = ["BT /F1 18 Tf 72 700 Td (Fee: USD 100) Tj ET ", "BT /F1 18 Tf 72 650 Td (Due: 30 days) Tj ET"];
+      const copy = await PDFDocument.load(await buildToSign(bytesOf(withContent(parts).text), "application/pdf"));
+      const xobjects = copy.getPage(0).node.lookup(N("Resources"), PDFDict).lookup(N("XObject"), PDFDict);
+      const own = xobjects.keys().find((k) => k.decodeText().startsWith("Page"));
+      const form = own && copy.context.lookup(xobjects.get(own));
+      expect(form instanceof PDFRawStream && new TextDecoder("latin1").decode(decodePDFRawStream(form).decode())).toBe(parts.join(""));
+    });
+
+    it("refuses a split that viewers could read differently: inside a comment, inside a string, through a token", async () => {
+      // The comment runs on into the next stream in viewers, hiding its first line (Security A2a).
+      await refused(withContent(["BT /F1 18 Tf 72 700 Td (Fee: USD 100) Tj ET % note", "BT /F1 18 Tf 72 650 Td (LATE FEE) Tj ET\n"]).text);
+      await refused(withContent(["BT /F1 18 Tf 72 700 Td (Fee: USD", " 100) Tj ET"]).text);
+      await refused(withContent(["BT /F1 18 Tf 72 700 Td (Fee) Tj E", "T"]).text);
+      // An escaped parenthesis doesn't close the string; a % inside a closed string isn't a comment.
+      await refused(withContent(["BT /F1 18 Tf 72 700 Td (50\\) Tj ET", " ok) Tj ET"]).text);
+      expect((await PDFDocument.load(await buildToSign(bytesOf(withContent(["BT /F1 18 Tf 72 700 Td (50%) Tj ET", "\nq Q"]).text), "application/pdf"))).getPageCount()).toBe(1);
+    });
+
+    it("refuses content stored with decode parameters ShipShape doesn't apply (predictors)", async () => {
+      const hex = deflateSync(Buffer.from("BT /F1 18 Tf 72 700 Td (Fee: USD 100) Tj ET")).toString("hex");
+      const predicted = `<< /Length ${hex.length + 1} /Filter [/ASCIIHexDecode /FlateDecode] /DecodeParms [null << /Predictor 12 /Columns 4 >>] >>\nstream\n${hex}>\nendstream`;
+      await refused(withStream(predicted).text);
+    });
+
+    it("stops at 50 MB of page content, however small the upload: one stream on many pages, or one that inflates", async () => {
+      const packed = (content: Buffer) => {
+        const hex = deflateSync(content).toString("hex");
+        return `<< /Length ${hex.length + 1} /Filter [/ASCIIHexDecode /FlateDecode] >>\nstream\n${hex}>\nendstream`;
+      };
+      // 64 pages drawing the same 1 MiB stream (Security R5-2: a 31 KiB upload took 12 s).
+      const mib = Buffer.alloc(1024 * 1024, " ");
+      const kids = Array.from({ length: 64 }, (_, i) => 20 + i);
+      const shared = rawPdf([
+        [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+        [2, `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(" ")}] /Count 64 >>`],
+        [4, packed(mib)],
+        [5, "<< /Type /Annot /Subtype /Square /Rect [400 100 420 120] /AP << /N 6 0 R >> >>"],
+        [6, "<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length 21 >>\nstream\n0 0 1 rg 0 0 20 20 re f\nendstream"],
+        ...kids.map((k): [number, string] => [k, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Annots [5 0 R] >>"]),
+      ]);
+      expect(shared.text.length).toBeLessThan(20_000);
+      await refused(shared.text);
+      // One stream that inflates past the limit: decoding stops there.
+      await refused(withStream(packed(Buffer.alloc(51 * 1024 * 1024, " "))).text);
+    });
   });
 
   it("signs ordinary forms: an empty signature field, a value the standard font can't draw, a field on no page (R2-3)", async () => {

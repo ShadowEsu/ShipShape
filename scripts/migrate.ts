@@ -14,7 +14,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import postgres from "postgres";
-import { migrate, type MigrationStep } from "../lib/server/migrations.ts";
+import { migrate, roleProblems, type MigrationStep } from "../lib/server/migrations.ts";
 import { pgTls } from "../lib/server/pg-tls.ts";
 
 const url = process.env.MIGRATE_DATABASE_URL;
@@ -48,18 +48,16 @@ try {
   );
   console.log(applied.length ? `Applied ${applied.length}: ${applied.join(", ")}` : "Up to date.");
 
-  const [role] = await sql`select rolsuper, rolbypassrls, rolcanlogin from pg_roles where rolname = 'shipshape_app'`;
-  const [owned] = await sql`select count(*)::int as n from pg_tables where tableowner = 'shipshape_app'`;
-  const problems = [
-    role.rolsuper && "shipshape_app is a superuser",
-    role.rolbypassrls && "shipshape_app can bypass row level security",
-    owned.n > 0 && `shipshape_app owns ${owned.n} table(s)`,
-  ].filter(Boolean);
+  const problems = await roleProblems(step(sql));
+  const [app] = await sql`select rolcanlogin from pg_roles where rolname = 'shipshape_app'`;
+  // Recorded in the run log (Security R-3): SCRAM only, TLS forced (an RDS parameter; empty elsewhere).
+  const [settings] = await sql`select current_setting('password_encryption') as pe, coalesce(current_setting('rds.force_ssl', true), '') as force_ssl`;
+  console.log(`password_encryption=${settings.pe} rds.force_ssl=${settings.force_ssl || "(not RDS)"}`);
   if (problems.length) {
     console.error(`FAIL: ${problems.join("; ")}`);
     process.exitCode = 1;
   } else {
-    console.log(`shipshape_app: no superuser, no BYPASSRLS, owns nothing; login ${role.rolcanlogin ? "set" : "not set yet (see aws-plan.md)"}.`);
+    console.log(`Roles OK: shipshape_app is no superuser, has no BYPASSRLS and owns nothing; the other roles can't log in. shipshape_app's login is ${app?.rolcanlogin ? "set" : "not set yet (see aws-plan.md)"}.`);
   }
 } catch (e) {
   // One line, no stack: a refused certificate (DEPTH_ZERO_SELF_SIGNED_CERT, ERR_TLS_CERT_ALTNAME_INVALID)
