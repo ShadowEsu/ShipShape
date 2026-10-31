@@ -176,4 +176,12 @@ describe("account deletion", () => {
     expect(left.some((p) => existsSync(path.join(blobDir, p)))).toBe(false);
     expect(await queued(me.orgId)).toEqual([]);
   });
+
+  it("one daily run clears a queue far over one batch, so even a big account's files go within the two days (Security N-091b)", async () => {
+    const org = crypto.randomUUID();
+    await db.root((tx) => tx.query("insert into app.storage_cleanup (path) select $1 || '/' || gen_random_uuid() || '/v1.pdf' from generate_series(1, 2500)", [org]));
+    expect(await queued(org)).toHaveLength(2500);
+    expect(await retryStorageCleanup()).toBeGreaterThanOrEqual(2500);
+    expect(await queued(org)).toEqual([]);
+  });
 });

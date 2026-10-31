@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { downloadUrl, fillTemplate, getDocument, listDocuments, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { downloadUrl, fillTemplate, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import { checkUpload } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
@@ -359,5 +359,16 @@ describe("document details", () => {
     await updateDocument(sample, doc.id, { title: "Umbrella liability policy", kind: "other" });
     expect((await listDocuments(sample, { q: "umbrella" })).map((d) => d.id)).toEqual([doc.id]);
     expect((await listDocuments(sample, { q: "umbrella\u0000" })).map((d) => d.id)).toEqual([doc.id]);
+  });
+
+  it("only changes documents in the workspace you're working in, even one you also belong to", async () => {
+    const mine = await workspace("two-workspaces@example.com", "sample");
+    const [second] = await asUser(mine.userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Second') as id"));
+    const inSecond: Ctx = { ...mine, demo: false, orgId: second.id, name: "Second" };
+    const [doc] = await listDocuments(mine);
+    await expect(updateDocument(inSecond, doc.id, { title: "Moved?", kind: "other" })).rejects.toThrow(new UserError("Document not found."));
+    await expect(setArchived(inSecond, doc.id, true)).rejects.toThrow(new UserError("Document not found."));
+    const after = (await getDocument(mine, doc.id))?.doc;
+    expect(after).toMatchObject({ title: doc.title, kind: doc.kind, status: "active" });
   });
 });

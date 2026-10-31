@@ -272,13 +272,25 @@ async function removeQueued(paths: string[]): Promise<void> {
   await asService((tx) => tx.query("delete from app.storage_cleanup where path = any($1::text[])", [paths]));
 }
 
+const CLEANUP_BATCH = 1000;
+/** Well inside the cron function's time limit, so one run clears even a large account (Security N-091b). */
+const CLEANUP_BUDGET_MS = 50_000;
+
 /**
- * The daily run: removes stored files an account deletion couldn't remove (Security N-091a), up to
- * 1,000 a day. Returns how many; a storage failure throws, so the run reports it (error name only).
+ * The daily run: removes stored files an account deletion couldn't remove (Security N-091a), in
+ * batches of 1,000 until none are left or 50 seconds have passed. Returns how many; a storage
+ * failure throws, so the run reports it (error name only).
  */
 export async function retryStorageCleanup(): Promise<number> {
-  const queued = await asService((tx) => tx.query<{ path: string }>("select path from app.storage_cleanup order by queued_at, path limit 1000"));
-  const paths = queued.map((q) => q.path);
-  await removeQueued(paths);
-  return paths.length;
+  const until = Date.now() + CLEANUP_BUDGET_MS;
+  let removed = 0;
+  for (;;) {
+    const queued = await asService((tx) =>
+      tx.query<{ path: string }>("select path from app.storage_cleanup order by queued_at, path limit $1", [CLEANUP_BATCH]),
+    );
+    const paths = queued.map((q) => q.path);
+    await removeQueued(paths);
+    removed += paths.length;
+    if (paths.length < CLEANUP_BATCH || Date.now() >= until) return removed;
+  }
 }
