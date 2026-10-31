@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { CreateBucketCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type BlobStore, localBlobStore, MAX_URL_SECONDS, s3BlobStore, verifyFileParams } from "@/lib/server/storage";
+import { type BlobStore, localBlobStore, MAX_URL_SECONDS, s3BlobStore, storeFromEnv, verifyFileParams } from "@/lib/server/storage";
 
 const newPath = () => `${randomUUID()}/${randomUUID()}/v1.pdf`;
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -66,6 +66,20 @@ describe("local file store", () => {
   });
   afterAll(() => rm(dir, { recursive: true, force: true }));
   contract(() => localBlobStore(dir));
+});
+
+describe("which store a deployment uses (Security D-2)", () => {
+  const production = { NODE_ENV: "production", SHIPSHAPE_S3_BUCKET: "shipshape-files", AWS_REGION: "us-east-1", AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/shipshape-prod-app" };
+
+  it("in production, only the S3 bucket through the OIDC role: no folder, no stand-in endpoint, nothing half set", () => {
+    expect(() => storeFromEnv({ NODE_ENV: "production" })).toThrow("needs SHIPSHAPE_S3_BUCKET");
+    expect(() => storeFromEnv({ ...production, SHIPSHAPE_BLOB_DIR: "/tmp/files", SHIPSHAPE_S3_BUCKET: undefined })).toThrow("needs SHIPSHAPE_S3_BUCKET");
+    expect(() => storeFromEnv({ ...production, AWS_ROLE_ARN: undefined })).toThrow("needs AWS_ROLE_ARN");
+    expect(() => storeFromEnv({ ...production, SHIPSHAPE_S3_ENDPOINT: "http://127.0.0.1:5917" })).toThrow("no SHIPSHAPE_S3_ENDPOINT");
+    expect(() => storeFromEnv({ ...production, AWS_REGION: undefined })).toThrow("needs AWS_REGION");
+    // The complete set is accepted (no AWS call happens until a file is stored or read).
+    expect(() => storeFromEnv(production)).not.toThrow();
+  });
 });
 
 describe("S3 store, offline", () => {

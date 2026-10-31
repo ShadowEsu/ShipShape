@@ -132,32 +132,37 @@ export function s3BlobStore(client: S3Client, bucket: string): BlobStore {
 }
 const S3_DELETE_BATCH = 1000; // the most one DeleteObjects request takes
 
+type Env = Record<string, string | undefined>;
+
 /**
  * Production signs S3 calls with credentials for AWS_ROLE_ARN, obtained per request from Vercel's
  * OIDC token: no stored keys (aws-plan.md). Elsewhere (a local S3 stand-in) the SDK's usual
  * credentials and SHIPSHAPE_S3_ENDPOINT apply.
  */
-function s3Client(): S3Client {
-  const region = process.env.AWS_REGION;
+function s3Client(env: Env): S3Client {
+  const region = env.AWS_REGION;
   if (!region) throw new Error("S3 storage needs AWS_REGION");
-  const endpoint = process.env.SHIPSHAPE_S3_ENDPOINT;
-  if (process.env.NODE_ENV === "production") {
-    const roleArn = process.env.AWS_ROLE_ARN;
+  const endpoint = env.SHIPSHAPE_S3_ENDPOINT;
+  if (env.NODE_ENV === "production") {
+    const roleArn = env.AWS_ROLE_ARN;
     if (!roleArn || endpoint) throw new Error("Production S3 storage needs AWS_ROLE_ARN and no SHIPSHAPE_S3_ENDPOINT");
     return new S3Client({ region, credentials: awsCredentialsProvider({ roleArn }) });
   }
   return new S3Client({ region, ...(endpoint ? { endpoint, forcePathStyle: true } : {}) });
 }
 
+/** The store a deployment uses, from its environment: S3 when a bucket is set; a folder only outside production. */
+export function storeFromEnv(env: Env): BlobStore {
+  const bucket = env.SHIPSHAPE_S3_BUCKET;
+  if (bucket) return s3BlobStore(s3Client(env), bucket);
+  if (env.NODE_ENV === "production") throw new Error("Production storage needs SHIPSHAPE_S3_BUCKET (not configured)");
+  return localBlobStore(env.SHIPSHAPE_BLOB_DIR ?? path.join(process.cwd(), ".data", "blobs"));
+}
+
 let store: BlobStore | undefined;
 
 export function blobStore(): BlobStore {
-  if (!store) {
-    const bucket = process.env.SHIPSHAPE_S3_BUCKET;
-    if (bucket) store = s3BlobStore(s3Client(), bucket);
-    else if (process.env.NODE_ENV === "production") throw new Error("Production storage needs SHIPSHAPE_S3_BUCKET (not configured)");
-    else store = localBlobStore(process.env.SHIPSHAPE_BLOB_DIR ?? path.join(process.cwd(), ".data", "blobs"));
-  }
+  store ??= storeFromEnv(process.env);
   return store;
 }
 
