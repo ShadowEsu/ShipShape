@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
-import { addDocument, addVersion, saveDetails, type FormState } from "./actions";
+import { useActionState, useEffect, useState } from "react";
+import { CopyLink } from "@/components/copy-link";
+import { addDocument, addVersion, askToSign, saveDetails, type FormState, type SignFormState } from "./actions";
 
 const KINDS: [string, string][] = [
   ["w9", "W-9"],
@@ -147,6 +148,69 @@ export function VersionForm({ id }: { id: string }) {
       <Status state={state} savedText="New version added. Earlier versions stay in the history." />
       <button className="btn-ghost" disabled={pending}>
         {pending ? "Uploading…" : "Add version"}
+      </button>
+    </form>
+  );
+}
+
+export function SignRequestForm({ id, days, demo }: { id: string; days: readonly number[]; demo: boolean }) {
+  const [state, action, pending] = useActionState<SignFormState, FormData>(askToSign, {});
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (state.created) setUrl(`${window.location.origin}/s/${state.created.id}#${state.created.token}`);
+  }, [state.created]);
+
+  if (url) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm font-medium">Signing link ready</p>
+        <p className="text-sm text-ink-2">
+          Send it to the signer yourself; ShipShape shows it only once. They confirm their email with a code before they sign.
+          {demo && " To try it, open the link in this browser; the code lands under Deadlines → Reminders sent."}
+        </p>
+        <CopyLink id="sign-url" label="Signing link" url={url} />
+        <button type="button" className="text-sm text-ink-2 underline" onClick={() => setUrl(null)}>
+          Ask someone else
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="id" value={id} />
+      <div>
+        <label htmlFor="signer-name" className="label">
+          Signer&apos;s name
+        </label>
+        <input id="signer-name" name="signer_name" required maxLength={120} autoComplete="off" className="input" />
+      </div>
+      <div>
+        <label htmlFor="signer-email" className="label">
+          Signer&apos;s email
+        </label>
+        <input id="signer-email" name="signer_email" type="email" required maxLength={200} autoComplete="off" className="input" />
+      </div>
+      <div>
+        <label htmlFor="sign-days" className="label">
+          Open for
+        </label>
+        <select id="sign-days" name="days" defaultValue={days[1]} className="input">
+          {days.map((d) => (
+            <option key={d} value={d}>
+              {d} days
+            </option>
+          ))}
+        </select>
+      </div>
+      {state.error && (
+        <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+          {state.error}
+        </p>
+      )}
+      <button className="btn-ghost" disabled={pending}>
+        {pending ? "Making the link…" : "Make a signing link"}
       </button>
     </form>
   );

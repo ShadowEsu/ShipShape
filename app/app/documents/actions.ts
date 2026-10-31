@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { setArchived, updateDocument, uploadDocument, uploadVersion, UserError } from "@/lib/server/documents";
+import { requestSignature, revokeSignatureRequest } from "@/lib/server/esign";
 import { GateClosed } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 
@@ -85,4 +86,32 @@ export async function archive(data: FormData) {
   await setArchived(ctx, id, data.get("archived") === "1");
   revalidatePath("/app/documents");
   revalidatePath(`/app/documents/${id}`);
+}
+
+export interface SignFormState {
+  error?: string;
+  created?: { id: string; token: string };
+}
+
+export async function askToSign(_prev: SignFormState, data: FormData): Promise<SignFormState> {
+  const ctx = await requireWorkspace();
+  const id = documentId(data);
+  try {
+    const created = await requestSignature(ctx, {
+      documentId: id,
+      signerName: data.get("signer_name"),
+      signerEmail: data.get("signer_email"),
+      days: data.get("days"),
+    });
+    revalidatePath(`/app/documents/${id}`);
+    return { created };
+  } catch (e) {
+    return { error: message(e) };
+  }
+}
+
+export async function withdrawSignature(data: FormData) {
+  const ctx = await requireWorkspace();
+  await revokeSignatureRequest(ctx, String(data.get("request") ?? ""));
+  revalidatePath(`/app/documents/${documentId(data)}`);
 }

@@ -5,11 +5,12 @@ import { Notice, ValidityChip, fmtDay } from "@/components/app-ui";
 import { fmtDateTime } from "@/components/ui";
 import { FACT_LABELS } from "@/lib/profile-fields";
 import { DOC_KINDS, getDocument } from "@/lib/server/documents";
+import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
-import { archive } from "../actions";
-import { DetailsForm, VersionForm } from "../forms";
+import { archive, withdrawSignature } from "../actions";
+import { DetailsForm, SignRequestForm, VersionForm } from "../forms";
 
 export const metadata: Metadata = { title: "Document" };
 
@@ -22,6 +23,19 @@ const ACTIONS: Record<string, string> = {
   "document.acknowledged": "Reviewed and acknowledged",
   "document.viewed": "Opened",
   "document.downloaded": "Downloaded",
+  "document.signed_version_added": "Signed copy added",
+  "esign.requested": "Signature requested",
+  "esign.opened": "Signer opened the link",
+  "esign.code_sent": "Signing code sent",
+  "esign.signed": "Signed",
+  "esign.revoked": "Signature request withdrawn",
+};
+
+const REQUEST_STATUS: Record<SignatureRequestRow["status"], string> = {
+  pending: "Waiting",
+  signed: "Signed",
+  declined: "Declined",
+  revoked: "Withdrawn",
 };
 
 const SOURCE: Record<string, string> = {
@@ -42,6 +56,8 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   const latest = versions[0];
   const template = doc.template_id ? templateById(doc.template_id) : undefined;
   const canUpload = !ctx.demo && realDocsEnabled();
+  const requests = await listSignatureRequests(ctx, doc.id);
+  const now = Date.now();
 
   return (
     <div className="space-y-6">
@@ -98,6 +114,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                 <li key={v.version} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <span>
                     Version {v.version} · {fmtDateTime(v.created_at)} · {size(v.size_bytes)}
+                    {v.origin === "signed" && <span className="ml-2 rounded-full bg-ok-soft px-2 py-0.5 text-xs font-medium text-ok">Signed copy</span>}
                     <span className="ml-2 font-mono text-xs text-ink-3" title={`SHA-256 ${v.sha256}`}>
                       {v.sha256.slice(0, 12)}
                     </span>
@@ -126,6 +143,44 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
               values={{ title: doc.title, kind: doc.kind, issuer: doc.issuer, counterparty: doc.counterparty, issued_on: doc.issued_on, expires_on: doc.expires_on, renews_on: doc.renews_on }}
             />
           </section>
+
+          {latest && doc.status === "active" && (
+            <section className="card space-y-3">
+              <h2 className="font-semibold">Signatures</h2>
+              {requests.length > 0 && (
+                <ul className="divide-y divide-line text-sm">
+                  {requests.map((r) => {
+                    const lapsed = r.status === "pending" && Date.parse(r.expires_at) <= now;
+                    return (
+                      <li key={r.id} className="space-y-1 py-2">
+                        <p className="flex justify-between gap-2">
+                          <span className="min-w-0 truncate font-medium">{r.signer_name}</span>
+                          <span className="shrink-0 text-xs text-ink-2">{lapsed ? "Expired" : REQUEST_STATUS[r.status]}</span>
+                        </p>
+                        <p className="truncate text-xs text-ink-3">
+                          {r.signer_email} · version {r.version}
+                          {r.status === "signed" && r.signed_at && <> · signed {fmtDateTime(r.signed_at)}</>}
+                          {r.status === "pending" && !lapsed && <> · open until {fmtDay(r.expires_at)}</>}
+                        </p>
+                        {r.status === "pending" && !lapsed && (
+                          <form action={withdrawSignature}>
+                            <input type="hidden" name="id" value={doc.id} />
+                            <input type="hidden" name="request" value={r.id} />
+                            <button className="text-xs text-ink-2 underline">Withdraw</button>
+                          </form>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {esignAvailable(ctx) ? (
+                <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={ctx.demo} />
+              ) : (
+                <p className="text-xs text-ink-3">Signing by email opens once ShipShape can send email.</p>
+              )}
+            </section>
+          )}
 
           {template && (
             <section className="card space-y-1 text-sm">

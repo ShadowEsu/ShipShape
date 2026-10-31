@@ -177,10 +177,12 @@ create index signature_requests_org_idx on app.signature_requests (org_id, creat
 create trigger signature_requests_org_fixed before update on app.signature_requests for each row execute function app.forbid_org_change();
 create trigger signature_requests_doc before insert on app.signature_requests for each row execute function app.document_in_org();
 
--- What a signer may see for a valid, pending request. No rows otherwise.
-create function app.esign_open(req uuid, secret_hash text, visitor_hash text)
-returns table (org_name text, title text, signer_name text, signer_email text, status text, expires_at timestamptz,
-  storage_path text, mime text, sha256 text, signed_at timestamptz)
+-- What a signer may see for a valid request (pending, or signed so they can fetch their copy).
+-- No rows otherwise. `record_open` logs the visit; the signing step itself reads without logging.
+create function app.esign_open(req uuid, secret_hash text, record_open boolean)
+returns table (org_id uuid, org_name text, is_demo boolean, document_id uuid, title text, signer_name text, signer_email text,
+  status text, expires_at timestamptz, requested_at timestamptz, version int, next_version int, storage_path text, mime text,
+  sha256 text, signed_at timestamptz)
 language plpgsql security definer set search_path = '' as $$
 declare
   r app.signature_requests;
@@ -190,11 +192,13 @@ begin
   if not found then
     return;
   end if;
-  if r.status = 'pending' then
+  if record_open and r.status = 'pending' then
     perform app.audit_write(r.org_id, null, 'esign.opened', r.document_id);
   end if;
   return query
-    select o.name, d.title, r.signer_name, r.signer_email, r.status, r.expires_at, v.storage_path, v.mime, v.sha256, r.signed_at
+    select r.org_id, o.name, o.is_demo, r.document_id, d.title, r.signer_name, r.signer_email, r.status, r.expires_at, r.created_at,
+      coalesce(r.signed_version, r.version), (select coalesce(max(x.version), 0) + 1 from app.document_versions x where x.document_id = r.document_id),
+      v.storage_path, v.mime, v.sha256, r.signed_at
     from app.documents d
     join app.organizations o on o.id = d.org_id
     join app.document_versions v on v.document_id = r.document_id and v.version = coalesce(r.signed_version, r.version)
@@ -252,6 +256,9 @@ begin
     raise exception 'missing consent or name' using errcode = '22023';
   end if;
   select coalesce(max(v.version), 0) + 1 into next_version from app.document_versions v where v.document_id = r.document_id;
+  if signed_path <> r.org_id::text || '/' || r.document_id::text || '/v' || next_version::text || '.pdf' then
+    raise exception 'signed copy path does not match the next version' using errcode = '22023';
+  end if;
   insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin, created_by)
   values (r.document_id, next_version, r.org_id, signed_path, 'application/pdf', signed_size, signed_sha256, 'signed', null);
   update app.signature_requests set status = 'signed', otp_hash = null, consent_version = consent_ver, consent_sha256 = consent_hash,
@@ -368,8 +375,8 @@ grant select, insert, update, delete on app.share_links, app.share_link_document
   app.outbox, app.signature_requests to service_role;
 
 revoke execute on function app.link_in_org(), app.lock_revocation(), app.passport_open(uuid, text, text),
-  app.passport_file(uuid, text, uuid, text, text), app.esign_open(uuid, text, text), app.esign_issue_code(uuid, text, text, text, text),
+  app.passport_file(uuid, text, uuid, text, text), app.esign_open(uuid, text, boolean), app.esign_issue_code(uuid, text, text, text, text),
   app.esign_complete(uuid, text, text, text, text, text, text, text, text, int) from public;
 grant execute on function app.passport_open(uuid, text, text), app.passport_file(uuid, text, uuid, text, text),
-  app.esign_open(uuid, text, text), app.esign_issue_code(uuid, text, text, text, text),
+  app.esign_open(uuid, text, boolean), app.esign_issue_code(uuid, text, text, text, text),
   app.esign_complete(uuid, text, text, text, text, text, text, text, text, int) to anon, authenticated;

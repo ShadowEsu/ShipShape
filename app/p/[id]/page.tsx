@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { ValidityChip, fmtDay } from "@/components/app-ui";
+import { FragmentOpener } from "@/components/fragment-opener";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { openPassport, PASSPORT_COOKIE } from "@/lib/server/passport";
-import { PassportOpener, Unavailable } from "./opener";
 
 export const metadata: Metadata = { title: "Shared documents", robots: { index: false, follow: false } };
 
@@ -55,8 +55,20 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
       ) : token ? (
         <Unavailable />
       ) : (
-        <PassportOpener id={id} />
+        <FragmentOpener openUrl={`/p/${id}/open`} unavailable={<Unavailable />} />
       )}
     </main>
+  );
+}
+
+function Unavailable() {
+  return (
+    <div className="space-y-2">
+      <h1 className="font-serif text-3xl font-semibold">This link isn&apos;t available</h1>
+      <p className="text-ink-2">
+        It may have expired or been turned off, or the address was copied without its last part. Ask the person who sent it for a
+        new link.
+      </p>
+    </div>
   );
 }

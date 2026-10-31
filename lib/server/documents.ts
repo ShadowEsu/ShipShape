@@ -98,7 +98,8 @@ export async function getDocument(ctx: Ctx, id: string) {
       [id],
     );
     const audit = await tx.query<AuditRow>(
-      "select seq::text as seq, at::text as at, action, actor = $3 as actor_is_me from app.audit_log where org_id = $1 and object_id = $2 order by seq desc limit 50",
+      // Order by the table's bigint column; the text alias `seq` would sort "10" before "9".
+      "select a.seq::text as seq, a.at::text as at, a.action, a.actor = $3 as actor_is_me from app.audit_log a where a.org_id = $1 and a.object_id = $2 order by a.seq desc limit 50",
       [ctx.orgId, id, ctx.userId],
     );
     return { doc, versions, audit };

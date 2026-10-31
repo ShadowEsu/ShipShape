@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { CopyLink } from "@/components/copy-link";
 import { makePassport, type PassportFormState } from "./actions";
 
 export interface PickableDoc {
@@ -13,7 +14,6 @@ export interface PickableDoc {
 export function NewPassportForm({ docs, days }: { docs: PickableDoc[]; days: readonly number[] }) {
   const [state, action, pending] = useActionState<PassportFormState, FormData>(makePassport, {});
   const [url, setUrl] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (state.created) setUrl(`${window.location.origin}/p/${state.created.id}#${state.created.token}`);
@@ -27,22 +27,7 @@ export function NewPassportForm({ docs, days }: { docs: PickableDoc[]; days: rea
           Copy it now: for your safety ShipShape keeps only a fingerprint of it and can&apos;t show it again. Anyone with the link
           can download these documents until it expires or you turn it off.
         </p>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <label htmlFor="passport-url" className="sr-only">
-            Passport link
-          </label>
-          <input id="passport-url" readOnly value={url} className="input flex-1 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-          <button
-            type="button"
-            className="btn"
-            onClick={async () => {
-              await navigator.clipboard.writeText(url);
-              setCopied(true);
-            }}
-          >
-            {copied ? "Copied" : "Copy link"}
-          </button>
-        </div>
+        <CopyLink id="passport-url" label="Passport link" url={url} />
         <button type="button" className="text-sm text-ink-2 underline" onClick={() => window.location.reload()}>
           Make another link
         </button>

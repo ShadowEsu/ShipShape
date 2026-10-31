@@ -101,9 +101,8 @@ export async function revokePassport(ctx: Ctx, id: string) {
 
 // Public side -------------------------------------------------------------------------------------
 
-/** Cookie that carries a passport token for 30 minutes, sent only to that link's own pages. */
+/** Cookie that carries a passport token, sent only to that link's own pages (see links.ts). */
 export const PASSPORT_COOKIE = "ss_passport";
-export const PASSPORT_COOKIE_SECONDS = 30 * 60;
 
 export interface PublicPassport {
   orgName: string;
