@@ -2,7 +2,7 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { composePdf, inlineRuns, isPrintable, type Block } from "@/lib/pdf/compose";
+import { composePdf, inlineRuns, isPrintable, isPrintableText, type Block } from "@/lib/pdf/compose";
 import type { EntityType, ProfileKey } from "@/lib/profile-fields";
 import { isVisible as visible, NDA_DEFAULT_PURPOSE } from "@/lib/templates/catalog";
 import type { Facts, FieldDef, Rendered, TemplateInfo } from "@/lib/templates/types";
@@ -64,7 +64,7 @@ export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<strin
     }
     if (f.required && !value) errors[f.key] = "Required.";
     else if (f.max && f.kind !== "number" && value.length > f.max) errors[f.key] = `Up to ${f.max} characters.`;
-    else if (!isPrintable(value)) errors[f.key] = "Use letters, numbers and common punctuation.";
+    else if (!(f.kind === "textarea" ? isPrintableText(value) : isPrintable(value))) errors[f.key] = "Use letters, numbers and common punctuation.";
     else if (f.options && value && !f.options.some((o) => o.value === value)) errors[f.key] = "Choose one of the options.";
     else if (f.kind === "date" && value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) errors[f.key] = "Enter a date.";
     else if (f.kind === "number" && value && !/^[1-9][0-9]?$/.test(value)) errors[f.key] = "Enter a whole number from 1 to 99.";

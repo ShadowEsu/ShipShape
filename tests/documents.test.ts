@@ -199,7 +199,11 @@ describe("Mutual NDA fill", () => {
       p2_company: "Acme Sample Co",
       p2_name: "Sam Example",
       p2_notice: "legal@acme.example",
+      purpose: "Evaluating a partnership.\nNothing else.", // a text box may hold line breaks
     };
+    // A one-line field may not (Security F4-1).
+    const refused = await fillTemplate(sample, t.id, { ...values, p2_company: "Acme\nSample Co" }, true);
+    expect(refused.ok ? {} : refused.errors).toEqual({ p2_company: "Use letters, numbers and common punctuation." });
     const made = await fillTemplate(sample, t.id, values, true);
     expect(made.ok).toBe(true);
     const doc = (await getDocument(sample, made.ok ? made.id : ""))!.doc;

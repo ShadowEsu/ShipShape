@@ -23,13 +23,18 @@ const INK = rgb(0.07, 0.07, 0.07);
 const MUTED = rgb(0.4, 0.4, 0.4);
 
 // Characters the standard PDF fonts can draw (WinAnsi). Inputs outside this set are refused with a
-// clear message rather than silently dropped.
-const PRINTABLE_SET = String.raw`\x20-\x7E\u00A0-\u00FF\u2018\u2019\u201C\u201D\u2013\u2014\u2022\u2026\u20AC\n`;
-const PRINTABLE = new RegExp(`^[${PRINTABLE_SET}]*$`, "u");
-const UNPRINTABLE = new RegExp(`[^${PRINTABLE_SET}]`, "gu");
-export const isPrintable = (s: string) => PRINTABLE.test(s);
-/** For text that must be drawn whatever it holds (a certificate row): each character the fonts can't draw becomes "?". */
-export const printableOnly = (s: string) => s.replace(UNPRINTABLE, "?");
+// clear message rather than silently dropped. One-line values (titles, names, labels, typed
+// signatures) can't hold a line break: drawn on one line, it can't be encoded (Security F4-1).
+const LINE_SET = String.raw`\x20-\x7E\u00A0-\u00FF\u2018\u2019\u201C\u201D\u2013\u2014\u2022\u2026\u20AC`;
+const PRINTABLE_LINE = new RegExp(`^[${LINE_SET}]*$`, "u");
+const PRINTABLE_TEXT = new RegExp(`^[${LINE_SET}\\n]*$`, "u");
+const UNPRINTABLE = new RegExp(`[^${LINE_SET}]`, "gu");
+/** A one-line value the PDF fonts can draw. */
+export const isPrintable = (s: string) => PRINTABLE_LINE.test(s);
+/** Multi-line text (a form's text box) the PDF fonts can draw. */
+export const isPrintableText = (s: string) => PRINTABLE_TEXT.test(s);
+/** For one-line text that must be drawn whatever it holds (a certificate row): line breaks become spaces, anything else the fonts can't draw becomes "?". */
+export const printableOnly = (s: string) => s.replace(/\r\n?|\n/g, " ").replace(UNPRINTABLE, "?");
 
 /** Parses the inline markdown used in the Common Paper source: **bold**, [links](…), <span> tags. */
 export function inlineRuns(md: string): Run[] {
@@ -71,12 +76,16 @@ class Writer {
 
   /** Lays out runs as wrapped lines starting at x; returns nothing, moves y down. */
   flow(runs: Run[], { x = PAGE.margin, width = this.width, size = 10.5, leading = 1.45, color = INK, sans = false } = {}) {
-    const words: { text: string; font: PDFFont }[] = [];
+    // A line break in the text (from a form's text box) starts a new line.
+    const words: { text: string; font: PDFFont; br?: true }[] = [];
     for (const r of runs) {
       const font = sans ? (r.bold ? this.f.sansBold : this.f.sans) : r.bold ? this.f.bold : this.f.regular;
-      for (const [i, w] of r.text.split(" ").entries()) {
-        if (w === "" && i > 0) continue;
-        words.push({ text: w, font });
+      for (const [li, segment] of r.text.split("\n").entries()) {
+        if (li > 0) words.push({ text: "", font, br: true });
+        for (const [i, w] of segment.split(" ").entries()) {
+          if (w === "" && i > 0) continue;
+          words.push({ text: w, font });
+        }
       }
     }
     const lineHeight = size * leading;
@@ -95,6 +104,10 @@ class Writer {
       lineWidth = 0;
     };
     for (const w of words) {
+      if (w.br) {
+        flush();
+        continue;
+      }
       const ww = w.font.widthOfTextAtSize(w.text, size);
       if (line.length && lineWidth + space(w.font) + ww > width) flush();
       lineWidth += (line.length ? space(w.font) : 0) + ww;

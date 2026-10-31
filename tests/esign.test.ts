@@ -187,11 +187,14 @@ describe("signing", () => {
     page.node.set(PDFName.of("Annots"), ctx.obj([jsLink, webLink]));
     const bytes = await hostile.save();
     const documentId = await asUser(a.userId, (tx) =>
-      insertDocument(tx, a, { title: "Lease → 2027 🏠", kind: "agreement" }, { bytes, mime: "application/pdf" }, "upload"),
+      // A title saved before one-line titles were enforced, with a line break (Security F4-1).
+      insertDocument(tx, a, { title: "Lease\n→ 2027 🏠", kind: "agreement" }, { bytes, mime: "application/pdf" }, "upload"),
     );
 
+    await expect(requestSignature(a, { documentId, signerName: "Jordan\nLee", signerEmail: "jordan@northwind.example", days: 7 })).rejects.toThrow();
     const { id, token } = await requestSignature(a, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
     await sendSigningCode(id, token);
+    expect(await completeSigning(id, token, { code: "000000", typedName: "Jordan\nLee", consented: true, ip: IP })).toBe("needs_name");
     expect(await completeSigning(id, token, { code: await lastCode(a.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
 
     const [signed] = (await getDocument(a, documentId))!.versions;

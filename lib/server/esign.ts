@@ -1,9 +1,10 @@
 import "server-only";
 import { randomInt } from "node:crypto";
-import { PDFDict, PDFDocument, PDFName, type PDFPage } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
+import { flattenForm, makeInert } from "@/lib/pdf/inert";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser } from "./db";
 import { downloadName } from "./documents";
@@ -179,41 +180,17 @@ export async function sendSigningCode(id: string, token: string): Promise<"ok" |
 
 export type SignResult = "ok" | "bad_code" | "locked" | "expired_code" | "invalid" | "needs_consent" | "needs_name" | "unsupported" | "too_large";
 
-// Link actions a signed copy may keep: jumps within the document and plain web links. Anything else
-// (JavaScript, launching files, submitting or importing form data, other documents) is removed.
-const SAFE_ACTIONS = new Set([PDFName.of("GoTo"), PDFName.of("URI")]);
-
-/**
- * Removes what could run when the copy is opened: the page's own actions, and every annotation's
- * actions except safe links (a safe link's chained /Next actions go too).
- */
-function makeInert(page: PDFPage) {
-  page.node.delete(PDFName.of("AA"));
-  const annots = page.node.Annots();
-  if (!annots) return;
-  for (let i = 0; i < annots.size(); i++) {
-    const annot = annots.lookupMaybe(i, PDFDict);
-    if (!annot) continue;
-    annot.delete(PDFName.of("AA"));
-    const action = annot.lookupMaybe(PDFName.of("A"), PDFDict);
-    if (!action) continue;
-    const kind = action.lookupMaybe(PDFName.of("S"), PDFName);
-    if (kind && SAFE_ACTIONS.has(kind)) action.delete(PDFName.of("Next"));
-    else annot.delete(PDFName.of("A"));
-  }
-}
-
 /**
  * The signed copy: the original's pages (or the image on a page), then a signature certificate page.
  * Only pages are copied into a new document, so the upload's document-level parts (open actions,
- * named scripts, form logic, attachments) never reach the copy, and the pages lose their actions
- * before the copy, so no script is even carried along unreferenced (Security F3).
+ * named scripts, form logic, attachments) never reach the copy. Form fields are drawn into the page
+ * first, and the finished copy is swept as a whole so nothing in it can run (Security F3, F3-1..3).
  */
 async function signedCopy(original: Uint8Array, mime: AllowedMime, rows: [string, string][]): Promise<Uint8Array> {
   const out = await PDFDocument.create();
   if (mime === "application/pdf") {
     const source = await PDFDocument.load(original, { updateMetadata: false });
-    for (const page of source.getPages()) makeInert(page);
+    if (!flattenForm(source)) throw new Error("form can't be flattened");
     for (const page of await out.copyPages(source, source.getPageIndices())) out.addPage(page);
   } else {
     const img = mime === "image/png" ? await out.embedPng(original) : await out.embedJpg(original);
@@ -237,6 +214,7 @@ async function signedCopy(original: Uint8Array, mime: AllowedMime, rows: [string
     ),
   );
   for (const p of await out.copyPages(certificate, certificate.getPageIndices())) out.addPage(p);
+  makeInert(out);
   return out.save();
 }
 
