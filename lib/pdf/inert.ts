@@ -295,7 +295,7 @@ function plainLink(annot: PDFDict) {
  * Moves the page's own content into a form XObject drawn inside q…Q (Security R4-3), so whatever
  * graphics state it leaves open (an unclosed q with a clip or a shift) can't reach the annotations
  * drawn after it. Viewers draw annotations in a fresh state; this keeps that true once they are
- * page content. The streams are joined byte for byte, as viewers read them (R5-1). Content
+ * page content. The streams are joined as viewers read them (R5-1, R6-1; see `joint`). Content
  * ShipShape can't read exactly as viewers do throws, which makes the file unreadable for signing.
  */
 function isolateContent(page: PDFPage, read: ContentReader) {
@@ -308,10 +308,12 @@ function isolateContent(page: PDFPage, read: ContentReader) {
     const part = read.stream(s);
     if (!part.length) continue;
     const before = parts.at(-1);
-    if (before && !cleanBoundary(before, part)) throw new Error("page content splits a comment, string or token across streams");
+    const how = before ? joint(before, part) : "join";
+    if (how === "refuse") throw new Error("page content splits a comment, string, inline image or token across streams");
+    if (how === "space") parts.push(SPACE);
     parts.push(part);
   }
-  const bytes = new Uint8Array(read.take(parts.reduce((n, p) => n + p.length, 0)));
+  const bytes = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const p of parts) {
     bytes.set(p, at);
@@ -325,37 +327,59 @@ function isolateContent(page: PDFPage, read: ContentReader) {
   page.pushOperators(pushGraphicsState(), drawObject(name), popGraphicsState());
 }
 
+const SPACE = new Uint8Array([32]);
+
 /**
- * The most page content one file may make ShipShape decode and rewrite (Security R5-2): a small
+ * The most page content one file may make ShipShape decode and copy (Security R5-2): a small
  * upload can inflate to far more, or repeat one large stream on every page.
  */
-const MAX_CONTENT_BYTES = 50 * 1024 * 1024;
+export const MAX_CONTENT_BYTES = 50 * 1024 * 1024;
+const STEP = 64 * 1024;
+
+/** Thrown when a file's page content passes MAX_CONTENT_BYTES. */
+export class TooMuchContent extends Error {}
 
 interface ContentReader {
-  /** A content stream's decoded bytes, decoded once per file however many pages share it. */
+  /**
+   * A content stream's decoded bytes, decoded once per file. Its size counts against the file's
+   * allowance when it's decoded and again each time another page reuses it (that page copies it).
+   */
   stream(s: PDFRawStream): Uint8Array;
-  /** Counts `bytes` of page content against the file's allowance; throws past it. */
-  take(bytes: number): number;
 }
 
 function contentReader(): ContentReader {
   const decoded = new Map<PDFRawStream, Uint8Array>();
   let left = MAX_CONTENT_BYTES;
   const take = (bytes: number) => {
-    if (bytes > left) throw new Error("too much page content to rewrite");
     left -= bytes;
-    return bytes;
+    if (left < 0) throw new TooMuchContent("too much page content to rewrite");
   };
   return {
-    take,
     stream(s) {
       const known = decoded.get(s);
-      if (known) return known;
+      if (known) {
+        take(known.length);
+        return known;
+      }
       // pdf-lib ignores predictors and other decode parameters, so such content would come out wrong (R5-1).
       if (s.dict.has(DECODE_PARMS)) throw new Error("page content uses decode parameters");
-      // Decoding stops one byte past the allowance, whatever the filters would expand to.
-      const out = decodePDFRawStream(s).getBytes(left + 1);
-      const bytes = new Uint8Array(out.buffer, out.byteOffset, take(out.length));
+      // In steps, so decoding stops just past the allowance whatever the filters expand to (R6-4).
+      const decoding = decodePDFRawStream(s);
+      const steps: (Uint8Array | Uint8ClampedArray)[] = [];
+      let size = 0;
+      for (;;) {
+        const step = decoding.getBytes(STEP);
+        take(step.length);
+        steps.push(step);
+        size += step.length;
+        if (step.length < STEP) break;
+      }
+      const bytes = new Uint8Array(size);
+      let at = 0;
+      for (const step of steps) {
+        bytes.set(step, at);
+        at += step.length;
+      }
       decoded.set(s, bytes);
       return bytes;
     },
@@ -363,16 +387,42 @@ function contentReader(): ContentReader {
 }
 
 /**
- * Viewers join a page's content streams into one; the format only allows a split between tokens.
- * A stream that ends inside a comment or a string, or a split through a token, reads differently
- * from one viewer to the next (and differently once joined), so it's refused (Security R5-1).
+ * How two of a page's content streams meet. Viewers read them as one, and the format only allows a
+ * split between tokens (Security R5-1, R6-1, R6-2):
+ * - "join" when the split falls at white space or a delimiter: the bytes go together as they are;
+ * - "space" when it falls between two complete operators that can't run together (ET|Q, Q|q, as
+ *   pdf-lib's own stamping makes): viewers read two operators there, and one space says so;
+ * - "refuse" for anything viewers read differently: a split inside a comment, a string or inline
+ *   image data, through a name (/|F1) or a << or >>, or through any other token (T|j, 1|2, BM|C).
  */
-function cleanBoundary(before: Uint8Array, after: Uint8Array): boolean {
-  if (endsInside(before)) return false;
-  return !(regular(before[before.length - 1]) && regular(after[0]));
+function joint(before: Uint8Array, after: Uint8Array): "join" | "space" | "refuse" {
+  if (endsInside(before)) return "refuse";
+  const last = before[before.length - 1];
+  const first = after[0];
+  if (last === SLASH && regular(first)) return "refuse";
+  if ((last === LESS && first === LESS) || (last === GREATER && first === GREATER)) return "refuse";
+  if (!regular(last) || !regular(first)) return "join";
+  let start = before.length - 1;
+  while (start > 0 && regular(before[start - 1])) start--;
+  if (start > 0 && before[start - 1] === SLASH) return "refuse"; // a name, not an operator
+  let end = 0;
+  while (end < after.length && regular(after[end])) end++;
+  const left = latin1(before.subarray(start));
+  const right = latin1(after.subarray(0, end));
+  if (!OPERATORS.has(left) || !OPERATORS.has(right)) return "refuse";
+  const together = left + right;
+  for (const op of OPERATORS) if (op.startsWith(together)) return "refuse";
+  return "space";
 }
 
-/** True if the content ends inside a comment or a literal string. */
+const latin1 = (b: Uint8Array) => String.fromCharCode(...b.subarray(0, 8));
+
+// Every content stream operator (PDF 32000-1, Annex A).
+const OPERATORS = new Set(
+  "b B b* B* BDC BI BMC BT BX c cm CS cs d d0 d1 Do DP EI EMC ET EX f F f* G g gs h i ID j J K k l m M MP n q Q re RG rg ri s S SC sc SCN scn sh T* Tc Td TD Tf Tj TJ TL Tm Tr Ts Tw Tz v w W W* y ' \"".split(" "),
+);
+
+/** True if the content ends inside a comment, a literal string or inline image data. */
 function endsInside(b: Uint8Array): boolean {
   let depth = 0;
   let comment = false;
@@ -385,16 +435,35 @@ function endsInside(b: Uint8Array): boolean {
       else if (c === 41) depth--;
     } else if (c === 37) comment = true;
     else if (c === 40) depth = 1;
+    else if (c === 73 && b[i + 1] === 68 && (i === 0 || (!regular(b[i - 1]) && b[i - 1] !== SLASH)) && (i + 2 >= b.length || !regular(b[i + 2]))) {
+      // The ID operator: image data follows one white-space byte, up to EI after white space.
+      if (i + 3 > b.length) return true;
+      const end = inlineImageEnd(b, i + 3);
+      if (end < 0) return true;
+      i = end;
+    }
   }
   return comment || depth > 0;
 }
 
+/** The index of the I in the EI that ends inline image data starting at `from`, or -1 if the data runs to the end. */
+function inlineImageEnd(b: Uint8Array, from: number): number {
+  for (let j = from; j + 1 < b.length; j++) {
+    if (b[j] === 69 && b[j + 1] === 73 && WHITE.has(b[j - 1]) && (j + 2 >= b.length || !regular(b[j + 2]))) return j + 1;
+  }
+  return -1;
+}
+
 /** A byte that is neither white space nor a delimiter, so it belongs to the token beside it. */
 function regular(c: number): boolean {
-  return !WHITE_OR_DELIMITER.has(c);
+  return !WHITE.has(c) && !DELIMITERS.has(c);
 }
-// NUL, tab, line feed, form feed, carriage return, space, and ( ) < > [ ] { } / %.
-const WHITE_OR_DELIMITER = new Set([0, 9, 10, 12, 13, 32, 40, 41, 60, 62, 91, 93, 123, 125, 47, 37]);
+// NUL, tab, line feed, form feed, carriage return, space; then ( ) < > [ ] { } / %.
+const WHITE = new Set([0, 9, 10, 12, 13, 32]);
+const DELIMITERS = new Set([40, 41, 60, 62, 91, 93, 123, 125, 47, 37]);
+const SLASH = 47;
+const LESS = 60;
+const GREATER = 62;
 
 /** True if any object in the file is an optional-content membership dictionary (/Type /OCMD). */
 function hasOcmd(doc: PDFDocument): boolean {

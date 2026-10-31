@@ -2,7 +2,7 @@ import { deflateSync } from "node:zlib";
 import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, PDFString, type PDFObject } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { appendPages } from "@/lib/pdf/append";
-import { makeInert } from "@/lib/pdf/inert";
+import { makeInert, TooMuchContent } from "@/lib/pdf/inert";
 import { buildToSign } from "@/lib/pdf/to-sign";
 
 const N = (s: string) => PDFName.of(s);
@@ -303,14 +303,18 @@ describe("the file a signer reviews (Security R2)", () => {
     // The page with its one content stream (object 10) given whole, dictionary and all.
     const withStream = (obj: string) => rawPdf([...pageObjects(["q Q"]).filter(([n]) => n !== 10), [10, obj]]);
     const refused = (text: string) => expect(buildToSign(bytesOf(text), "application/pdf")).rejects.toMatchObject({ reason: "unreadable" });
-
-    it("joins the page's content streams byte for byte", async () => {
-      const parts = ["BT /F1 18 Tf 72 700 Td (Fee: USD 100) Tj ET ", "BT /F1 18 Tf 72 650 Td (Due: 30 days) Tj ET"];
-      const copy = await PDFDocument.load(await buildToSign(bytesOf(withContent(parts).text), "application/pdf"));
+    const tooMuch = (text: string) => expect(buildToSign(bytesOf(text), "application/pdf")).rejects.toMatchObject({ reason: "unreadable", cause: expect.any(TooMuchContent) });
+    const ownContent = async (bytes: Uint8Array) => {
+      const copy = await PDFDocument.load(await buildToSign(bytes, "application/pdf"));
       const xobjects = copy.getPage(0).node.lookup(N("Resources"), PDFDict).lookup(N("XObject"), PDFDict);
       const own = xobjects.keys().find((k) => k.decodeText().startsWith("Page"));
       const form = own && copy.context.lookup(xobjects.get(own));
-      expect(form instanceof PDFRawStream && new TextDecoder("latin1").decode(decodePDFRawStream(form).decode())).toBe(parts.join(""));
+      return form instanceof PDFRawStream ? new TextDecoder("latin1").decode(decodePDFRawStream(form).decode()) : null;
+    };
+
+    it("joins the page's content streams byte for byte", async () => {
+      const parts = ["BT /F1 18 Tf 72 700 Td (Fee: USD 100) Tj ET ", "BT /F1 18 Tf 72 650 Td (Due: 30 days) Tj ET"];
+      expect(await ownContent(bytesOf(withContent(parts).text))).toBe(parts.join(""));
     });
 
     it("refuses a split that viewers could read differently: inside a comment, inside a string, through a token", async () => {
@@ -346,9 +350,61 @@ describe("the file a signer reviews (Security R2)", () => {
         ...kids.map((k): [number, string] => [k, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Annots [5 0 R] >>"]),
       ]);
       expect(shared.text.length).toBeLessThan(20_000);
-      await refused(shared.text);
+      await tooMuch(shared.text);
       // One stream that inflates past the limit: decoding stops there.
-      await refused(withStream(packed(Buffer.alloc(51 * 1024 * 1024, " "))).text);
+      await tooMuch(withStream(packed(Buffer.alloc(51 * 1024 * 1024, " "))).text);
+    });
+
+    it("counts each stream once, plus each page that copies it again: 26 MiB on one page, or a stream on two pages, builds (R6-4)", async () => {
+      const packed = (content: Buffer) => {
+        const hex = deflateSync(content).toString("hex");
+        return `<< /Length ${hex.length + 1} /Filter [/ASCIIHexDecode /FlateDecode] >>\nstream\n${hex}>\nendstream`;
+      };
+      const big = Buffer.alloc(26 * 1024 * 1024, " ");
+      big.write("BT /F1 18 Tf 72 700 Td (Fee: USD 100) Tj ET");
+      expect((await ownContent(bytesOf(withStream(packed(big)).text)))?.length).toBe(big.length);
+      const twice = rawPdf([
+        [1, "<< /Type /Catalog /Pages 2 0 R >>"],
+        [2, "<< /Type /Pages /Kids [20 0 R 21 0 R] /Count 2 >>"],
+        [4, packed(Buffer.alloc(1024 * 1024, " "))],
+        [5, "<< /Type /Annot /Subtype /Square /Rect [400 100 420 120] /AP << /N 6 0 R >> >>"],
+        [6, "<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length 21 >>\nstream\n0 0 1 rg 0 0 20 20 re f\nendstream"],
+        [20, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Annots [5 0 R] >>"],
+        [21, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Annots [5 0 R] >>"],
+      ]);
+      expect((await PDFDocument.load(await buildToSign(bytesOf(twice.text), "application/pdf"))).getPageCount()).toBe(2);
+    });
+
+    describe("splits between streams that viewers read the same way are kept (R6-1, R6-2)", () => {
+      const content = (streams: string[]) => ownContent(bytesOf(withContent(streams).text));
+      const refusedSplit = (streams: string[]) => refused(withContent(streams).text);
+
+      it("two complete operators meet: joined with one space, as both viewers read them", async () => {
+        expect(await content(["q", "BT /F1 18 Tf 72 700 Td (A) Tj ET", "Q", "BT /F1 18 Tf 72 650 Td (B) Tj ET"])).toBe("q BT /F1 18 Tf 72 700 Td (A) Tj ET Q BT /F1 18 Tf 72 650 Td (B) Tj ET");
+      });
+
+      it("a page that ends in an operator, then stamped by pdf-lib with text and a form field, builds (Security P3)", async () => {
+        const doc = await PDFDocument.load(bytesOf(rawPdf([[1, "<< /Type /Catalog /Pages 2 0 R >>"], [2, PAGES], [3, pageWith()], [4, stream("BT /F1 18 Tf 72 700 Td (Fee: USD 100) Tj ET")]]).text));
+        const page = doc.getPage(0);
+        page.drawText("Approved", { x: 72, y: 600 });
+        doc.getForm().createTextField("name").addToPage(page, { x: 72, y: 500, width: 200, height: 20 });
+        expect((await PDFDocument.load(await buildToSign(await doc.save(), "application/pdf"))).getPageCount()).toBe(1);
+      });
+
+      it("still refuses tokens that would run together, a name or << >> cut in two, and a cut inside inline image data", async () => {
+        await refusedSplit(["BT /F1 18 Tf 72 700 Td (A) Tj ET /P BM", "C"]); // BM + C reads as BMC in pdf.js
+        await refusedSplit(["0 0 m 10 10 l s", "h"]); // s + h is sh
+        await refusedSplit(["BT /", "F1 18 Tf 72 700 Td (LATE FEE) Tj ET"]); // R6-2 X4
+        await refusedSplit(["/Span << /ActualText (x) >", "> BDC (A) Tj EMC"]); // R6-2 X6
+        await refusedSplit(["q Q", "1 0 0 1 0 0 cm"]); // an operator, then a number
+        await refusedSplit(["q BI /W 2 /H 1 /BPC 8 /CS /G ID ab", "cd EI Q"]);
+      });
+
+      it("inline image data isn't read as syntax: a ( in the pixels doesn't open a string", async () => {
+        expect(await content(["q 10 0 0 10 50 50 cm BI /W 2 /H 1 /BPC 8 /CS /G ID (x EI Q", "BT /F1 18 Tf 72 700 Td (A) Tj ET"])).toBe(
+          "q 10 0 0 10 50 50 cm BI /W 2 /H 1 /BPC 8 /CS /G ID (x EI Q BT /F1 18 Tf 72 700 Td (A) Tj ET",
+        );
+      });
     });
   });
 

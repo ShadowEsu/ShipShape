@@ -2,10 +2,13 @@ import { PDFDocument } from "pdf-lib";
 import { attachLinkTargets, detachLinkTargets, flattenAnnotations, makeInert, viewerDependent } from "./inert";
 import { loadUntrusted } from "./load";
 
-/** Why a file can't be sent for signature. */
+/** Why a file can't be sent for signature; `cause` says what ShipShape couldn't read (for logs and tests, never shown). */
 export class NotSignable extends Error {
-  constructor(readonly reason: "viewer_dependent" | "unreadable") {
-    super(reason);
+  constructor(
+    readonly reason: "viewer_dependent" | "unreadable",
+    cause?: unknown,
+  ) {
+    super(reason, { cause });
   }
 }
 
@@ -24,16 +27,16 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
     let source: PDFDocument;
     try {
       source = await loadUntrusted(original);
-    } catch {
-      throw new NotSignable("unreadable"); // e.g. password-protected, or too much to unpack (R6-3)
+    } catch (e) {
+      throw new NotSignable("unreadable", e); // e.g. password-protected, or too much to unpack (R6-3)
     }
     if (viewerDependent(source, original)) throw new NotSignable("viewer_dependent");
     try {
       flattenAnnotations(source);
       detachLinkTargets(source);
       for (const page of await out.copyPages(source, source.getPageIndices())) out.addPage(page);
-    } catch {
-      throw new NotSignable("unreadable"); // a broken page tree, say
+    } catch (e) {
+      throw new NotSignable("unreadable", e); // a broken page tree, say, or page content ShipShape can't read as viewers do
     }
     attachLinkTargets(out);
   } else {
