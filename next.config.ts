@@ -1,5 +1,39 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {};
+const BUILT_AT = new Date().toISOString();
+
+const SECURITY_HEADERS = [
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), serial=(), hid=(), interest-cohort=()",
+  },
+];
+
+// Shared passports (/p/…) and signing pages (/s/…) carry a secret in the path: never indexed,
+// never sent on as a referrer, never cached by shared caches.
+const SECRET_LINK_HEADERS = [
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+  { key: "Cache-Control", value: "private, no-store" },
+];
+
+const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  env: { SHIPSHAPE_BUILT_AT: BUILT_AT },
+  serverExternalPackages: ["@electric-sql/pglite"],
+  async headers() {
+    return [
+      { source: "/:path*", headers: SECURITY_HEADERS },
+      { source: "/p/:path*", headers: SECRET_LINK_HEADERS },
+      { source: "/s/:path*", headers: SECRET_LINK_HEADERS },
+      { source: "/app/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }, { key: "X-Robots-Tag", value: "noindex" }] },
+    ];
+  },
+};
 
 export default nextConfig;

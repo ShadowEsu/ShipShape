@@ -1,32 +1,88 @@
 @import "tailwindcss";
 
-@theme {
-  --color-ink: #0b1b2b;
-  --color-sea: #0f5e7a;
-  --color-sea-light: #e6f2f6;
-  --color-foam: #f6f8fa;
-  --color-line: #dfe5ea;
-  --color-blocker: #b42318;
-  --color-warn: #b54708;
-  --color-doc: #175cd3;
-  --color-good: #067647;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+/*
+ * Design tokens. Neutral until Preston picks a direction from Design's stills: the pick is a
+ * swap of --accent (and --accent-ink / --accent-soft) and the --serif / --sans families here.
+ * Documents always render on a white sheet, in both themes.
+ */
+:root {
+  --paper: #ffffff;
+  --canvas: #f7f7f5;
+  --ink: #111111;
+  --ink-2: #4a4a4a;
+  --ink-3: #6b6b6b;
+  --line: #e4e4e0;
+  --accent: #1d4ed8;
+  --accent-ink: #ffffff;
+  --accent-soft: #eef2ff;
+  --ok: #067647;
+  --ok-soft: #ecfdf3;
+  --warn: #9a4a00;
+  --warn-soft: #fff6e5;
+  --bad: #b42318;
+  --bad-soft: #fef3f2;
+  --serif: var(--font-newsreader), "Iowan Old Style", Georgia, serif;
+  --sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-canvas: var(--canvas);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --font-serif: var(--serif);
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+}
+
+html {
+  color-scheme: light;
 }
 
 body {
-  background: white;
-  color: var(--color-ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-.btn {
-  @apply inline-flex items-center justify-center rounded-lg bg-sea px-4 py-2 text-sm font-semibold text-white hover:bg-ink disabled:opacity-50;
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
-.btn-ghost {
-  @apply inline-flex items-center justify-center rounded-lg border border-line px-4 py-2 text-sm font-semibold hover:bg-foam;
-}
-.input {
-  @apply w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-sea focus:ring-2 focus:ring-sea/20;
-}
-.card {
-  @apply rounded-xl border border-line bg-white p-5;
+
+@layer components {
+  .btn {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-paper transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-accent {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-accent px-5 text-sm font-semibold text-accent-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-line bg-paper px-5 text-sm font-semibold text-ink hover:bg-canvas disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .input {
+    @apply min-h-10 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-ink;
+  }
+  .card {
+    @apply rounded-2xl border border-line bg-paper p-5;
+  }
+  .eyebrow {
+    @apply font-mono text-xs font-medium tracking-widest text-ink-3 uppercase;
+  }
 }

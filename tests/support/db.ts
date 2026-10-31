@@ -1,0 +1,24 @@
+import { createLocalDriver, setDriverForTests, type Driver, type Tx } from "@/lib/server/db";
+
+export interface TestDb {
+  driver: Driver;
+  /** Superuser access for test setup and tamper checks only. */
+  root<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
+  /** Adds a row to auth.users and returns its id. */
+  user(email: string): Promise<string>;
+}
+
+/** A fresh in-memory Postgres with every migration applied, wired in as the app's database. */
+export async function freshDb(): Promise<TestDb> {
+  const driver = await createLocalDriver();
+  setDriverForTests(driver);
+  const root = <T>(fn: (tx: Tx) => Promise<T>) => driver.transaction(fn);
+  return {
+    driver,
+    root,
+    async user(email) {
+      const [row] = await root((tx) => tx.query<{ id: string }>("insert into auth.users (email) values ($1) returning id", [email]));
+      return row.id;
+    },
+  };
+}

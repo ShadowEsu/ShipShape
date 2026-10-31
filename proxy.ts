@@ -1,0 +1,45 @@
+import { NextResponse, type NextRequest } from "next/server";
+
+/**
+ * A fresh nonce per request and a strict Content-Security-Policy (Security R9): no 'unsafe-eval'
+ * in production, no inline script without the nonce, no framing. Stripe's hosted Checkout and
+ * Customer Portal are reached by redirect after a form post, so form-action names them.
+ */
+export function proxy(request: NextRequest) {
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const dev = process.env.NODE_ENV === "development";
+  const csp = [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
+    `style-src 'self' 'nonce-${nonce}'`,
+    "img-src 'self' blob: data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "frame-src 'self'",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self' https://checkout.stripe.com https://billing.stripe.com",
+    "frame-ancestors 'none'",
+    ...(dev ? [] : ["upgrade-insecure-requests"]),
+  ].join("; ");
+
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set("Content-Security-Policy", csp);
+  return response;
+}
+
+export const config = {
+  matcher: [
+    {
+      source: "/((?!api|_next/static|_next/image|favicon.ico).*)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+  ],
+};
