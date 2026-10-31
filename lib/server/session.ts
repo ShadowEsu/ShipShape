@@ -42,7 +42,8 @@ export function sessionSecret(): string {
   return s;
 }
 
-const sign = (payload: string) => createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
+// Labelled, so no other MAC made with this secret (the sign-in cookie's is `signin:`) can pass as a session (Security CG-4).
+const sign = (payload: string) => createHmac("sha256", sessionSecret()).update(`session:${payload}`).digest("base64url");
 
 /** `authAt` defaults to now; account sign-in passes the moment Cognito says the person authenticated. */
 export function encodeSession(s: Pick<Session, "userId" | "demo"> & { authAt?: number }, now = Date.now()): string {

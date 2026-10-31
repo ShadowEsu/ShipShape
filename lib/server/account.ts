@@ -2,7 +2,7 @@ import "server-only";
 import type { AllowedMime } from "./files";
 import { cancelSubscriptionsBeforeDeletion } from "./billing";
 import { deleteSignIn } from "./cognito";
-import { asUser, pgErrorCode } from "./db";
+import { asService, asUser, pgErrorCode } from "./db";
 import { downloadName } from "./documents";
 import { UserError } from "./errors";
 import { loadProfile, NeedsRecentSignIn, type Ctx } from "./profile";
@@ -183,47 +183,71 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
   };
 }
 
+/** Requests older than this are the daily run's to finish: younger ones may still be finishing in the person's own request. */
+const PENDING_AFTER = "15 minutes";
+
 /**
  * Deletes the account (Security R10): workspaces where you're the only owner go entirely, with
  * their files, share links and signing requests; in other workspaces you're removed.
+ * Billing stops first: a deleted workspace must never keep being charged, and if it can't be
+ * stopped nothing is deleted. Then the request is recorded in a transaction of its own (Security
+ * CG-3), so from here on the deletion finishes even if the person never comes back: whatever
+ * doesn't finish now, the daily run finishes (finishDeletions).
  */
 export async function deleteAccount(ctx: Ctx): Promise<void> {
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to delete your account.");
-  // Stop billing first: a deleted workspace must never keep being charged. The database refuses
-  // (SS001) if a billed workspace it is about to delete wasn't handled here: another owner left in
-  // the meantime and made this person the sole owner. Then billing is handled again, once.
-  // The Cognito user goes next, before the rows: nobody can sign back in to an emptied account, and
-  // if Cognito fails nothing is deleted yet. If the rows then fail, the person is still signed in
-  // here (the session lasts 12 hours) and is told to press Delete again: that finds the Cognito
-  // user already gone, which counts as deleted, and finishes.
-  const remove = async () => {
-    const handled = await cancelSubscriptionsBeforeDeletion(ctx.userId);
-    let signInRemoved: boolean;
+  const handled = await cancelSubscriptionsBeforeDeletion(ctx.userId);
+  await asService((tx) =>
+    tx.query("insert into app.deletion_requests (user_id) values ($1) on conflict (user_id) do update set requested_at = now()", [ctx.userId]),
+  );
+  try {
+    await finishDeletion(ctx.userId, handled);
+  } catch (e) {
+    console.error(`account deletion: didn't finish, left for the daily run (${e instanceof Error ? e.name : "unknown"})`);
+    throw new UserError(
+      "Deleting your account didn't finish just now. It will finish by itself within a day, so there's nothing more you need to do; pressing Delete my account again finishes it now.",
+    );
+  }
+}
+
+/**
+ * The daily run (Security CG-3): finishes every recorded deletion older than PENDING_AFTER. Each
+ * one that fails stays recorded for the next run; only error names are logged.
+ */
+export async function finishDeletions(): Promise<{ finished: number; failed: number }> {
+  const due = await asService((tx) =>
+    tx.query<{ user_id: string }>("select user_id from app.deletion_requests where requested_at < now() - $1::interval order by requested_at limit 100", [PENDING_AFTER]),
+  );
+  let finished = 0;
+  for (const { user_id } of due) {
     try {
-      signInRemoved = await deleteSignIn(ctx.userId);
+      await finishDeletion(user_id, await cancelSubscriptionsBeforeDeletion(user_id));
+      finished++;
     } catch (e) {
-      console.error(`account deletion: sign-in not removed (${e instanceof Error ? e.name : "unknown"})`);
-      throw new UserError("We couldn't remove your sign-in just now, so your account wasn't deleted. Try again in a minute.");
+      console.error(`account deletion: a recorded deletion didn't finish (${e instanceof Error ? e.name : "unknown"})`);
     }
-    try {
-      return await asUser(ctx.userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account($1::uuid[])", [handled]));
-    } catch (e) {
-      if (!signInRemoved || pgErrorCode(e) === BILLING_NOT_HANDLED) throw e;
-      console.error(`account deletion: sign-in removed but data not deleted (${e instanceof Error ? e.name : "unknown"})`);
-      throw new UserError("Your sign-in was removed, but deleting your data didn't finish. Press Delete my account again now to finish it: this page still has you signed in.");
-    }
-  };
+  }
+  return { finished, failed: due.length - finished };
+}
+
+/**
+ * The rest of a recorded deletion, once `handled` (the workspaces whose billing was stopped) is
+ * known. The Cognito user goes before the rows: nobody can sign back in to an emptied account, and
+ * a Cognito user that's already gone counts as deleted, so this can run again. The database refuses
+ * (SS001) if a billed workspace it is about to delete wasn't handled: another owner left in the
+ * meantime and made this person the sole owner. Then billing is handled again, once. Deleting the
+ * user removes the recorded request with it.
+ */
+async function finishDeletion(userId: string, handled: string[]): Promise<void> {
+  await deleteSignIn(userId);
+  const deleteRows = (orgs: string[]) =>
+    asUser(userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account($1::uuid[])", [orgs]));
   let rows: { storage_path: string }[];
   try {
-    rows = await remove();
+    rows = await deleteRows(handled);
   } catch (e) {
     if (pgErrorCode(e) !== BILLING_NOT_HANDLED) throw e;
-    try {
-      rows = await remove();
-    } catch (again) {
-      if (pgErrorCode(again) === BILLING_NOT_HANDLED) throw new UserError("Your workspaces changed while deleting. Try again.");
-      throw again;
-    }
+    rows = await deleteRows(await cancelSubscriptionsBeforeDeletion(userId));
   }
   // After the commit: if this fails the rows are already gone, so the objects are unreachable
   // orphans in private storage; the count (never the paths) goes to the log for cleanup.

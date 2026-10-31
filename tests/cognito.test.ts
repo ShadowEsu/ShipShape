@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { AdminDeleteUserCommand, CognitoIdentityProviderClient, NotAuthorizedException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { deleteAccount } from "@/lib/server/account";
+import { deleteAccount, finishDeletions } from "@/lib/server/account";
 import { type CallbackParams, type CognitoConfig, cognitoAdmin, cognitoClient, cognitoConfig, completeSignIn, setSignInAdminForTests, startSignIn } from "@/lib/server/cognito";
 import { asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
@@ -281,6 +281,7 @@ describe("deleting the account", () => {
     return { sub, userId, ctx: { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Cognito Co", role: "owner" as const } };
   }
   const exists = async (userId: string) => (await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [userId]))).length === 1;
+  const recorded = async (userId: string) => (await db.root((tx) => tx.query("select 1 from app.deletion_requests where user_id = $1", [userId]))).length === 1;
 
   it("deletes the person's Cognito user while their data is still there, then the data; people without one aren't sent to Cognito", async () => {
     for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
@@ -324,7 +325,7 @@ describe("deleting the account", () => {
     expect(await exists(owner.userId)).toBe(true);
   });
 
-  it("if the data can't be deleted after the Cognito user was, the person is told to press Delete again, and that finishes", async () => {
+  it("if the data can't be deleted after the Cognito user was, the deletion stays recorded, and pressing Delete again finishes it", async () => {
     for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
     const owner = await cognitoOwner();
     const pool = new Set<string>([owner.sub]);
@@ -339,12 +340,37 @@ describe("deleting the account", () => {
       await db.root((tx) => tx.query("alter function app.delete_my_account_unavailable(uuid[]) rename to delete_my_account"));
     }
     expect(error).toBeInstanceOf(UserError);
-    expect(error).toMatchObject({ message: expect.stringContaining("Press Delete my account again") });
     expect(pool.has(owner.sub)).toBe(false);
     expect(await exists(owner.userId)).toBe(true);
+    expect(await recorded(owner.userId)).toBe(true);
     await deleteAccount(owner.ctx);
     expect(asked).toEqual([owner.sub, owner.sub]);
     expect(await exists(owner.userId)).toBe(false);
+    expect(await recorded(owner.userId)).toBe(false);
+  });
+
+  it("a deletion that didn't finish is finished by the daily run once it's 15 minutes old, without the person (CG-3)", async () => {
+    for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
+    const owner = await cognitoOwner();
+    let down = true;
+    const asked: string[] = [];
+    setSignInAdminForTests({
+      deleteUser: async (sub) => {
+        if (down) throw new Error("Cognito unavailable");
+        asked.push(sub);
+      },
+    });
+    await expect(deleteAccount(owner.ctx)).rejects.toBeInstanceOf(UserError);
+    expect(await recorded(owner.userId)).toBe(true);
+    down = false;
+    await finishDeletions(); // under 15 minutes old: possibly still finishing in the person's own request
+    expect(await exists(owner.userId)).toBe(true);
+    await db.root((tx) => tx.query("update app.deletion_requests set requested_at = now() - interval '16 minutes' where user_id = $1", [owner.userId]));
+    await finishDeletions();
+    expect(asked).toContain(owner.sub);
+    expect(await exists(owner.userId)).toBe(false);
+    expect(await recorded(owner.userId)).toBe(false);
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [owner.ctx.orgId]))).toHaveLength(0);
   });
 
   describe("through the AWS SDK", () => {

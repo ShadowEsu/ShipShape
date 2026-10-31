@@ -109,7 +109,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <li>your membership of workspaces that have another owner (their documents stay with them);</li>
             <li>your sign-in and the agreements you accepted.</li>
           </ul>
-          <p>Copies other people already downloaded stay with them. Export first if you want to keep anything.</p>
+          <p>
+            Copies other people already downloaded stay with them. Export first if you want to keep anything. If deleting can&apos;t
+            finish straight away, ShipShape finishes it by itself within a day.
+          </p>
         </div>
         <Notice>There&apos;s no undo: once deleted, ShipShape can&apos;t bring a workspace back for you.</Notice>
         <DeleteAccountForm />

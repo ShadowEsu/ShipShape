@@ -1,6 +1,7 @@
+import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sameOrigin } from "@/lib/server/http";
-import { decodeSession, encodeSession, localSignInAllowed } from "@/lib/server/session";
+import { decodeSession, encodeSession, localSignInAllowed, sessionSecret } from "@/lib/server/session";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 
@@ -18,6 +19,14 @@ describe("session cookie", () => {
     expect(decodeSession("junk")).toBeNull();
     expect(decodeSession(undefined)).toBeNull();
     expect(decodeSession(value, Date.now() + 13 * 3600 * 1000)).toBeNull();
+  });
+
+  it("takes only its own MAC: the same payload MAC'd unlabelled or as a sign-in cookie is refused (CG-4)", () => {
+    const [payload] = encodeSession({ userId: USER, demo: false }).split(".");
+    const mac = (label: string) => createHmac("sha256", sessionSecret()).update(label + payload).digest("base64url");
+    expect(decodeSession(`${payload}.${mac("session:")}`)).not.toBeNull();
+    expect(decodeSession(`${payload}.${mac("")}`)).toBeNull();
+    expect(decodeSession(`${payload}.${mac("signin:")}`)).toBeNull();
   });
 
   it("refuses a weak or missing secret", () => {
