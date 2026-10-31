@@ -370,7 +370,8 @@ describe("security review E2-E7", () => {
       await tx.query("reset role");
       return tx.query(sql);
     });
-    await expectDenied(inject("set role postgres"));
+    const [su] = await db.root((tx) => tx.query<{ name: string }>("select quote_ident(current_user) as name"));
+    await expectDenied(inject(`set role ${su.name}`));
     await expectDenied(inject("alter table app.audit_log disable row level security"));
     await expectDenied(inject("select * from app.documents"));
     await expectDenied(inject("update app.audit_log set action = 'x.y'"));

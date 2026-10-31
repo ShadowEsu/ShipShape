@@ -39,6 +39,12 @@ npm run lint    # typecheck, plus a check that no SQL is built by string interpo
 
 `npm test` checks the S3 file store offline; `npm run test:s3` runs the same file-store checks against an S3 API on port 5917. Locally that's [moto](https://github.com/getmoto/moto) in its own virtualenv: `python3 -m venv .moto && .moto/bin/pip install "moto[server]==5.2.5" && .moto/bin/moto_server -p 5917`.
 
+PGlite differs from a real server in small ways. Before a release, run the whole suite against a throwaway PostgreSQL through the production driver (verified TLS, as `shipshape_app`). `SHIPSHAPE_PG_TEST_URL` is a superuser URL on a server you can throw away: each test file creates its own `shipshape_test_*` database there (left behind afterwards) and the run sets `shipshape_app`'s password. Never point it at a real database.
+
+```bash
+SHIPSHAPE_PG_TEST_URL=postgres://<superuser>@<host>/postgres DATABASE_CA_CERT="$(cat ca.pem)" npm test
+```
+
 ### Database setup on plain Postgres (Amazon RDS)
 
 ```bash

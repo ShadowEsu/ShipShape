@@ -74,8 +74,9 @@ export async function createLocalDriver(dataDir?: string, { supabaseStorage = tr
   };
 }
 
-async function createRemoteDriver(url: string): Promise<Driver> {
-  // Runtime-selected driver: local runs and tests never load the network client.
+/** The production driver (postgres.js, verified TLS). Exported so `SHIPSHAPE_PG_TEST_URL` runs can test it. */
+export async function createRemoteDriver(url: string): Promise<Driver> {
+  // Runtime-selected driver: local runs and PGlite tests never load the network client.
   const { default: postgres } = await import("postgres");
   // prepare: false because Supabase's transaction pooler doesn't keep prepared statements.
   // TLS always verified (pg-tls.ts).

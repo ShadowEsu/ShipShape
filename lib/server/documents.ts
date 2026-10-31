@@ -158,8 +158,10 @@ async function insertVersion(
   record: VersionRow["fill_record"],
 ) {
   const objectPath = `${ctx.orgId}/${documentId}/v${version}.${EXTENSION[file.mime]}`;
+  // `$9::text`: the JSON goes over as text and Postgres parses it. Untyped, postgres.js sees the jsonb
+  // column and encodes the string again, storing a JSON string instead of the object (PGlite doesn't).
   await tx.query(
-    "insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin, fill_record, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+    "insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin, fill_record, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9::text::jsonb, $10)",
     [documentId, version, ctx.orgId, objectPath, file.mime, file.bytes.length, sha256Hex(file.bytes), origin, record ? JSON.stringify(record) : null, ctx.userId],
   );
   // Stored last, inside the transaction: if storing fails, the rows roll back with it.
