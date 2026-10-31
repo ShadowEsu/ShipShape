@@ -7,7 +7,7 @@ import { asService, asUser } from "@/lib/server/db";
 import { deadlinesIcs, listDeadlines, listOutbox, runReminders } from "@/lib/server/deadlines";
 import { listDocuments } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
-import { seedSampleWorkspace } from "@/lib/server/sample";
+import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { freshDb, type TestDb } from "./support/db";
 
@@ -93,7 +93,9 @@ describe("calendar file", () => {
     const coi = docs.find((d) => d.kind === "coi")!;
     expect(ics).toContain(`DTSTART;VALUE=DATE:${coi.expires_on!.replaceAll("-", "")}`);
     expect(ics).toContain("TRIGGER:-P7D");
-    expect(ics).not.toMatch(/\d{2}-?\d{7}|Harbor Plumbing LLC/);
+    // The workspace's EIN and legal name never go into a calendar file (UIDs carry random UUIDs, so match the value itself).
+    expect(ics.replaceAll("-", "")).not.toContain(SAMPLE_EIN.replace("-", ""));
+    expect(ics).not.toContain("Harbor Plumbing LLC");
   });
 
   it("escapes calendar syntax in titles and keeps lines within 75 bytes", () => {
