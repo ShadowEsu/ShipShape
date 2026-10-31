@@ -266,6 +266,7 @@ export function downloadName(title: string, version: number, mime: AllowedMime):
  * uploads and signed copies, which carry pages from an upload, always download (Security F3).
  */
 export async function downloadUrl(ctx: Ctx, id: string, version: number, mode: "view" | "download"): Promise<string> {
+  if (!z.uuid().safeParse(id).success) throw new UserError("Document not found.");
   const [row] = await asUser(ctx.userId, async (tx) => {
     const rows = await tx.query<{ storage_path: string; mime: AllowedMime; origin: string; title: string }>(
       "select v.storage_path, v.mime, v.origin, d.title from app.document_versions v join app.documents d on d.id = v.document_id where v.document_id = $1 and v.version = $2 and d.org_id = $3",
