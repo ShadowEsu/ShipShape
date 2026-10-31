@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import postgres from "postgres";
+import { hostProblem, serverProblem } from "./pg-test-guard";
 import { createLocalDriver, createRemoteDriver, setDriverForTests, type Driver, type Tx } from "@/lib/server/db";
 import { migrate, type MigrationStep } from "@/lib/server/migrations";
 import { pgTls } from "@/lib/server/pg-tls";
@@ -45,40 +46,53 @@ async function remoteDb(adminUrl: string) {
   const options = { max: 1, ssl: pgTls(), onnotice: () => {} };
   const name = `shipshape_test_${randomBytes(6).toString("hex")}`;
   const admin = postgres(adminUrl, options);
-  // Test files run in parallel, but migrations and the password change touch server-wide roles,
-  // which Postgres refuses to update concurrently ("tuple concurrently updated"): one setup at a time.
-  await admin`select pg_advisory_lock(hashtext('shipshape-test-setup'))`;
-  await admin.unsafe(`create database ${name}`);
-
+  const refused = hostProblem(admin, process.env.SHIPSHAPE_PG_TEST_ALLOW_HOST);
+  if (refused) {
+    await admin.end();
+    throw new Error(refused);
+  }
   const url = new URL(adminUrl);
   url.pathname = `/${name}`;
   const su = postgres(url.toString(), options);
-  const step = (s: postgres.Sql | postgres.TransactionSql): MigrationStep => ({
-    exec: async (text) => {
-      await s.unsafe(text);
-    },
-    query: async (text, params) => s.unsafe(text, params ?? []),
-  });
-  const root = path.resolve(import.meta.dirname, "../..");
-  const dir = path.join(root, "supabase/migrations");
-  const files = (await readdir(dir)).filter((n) => n.endsWith(".sql")).sort();
-  await migrate(
-    {
-      ...step(su),
-      transaction: async (fn) => {
-        await su.begin((t) => fn(step(t)));
-      },
-    },
-    [await readFile(path.join(root, "supabase/platform/plain-postgres.sql"), "utf8"), await readFile(path.join(root, "supabase/test/supabase-shim.sql"), "utf8")],
-    await Promise.all(files.map(async (n) => ({ name: n, sql: await readFile(path.join(dir, n), "utf8") }))),
-  );
   // Roles are server-wide and test files run in parallel, so every file sets the same password.
   const password = createHash("sha256").update(`shipshape-test:${adminUrl}`).digest("hex");
-  const [{ q }] = await su<{ q: string }[]>`select format('alter role shipshape_app login password %L', ${password}::text) as q`;
-  await su.unsafe(q);
-  await admin`select pg_advisory_unlock(hashtext('shipshape-test-setup'))`;
-  await admin.end();
+  try {
+    const databases = await admin<{ datname: string }[]>`select datname from pg_database`;
+    const rds = serverProblem(databases.map((d) => d.datname));
+    if (rds) throw new Error(rds);
+    // Test files run in parallel, but migrations and the password change touch server-wide roles,
+    // which Postgres refuses to update concurrently ("tuple concurrently updated"): one setup at a
+    // time. The lock belongs to this session, so ending it (finally) always releases the lock.
+    await admin`select pg_advisory_lock(hashtext('shipshape-test-setup'))`;
+    await admin.unsafe(`create database ${name}`);
 
+    const step = (s: postgres.Sql | postgres.TransactionSql): MigrationStep => ({
+      exec: async (text) => {
+        await s.unsafe(text);
+      },
+      query: async (text, params) => s.unsafe(text, params ?? []),
+    });
+    const root = path.resolve(import.meta.dirname, "../..");
+    const dir = path.join(root, "supabase/migrations");
+    const files = (await readdir(dir)).filter((n) => n.endsWith(".sql")).sort();
+    await migrate(
+      {
+        ...step(su),
+        transaction: async (fn) => {
+          await su.begin((t) => fn(step(t)));
+        },
+      },
+      [await readFile(path.join(root, "supabase/platform/plain-postgres.sql"), "utf8"), await readFile(path.join(root, "supabase/test/supabase-shim.sql"), "utf8")],
+      await Promise.all(files.map(async (n) => ({ name: n, sql: await readFile(path.join(dir, n), "utf8") }))),
+    );
+    const [{ q }] = await su<{ q: string }[]>`select format('alter role shipshape_app login password %L', ${password}::text) as q`;
+    await su.unsafe(q);
+  } catch (e) {
+    await su.end();
+    throw e;
+  } finally {
+    await admin.end();
+  }
   const appUrl = new URL(url);
   appUrl.username = "shipshape_app";
   appUrl.password = password;

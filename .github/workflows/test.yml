@@ -1,0 +1,35 @@
+name: test
+
+on:
+  push:
+    branches: [rebuild]
+  pull_request:
+    branches: [rebuild]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run lint
+      - name: Tests on PGlite
+        run: npm test
+      - name: Start PostgreSQL 17 (TLS only over TCP)
+        run: scripts/ci-postgres.sh "$RUNNER_TEMP/pg"
+      - name: Tests on PostgreSQL 17, through the production driver
+        run: |
+          SHIPSHAPE_PG_TEST_URL="$(cat "$RUNNER_TEMP/pg/url")" DATABASE_CA_CERT="$(cat "$RUNNER_TEMP/pg/ca.pem")" npm test
