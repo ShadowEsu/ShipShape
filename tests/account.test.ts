@@ -103,6 +103,8 @@ describe("account deletion", () => {
       ),
     );
     await asUser(me.userId, (tx) => tx.query("update app.share_links set revoked_at = now() where id = $1", [sharedLink.id]));
+    await asUser(me.userId, (tx) => tx.query("update app.profiles set signer_name = 'Pat Doe' where org_id = $1", [shared.id]));
+    const sharedHistory = await count("audit_log", shared.id);
 
     await deleteAccount(me);
 
@@ -124,6 +126,13 @@ describe("account deletion", () => {
     // Any other change to a revoked link is still refused, even below the app.
     await expect(db.root((tx) => tx.query("update app.share_links set label = 'changed' where id = $1", [sharedLink.id]))).rejects.toThrow(/already revoked/);
     await expect(db.root((tx) => tx.query("update app.share_links set revoked_at = now() where id = $1", [sharedLink.id]))).rejects.toThrow(/already revoked/);
+    // Clearing my references there isn't a change anyone made (Security F7): no history rows, and
+    // the profile isn't stamped with my deleted id.
+    expect(await count("audit_log", shared.id)).toBe(sharedHistory);
+    const [profile] = await db.root((tx) => tx.query<{ updated_by: string | null }>("select updated_by from app.profiles where org_id = $1", [shared.id]));
+    expect(profile.updated_by).toBeNull();
+    const [chain] = await asUser(other, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [shared.id]));
+    expect(chain.broken).toBeNull();
   });
 
   it("needs a recent sign-in in a real workspace, and only ever deletes the caller", async () => {

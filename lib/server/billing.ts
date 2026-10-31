@@ -172,8 +172,11 @@ export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> 
     }
     if (row) return row.stripe_customer_id;
     const created = await stripe.createCustomer({ metadata: { org_id: ctx.orgId } }, `customer:${ctx.orgId}`);
-    await tx.query("insert into app.billing (org_id, stripe_customer_id) values ($1, $2)", [ctx.orgId, created.id]);
-    return created.id;
+    // A second first checkout at the same moment gets the same customer (same idempotency key) and
+    // finds the row the other one stored (Security I5).
+    await tx.query("insert into app.billing (org_id, stripe_customer_id) values ($1, $2) on conflict (org_id) do nothing", [ctx.orgId, created.id]);
+    const [stored] = await tx.query<{ stripe_customer_id: string }>("select stripe_customer_id from app.billing where org_id = $1", [ctx.orgId]);
+    return stored.stripe_customer_id;
   });
 
   await asUser(ctx.userId, (tx) =>

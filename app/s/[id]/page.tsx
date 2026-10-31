@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { fmtDay } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { fmtDateTime } from "@/components/ui";
 import { ESIGN_CONSENT_TEXT } from "@/lib/consent";
 import { openSigning, SIGN_COOKIE } from "@/lib/server/esign";
+import { clientIp, rateLimited } from "@/lib/server/http";
 import { SignForm } from "./sign-form";
 
 export const metadata: Metadata = { title: "Sign a document", robots: { index: false, follow: false } };
@@ -12,7 +13,8 @@ export const metadata: Metadata = { title: "Sign a document", robots: { index: f
 export default async function SigningPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const token = (await cookies()).get(SIGN_COOKIE)?.value;
-  const view = token ? await openSigning(id, token) : null;
+  // Same view limit as passport and upload pages (Security F8).
+  const view = token && !(await rateLimited("sign-view", clientIp(await headers()), 60, 600)) ? await openSigning(id, token) : null;
 
   return (
     <main id="main" className="mx-auto min-h-screen max-w-2xl px-5 py-12 sm:py-16">

@@ -22,6 +22,16 @@ function walk(dir) {
       for (const m of src.matchAll(concat)) bad.push(`${p}:${src.slice(0, m.index).split("\n").length}`);
       const leadingVar = /\.(query|unsafe)\s*(<[^>]*>)?\s*\(\s*[A-Za-z_$][\w$.]*\s*\+/g;
       for (const m of src.matchAll(leadingVar)) bad.push(`${p}:${src.slice(0, m.index).split("\n").length}`);
+      // SQL built before the call (Security F9): any template literal with ${...}, or any string joined
+      // with +, whose literal text reads as SQL. App SQL is lowercase, so UI copy ("Select a file")
+      // doesn't match.
+      const SQL = /\b(select\b[\s\S]*\bfrom|insert\s+into|update\s+[\w.]+\s+set|delete\s+from)\b/;
+      for (const m of src.matchAll(/`(?:\\.|[^`\\])*`/g)) {
+        if (m[0].includes("${") && SQL.test(m[0].replace(/\$\{[^}]*\}/g, ""))) bad.push(`${p}:${src.slice(0, m.index).split("\n").length}`);
+      }
+      for (const m of src.matchAll(/(["'])((?:\\.|(?!\1).)*)\1\s*\+|\+\s*(["'])((?:\\.|(?!\3).)*)\3/g)) {
+        if (SQL.test(m[2] ?? m[4] ?? "")) bad.push(`${p}:${src.slice(0, m.index).split("\n").length}`);
+      }
     }
   }
 }
