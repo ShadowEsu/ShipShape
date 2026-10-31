@@ -38,7 +38,12 @@ describe("SHIPSHAPE_PG_TEST_URL only reaches a throwaway server (Security T-afc1
   });
 
   it("refuses an Amazon RDS server even when it's reached through this machine (a tunnel)", () => {
-    expect(serverProblem(["postgres", "rdsadmin", "shipshape", "template1"])).toMatch(/rdsadmin/);
-    expect(serverProblem(["postgres", "shipshape", "template0", "template1"])).toBeNull();
+    expect(serverProblem(["postgres", "rdsadmin", "template0", "template1"])).toMatch(/Amazon RDS/);
+  });
+
+  it("runs only on a server holding nothing but its own test databases", () => {
+    expect(serverProblem(["postgres", "template0", "template1"])).toBeNull();
+    expect(serverProblem(["postgres", "shipshape_test_0a1b2c3d4e5f", "template0", "template1"])).toBeNull();
+    expect(serverProblem(["postgres", "shipshape", "template0", "template1"])).toMatch(/other databases \(shipshape\)/);
   });
 });

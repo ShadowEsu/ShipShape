@@ -41,7 +41,7 @@ npm run lint    # typecheck, plus a check that no SQL is built by string interpo
 
 PGlite differs from a real server in small ways, so the suite also runs against a throwaway PostgreSQL through the production driver (verified TLS, as `shipshape_app`). CI (`.github/workflows/test.yml`) does both on every push and pull request to `rebuild`, on PostgreSQL 17 that accepts TCP only over TLS (`scripts/ci-postgres.sh`).
 
-`SHIPSHAPE_PG_TEST_URL` is a superuser URL on a server you can throw away: each test file creates its own `shipshape_test_*` database there (left behind afterwards) and the run sets `shipshape_app`'s password. The tests refuse any host but this machine (to use another, name it in `SHIPSHAPE_PG_TEST_ALLOW_HOST`) and any Amazon RDS server, even through a tunnel.
+`SHIPSHAPE_PG_TEST_URL` is a superuser URL on an empty server you can throw away: each test file creates its own `shipshape_test_*` database there (left behind afterwards) and the run sets `shipshape_app`'s password. The tests refuse any host but this machine (to use another, name it in `SHIPSHAPE_PG_TEST_ALLOW_HOST`), any server that holds other databases, and any Amazon RDS server, even through a tunnel.
 
 ```bash
 SHIPSHAPE_PG_TEST_URL=postgres://<superuser>@localhost/postgres DATABASE_CA_CERT="$(cat ca.pem)" npm test

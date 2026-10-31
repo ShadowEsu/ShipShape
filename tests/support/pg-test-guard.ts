@@ -19,7 +19,12 @@ export function hostProblem(sql: postgres.Sql, allowHost: string | undefined): s
   return `SHIPSHAPE_PG_TEST_URL connects to ${away.join(", ") || "no host"}, not this machine. These tests create databases and change shipshape_app's password: use a throwaway server (to allow a remote one, set SHIPSHAPE_PG_TEST_ALLOW_HOST to its host name).`;
 }
 
-/** RDS keeps its own `rdsadmin` database on every instance, so its presence means a real RDS server. */
+/**
+ * RDS keeps its own `rdsadmin` database on every instance, so its presence means a real RDS server.
+ * Any other database this suite didn't make means the server is in use for something else.
+ */
 export function serverProblem(databases: string[]): string | null {
-  return databases.includes("rdsadmin") ? "SHIPSHAPE_PG_TEST_URL reaches an Amazon RDS server (it has an rdsadmin database). These tests only run on a throwaway server." : null;
+  if (databases.includes("rdsadmin")) return "SHIPSHAPE_PG_TEST_URL reaches an Amazon RDS server (it has an rdsadmin database). These tests only run on a throwaway server.";
+  const others = databases.filter((d) => !["postgres", "template0", "template1"].includes(d) && !d.startsWith("shipshape_test_"));
+  return others.length > 0 ? `SHIPSHAPE_PG_TEST_URL reaches a server that holds other databases (${others.join(", ")}). These tests create databases and change shipshape_app's password: use an empty throwaway server.` : null;
 }
