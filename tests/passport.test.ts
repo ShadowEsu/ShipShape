@@ -116,6 +116,10 @@ describe("passport links", () => {
     expect(detail?.access.map((x) => x.action)).toEqual(["downloaded", "opened"]);
     expect(detail?.access.every((x) => /^[0-9a-f]{16}$/.test(x.visitor))).toBe(true);
     expect(JSON.stringify(detail)).not.toContain(IP);
+
+    // Events in the same instant (PGlite's clock counts milliseconds) still list newest first.
+    await db.root((tx) => tx.query("update app.share_access set at = '2026-10-31 12:00:00+00' where link_id = $1", [id]));
+    expect((await getPassport(a, id))?.access.map((x) => x.action)).toEqual(["downloaded", "opened"]);
   });
 
   it("stops showing a document once it is archived, and won't hand out a document that isn't on the link", async () => {

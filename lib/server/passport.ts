@@ -88,7 +88,7 @@ export async function getPassport(ctx: Ctx, id: string): Promise<PassportDetail 
       [id],
     ),
     access: await tx.query<{ at: string; action: string; title: string | null; visitor: string }>(
-      "select a.at::text as at, a.action, d.title, a.visitor from app.share_access a left join app.documents d on d.id = a.document_id where a.link_id = $1 order by a.at desc limit 200",
+      "select a.at::text as at, a.action, d.title, a.visitor from app.share_access a left join app.documents d on d.id = a.document_id where a.link_id = $1 order by a.at desc, a.seq desc limit 200",
       [id],
     ),
   }));
