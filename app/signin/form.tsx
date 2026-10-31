@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { signIn, type SignInState } from "./actions";
 
-export function SignInForm({ allowEmail }: { allowEmail: boolean }) {
+export function SignInForm({ allowEmail, accounts }: { allowEmail: boolean; accounts: boolean }) {
   const [state, action, pending] = useActionState<SignInState, FormData>(signIn, {});
   return (
     <form action={action} className="space-y-4" noValidate>
@@ -44,8 +44,13 @@ export function SignInForm({ allowEmail }: { allowEmail: boolean }) {
         </p>
       )}
       <div className="flex flex-col gap-2">
-        <button type="submit" name="mode" value="demo" className="btn" disabled={pending}>
-          {pending ? "Opening…" : "Try the sample workspace"}
+        {accounts && (
+          <button type="submit" name="mode" value="account" className="btn" disabled={pending}>
+            {pending ? "Opening…" : "Sign in or create an account"}
+          </button>
+        )}
+        <button type="submit" name="mode" value="demo" className={accounts ? "btn-ghost" : "btn"} disabled={pending}>
+          {pending && !accounts ? "Opening…" : "Try the sample workspace"}
         </button>
         {allowEmail && (
           <button type="submit" name="mode" value="email" className="btn-ghost" disabled={pending}>

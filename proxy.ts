@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * A fresh nonce per request and a strict Content-Security-Policy (Security R9): no 'unsafe-eval'
  * in production, no inline script without the nonce, no framing. Stripe's hosted Checkout and
- * Customer Portal are reached by redirect after a form post, so form-action names them.
+ * Customer Portal, and Cognito's sign-in page, are reached by redirect after a form post, so
+ * form-action names them.
  */
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
@@ -23,7 +24,7 @@ export function proxy(request: NextRequest) {
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'none'",
-    "form-action 'self' https://checkout.stripe.com https://billing.stripe.com",
+    `form-action 'self' https://checkout.stripe.com https://billing.stripe.com${signInOrigin()}`,
     "frame-ancestors 'none'",
     ...(dev ? [] : ["upgrade-insecure-requests"]),
   ].join("; ");
@@ -34,6 +35,16 @@ export function proxy(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
   return response;
+}
+
+/** Cognito's managed login origin (lib/server/cognito.ts checks the rest); empty where account sign-in isn't set up. */
+function signInOrigin(): string {
+  try {
+    const url = new URL(process.env.COGNITO_DOMAIN ?? "");
+    return url.protocol === "https:" ? ` ${url.origin}` : "";
+  } catch {
+    return "";
+  }
 }
 
 export const config = {
