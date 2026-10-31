@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
@@ -167,6 +167,32 @@ describe("signing", () => {
     );
     await writeFile(path.join(blobDir, upload.storage_path), await other.save());
     await expect(request(c)).rejects.toThrow(/doesn't match its fingerprint/);
+  });
+
+  it("tells the sender why a PDF can't be sent (built in its own process), and keeps nothing", async () => {
+    // A hidden layer: what the signer sees can differ by app. Then a file cut off mid-object.
+    const hiddenLayer = [
+      "%PDF-1.7",
+      "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R] /D << /OFF [5 0 R] >> >> >>\nendobj",
+      "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj",
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj",
+      "4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj",
+      "5 0 obj\n<< /Type /OCG /Name (Layer) >>\nendobj",
+      "trailer\n<< /Root 1 0 R >>\n%%EOF",
+    ].join("\n");
+    const cutOff = "%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages";
+    const files = async () => (await readdir(path.join(blobDir, a.orgId), { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length;
+    const before = await files();
+    for (const [pdf, message] of [
+      [hiddenLayer, /can look different in different apps/],
+      [cutOff, /can't read this file well enough/],
+    ] as const) {
+      const bytes = new TextEncoder().encode(pdf);
+      const documentId = await asUser(a.userId, (tx) => insertDocument(tx, a, { title: "Lease", kind: "agreement" }, { bytes, mime: "application/pdf" }, "upload"));
+      await expect(requestSignature(a, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 })).rejects.toThrow(message);
+      expect(await db.root((tx) => tx.query("select 1 from app.signature_requests where document_id = $1", [documentId]))).toEqual([]);
+    }
+    expect(await files()).toBe(before + 2); // the two uploads themselves, nothing for a request
   });
 
   it("adds the signed copy (the reviewed file + certificate) as a new version, once, and records every step", async () => {
