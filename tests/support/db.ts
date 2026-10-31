@@ -4,8 +4,8 @@ export interface TestDb {
   driver: LocalDriver;
   /** Superuser access for test setup and tamper checks only. */
   root<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
-  /** Adds a row to auth.users and returns its id. */
-  user(email: string): Promise<string>;
+  /** Adds a row to auth.users and returns its id (null email: like a sample-workspace visitor). */
+  user(email: string | null): Promise<string>;
 }
 
 /** A fresh in-memory Postgres with every migration applied, wired in as the app's database. */

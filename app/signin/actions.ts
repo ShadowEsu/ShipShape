@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { asService, asUser } from "@/lib/server/db";
+import { runReminders } from "@/lib/server/deadlines";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { createLocalUser, endSession, localSignInAllowed, startSession, TERMS_VERSION } from "@/lib/server/session";
 import { seedSampleWorkspace } from "@/lib/server/sample";
@@ -39,6 +40,8 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
       tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]),
     );
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    // The sample's expired permit and expiring certificate show their reminders straight away.
+    await runReminders(undefined, org.id);
   }
   await asUser(userId, async (tx) => {
     await tx.query("insert into app.consents (user_id, item, policy_version) values ($1, 'terms_privacy', $2)", [userId, TERMS_VERSION]);

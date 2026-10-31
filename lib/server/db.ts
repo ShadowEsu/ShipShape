@@ -34,17 +34,27 @@ export interface LocalDriver extends Driver {
 }
 
 /**
- * Local/test database: the Supabase shim, then every migration in order. App transactions run
- * as the login role `shipshape_app` (like production), never as the superuser.
+ * Local/test database: the Supabase shim once, then each migration not applied yet (tracked in
+ * public.local_migrations, like Supabase's own migration table). App transactions run as the
+ * login role `shipshape_app` (like production), never as the superuser.
  */
 export async function createLocalDriver(dataDir?: string): Promise<LocalDriver> {
   // Runtime-selected driver: production never loads the PGlite WebAssembly bundle.
   const { PGlite } = await import("@electric-sql/pglite");
   const pg = await PGlite.create(dataDir ? { dataDir } : undefined);
   const fresh = (await pg.query<{ n: number }>("select count(*)::int as n from pg_namespace where nspname = 'app'")).rows[0].n === 0;
-  if (fresh) {
-    await pg.exec(await readFile(path.join(ROOT, "supabase/test/supabase-shim.sql"), "utf8"));
-    for (const f of await sqlFiles(path.join(ROOT, "supabase/migrations"))) await pg.exec(f.sql);
+  if (fresh) await pg.exec(await readFile(path.join(ROOT, "supabase/test/supabase-shim.sql"), "utf8"));
+  await pg.exec("create table if not exists public.local_migrations (name text primary key, applied_at timestamptz not null default now())");
+  const applied = new Set((await pg.query<{ name: string }>("select name from public.local_migrations")).rows.map((r) => r.name));
+  if (!fresh && applied.size === 0) {
+    throw new Error("This local database predates migration tracking. Delete .data/pglite (sample data only) and restart.");
+  }
+  for (const f of await sqlFiles(path.join(ROOT, "supabase/migrations"))) {
+    if (applied.has(f.name)) continue;
+    await pg.transaction(async (t) => {
+      await t.exec(f.sql);
+      await t.query("insert into public.local_migrations (name) values ($1)", [f.name]);
+    });
   }
   const wrap = (t: { query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }): Tx => ({
     query: async (text, params) => (await t.query(text, params)).rows as never,
