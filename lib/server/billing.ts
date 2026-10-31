@@ -59,7 +59,12 @@ export interface StripePort {
   retrievePrice(id: string): Promise<{ active: boolean; unit_amount: number | null; currency: string; recurring: { interval: string } | null }>;
   retrieveSubscription(id: string): Promise<SubscriptionState>;
   cancelSubscription(id: string): Promise<unknown>;
-  retrieveCharge(id: string): Promise<{ customer: string | { id: string } | null }>;
+  /** Every subscription the customer has in Stripe, ended ones included. */
+  listSubscriptions(customer: string): Promise<{ id: string; status: string }[]>;
+  /** Who a charge belongs to, and the subscription it paid for (null for a one-off charge). */
+  chargeOwner(id: string): Promise<{ customer: string | null; subscription: string | null }>;
+  /** Refunds whatever was paid on an invoice (a duplicate subscription's first payment). */
+  refundInvoice(invoiceId: string): Promise<unknown>;
 }
 
 let testPort: StripePort | null = null;
@@ -77,7 +82,23 @@ function stripePort(cfg: BillingConfig): StripePort {
     retrievePrice: (id) => s.prices.retrieve(id),
     retrieveSubscription: (id) => s.subscriptions.retrieve(id),
     cancelSubscription: (id) => s.subscriptions.cancel(id),
-    retrieveCharge: (id) => s.charges.retrieve(id),
+    listSubscriptions: async (customer) => (await s.subscriptions.list({ customer, status: "all", limit: 100 }).autoPagingToArray({ limit: 1000 })).map((x) => ({ id: x.id, status: x.status })),
+    chargeOwner: async (id) => {
+      // A charge names its payment intent; the invoice payment for that intent names the invoice, whose parent is the subscription.
+      const charge = await s.charges.retrieve(id);
+      const intent = idOf(charge.payment_intent);
+      const payments = intent ? await s.invoicePayments.list({ payment: { type: "payment_intent", payment_intent: intent }, expand: ["data.invoice"], limit: 1 }) : null;
+      const invoice = payments?.data[0]?.invoice;
+      const subscription = invoice && typeof invoice !== "string" && !invoice.deleted ? invoice.parent?.subscription_details?.subscription : null;
+      return { customer: idOf(charge.customer), subscription: idOf(subscription) };
+    },
+    refundInvoice: async (invoiceId) => {
+      const payments = await s.invoicePayments.list({ invoice: invoiceId, limit: 10 });
+      for (const p of payments.data) {
+        const intent = idOf(p.payment.payment_intent);
+        if (p.status === "paid" && intent) await s.refunds.create({ payment_intent: intent, reason: "duplicate" }, { idempotencyKey: `refund-dup-${intent}` });
+      }
+    },
   };
 }
 
@@ -211,24 +232,32 @@ async function syncSubscription(tx: Tx, cfg: BillingConfig, stripe: StripePort, 
   if (idOf(sub.customer) !== customer) throw new Error("subscription belongs to another customer");
   const items = sub.items.data;
   const plan: PlanId = items.length === 1 && items[0].price.id === cfg.proPrice ? "pro" : "free";
+  // past_due_since starts the 7-day grace at the first past-due sync and clears on any other status.
   await tx.query(
-    "update app.billing set stripe_subscription_id = $2, status = $3, plan = $4, current_period_end = to_timestamp($5), cancel_at_period_end = $6, updated_at = now() where org_id = $1",
+    `update app.billing set stripe_subscription_id = $2, status = $3, plan = $4, current_period_end = to_timestamp($5), cancel_at_period_end = $6,
+       past_due_since = case when $3 = 'past_due' then coalesce(past_due_since, now()) end, updated_at = now() where org_id = $1`,
     [orgId, sub.id, sub.status, plan, items[0]?.current_period_end ?? null, sub.cancel_at_period_end],
   );
 }
 
-/** The Stripe customer an event is about. A dispute names only its charge, so the charge is read for it. */
-async function eventCustomer(stripe: StripePort, event: Stripe.Event): Promise<string | null> {
-  if (event.type === "charge.dispute.created") {
-    const charge = idOf(event.data.object.charge);
-    return charge ? idOf((await stripe.retrieveCharge(charge)).customer) : null;
-  }
-  const object = event.data.object;
-  return "customer" in object ? idOf(object.customer) : null;
+// Subscriptions in these states are over: nothing to cancel.
+const ENDED_STATUSES = ["canceled", "incomplete_expired"];
+
+/** Cancels a subscription unless it already ended, so a redelivered event can run again safely. */
+async function cancelIfRunning(stripe: StripePort, id: string) {
+  const sub = await stripe.retrieveSubscription(id);
+  if (!ENDED_STATUSES.includes(sub.status)) await stripe.cancelSubscription(id);
 }
 
 async function applyEvent(tx: Tx, cfg: BillingConfig, stripe: StripePort, event: Stripe.Event) {
-  const customer = await eventCustomer(stripe, event);
+  // A partial refund changes nothing (refund policy), so it needs no lookups.
+  if (event.type === "charge.refunded" && !event.data.object.refunded) return;
+  // Refunds and disputes are about a charge: read who it belongs to and which subscription it paid
+  // for (a dispute doesn't even name the customer).
+  const charge = event.type === "charge.refunded" ? event.data.object.id : event.type === "charge.dispute.created" ? idOf(event.data.object.charge) : null;
+  const owner = charge ? await stripe.chargeOwner(charge) : null;
+  const object = event.data.object;
+  const customer = owner ? owner.customer : "customer" in object ? idOf(object.customer) : null;
   if (!customer) return;
   const [row] = await tx.query<{ org_id: string; stripe_subscription_id: string | null; status: string }>(
     "select org_id, stripe_subscription_id, status from app.billing where stripe_customer_id = $1 for update",
@@ -244,8 +273,11 @@ async function applyEvent(tx: Tx, cfg: BillingConfig, stripe: StripePort, event:
       const fresh = idOf(event.data.object.subscription);
       if (!fresh) return;
       if (currentLive && fresh !== current) {
-        // A second checkout went through while one subscription is live: undo the duplicate.
-        await stripe.cancelSubscription(fresh);
+        // A second checkout went through while one subscription is live: undo the duplicate and
+        // give its first payment back (the refund's idempotency key makes a redelivery harmless).
+        await cancelIfRunning(stripe, fresh);
+        const invoice = idOf(event.data.object.invoice);
+        if (invoice) await stripe.refundInvoice(invoice);
         return;
       }
       return syncSubscription(tx, cfg, stripe, row.org_id, customer, fresh);
@@ -264,10 +296,10 @@ async function applyEvent(tx: Tx, cfg: BillingConfig, stripe: StripePort, event:
       return;
     case "charge.refunded":
     case "charge.dispute.created": {
-      // Refund policy: a full refund or a dispute ends Pro straight away.
-      const full = event.type === "charge.dispute.created" || event.data.object.refunded;
-      if (!full || !current || !currentLive) return;
-      await stripe.cancelSubscription(current);
+      // Refund policy: a full refund or a dispute ends Pro straight away, but only when the charge
+      // paid for the live subscription (refunding a cancelled duplicate must not end the good one).
+      if (!current || !currentLive || owner?.subscription !== current) return;
+      await cancelIfRunning(stripe, current);
       return syncSubscription(tx, cfg, stripe, row.org_id, customer, current);
     }
   }
@@ -287,6 +319,8 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
   } catch {
     return { status: 400, message: "bad signature" };
   }
+  // The fleet never takes live payments: a live-mode event is refused before it touches anything (Security B5).
+  if (event.livemode) return { status: 400, message: "live events refused" };
   if (!HANDLED.has(event.type)) return { status: 200, message: "ignored" };
 
   const claimed = await asService((tx) =>
@@ -318,31 +352,43 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
 
 /**
  * Cancels the subscriptions of the workspaces an account deletion will remove (those where the
- * person is the only owner). Runs before the deletion; if Stripe can't be reached, the deletion stops.
+ * person is the only owner). It asks Stripe for every subscription of each workspace's customer, so
+ * one whose webhook never reached us (a checkout paid moments ago) stops too (Security B3). Runs
+ * before the deletion; if Stripe can't be reached, the deletion stops.
  */
 export async function cancelSubscriptionsBeforeDeletion(userId: string) {
-  const subs = await asService((tx) =>
-    tx.query<{ stripe_subscription_id: string }>(
-      `select b.stripe_subscription_id from app.billing b
+  const customers = await asService((tx) =>
+    tx.query<{ stripe_customer_id: string; known_live: boolean }>(
+      `select b.stripe_customer_id, (b.stripe_subscription_id is not null and b.status = any($2::text[])) as known_live from app.billing b
        join app.members m on m.org_id = b.org_id and m.user_id = $1 and m.role = 'owner'
-       where b.stripe_subscription_id is not null and b.status = any($2::text[])
+       where b.stripe_customer_id is not null
          and not exists (select 1 from app.members o where o.org_id = b.org_id and o.role = 'owner' and o.user_id <> $1)`,
       [userId, LIVE_STATUSES],
     ),
   );
-  if (!subs.length) return;
+  if (!customers.length) return;
   const cfg = billingConfig();
-  if (!cfg) throw new UserError("Your subscription couldn't be cancelled automatically. Cancel it under Billing first, then delete your account.");
+  if (!cfg) {
+    // Billing is off, so no new checkout can have started; only a subscription we know is running stops the deletion.
+    if (customers.some((c) => c.known_live)) {
+      throw new UserError("Your subscription couldn't be cancelled automatically. Cancel it under Billing first, then delete your account.");
+    }
+    return;
+  }
   const stripe = stripePort(cfg);
-  for (const s of subs) {
-    try {
-      await stripe.cancelSubscription(s.stripe_subscription_id);
-    } catch {
-      // Stripe refuses to cancel a subscription that already ended (its webhook may not have
-      // reached us yet). Anything still running stops the deletion.
-      const now = await stripe.retrieveSubscription(s.stripe_subscription_id).catch(() => null);
-      if (now?.status !== "canceled" && now?.status !== "incomplete_expired") {
-        throw new UserError("Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it under Billing first.");
+  const busy = "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it under Billing first.";
+  for (const c of customers) {
+    const subs = await stripe.listSubscriptions(c.stripe_customer_id).catch(() => {
+      throw new UserError(busy);
+    });
+    for (const s of subs) {
+      if (ENDED_STATUSES.includes(s.status)) continue;
+      try {
+        await stripe.cancelSubscription(s.id);
+      } catch {
+        // Stripe refuses to cancel a subscription that ended since the list was read. Anything still running stops the deletion.
+        const now = await stripe.retrieveSubscription(s.id).catch(() => null);
+        if (!now || !ENDED_STATUSES.includes(now.status)) throw new UserError(busy);
       }
     }
   }

@@ -58,9 +58,9 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 - Files live in private storage and are served through signed links that expire after 5 minutes.
 - Passport, signing and upload links carry their secret in the URL fragment, so it never reaches a server log; the page trades it for a short-lived, path-scoped cookie and removes it from the address bar. Only a hash is stored.
 - Files vendors send through upload links are checked by content (PDF, PNG or JPEG, 10 MB), kept apart from the workspace's own documents, and always download rather than open in the browser. In sample workspaces those links store a generated sample file, never the upload.
-- The audit history is append-only and each entry hashes the one before it.
+- The audit history is append-only and each entry hashes the one before it; entries for new document versions (signed copies included) and vendor files carry the file's SHA-256 inside the chain.
 - Logs redact anything shaped like an SSN or EIN. Strict CSP with per-request nonces, no third-party scripts, no analytics.
-- Billing accepts Stripe test keys only and switches off in production once real documents are on.
+- Billing accepts Stripe test keys only, refuses live-mode webhook events, and switches off in production once real documents are on. Access follows what Stripe reports now: a failed payment keeps Pro for 7 days from the first failure; a full refund or dispute ends Pro only when its charge paid for the live subscription; a duplicate checkout is cancelled and refunded; deleting an account cancels every subscription Stripe has for its workspaces.
 
 ## Before launch
 

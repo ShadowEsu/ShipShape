@@ -57,7 +57,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           )}
         </p>
         {view.status === "past_due" && (
-          <Notice>Your last payment didn&apos;t go through. Update your card under Manage billing; Pro stays on for 7 days past the paid period.</Notice>
+          <Notice>Your last payment didn&apos;t go through. Update your card under Manage billing; Pro stays on for 7 days after a payment fails.</Notice>
         )}
         {view.plan === "free" && (
           <p className="text-sm text-ink-2">

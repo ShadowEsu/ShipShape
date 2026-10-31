@@ -64,7 +64,7 @@ export default function TermsPage() {
           adds email reminders and signature requests.
         </li>
         <li>You can cancel any time from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free.</li>
-        <li>If a payment fails, Pro stays on for 7 days after the paid period while the payment is retried, then moves to Free.</li>
+        <li>If a payment fails, Pro stays on for 7 days from the first failed attempt while the payment is retried, then moves to Free.</li>
         <li>
           Your first {pro.name} payment can be refunded in full if you ask within 14 days of it. The address to ask will be listed here
           before real accounts open (during the preview no real money moves).

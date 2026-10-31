@@ -22,7 +22,7 @@ const ROWS: [feature: string, free: string, pro: string][] = [
 const BILLING: [q: string, a: string][] = [
   ["Can I cancel any time?", "Yes, from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free."],
   ["What happens to my documents if I go back to Free?", "Nothing is deleted. You just can't add more than Free allows until you're under its limits."],
-  ["What if a payment fails?", "Pro stays on for 7 days after the paid period while the payment is retried, then the workspace moves to Free."],
+  ["What if a payment fails?", "Pro stays on for 7 days from the first failed attempt while the payment is retried, then the workspace moves to Free."],
   ["Refunds?", "Your first Pro payment is refunded in full if you ask within 14 days. After that you can cancel any time, but earlier payments aren't refunded, in whole or in part. A full refund or a disputed charge ends Pro straight away."],
   ["Am I charged now?", "No. During the preview, payments run in Stripe's test mode and no real money moves."],
 ];

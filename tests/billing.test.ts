@@ -61,11 +61,19 @@ class FakeStripe implements StripePort {
     s.status = "canceled";
     return {};
   }
-  charges = new Map<string, string>();
-  async retrieveCharge(id: string) {
-    const customer = this.charges.get(id);
-    if (!customer) throw new Error("no such charge");
-    return { customer };
+  /** charge id → who it belongs to and the subscription it paid for */
+  charges = new Map<string, { customer: string; subscription: string | null }>();
+  async chargeOwner(id: string) {
+    const owner = this.charges.get(id);
+    if (!owner) throw new Error("no such charge");
+    return owner;
+  }
+  async listSubscriptions(customer: string) {
+    return [...this.subs.values()].filter((s) => s.customer === customer).map((s) => ({ id: s.id, status: s.status }));
+  }
+  refunded: string[] = [];
+  async refundInvoice(invoiceId: string) {
+    this.refunded.push(invoiceId);
   }
 }
 
@@ -88,8 +96,8 @@ function subscription(id: string, customer: string, opts: Partial<Pick<Subscript
   return s;
 }
 
-function send(type: string, object: object, opts: { id?: string; timestamp?: number; secret?: string } = {}) {
-  const payload = JSON.stringify({ id: opts.id ?? `evt_${++seq}x`, object: "event", type, data: { object } });
+function send(type: string, object: object, opts: { id?: string; timestamp?: number; secret?: string; livemode?: boolean } = {}) {
+  const payload = JSON.stringify({ id: opts.id ?? `evt_${++seq}x`, object: "event", type, livemode: opts.livemode ?? false, data: { object } });
   const header = Stripe.webhooks.generateTestHeaderString({ payload, secret: opts.secret ?? WHSEC, timestamp: opts.timestamp });
   return handleStripeWebhook(payload, header);
 }
@@ -168,6 +176,17 @@ describe("webhook authenticity and idempotency", () => {
     expect(await send("product.created", { object: "product" })).toEqual({ status: 200, message: "ignored" });
   });
 
+  it("refuses a live-mode event even with a valid signature, before it touches anything (Security B5)", async () => {
+    const { ctx, customer, sub } = await payingWorkspace();
+    sub.status = "canceled";
+    expect(await send("customer.subscription.deleted", { object: "subscription", id: sub.id, customer }, { id: "evt_Live1", livemode: true })).toEqual({
+      status: 400,
+      message: "live events refused",
+    });
+    expect(await plan(ctx)).toBe("pro");
+    expect(await db.root((tx) => tx.query("select 1 from app.stripe_events where id = 'evt_Live1'"))).toEqual([]);
+  });
+
   it("processes an event once: a redelivery is acknowledged without re-reading Stripe", async () => {
     const ctx = await realWorkspace();
     await startCheckout(ctx, true);
@@ -226,11 +245,16 @@ describe("checkout", () => {
     expect(await plan(ctx)).toBe("free");
   });
 
-  it("refuses a second subscription, and cancels a duplicate that slipped through", async () => {
+  it("refuses a second subscription; a duplicate that slipped through is cancelled and its payment refunded, once", async () => {
     const { ctx, customer, sub } = await payingWorkspace();
     await expect(startCheckout(ctx, true)).rejects.toThrow(/already has a subscription/);
     const dup = subscription("sub_Dup1", customer);
-    await send("checkout.session.completed", { object: "checkout.session", customer, subscription: dup.id });
+    const session = { object: "checkout.session", customer, subscription: dup.id, invoice: "in_Dup1" };
+    expect(await send("checkout.session.completed", session)).toEqual({ status: 200, message: "ok" });
+    expect(fake.cancelled).toEqual([dup.id]);
+    expect(fake.refunded).toEqual(["in_Dup1"]);
+    // The same session arriving again (async_payment_succeeded) finds it already cancelled and still succeeds.
+    expect(await send("checkout.session.async_payment_succeeded", session)).toEqual({ status: 200, message: "ok" });
     expect(fake.cancelled).toEqual([dup.id]);
     const [row] = await db.root((tx) => tx.query<{ stripe_subscription_id: string }>("select stripe_subscription_id from app.billing where org_id = $1", [ctx.orgId]));
     expect(row.stripe_subscription_id).toBe(sub.id);
@@ -271,37 +295,57 @@ describe("access follows the subscription Stripe reports now", () => {
     expect(await plan(ctx)).toBe("free");
   });
 
-  it("a failed payment keeps Pro for 7 days past the paid period, then not", async () => {
+  it("a failed payment keeps Pro for 7 days from the first failure, even though Stripe already moved the period on (Security B2)", async () => {
     const { ctx, customer, sub } = await payingWorkspace();
+    // Renewal: Stripe starts the new period, then the charge fails.
     sub.status = "past_due";
-    sub.items.data[0].current_period_end = inDays(-3);
+    sub.items.data[0].current_period_end = inDays(30);
     await send("invoice.payment_failed", { object: "invoice", customer });
     expect(await plan(ctx)).toBe("pro");
-    sub.items.data[0].current_period_end = inDays(-8);
+    // A retry fails 8 days after the first failure: the grace is over, period end notwithstanding.
+    await db.root((tx) => tx.query("update app.billing set past_due_since = now() - interval '8 days' where org_id = $1", [ctx.orgId]));
     await send("invoice.payment_failed", { object: "invoice", customer });
     expect(await plan(ctx)).toBe("free");
+    // Paying clears it.
+    sub.status = "active";
+    await send("invoice.paid", { object: "invoice", customer });
+    expect(await plan(ctx)).toBe("pro");
+    const [row] = await db.root((tx) => tx.query<{ past_due_since: string | null }>("select past_due_since from app.billing where org_id = $1", [ctx.orgId]));
+    expect(row.past_due_since).toBeNull();
   });
 
-  it("a full refund or a dispute ends Pro at once; a partial refund doesn't", async () => {
+  it("a full refund or a dispute of the live subscription's charge ends Pro at once; a partial refund doesn't", async () => {
     const a = await payingWorkspace();
-    await send("charge.refunded", { object: "charge", customer: a.customer, refunded: false });
+    fake.charges.set("ch_A1", { customer: a.customer, subscription: a.sub.id });
+    await send("charge.refunded", { object: "charge", id: "ch_A1", customer: a.customer, refunded: false });
     expect(await plan(a.ctx)).toBe("pro");
-    await send("charge.refunded", { object: "charge", customer: a.customer, refunded: true });
+    await send("charge.refunded", { object: "charge", id: "ch_A1", customer: a.customer, refunded: true });
     expect(fake.cancelled).toContain(a.sub.id);
     expect(await plan(a.ctx)).toBe("free");
 
     // A real dispute names its charge and no customer.
     const b = await payingWorkspace();
-    fake.charges.set("ch_Disputed1", b.customer);
+    fake.charges.set("ch_Disputed1", { customer: b.customer, subscription: b.sub.id });
     await send("charge.dispute.created", { object: "dispute", charge: "ch_Disputed1" });
     expect(fake.cancelled).toContain(b.sub.id);
     expect(await plan(b.ctx)).toBe("free");
 
     // A dispute on someone else's charge changes nothing here.
     const c = await payingWorkspace();
-    fake.charges.set("ch_Stranger1", "cus_Stranger1");
+    fake.charges.set("ch_Stranger1", { customer: "cus_Stranger1", subscription: "sub_Stranger1" });
     await send("charge.dispute.created", { object: "dispute", charge: "ch_Stranger1" });
     expect(await plan(c.ctx)).toBe("pro");
+  });
+
+  it("refunding a cancelled duplicate's charge leaves the live subscription alone (Security B4)", async () => {
+    const { ctx, customer, sub } = await payingWorkspace();
+    const dup = subscription("sub_Dup2", customer);
+    fake.charges.set("ch_Dup2", { customer, subscription: dup.id });
+    await send("checkout.session.completed", { object: "checkout.session", customer, subscription: dup.id, invoice: "in_Dup2" });
+    await send("charge.refunded", { object: "charge", id: "ch_Dup2", customer, refunded: true });
+    expect(fake.cancelled).toEqual([dup.id]);
+    expect(fake.cancelled).not.toContain(sub.id);
+    expect(await plan(ctx)).toBe("pro");
   });
 
   it("events for a customer that isn't ours change nothing", async () => {
@@ -327,6 +371,26 @@ describe("account deletion", () => {
     a.sub.status = "canceled"; // cancelled in Stripe; our row still says active
     await deleteAccount(a.ctx);
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toEqual([]);
+  });
+
+  it("cancels a subscription Stripe has that our database never heard of (Security B3)", async () => {
+    const a = await payingWorkspace();
+    // A second checkout paid moments ago; its webhook hasn't arrived.
+    const unseen = subscription("sub_Unseen1", a.customer);
+    // An abandoned checkout of another workspace: a customer, no subscription.
+    const b = await realWorkspace();
+    await startCheckout(b, true);
+    await deleteAccount(a.ctx);
+    expect(fake.cancelled.sort()).toEqual([a.sub.id, unseen.id].sort());
+    await deleteAccount(b);
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = any($1::uuid[])", [[a.ctx.orgId, b.orgId]]))).toEqual([]);
+  });
+
+  it("stops if Stripe can't list the subscriptions", async () => {
+    const a = await payingWorkspace();
+    fake.listSubscriptions = () => Promise.reject(new Error("network"));
+    await expect(deleteAccount(a.ctx)).rejects.toThrow(/couldn't be cancelled just now/);
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toHaveLength(1);
   });
 });
 

@@ -1,5 +1,5 @@
 /** Version of /terms and /privacy recorded with every agreement; change it whenever either text changes. */
-export const TERMS_VERSION = "2026-10-31c-draft";
+export const TERMS_VERSION = "2026-10-31d-draft";
 
 /** Shown with a required, unticked checkbox before a filled document is created (legal-risk-playbook §2, §6). */
 export const ACK_VERSION = "ack-2026-10-30";
