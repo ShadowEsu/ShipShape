@@ -3,7 +3,11 @@ import { Geist, Geist_Mono, Newsreader } from "next/font/google";
 import { connection } from "next/server";
 import "./globals.css";
 
-const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-newsreader", display: "swap", style: ["normal", "italic"] });
+const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-newsreader", display: "swap" });
+// The italic faces of the same family (the home headline's <em>, the typed signature) aren't preloaded,
+// so a page downloads them only when it shows italic serif text. Its variable class only keeps the
+// loader in use; text reaches these faces through `font-serif italic`.
+const newsreaderItalic = Newsreader({ subsets: ["latin"], style: "italic", variable: "--font-newsreader-italic", display: "swap", preload: false });
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
 
@@ -20,7 +24,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // A prerendered page has no nonce, and the strict CSP would block all of its JavaScript.
   await connection();
   return (
-    <html lang="en" className={`${newsreader.variable} ${geist.variable} ${geistMono.variable}`}>
+    <html lang="en" className={`${newsreader.variable} ${newsreaderItalic.variable} ${geist.variable} ${geistMono.variable}`}>
       <body>
         <a
           href="#main"
