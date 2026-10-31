@@ -82,6 +82,30 @@ describe("export", () => {
     await expect(exportWorkspace({ ...ctx, role: "member" })).rejects.toThrow(UserError);
     await expect(exportWorkspace({ ...ctx, demo: false, authAt: Math.floor(Date.now() / 1000) - 3600 })).rejects.toThrow(NeedsRecentSignIn);
   });
+
+  it("refuses a workspace whose files add up to more than 200 MB, vendors' files included, and records no export", async () => {
+    const ctx = await sampleWorkspace();
+    // Records only: the size check comes before any file is read. 19 versions at the 10 MB maximum
+    // stay under the limit by themselves; 2 vendor files at 10 MB take the total over it.
+    await db.root((tx) =>
+      tx.query(
+        `insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin)
+         select d.id, 100 + g, d.org_id, d.org_id::text || '/big/' || g || '.pdf', 'application/pdf', 10485760, repeat('a', 64), 'upload'
+         from (select id, org_id from app.documents where org_id = $1 limit 1) d, generate_series(1, 19) g`,
+        [ctx.orgId],
+      ),
+    );
+    await db.root((tx) =>
+      tx.query(
+        `insert into app.vendor_files (id, org_id, vendor_id, kind, filename, storage_path, mime, size_bytes, sha256)
+         select f.id, v.org_id, v.id, 'other', 'big.pdf', v.org_id::text || '/' || f.id::text || '/v1.pdf', 'application/pdf', 10485760, repeat('b', 64)
+         from (select id, org_id from app.vendors where org_id = $1 limit 1) v, (select gen_random_uuid() as id from generate_series(1, 2)) f`,
+        [ctx.orgId],
+      ),
+    );
+    await expect(exportWorkspace(ctx)).rejects.toThrow("This workspace is too large to export in one file.");
+    expect(await db.root((tx) => tx.query("select 1 from app.audit_log where org_id = $1 and action = 'workspace.exported'", [ctx.orgId]))).toEqual([]);
+  });
 });
 
 describe("account deletion", () => {
