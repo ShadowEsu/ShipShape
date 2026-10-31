@@ -78,7 +78,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 ## Before launch
 
 - [ ] Security review GO (gates for real documents, AI and payments)
-- [ ] Production Postgres and file storage, connecting as the `shipshape_app` role (Amazon RDS + S3 is the plan; `npm run migrate` sets up the database)
+- [ ] Production Postgres and file storage, connecting as the `shipshape_app` role (Amazon RDS + S3 is the plan; `npm run migrate` sets up the database); `node scripts/probe-aws.mjs` passes against the account (bucket privacy and expiry, encryption, backups, TLS, the app role's privileges, and that preview deployments can't reach AWS)
 - [ ] Supabase Data API switched off, or serving `public` only (never `app`); `node scripts/probe-supabase.mjs` passes against the project (Data API, bucket privacy, anonymous list/download/upload refused)
 - [ ] Email provider for reminders and signing codes
 - [ ] A lawyer reviews `/terms` and `/privacy` (drafts), the e-sign flow, and which states ShipShape serves
