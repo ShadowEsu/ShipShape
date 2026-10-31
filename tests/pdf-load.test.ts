@@ -83,10 +83,47 @@ describe("loading an upload", () => {
     expect(fine.context.enumerateIndirectObjects().length).toBeGreaterThanOrEqual(1000);
   });
 
-  it("an ordinary file saved with object streams loads", async () => {
+  // Security R7-1: what pdf-lib builds from an object stream, not only the bytes it inflates.
+  const fixture = (name: string) => readFile(path.join(import.meta.dirname, "fixtures", name));
+
+  it("an 8 KiB file whose 50 entries all point at one 4-million-number array is refused (R7-1 A1: it ran a 2 GB process out of memory)", async () => {
+    await expect(loadUntrusted(await fixture("A1-overlap-50x4M.pdf"))).rejects.toThrow(PdfTooComplex);
+  });
+
+  it("entries sharing an offset, or pointing into one nested array in increasing order, are refused however small: each would be parsed again", async () => {
+    const objectStream = (offsets: number[], body: string) => {
+      const header = offsets.map((offset, i) => `${100 + i} ${offset}`).join(" ") + " ";
+      return stream(`/Type /ObjStm /N ${offsets.length} /First ${header.length} /Filter /FlateDecode`, deflateSync(Buffer.from(header + body)));
+    };
+    const numbers = "0 ".repeat(1000);
+    await expect(loadUntrusted(pdfWith([[4, objectStream([0, 0, 0, 0, 0], `[${numbers}]`)]]))).rejects.toThrow("objects overlap");
+    await expect(loadUntrusted(pdfWith([[4, objectStream([0, 1, 2, 3, 4], `[[[[[${numbers}]]]]]`)]]))).rejects.toThrow("objects overlap");
+  });
+
+  it("one object stream inflating to 30 MiB is refused (R7-1 A3: 1.4 GB once parsed)", async () => {
+    await expect(loadUntrusted(await fixture("A3-single-15M-array.pdf"))).rejects.toThrow(PdfTooComplex);
+  });
+
+  it("an object count given indirectly is counted as pdf-lib reads it (R7-1 A4: /N 9 0 R meaning millions)", async () => {
+    const count = MAX_PACKED_OBJECTS + 1;
+    const pairs: string[] = [];
+    for (let i = 0; i < count; i++) pairs.push(`${1000 + i} ${i * 2}`);
+    const header = `${pairs.join(" ")} `;
+    const packed = stream(`/Type /ObjStm /N 9 0 R /First ${header.length} /Filter /FlateDecode`, deflateSync(Buffer.from(header + "0 ".repeat(count))));
+    await expect(loadUntrusted(pdfWith([[9, Buffer.from(String(count))], [10, packed]]))).rejects.toThrow("too many objects");
+  });
+
+  it("a cross-reference stream listing more entries than its data holds is refused (pdf-lib would build them all)", async () => {
+    const xref = stream("/Type /XRef /Size 1000 /W [1 2 1] /Filter /FlateDecode", deflateSync(Buffer.from([1, 0, 9, 0])));
+    await expect(loadUntrusted(pdfWith([[4, xref]]))).rejects.toThrow("more entries than its data holds");
+  });
+
+  it("ordinary files with object streams load: one pdf-lib saves, Security's control, and the IRS W-9", async () => {
     const doc = await PDFDocument.create();
     for (let i = 0; i < 60; i++) doc.addPage().drawText(`page ${i + 1}`);
-    const loaded = await loadUntrusted(await doc.save({ useObjectStreams: true }));
-    expect(loaded.getPageCount()).toBe(60);
+    expect((await loadUntrusted(await doc.save({ useObjectStreams: true }))).getPageCount()).toBe(60);
+    expect((await loadUntrusted(await fixture("C0-normal-objstm.pdf"))).context.lookup(PDFRef.of(102))).toBeDefined();
+    const w9 = await readFile(path.join(import.meta.dirname, "..", "templates", "fw9.pdf"));
+    expect((await loadUntrusted(w9)).getForm().getFields().length).toBeGreaterThan(20);
   });
 });
