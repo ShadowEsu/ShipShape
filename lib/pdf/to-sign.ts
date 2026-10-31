@@ -1,5 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { attachLinkTargets, detachLinkTargets, flattenAnnotations, makeInert, viewerDependent } from "./inert";
+import { loadUntrusted } from "./load";
 
 /** Why a file can't be sent for signature. */
 export class NotSignable extends Error {
@@ -22,9 +23,9 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
   if (mime === "application/pdf") {
     let source: PDFDocument;
     try {
-      source = await PDFDocument.load(original, { updateMetadata: false });
+      source = await loadUntrusted(original);
     } catch {
-      throw new NotSignable("unreadable"); // e.g. password-protected
+      throw new NotSignable("unreadable"); // e.g. password-protected, or too much to unpack (R6-3)
     }
     if (viewerDependent(source, original)) throw new NotSignable("viewer_dependent");
     try {
