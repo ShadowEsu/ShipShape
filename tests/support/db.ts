@@ -1,7 +1,7 @@
-import { createLocalDriver, setDriverForTests, type Driver, type Tx } from "@/lib/server/db";
+import { createLocalDriver, setDriverForTests, type LocalDriver, type Tx } from "@/lib/server/db";
 
 export interface TestDb {
-  driver: Driver;
+  driver: LocalDriver;
   /** Superuser access for test setup and tamper checks only. */
   root<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
   /** Adds a row to auth.users and returns its id. */
@@ -12,7 +12,7 @@ export interface TestDb {
 export async function freshDb(): Promise<TestDb> {
   const driver = await createLocalDriver();
   setDriverForTests(driver);
-  const root = <T>(fn: (tx: Tx) => Promise<T>) => driver.transaction(fn);
+  const root = <T>(fn: (tx: Tx) => Promise<T>) => driver.root(fn);
   return {
     driver,
     root,

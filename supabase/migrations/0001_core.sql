@@ -139,17 +139,6 @@ create table app.document_versions (
 );
 create index document_versions_org_idx on app.document_versions (org_id);
 
-create function app.version_matches_document() returns trigger
-language plpgsql security definer set search_path = '' as $$
-begin
-  if not exists (select 1 from app.documents d where d.id = new.document_id and d.org_id = new.org_id) then
-    raise exception 'version org does not match document org' using errcode = '42501';
-  end if;
-  return new;
-end
-$$;
-create trigger document_versions_org before insert on app.document_versions for each row execute function app.version_matches_document();
-
 -- "ShipShape is software, not a law firm" acknowledgments, logged before a filled document is
 -- finalized or downloaded.
 create table app.acknowledgments (
@@ -208,12 +197,17 @@ begin
 end
 $$;
 
--- For signed-in members: the actor is always the caller.
+-- For signed-in members, and only for events that change nothing (views, downloads, reveals).
+-- Everything that changes data is logged by the triggers below, inside the database, when it
+-- actually happens, so a member can't write e.g. an e-sign event into the chain.
 create function app.audit_append(org uuid, action text, object_id uuid default null) returns bigint
 language plpgsql security definer set search_path = '' as $$
 begin
   if (select auth.uid()) is null or not app.is_member(org) then
     raise exception 'not a member' using errcode = '42501';
+  end if;
+  if action not in ('document.viewed', 'document.downloaded', 'profile.tax_id_revealed', 'workspace.exported') then
+    raise exception 'action % is not a user event', action using errcode = '42501';
   end if;
   return app.audit_write(org, (select auth.uid()), action, object_id);
 end
@@ -227,7 +221,7 @@ declare
   expected_prev text := 'genesis';
   expected_seq bigint := 1;
 begin
-  if (select auth.uid()) is not null and not app.is_member(org) then
+  if (select auth.uid()) is null or not app.is_member(org) then
     raise exception 'not a member' using errcode = '42501';
   end if;
   for r in select * from app.audit_log a where a.org_id = org order by a.seq loop
@@ -242,8 +236,102 @@ begin
 end
 $$;
 
--- Creating a workspace makes the caller its owner, with an empty profile.
-create function app.create_workspace(workspace_name text, demo boolean default false) returns uuid
+-- Audit triggers: data changes write their own audit rows. Skipped only when the workspace itself
+-- is being deleted (account deletion cascades).
+create function app.audit_row_change() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare
+  r jsonb;
+  org uuid;
+  object uuid;
+  act text;
+begin
+  if tg_op = 'DELETE' then r := to_jsonb(old); else r := to_jsonb(new); end if;
+  org := (r ->> 'org_id')::uuid;
+  if not exists (select 1 from app.organizations o where o.id = org) then
+    return null;
+  end if;
+  if tg_table_name = 'documents' then
+    object := (r ->> 'id')::uuid;
+    act := case
+      when tg_op = 'INSERT' then 'document.created'
+      when tg_op = 'DELETE' then 'document.deleted'
+      when new.status is distinct from old.status then 'document.' || case new.status when 'archived' then 'archived' else 'restored' end
+      else 'document.updated' end;
+  elsif tg_table_name = 'document_versions' then
+    object := (r ->> 'document_id')::uuid;
+    act := 'document.version_added';
+  elsif tg_table_name = 'acknowledgments' then
+    object := (r ->> 'document_id')::uuid;
+    act := 'document.acknowledged';
+  elsif tg_table_name = 'profiles' then
+    object := org;
+    act := 'profile.updated';
+  else
+    raise exception 'no audit mapping for %', tg_table_name;
+  end if;
+  perform app.audit_write(org, (select auth.uid()), act, object);
+  return null;
+end
+$$;
+
+create trigger documents_audit after insert or update or delete on app.documents for each row execute function app.audit_row_change();
+create trigger document_versions_audit after insert on app.document_versions for each row execute function app.audit_row_change();
+create trigger acknowledgments_audit after insert on app.acknowledgments for each row execute function app.audit_row_change();
+create trigger profiles_audit after update on app.profiles for each row execute function app.audit_row_change();
+
+-- Who changed a row and when is set by the database, never by the caller.
+create function app.stamp_update() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  new.updated_at := now();
+  if tg_table_name = 'profiles' then
+    new.updated_by := (select auth.uid());
+  end if;
+  return new;
+end
+$$;
+create trigger profiles_stamp before update on app.profiles for each row execute function app.stamp_update();
+create trigger documents_stamp before update on app.documents for each row execute function app.stamp_update();
+
+-- Rows that point at a document must belong to the document's workspace (no cross-workspace
+-- references, and no probing for other workspaces' document ids).
+create function app.document_in_org() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.document_id is not null and not exists (select 1 from app.documents d where d.id = new.document_id and d.org_id = new.org_id) then
+    raise exception 'document does not match workspace' using errcode = '42501';
+  end if;
+  return new;
+end
+$$;
+create trigger acknowledgments_org before insert on app.acknowledgments for each row execute function app.document_in_org();
+create trigger document_versions_org before insert on app.document_versions for each row execute function app.document_in_org();
+
+-- Tax identifiers: the server encrypts and computes the last four digits; only owners and admins
+-- may set or clear them, and nobody may write the columns directly.
+create function app.set_tax_id(org uuid, kind text, cipher text, last4 text) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not app.has_role(org, array['owner', 'admin']) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  if (cipher is null) <> (last4 is null) or (cipher is not null and cipher not like 'v1.%') then
+    raise exception 'invalid tax id value' using errcode = '22023';
+  end if;
+  if kind = 'ein' then
+    update app.profiles set ein_cipher = cipher, ein_last4 = last4 where org_id = org;
+  elsif kind = 'ssn' then
+    update app.profiles set ssn_cipher = cipher, ssn_last4 = last4 where org_id = org;
+  else
+    raise exception 'unknown tax id kind' using errcode = '22023';
+  end if;
+end
+$$;
+
+-- Creating a workspace makes the caller its owner, with an empty profile. Real workspaces only;
+-- sample workspaces are made by the server (service role) with app.create_sample_workspace.
+create function app.create_workspace(workspace_name text) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
   uid uuid := (select auth.uid());
@@ -252,10 +340,23 @@ begin
   if uid is null then
     raise exception 'sign in first' using errcode = '42501';
   end if;
-  insert into app.organizations (name, is_demo) values (workspace_name, demo) returning id into org;
+  insert into app.organizations (name) values (workspace_name) returning id into org;
   insert into app.members (org_id, user_id, role) values (org, uid, 'owner');
   insert into app.profiles (org_id, updated_by) values (org, uid);
   perform app.audit_write(org, uid, 'workspace.created', org);
+  return org;
+end
+$$;
+
+create function app.create_sample_workspace(owner uuid, workspace_name text) returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare
+  org uuid;
+begin
+  insert into app.organizations (name, is_demo) values (workspace_name, true) returning id into org;
+  insert into app.members (org_id, user_id, role) values (org, owner, 'owner');
+  insert into app.profiles (org_id, updated_by) values (org, owner);
+  perform app.audit_write(org, owner, 'workspace.created', org);
   return org;
 end
 $$;
@@ -356,17 +457,32 @@ grant update (name) on app.organizations to authenticated;
 grant select on app.members to authenticated;
 grant select on app.profiles to authenticated;
 grant update (legal_name, dba, entity_type, address_line1, address_line2, city, state, postal_code, country, phone, email,
-  website, state_of_formation, signer_name, signer_title, ein_cipher, ein_last4, ssn_cipher, ssn_last4, updated_at, updated_by)
+  website, state_of_formation, signer_name, signer_title)
   on app.profiles to authenticated;
 grant select, insert, delete on app.documents to authenticated;
-grant update (title, kind, status, issuer, counterparty, issued_on, expires_on, renews_on, notes, updated_at) on app.documents to authenticated;
+grant update (title, kind, status, issuer, counterparty, issued_on, expires_on, renews_on, notes) on app.documents to authenticated;
 grant select, insert on app.document_versions to authenticated;
 grant select, insert on app.acknowledgments to authenticated;
 grant select on app.audit_log to authenticated;
 grant select, insert on app.consents to authenticated;
 grant all on all tables in schema app to service_role;
+-- Not even the server's service role may rewrite history.
+revoke update, delete, truncate on app.audit_log, app.document_versions from service_role;
 
 revoke execute on all functions in schema app from public;
 grant execute on function app.is_member(uuid), app.has_role(uuid, text[]) to authenticated, service_role;
-grant execute on function app.audit_append(uuid, text, uuid), app.audit_verify(uuid), app.create_workspace(text, boolean) to authenticated;
-grant execute on all functions in schema app to service_role;
+grant execute on function app.audit_append(uuid, text, uuid), app.audit_verify(uuid), app.create_workspace(text),
+  app.set_tax_id(uuid, text, text, text) to authenticated;
+grant execute on function app.create_sample_workspace(uuid, text), app.rate_hit(text, text, int, int) to service_role;
+
+-- The app's own login role (Security E7): it can become anon, authenticated or service_role and
+-- nothing more, so even injected SQL that resets the role stops at service_role. Production sets
+-- its password out of band (never in the repo) and connects with it instead of `postgres`.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'shipshape_app') then
+    create role shipshape_app nologin noinherit;
+  end if;
+end
+$$;
+grant anon, authenticated, service_role to shipshape_app;

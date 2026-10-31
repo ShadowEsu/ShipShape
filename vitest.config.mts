@@ -16,6 +16,7 @@ export default defineConfig({
     env: {
       SHIPSHAPE_FIELD_KEY: Buffer.alloc(32, 7).toString("base64"),
       SHIPSHAPE_SESSION_SECRET: "test-session-secret-not-used-anywhere-else",
+      SHIPSHAPE_HASH_KEY: "test-hash-key-not-used-anywhere-else-0000",
     },
   },
 });

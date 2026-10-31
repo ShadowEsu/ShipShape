@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { asUser } from "@/lib/server/db";
+import { asService, asUser } from "@/lib/server/db";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { createLocalUser, endSession, localSignInAllowed, startSession, TERMS_VERSION } from "@/lib/server/session";
 import { seedSampleWorkspace } from "@/lib/server/sample";
@@ -34,16 +34,16 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
     userId = await createLocalUser(null, true);
   }
 
+  if (mode === "demo") {
+    const [org] = await asService((tx) =>
+      tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]),
+    );
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+  }
   await asUser(userId, async (tx) => {
     await tx.query("insert into app.consents (user_id, item, policy_version) values ($1, 'terms_privacy', $2)", [userId, TERMS_VERSION]);
     const [has] = await tx.query("select 1 from app.members where user_id = $1", [userId]);
-    if (!has) {
-      const [org] = await tx.query<{ id: string }>("select app.create_workspace($1, $2) as id", [
-        mode === "demo" ? "Harbor Plumbing (sample)" : "My business",
-        mode === "demo",
-      ]);
-      if (mode === "demo") await seedSampleWorkspace(tx, org.id, userId);
-    }
+    if (!has) await tx.query("select app.create_workspace('My business')");
   });
   await startSession({ userId, demo: mode === "demo" });
   redirect("/app");

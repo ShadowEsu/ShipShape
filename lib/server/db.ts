@@ -28,8 +28,16 @@ async function sqlFiles(dir: string) {
   return Promise.all(names.map(async (n) => ({ name: n, sql: await readFile(path.join(dir, n), "utf8") })));
 }
 
-/** Local/test database: the Supabase shim, then every migration in order. */
-export async function createLocalDriver(dataDir?: string): Promise<Driver> {
+export interface LocalDriver extends Driver {
+  /** Superuser transaction, for test setup and tamper checks only. The app never uses it. */
+  root<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
+}
+
+/**
+ * Local/test database: the Supabase shim, then every migration in order. App transactions run
+ * as the login role `shipshape_app` (like production), never as the superuser.
+ */
+export async function createLocalDriver(dataDir?: string): Promise<LocalDriver> {
   // Runtime-selected driver: production never loads the PGlite WebAssembly bundle.
   const { PGlite } = await import("@electric-sql/pglite");
   const pg = await PGlite.create(dataDir ? { dataDir } : undefined);
@@ -38,8 +46,22 @@ export async function createLocalDriver(dataDir?: string): Promise<Driver> {
     await pg.exec(await readFile(path.join(ROOT, "supabase/test/supabase-shim.sql"), "utf8"));
     for (const f of await sqlFiles(path.join(ROOT, "supabase/migrations"))) await pg.exec(f.sql);
   }
+  const wrap = (t: { query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }): Tx => ({
+    query: async (text, params) => (await t.query(text, params)).rows as never,
+  });
+  // PGlite has one connection whose login user is the superuser `postgres`. Its `SET LOCAL` and
+  // `RESET SESSION AUTHORIZATION` don't restore the identity, so each transaction sets it explicitly.
   return {
-    transaction: (fn) => pg.transaction((t) => fn({ query: async (text, params) => (await t.query(text, params)).rows as never })),
+    transaction: (fn) =>
+      pg.transaction(async (t) => {
+        await t.query("set session authorization shipshape_app");
+        return fn(wrap(t));
+      }),
+    root: (fn) =>
+      pg.transaction(async (t) => {
+        await t.query("set session authorization postgres");
+        return fn(wrap(t));
+      }),
     close: () => pg.close(),
   };
 }
@@ -61,9 +83,8 @@ function getDriver(): Promise<Driver> {
   if (!driver) {
     const url = process.env.DATABASE_URL;
     if (url) driver = createRemoteDriver(url);
-    else if (process.env.NODE_ENV === "production" && process.env.SHIPSHAPE_LOCAL_DB !== "1") {
-      driver = Promise.reject(new Error("DATABASE_URL is not set"));
-    } else driver = createLocalDriver(process.env.SHIPSHAPE_PGLITE_DIR ?? path.join(ROOT, ".data", "pglite"));
+    else if (process.env.NODE_ENV === "production") driver = Promise.reject(new Error("DATABASE_URL is not set"));
+    else driver = createLocalDriver(process.env.SHIPSHAPE_PGLITE_DIR ?? path.join(ROOT, ".data", "pglite"));
     driver.catch(() => (driver = undefined));
   }
   return driver;

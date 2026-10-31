@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { decryptField, encryptField, newToken, sha256Hex } from "@/lib/server/crypto";
 import { installLogScrubber, scrub } from "@/lib/server/log";
 
@@ -18,8 +18,19 @@ describe("tax identifier encryption (R4)", () => {
     expect(() => decryptField(sealed, OTHER, "ein")).toThrow();
     expect(() => decryptField(sealed, ORG, "ssn")).toThrow();
     const parts = sealed.split(".");
-    parts[3] = Buffer.from("tampered").toString("base64url");
+    parts[4] = Buffer.from("tampered").toString("base64url");
     expect(() => decryptField(parts.join("."), ORG, "ein")).toThrow();
+    const shortTag = sealed.split(".");
+    shortTag[3] = shortTag[3].slice(0, 8);
+    expect(() => decryptField(shortTag.join("."), ORG, "ein")).toThrow();
+  });
+
+  it("names its key, and refuses ciphertext from another key", () => {
+    const sealed = encryptField("98-7654321", ORG, "ein");
+    expect(sealed.split(".")).toHaveLength(5);
+    vi.stubEnv("SHIPSHAPE_FIELD_KEY", Buffer.alloc(32, 9).toString("base64"));
+    expect(() => decryptField(sealed, ORG, "ein")).toThrow(/different key/);
+    vi.unstubAllEnvs();
   });
 });
 

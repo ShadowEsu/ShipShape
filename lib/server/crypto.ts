@@ -5,30 +5,35 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
  * Field encryption for tax identifiers (EIN, SSN): AES-256-GCM with a 32-byte key that lives
  * outside the database (SHIPSHAPE_FIELD_KEY, base64). The organization id and field name are
  * bound in as associated data, so a ciphertext copied to another workspace or field won't open.
+ * Format: v1.<key id>.<iv>.<tag>.<ciphertext>; the key id (first 8 hex of the key's SHA-256)
+ * names the key, so a later rotation can tell old ciphertexts apart.
  */
 
 const FORMAT = "v1";
 
-function fieldKey(): Buffer {
+function fieldKey(): { key: Buffer; id: string } {
   const raw = process.env.SHIPSHAPE_FIELD_KEY;
   if (!raw) throw new Error("SHIPSHAPE_FIELD_KEY is not set");
   const key = Buffer.from(raw, "base64");
   if (key.length !== 32) throw new Error("SHIPSHAPE_FIELD_KEY must be 32 bytes, base64");
-  return key;
+  return { key, id: createHash("sha256").update(key).digest("hex").slice(0, 8) };
 }
 
 export function encryptField(plain: string, orgId: string, field: string): string {
+  const { key, id } = fieldKey();
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", fieldKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
   cipher.setAAD(Buffer.from(`${orgId}:${field}`));
   const body = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
-  return [FORMAT, iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), body.toString("base64url")].join(".");
+  return [FORMAT, id, iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), body.toString("base64url")].join(".");
 }
 
 export function decryptField(token: string, orgId: string, field: string): string {
-  const [format, iv, tag, body] = token.split(".");
-  if (format !== FORMAT || !iv || !tag || !body) throw new Error("Unreadable encrypted field");
-  const decipher = createDecipheriv("aes-256-gcm", fieldKey(), Buffer.from(iv, "base64url"));
+  const [format, kid, iv, tag, body] = token.split(".");
+  if (format !== FORMAT || !kid || !iv || !tag || !body) throw new Error("Unreadable encrypted field");
+  const { key, id } = fieldKey();
+  if (kid !== id) throw new Error("Encrypted with a different key");
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"), { authTagLength: 16 });
   decipher.setAAD(Buffer.from(`${orgId}:${field}`));
   decipher.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([decipher.update(Buffer.from(body, "base64url")), decipher.final()]).toString("utf8");
@@ -42,10 +47,13 @@ export function newToken() {
   return { token, hash: sha256Hex(token) };
 }
 
-/** HMAC for values we must correlate but never store raw (IP addresses in rate limits and access logs). */
+/**
+ * HMAC for values we must correlate but never store raw (IP addresses in rate limits and access
+ * logs). Its own key, so rotating the session secret doesn't reset rate limits.
+ */
 export function keyedHash(value: string, purpose: string): string {
-  const secret = process.env.SHIPSHAPE_SESSION_SECRET;
-  if (!secret) throw new Error("SHIPSHAPE_SESSION_SECRET is not set");
+  const secret = process.env.SHIPSHAPE_HASH_KEY;
+  if (!secret || secret.length < 32) throw new Error("SHIPSHAPE_HASH_KEY must be at least 32 characters");
   return createHmac("sha256", secret).update(`${purpose}:${value}`).digest("hex").slice(0, 32);
 }
 

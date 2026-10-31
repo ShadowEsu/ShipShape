@@ -13,7 +13,7 @@ let a: string, b: string, orgA: string, orgB: string, docA: string;
 const SHA = "a".repeat(64);
 
 async function expectDenied(p: Promise<unknown>) {
-  await expect(p).rejects.toThrow(/permission denied|row-level security|not a member|does not match|cannot change/i);
+  await expect(p).rejects.toThrow(/permission denied|row-level security|not a member|does not match|cannot change|not a user event|not allowed/i);
 }
 
 beforeAll(async () => {
@@ -34,7 +34,7 @@ beforeAll(async () => {
     await tx.query("insert into app.acknowledgments (org_id, user_id, document_id, text_version, text_sha256) values ($1, $2, $3, 'ack-v1', $4)", [
       orgA, a, d.id, SHA,
     ]);
-    await tx.query("select app.audit_append($1, 'document.uploaded', $2)", [orgA, d.id]);
+    await tx.query("select app.confirm_facts($1, array['legal_name'])", [orgA]);
     return d.id;
   });
   await asService((tx) => tx.query("insert into app.waitlist (email) values ('w@example.com')"));
@@ -49,6 +49,7 @@ const TABLES: Record<string, string | null> = {
   organizations: "id",
   members: "org_id",
   profiles: "org_id",
+  profile_facts: "org_id",
   documents: "org_id",
   document_versions: "org_id",
   acknowledgments: "org_id",
@@ -175,16 +176,80 @@ describe("row level security", () => {
 });
 
 describe("audit chain", () => {
-  it("verifies, then reports the first row someone edited behind the app's back", async () => {
+  it("records data changes itself, verifies, then reports the first row someone edited behind the app's back", async () => {
     await asUser(a, (tx) => tx.query("select app.audit_append($1, 'document.viewed', $2)", [orgA, docA]));
     const verify = () => asUser(a, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [orgA]));
     expect((await verify())[0].broken).toBeNull();
 
-    const rows = await asUser(a, (tx) => tx.query<{ seq: string; actor: string | null }>("select seq::text, actor from app.audit_log where org_id = $1 order by seq", [orgA]));
-    expect(rows.map((r) => r.seq)).toEqual(["1", "2", "3"]);
+    const rows = await asUser(a, (tx) =>
+      tx.query<{ action: string; actor: string | null }>("select action, actor from app.audit_log where org_id = $1 order by seq", [orgA]),
+    );
+    expect(rows.map((r) => r.action)).toEqual([
+      "workspace.created",
+      "document.created",
+      "document.version_added",
+      "document.acknowledged",
+      "document.viewed",
+    ]);
     expect(rows.every((r) => r.actor === a)).toBe(true);
 
     await db.root((tx) => tx.query("update app.audit_log set object_id = null where org_id = $1 and seq = 2", [orgA]));
     expect(String((await verify())[0].broken)).toBe("2");
+  });
+
+  it("members can only append view-type events, never forge e-sign or data events", async () => {
+    for (const action of ["esign.completed", "document.signed", "document.created", "workspace.created"]) {
+      await expectDenied(asUser(a, (tx) => tx.query("select app.audit_append($1, $2, $3)", [orgA, action, docA])));
+    }
+  });
+
+  it("service role can't verify without a member, or rewrite history", async () => {
+    await expectDenied(asService((tx) => tx.query("select app.audit_verify($1)", [orgA])));
+    await expectDenied(asService((tx) => tx.query("update app.audit_log set action = 'x.y' where org_id = $1", [orgA])));
+    await expectDenied(asService((tx) => tx.query("delete from app.document_versions where document_id = $1", [docA])));
+  });
+});
+
+describe("security review E2-E7", () => {
+  it("signed-in users can only create real workspaces; sample workspaces are server-only", async () => {
+    await expect(asUser(a, (tx) => tx.query("select app.create_workspace('x', true)"))).rejects.toThrow(/does not exist/);
+    await expectDenied(asUser(a, (tx) => tx.query("select app.create_sample_workspace($1, 'x')", [a])));
+    const [row] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [b]));
+    const [org] = await db.root((tx) => tx.query<{ is_demo: boolean }>("select is_demo from app.organizations where id = $1", [row.id]));
+    expect(org.is_demo).toBe(true);
+  });
+
+  it("an acknowledgment can't point at another workspace's document", async () => {
+    await expectDenied(
+      asUser(b, (tx) =>
+        tx.query("insert into app.acknowledgments (org_id, user_id, document_id, text_version, text_sha256) values ($1, $2, $3, 'v1', $4)", [
+          orgB, b, docA, SHA,
+        ]),
+      ),
+    );
+  });
+
+  it("tax ids go only through set_tax_id, by owners and admins; updated_by is set by the database", async () => {
+    await expectDenied(asUser(a, (tx) => tx.query("update app.profiles set ein_last4 = '9999' where org_id = $1", [orgA])));
+    await expectDenied(asUser(a, (tx) => tx.query("update app.profiles set updated_by = $2 where org_id = $1", [orgA, b])));
+    await expect(asUser(a, (tx) => tx.query("select app.set_tax_id($1, 'ein', 'not-a-cipher', '1234')", [orgA]))).rejects.toThrow(/invalid/);
+    await asUser(a, (tx) => tx.query("select app.set_tax_id($1, 'ein', 'v1.k.iv.tag.body', '4567')", [orgA]));
+    const c = await db.user("c2@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [orgA, c]));
+    await expectDenied(asUser(c, (tx) => tx.query("select app.set_tax_id($1, 'ein', null, null)", [orgA])));
+    await asUser(a, (tx) => tx.query("update app.profiles set legal_name = 'A Plumbing LLC' where org_id = $1", [orgA]));
+    const [p] = await db.root((tx) => tx.query<{ updated_by: string; ein_last4: string }>("select updated_by, ein_last4 from app.profiles where org_id = $1", [orgA]));
+    expect(p).toEqual({ updated_by: a, ein_last4: "4567" });
+  });
+
+  it("injected SQL that resets the role stops at the app role, below the superuser", async () => {
+    const inject = (sql: string) => asUser(a, async (tx) => {
+      await tx.query("reset role");
+      return tx.query(sql);
+    });
+    await expectDenied(inject("set role postgres"));
+    await expectDenied(inject("alter table app.audit_log disable row level security"));
+    await expectDenied(inject("select * from app.documents"));
+    await expectDenied(inject("update app.audit_log set action = 'x.y'"));
   });
 });
