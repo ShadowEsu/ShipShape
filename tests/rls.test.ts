@@ -330,6 +330,40 @@ describe("audit chain", () => {
     await expectDenied(asService((tx) => tx.query("update app.audit_log set action = 'x.y' where org_id = $1", [orgA])));
     await expectDenied(asService((tx) => tx.query("delete from app.document_versions where document_id = $1", [docA])));
   });
+
+  // Real Postgres only: PGlite has one connection, so two transactions never overlap there.
+  it.skipIf(!process.env.SHIPSHAPE_PG_TEST_URL)("two people adding to a workspace at once can both write its history, without a deadlock", async () => {
+    const owner = await db.user("busy@example.com");
+    const org = (await asUser(owner, (tx) => tx.query<{ id: string }>("select app.create_workspace('Busy Workspace') as id")))[0].id;
+    const [{ link, d1, d2 }] = await db.root((tx) =>
+      tx.query<{ link: string; d1: string; d2: string }>(
+        `with l as (insert into app.share_links (org_id, label, token_hash, expires_at) values ($1, 'Busy', repeat('c', 64), now() + interval '1 day') returning id),
+              d as (insert into app.documents (org_id, title, kind) select $1, 'Doc ' || g, 'w9' from generate_series(1, 2) g returning id)
+         select (select id from l) as link, (select min(id::text) from d) as d1, (select max(id::text) from d) as d2`,
+        [org],
+      ),
+    );
+    // Each adds a row that references the workspace (its foreign key takes a key-share lock on the
+    // workspace's row, as every insert does), waits until the other has too, then writes history.
+    let arrived = 0;
+    let bothIn = () => {};
+    const together = new Promise<void>((resolve) => (bothIn = resolve));
+    const one = (doc: string) =>
+      asUser(owner, async (tx) => {
+        await tx.query("insert into app.share_link_documents (link_id, document_id, org_id) values ($1, $2, $3)", [link, doc, org]);
+        if (++arrived === 2) bothIn();
+        await together;
+        await tx.query("select app.audit_append($1, 'document.viewed', $2)", [org, doc]);
+      });
+    await Promise.all([one(d1), one(d2)]);
+    const [chain] = await asUser(owner, (tx) =>
+      tx.query<{ broken: string | null; viewed: number }>(
+        "select app.audit_verify($1) as broken, (select count(*)::int from app.audit_log where org_id = $1 and action = 'document.viewed') as viewed",
+        [org],
+      ),
+    );
+    expect(chain).toEqual({ broken: null, viewed: 2 });
+  });
 });
 
 describe("security review E2-E7", () => {
