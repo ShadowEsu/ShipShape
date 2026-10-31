@@ -4,6 +4,9 @@ import { runReminders } from "@/lib/server/deadlines";
 import { fail, purgeRateHits } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
+// The stored-file cleanup works for up to 50 s (Security N-091b); this keeps the function alive for
+// it whatever the project's default limit is (N-091c). A run cut short loses nothing: leftovers wait a day.
+export const maxDuration = 60;
 
 /**
  * Daily: reminders, clearing rate-limit windows that started over an hour ago (the privacy policy says
