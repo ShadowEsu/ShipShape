@@ -54,10 +54,12 @@ async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides
   const start = prefill(t, facts);
   const values = { ...start, ...overrides };
   const out = await render(t, values, facts);
+  // Titles built from a sample party's name already end in "(sample)".
+  const title = out.title.endsWith("(sample)") ? out.title : `${out.title} (sample)`;
   await insertDocument(
     tx,
     ctx,
-    { title: `${out.title} (sample)`, kind: t.kind, counterparty: out.counterparty, issued_on: out.issuedOn, expires_on: out.expiresOn, template_id: t.id },
+    { title, kind: t.kind, counterparty: out.counterparty, issued_on: out.issuedOn, expires_on: out.expiresOn, template_id: t.id },
     { bytes: out.bytes, mime: "application/pdf" },
     "sample",
     { template: t.id, templateVersion: t.source.version, fields: fillRecord(t, values, start) },
