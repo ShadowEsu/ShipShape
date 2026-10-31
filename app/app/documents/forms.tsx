@@ -56,7 +56,8 @@ function DetailFields({ v }: { v?: DetailValues }) {
         <label htmlFor="kind" className="label">
           Kind
         </label>
-        <select id="kind" name="kind" defaultValue={v?.kind ?? "other"} className="input">
+        {/* Keyed: React applies a select's defaultValue only when it mounts, and resets the form to that after each action. */}
+        <select key={v?.kind} id="kind" name="kind" defaultValue={v?.kind ?? "other"} className="input">
           {KINDS.map(([k, l]) => (
             <option key={k} value={k}>
               {l}
@@ -108,7 +109,7 @@ export function DetailsForm({ id, values }: { id: string; values: DetailValues }
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="id" value={id} />
-      <DetailFields v={values} />
+      <DetailFields v={state.values ?? values} />
       <Status state={state} savedText="Saved. Reminders follow the new dates." />
       <button className="btn-ghost" disabled={pending}>
         {pending ? "Saving…" : "Save details"}
@@ -128,7 +129,7 @@ export function NewDocumentForm() {
         <input id="file" name="file" type="file" required accept="application/pdf,image/png,image/jpeg" className="input py-1.5" />
         <p className="mt-1 text-xs text-ink-3">PDF, PNG or JPEG, up to 10 MB.</p>
       </div>
-      <DetailFields />
+      <DetailFields v={state.values} />
       <Status state={state} savedText="" />
       <button className="btn" disabled={pending}>
         {pending ? "Uploading…" : "Add to vault"}
@@ -193,19 +194,19 @@ export function SignRequestForm({ id, days, demo }: { id: string; days: readonly
         <label htmlFor="signer-name" className="label">
           Signer&apos;s name
         </label>
-        <input id="signer-name" name="signer_name" required maxLength={120} autoComplete="off" className="input" />
+        <input id="signer-name" name="signer_name" required maxLength={120} autoComplete="off" defaultValue={state.values?.signer_name} className="input" />
       </div>
       <div>
         <label htmlFor="signer-email" className="label">
           Signer&apos;s email
         </label>
-        <input id="signer-email" name="signer_email" type="email" required maxLength={200} autoComplete="off" className="input" />
+        <input id="signer-email" name="signer_email" type="email" required maxLength={200} autoComplete="off" defaultValue={state.values?.signer_email} className="input" />
       </div>
       <div>
         <label htmlFor="sign-days" className="label">
           Open for
         </label>
-        <select id="sign-days" name="days" defaultValue={days[1]} className="input">
+        <select key={state.values?.days} id="sign-days" name="days" defaultValue={state.values?.days ?? days[1]} className="input">
           {days.map((d) => (
             <option key={d} value={d}>
               {d} days

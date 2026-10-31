@@ -12,6 +12,8 @@ import { requireWorkspace } from "@/lib/server/session";
 export interface FormState {
   error?: string;
   saved?: boolean;
+  /** What was typed, sent back with an error so the form shows it again after React resets it. */
+  values?: DetailInput;
 }
 
 function message(e: unknown): string {
@@ -29,6 +31,7 @@ const meta = (data: FormData) => ({
   expires_on: String(data.get("expires_on") ?? ""),
   renews_on: String(data.get("renews_on") ?? ""),
 });
+export type DetailInput = ReturnType<typeof meta>;
 
 async function fileBytes(data: FormData): Promise<Uint8Array> {
   const file = data.get("file");
@@ -42,7 +45,7 @@ export async function addDocument(_prev: FormState, data: FormData): Promise<For
   try {
     id = await uploadDocument(ctx, meta(data), await fileBytes(data));
   } catch (e) {
-    return { error: message(e) };
+    return { error: message(e), values: meta(data) };
   }
   redirect(`/app/documents/${id}`);
 }
@@ -62,7 +65,7 @@ export async function saveDetails(_prev: FormState, data: FormData): Promise<For
     id = documentId(data);
     await updateDocument(ctx, id, meta(data));
   } catch (e) {
-    return { error: message(e) };
+    return { error: message(e), values: meta(data) };
   }
   revalidatePath(`/app/documents/${id}`);
   return { saved: true };
@@ -92,6 +95,8 @@ export async function archive(data: FormData) {
 export interface SignFormState {
   error?: string;
   created?: { id: string; token: string };
+  /** What was typed, sent back with an error so the form shows it again after React resets it. */
+  values?: { signer_name: string; signer_email: string; days: string };
 }
 
 export async function askToSign(_prev: SignFormState, data: FormData): Promise<SignFormState> {
@@ -107,7 +112,8 @@ export async function askToSign(_prev: SignFormState, data: FormData): Promise<S
     revalidatePath(`/app/documents/${id}`);
     return { created };
   } catch (e) {
-    return { error: message(e) };
+    const typed = (name: string) => String(data.get(name) ?? "");
+    return { error: message(e), values: { signer_name: typed("signer_name"), signer_email: typed("signer_email"), days: typed("days") } };
   }
 }
 
