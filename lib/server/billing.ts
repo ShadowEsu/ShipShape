@@ -1,11 +1,11 @@
 import "server-only";
 import Stripe from "stripe";
+import { TERMS_VERSION } from "@/lib/legal";
 import { PLANS, type PlanId } from "@/lib/plans";
 import { asService, asUser, type Tx } from "./db";
 import { UserError } from "./errors";
 import { realDocsEnabled } from "./flags";
 import type { Ctx } from "./profile";
-import { TERMS_VERSION } from "./session";
 
 /**
  * Stripe billing, TEST MODE ONLY (fleet rule: no live keys until an attorney names the seller).

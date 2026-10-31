@@ -18,8 +18,6 @@ import { safeEqual } from "./crypto";
 const COOKIE = "ss_session";
 const TTL_SECONDS = 12 * 60 * 60;
 
-export const TERMS_VERSION = "2026-10-30-draft";
-
 export interface Session {
   userId: string;
   demo: boolean;

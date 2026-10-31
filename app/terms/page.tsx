@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
+import { TERMS_VERSION } from "@/lib/legal";
 import { PLANS } from "@/lib/plans";
-import { TERMS_VERSION } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Terms (draft)" };
 
@@ -65,6 +65,11 @@ export default function TermsPage() {
         </li>
         <li>You can cancel any time from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free.</li>
         <li>If a payment fails, Pro stays on for 7 days after the paid period while the payment is retried, then moves to Free.</li>
+        <li>
+          Your first {pro.name} payment can be refunded in full if you ask within 14 days of it. The address to ask will be listed here
+          before real accounts open (during the preview no real money moves).
+        </li>
+        <li>After that, you can cancel any time, but payments already made aren&apos;t refunded, in whole or in part.</li>
         <li>If you get a full refund, or dispute a charge, Pro ends straight away.</li>
         <li>Moving to Free never deletes anything; you just can&apos;t add more than Free allows until you&apos;re under its limits.</li>
         <li>Prices don&apos;t include taxes that may apply where you live.</li>

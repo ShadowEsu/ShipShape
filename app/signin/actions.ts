@@ -3,10 +3,11 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { TERMS_VERSION } from "@/lib/legal";
 import { asService, asUser } from "@/lib/server/db";
 import { runReminders } from "@/lib/server/deadlines";
 import { clientIp, rateLimited } from "@/lib/server/http";
-import { createLocalUser, endSession, localSignInAllowed, startSession, TERMS_VERSION } from "@/lib/server/session";
+import { createLocalUser, endSession, localSignInAllowed, startSession } from "@/lib/server/session";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 
 export interface SignInState {

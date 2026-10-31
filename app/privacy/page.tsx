@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 import { AI_RECIPIENT } from "@/lib/ai";
-import { TERMS_VERSION } from "@/lib/server/session";
+import { TERMS_VERSION } from "@/lib/legal";
 
 export const metadata: Metadata = { title: "Privacy (draft)" };
 

@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 /*
- * Design tokens. Neutral until Preston picks a direction from Design's stills: the pick is a
- * swap of --accent (and --accent-ink / --accent-soft) and the --serif / --sans families here.
+ * Design tokens. Neutral ink until a brand direction is chosen from Design's three options; the
+ * choice is a swap of --accent (and --accent-ink / --accent-soft) and the --serif / --sans
+ * families here.
  * Documents always render on a white sheet, in both themes.
  */
 :root {
@@ -12,9 +13,9 @@
   --ink-2: #4a4a4a;
   --ink-3: #6b6b6b;
   --line: #e4e4e0;
-  --accent: #1d4ed8;
+  --accent: #111111;
   --accent-ink: #ffffff;
-  --accent-soft: #eef2ff;
+  --accent-soft: #efefec;
   --ok: #067647;
   --ok-soft: #ecfdf3;
   --warn: #9a4a00;
