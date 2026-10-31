@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { PDFPage } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
 import { downloadUrl, fillTemplate, getDocument, listDocuments, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
@@ -266,7 +267,14 @@ describe("business facts", () => {
 
 describe("workspace name", () => {
   const renames = async (orgId: string) =>
-    db.root((tx) => tx.query<{ actor: string }>("select actor from app.audit_log where org_id = $1 and action = 'workspace.renamed'", [orgId]));
+    db.root((tx) =>
+      tx.query<{ actor: string; detail_sha256: string | null }>(
+        "select actor, detail_sha256 from app.audit_log where org_id = $1 and action = 'workspace.renamed' order by seq",
+        [orgId],
+      ),
+    );
+  // The history detail is SHA-256 of [old, new] as Postgres writes a JSON array (Security, 0026).
+  const renamed = (from: string, to: string) => sha256Hex(`[${JSON.stringify(from)}, ${JSON.stringify(to)}]`);
 
   it("is what people opening a passport link see; an owner renames it and the rename is in the history", async () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
@@ -275,9 +283,11 @@ describe("workspace name", () => {
     const { id, token } = await createPassport(ctx, { label: "For Northwind", days: 7, documentIds: [docId] });
     await renameWorkspace(ctx, "  Harbor Supply Co  ");
     expect((await openPassport(id, token, "203.0.113.9"))?.orgName).toBe("Harbor Supply Co");
-    expect(await renames(ctx.orgId)).toEqual([{ actor: ctx.userId }]);
+    expect(await renames(ctx.orgId)).toEqual([{ actor: ctx.userId, detail_sha256: renamed("Real", "Harbor Supply Co") }]);
     await renameWorkspace(ctx, "Harbor Supply Co"); // the same name again isn't a change
     expect(await renames(ctx.orgId)).toHaveLength(1);
+    await renameWorkspace(ctx, 'Harbor "HSC" Co'); // quotes are escaped, so the pair stays unambiguous
+    expect((await renames(ctx.orgId))[1].detail_sha256).toBe(renamed("Harbor Supply Co", 'Harbor "HSC" Co'));
     const [chain] = await asUser(ctx.userId, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [ctx.orgId]));
     expect(chain.broken).toBeNull();
     vi.unstubAllEnvs();
