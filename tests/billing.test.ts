@@ -5,7 +5,7 @@ import { PDFDocument } from "pdf-lib";
 import Stripe from "stripe";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteAccount } from "@/lib/server/account";
-import { billingConfig, billingView, handleStripeWebhook, setStripeForTests, startCheckout, type StripePort, type SubscriptionState } from "@/lib/server/billing";
+import { billingConfig, billingView, handleStripeWebhook, openPortal, setStripeForTests, startCheckout, type StripePort, type SubscriptionState } from "@/lib/server/billing";
 import { asUser } from "@/lib/server/db";
 import { uploadDocument } from "@/lib/server/documents";
 import { PlanLimit, UserError } from "@/lib/server/errors";
@@ -38,7 +38,9 @@ class FakeStripe implements StripePort {
     this.checkouts.push(params);
     return { url: "https://checkout.stripe.com/c/pay/cs_test_1" };
   }
-  async createPortal() {
+  portals: Stripe.BillingPortal.SessionCreateParams[] = [];
+  async createPortal(params: Stripe.BillingPortal.SessionCreateParams) {
+    this.portals.push(params);
     return { url: "https://billing.stripe.com/p/session/test_1" };
   }
   async retrievePrice() {
@@ -259,6 +261,23 @@ describe("checkout", () => {
     const [row] = await db.root((tx) => tx.query<{ stripe_subscription_id: string }>("select stripe_subscription_id from app.billing where org_id = $1", [ctx.orgId]));
     expect(row.stripe_subscription_id).toBe(sub.id);
   });
+
+  it("opens the billing portal only for the owner of a workspace that has a Stripe customer, and for that customer", async () => {
+    await payingWorkspace(); // another workspace's customer exists
+    const fresh = await realWorkspace();
+    await expect(openPortal(fresh)).rejects.toThrow(/no billing account/);
+    const { ctx, customer } = await payingWorkspace();
+    await expect(openPortal({ ...ctx, role: "admin" })).rejects.toThrow(/owner/);
+    await expect(openPortal({ ...ctx, demo: true })).rejects.toThrow(/Sample workspaces/);
+    expect(fake.portals).toEqual([]);
+    expect(await openPortal(ctx)).toBe("https://billing.stripe.com/p/session/test_1");
+    vi.stubEnv("STRIPE_PORTAL_CONFIG", "bpc_Test1");
+    await openPortal(ctx);
+    expect(fake.portals).toEqual([
+      { customer, return_url: "http://127.0.0.1:3917/app/settings" },
+      { customer, return_url: "http://127.0.0.1:3917/app/settings", configuration: "bpc_Test1" },
+    ]);
+  });
 });
 
 describe("access follows the subscription Stripe reports now", () => {
@@ -391,6 +410,28 @@ describe("account deletion", () => {
     fake.listSubscriptions = () => Promise.reject(new Error("network"));
     await expect(deleteAccount(a.ctx)).rejects.toThrow(/couldn't be cancelled just now/);
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toHaveLength(1);
+  });
+
+  it("when Stripe refuses a cancel, goes ahead only if the subscription has ended meanwhile", async () => {
+    const exists = async (orgId: string) => (await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [orgId]))).length === 1;
+    const cancel = fake.cancelSubscription.bind(fake);
+
+    // It ended between the list and the cancel (Stripe: "already canceled"): nothing is billed, so delete.
+    const ended = await payingWorkspace();
+    fake.cancelSubscription = async (id) => {
+      ended.sub.status = "canceled";
+      return cancel(id);
+    };
+    await deleteAccount(ended.ctx);
+    expect(await exists(ended.ctx.orgId)).toBe(false);
+
+    // The cancel failed and Stripe still reports it active, or can't be read: keep the account.
+    const running = await payingWorkspace();
+    fake.cancelSubscription = () => Promise.reject(new Error("network"));
+    await expect(deleteAccount(running.ctx)).rejects.toThrow(/couldn't be cancelled just now/);
+    fake.failNextRetrieve = true;
+    await expect(deleteAccount(running.ctx)).rejects.toThrow(/couldn't be cancelled just now/);
+    expect(await exists(running.ctx.orgId)).toBe(true);
   });
 
   it("a co-owner leaving mid-deletion can't leave a deleted workspace billed (Security F5-r2)", async () => {
