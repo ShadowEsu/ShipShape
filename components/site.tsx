@@ -41,9 +41,9 @@ export function SiteFooter() {
           <Logo />
           <NotLegalAdvice className="max-w-md" />
         </div>
-        <nav aria-label="Footer" className="flex flex-wrap content-start gap-x-6 gap-y-2 text-sm text-ink-2">
+        <nav aria-label="Footer" className="flex flex-wrap content-start gap-x-6 gap-y-1 text-sm text-ink-2">
           {FOOTER.map(([href, label]) => (
-            <Link key={href} href={href} className="hover:text-ink hover:underline">
+            <Link key={href} href={href} className="py-1 hover:text-ink hover:underline">
               {label}
             </Link>
           ))}

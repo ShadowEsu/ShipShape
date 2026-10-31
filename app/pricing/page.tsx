@@ -42,7 +42,7 @@ export default function PricingPage() {
             <p>
               <span className="font-serif text-4xl font-semibold">$0</span>
             </p>
-            <p className="text-sm text-ink-2">
+            <p className="text-base text-ink-2 sm:text-sm">
               For getting your papers in order: {free.documents} active documents and {free.passports} passport link open at a time.
             </p>
             <Link href="/signin" className="btn-ghost mt-auto">
@@ -55,7 +55,7 @@ export default function PricingPage() {
               <span className="font-serif text-4xl font-semibold">${pro.price}</span>
               <span className="text-ink-2"> / month</span>
             </p>
-            <p className="text-sm text-ink-2">No limits on documents or links, plus email reminders and signature requests.</p>
+            <p className="text-base text-ink-2 sm:text-sm">No limits on documents or links, plus email reminders and signature requests.</p>
             <Link href="/signin" className="btn-accent mt-auto">
               Try the sample
             </Link>
@@ -66,7 +66,7 @@ export default function PricingPage() {
               <h2 className="text-lg font-semibold">Collect</h2>
               <StatusLabel status="Works today" />
             </div>
-            <p className="text-sm text-ink-2">
+            <p className="text-base text-ink-2 sm:text-sm">
               For businesses that gather documents from many vendors or subcontractors: send each one an upload link and see who&apos;s
               current. Try it in the sample workspace. It isn&apos;t in a plan yet, so it isn&apos;t for sale.
             </p>
@@ -106,7 +106,7 @@ export default function PricingPage() {
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-sm text-ink-3">
+          <p className="mt-3 text-base text-ink-3 sm:text-sm">
             Email reminders and signing codes go out once ShipShape has an email provider; until then they appear inside the app.
           </p>
         </section>
@@ -121,7 +121,7 @@ export default function PricingPage() {
               </div>
             ))}
           </dl>
-          <p className="mt-4 text-sm text-ink-2">
+          <p className="mt-4 text-base text-ink-2 sm:text-sm">
             The full terms, including billing, are in the{" "}
             <Link href="/terms" className="underline">
               terms

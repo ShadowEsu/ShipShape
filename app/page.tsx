@@ -85,7 +85,7 @@ export default function Home() {
                 How it works
               </Link>
             </div>
-            <p className="text-sm text-ink-3">Preview: a sample business with made-up documents. Real accounts open after our security review.</p>
+            <p className="text-base text-ink-3 sm:text-sm">Preview: a sample business with made-up documents. Real accounts open after our security review.</p>
           </div>
           <SamplePassport />
         </section>
@@ -97,7 +97,7 @@ export default function Home() {
               {WHO.map((w) => (
                 <div key={w.who} className="rounded-2xl border border-line p-5">
                   <h3 className="font-semibold">{w.who}</h3>
-                  <p className="mt-2 text-sm text-ink-2">{w.asks}</p>
+                  <p className="mt-2 text-base text-ink-2 sm:text-sm">{w.asks}</p>
                 </div>
               ))}
             </div>
@@ -113,7 +113,7 @@ export default function Home() {
               <li key={s.title} className="space-y-2">
                 <span className="font-mono text-sm text-ink-3">0{i + 1}</span>
                 <h3 className="text-lg font-semibold">{s.title}</h3>
-                <p className="text-sm text-ink-2">{s.body}</p>
+                <p className="text-base text-ink-2 sm:text-sm">{s.body}</p>
               </li>
             ))}
           </ol>
@@ -130,11 +130,11 @@ export default function Home() {
                     <h3 className="font-semibold">{c.title}</h3>
                     <StatusLabel status={c.status} />
                   </div>
-                  <p className="mt-1 text-sm text-ink-2">{c.body}</p>
+                  <p className="mt-1 text-base text-ink-2 sm:text-sm">{c.body}</p>
                 </li>
               ))}
             </ul>
-            <p className="mt-4 text-sm text-ink-3">&ldquo;Works today&rdquo; means in the sample workspace.</p>
+            <p className="mt-4 text-base text-ink-3 sm:text-sm">&ldquo;Works today&rdquo; means in the sample workspace.</p>
           </div>
         </section>
 
@@ -147,7 +147,7 @@ export default function Home() {
               or changes the clauses, and it never tells you which document you need. You review every field, and you decide.
             </p>
           </div>
-          <ul className="space-y-3 text-sm text-ink-2">
+          <ul className="space-y-3 text-base text-ink-2 sm:text-sm">
             {[
               "Tax IDs are encrypted with a key kept outside the database and shown as the last 4 digits unless you ask.",
               "Files sit in private storage and open through links that expire after 5 minutes.",
