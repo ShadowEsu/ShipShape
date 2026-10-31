@@ -15,6 +15,7 @@ import {
   receiveFile,
   revokeVendorLink,
   setVendorArchived,
+  vendorFileUrl,
 } from "@/lib/server/collect";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
@@ -23,7 +24,7 @@ import { MAX_UPLOAD_BYTES } from "@/lib/server/files";
 import { collectOpen, GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
-import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { freshDb, type TestDb } from "./support/db";
 
 /** Collect: vendors send documents through upload links (secret in the fragment, hashed, expiring, revocable). */
@@ -132,6 +133,26 @@ describe("a vendor sending files", () => {
       tx.query<{ actor: string | null }>("select actor from app.audit_log where org_id = $1 and action = 'collect.received'", [ctx.orgId]),
     );
     expect(audit.actor).toBeNull();
+  });
+
+  it("downloads to the workspace that asked for it, as an attachment under the file's name, and to nobody else", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner-dl@example.com");
+    const other = await realWorkspace("other-dl@example.com");
+    const vendorId = await addVendor(ctx, { name: "Lopez Roofing", email: "", requested: ["w9"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 30 });
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: { name: "W9 Lopez.pdf", bytes: PDF } })).toBe("sent");
+    const [file] = (await getVendor(ctx, vendorId))!.files;
+
+    const got = verifyFileParams(new URL((await vendorFileUrl(ctx, file.id))!, "http://x").searchParams);
+    expect(got).toMatchObject({ inline: false, filename: "W9 Lopez.pdf" });
+    expect(sha256Hex(await blobStore().get(got!.objectPath))).toBe(sha256Hex(PDF));
+
+    expect(await vendorFileUrl(other, file.id)).toBeNull();
+    // A member of both workspaces, working in the other one, gets nothing there either.
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [other.orgId, ctx.userId]));
+    expect(await vendorFileUrl({ ...ctx, orgId: other.orgId, role: "member" }, file.id)).toBeNull();
+    expect(await vendorFileUrl(ctx, "not-a-file-id")).toBeNull();
   });
 
   it("refuses an unrequested kind, a bad date, a non-PDF/image, an oversized file or no file, and stores nothing", async () => {

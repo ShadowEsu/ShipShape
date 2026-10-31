@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
 import { downloadUrl, getDocument, insertDocument, listDocuments } from "@/lib/server/documents";
-import { completeSigning, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
+import { completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
@@ -79,6 +79,23 @@ describe("signature requests", () => {
     await expect(
       asUser(a.userId, (tx) => tx.query("update app.signature_requests set status = 'signed' where id = $1", [id])),
     ).rejects.toThrow(/row-level security|permission denied/);
+  });
+
+  it("are listed on their document, newest first, only in the workspace that sent them", async () => {
+    const ctx = await sampleWorkspace();
+    const doc = await nda(ctx);
+    const first = await request(ctx);
+    const second = await request(ctx);
+    await revokeSignatureRequest(ctx, first.id);
+    const list = await listSignatureRequests(ctx, doc.id);
+    expect(list.map((r) => [r.id, r.status, r.signer_name, r.has_review_file])).toEqual([
+      [second.id, "pending", "Jordan Lee", true],
+      [first.id, "revoked", "Jordan Lee", true],
+    ]);
+    expect(await listSignatureRequests(b, doc.id)).toEqual([]);
+    // A member of both workspaces, working in the other one, doesn't see them there either.
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [b.orgId, ctx.userId]));
+    expect(await listSignatureRequests({ ...ctx, orgId: b.orgId, role: "member" }, doc.id)).toEqual([]);
   });
 
   it("stop if the document changes while its file is being prepared: the request must name the latest version of an active document (Security R10-1)", async () => {
