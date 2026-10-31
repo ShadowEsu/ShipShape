@@ -193,16 +193,25 @@ export async function deleteAccount(ctx: Ctx): Promise<void> {
   // (SS001) if a billed workspace it is about to delete wasn't handled here: another owner left in
   // the meantime and made this person the sole owner. Then billing is handled again, once.
   // The Cognito user goes next, before the rows: nobody can sign back in to an emptied account, and
-  // if Cognito fails nothing is deleted yet (a retry finds the user gone and carries on).
+  // if Cognito fails nothing is deleted yet. If the rows then fail, the person is still signed in
+  // here (the session lasts 12 hours) and is told to press Delete again: that finds the Cognito
+  // user already gone, which counts as deleted, and finishes.
   const remove = async () => {
     const handled = await cancelSubscriptionsBeforeDeletion(ctx.userId);
+    let signInRemoved: boolean;
     try {
-      await deleteSignIn(ctx.userId);
+      signInRemoved = await deleteSignIn(ctx.userId);
     } catch (e) {
       console.error(`account deletion: sign-in not removed (${e instanceof Error ? e.name : "unknown"})`);
       throw new UserError("We couldn't remove your sign-in just now, so your account wasn't deleted. Try again in a minute.");
     }
-    return asUser(ctx.userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account($1::uuid[])", [handled]));
+    try {
+      return await asUser(ctx.userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_my_account($1::uuid[])", [handled]));
+    } catch (e) {
+      if (!signInRemoved || pgErrorCode(e) === BILLING_NOT_HANDLED) throw e;
+      console.error(`account deletion: sign-in removed but data not deleted (${e instanceof Error ? e.name : "unknown"})`);
+      throw new UserError("Your sign-in was removed, but deleting your data didn't finish. Press Delete my account again now to finish it: this page still has you signed in.");
+    }
   };
   let rows: { storage_path: string }[];
   try {

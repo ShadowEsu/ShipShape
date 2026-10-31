@@ -1,9 +1,9 @@
 import "server-only";
 import { createHash, createHmac, createPublicKey, randomBytes, verify, type KeyObject } from "node:crypto";
 import { AdminDeleteUserCommand, CognitoIdentityProviderClient, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
-import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 import { z } from "zod";
 import { TERMS_VERSION } from "@/lib/legal";
+import { productionAwsClient } from "./aws";
 import { safeEqual } from "./crypto";
 import { asService } from "./db";
 import { sessionSecret } from "./session";
@@ -296,29 +296,30 @@ export function setSignInAdminForTests(a: SignInAdmin | undefined) {
 }
 
 /**
- * Production calls Cognito with credentials for AWS_ROLE_ARN from Vercel's OIDC token (the role
- * allows AdminDeleteUser on this pool only; aws-plan.md), never stored keys.
+ * The Cognito client account deletion uses. Production signs with credentials for AWS_ROLE_ARN from
+ * Vercel's OIDC token (the role allows AdminDeleteUser on this pool only; aws-plan.md) and reaches
+ * AWS's own endpoint only (productionAwsClient, Security CG-1).
  */
+export function cognitoClient(cfg: CognitoConfig, env: Env): CognitoIdentityProviderClient {
+  if (env.NODE_ENV === "production") return new CognitoIdentityProviderClient({ region: cfg.region, ...productionAwsClient(env, "Deleting Cognito users") });
+  return new CognitoIdentityProviderClient({ region: cfg.region });
+}
+
 function signInAdmin(cfg: CognitoConfig, env: Env): SignInAdmin {
-  if (admin) return admin;
-  let credentials: ReturnType<typeof awsCredentialsProvider> | undefined;
-  if (env.NODE_ENV === "production") {
-    const roleArn = env.AWS_ROLE_ARN;
-    if (!roleArn) throw new Error("Deleting Cognito users needs AWS_ROLE_ARN in production");
-    credentials = awsCredentialsProvider({ roleArn });
-  }
-  admin = cognitoAdmin(new CognitoIdentityProviderClient({ region: cfg.region, ...(credentials ? { credentials } : {}) }), cfg.poolId);
+  admin ??= cognitoAdmin(cognitoClient(cfg, env), cfg.poolId);
   return admin;
 }
 
 /**
- * Account deletion's first step: the person's Cognito user, so they can't sign back in to an
- * account whose data is gone. Users without a Cognito identity (sample workspaces) have none.
+ * Account deletion's step before the rows: the person's Cognito user, so they can't sign back in to
+ * an account whose data is gone. True if there was one (it's gone now); users without a Cognito
+ * identity (sample workspaces) have none.
  */
-export async function deleteSignIn(userId: string): Promise<void> {
+export async function deleteSignIn(userId: string): Promise<boolean> {
   const [identity] = await asService((tx) => tx.query<{ subject: string }>("select subject from app.identities where provider = 'cognito' and user_id = $1", [userId]));
-  if (!identity) return;
+  if (!identity) return false;
   const cfg = cognitoConfig(process.env);
   if (!cfg) throw new Error("This account signs in with Cognito, which isn't set up here");
   await signInAdmin(cfg, process.env).deleteUser(identity.subject);
+  return true;
 }

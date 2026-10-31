@@ -1,8 +1,11 @@
 import { createHash, generateKeyPairSync, randomUUID, sign, type KeyObject } from "node:crypto";
-import { CognitoIdentityProviderClient, NotAuthorizedException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { AdminDeleteUserCommand, CognitoIdentityProviderClient, NotAuthorizedException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteAccount } from "@/lib/server/account";
-import { type CallbackParams, type CognitoConfig, cognitoAdmin, cognitoConfig, completeSignIn, setSignInAdminForTests, startSignIn } from "@/lib/server/cognito";
+import { type CallbackParams, type CognitoConfig, cognitoAdmin, cognitoClient, cognitoConfig, completeSignIn, setSignInAdminForTests, startSignIn } from "@/lib/server/cognito";
 import { asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
 import { authIsRecent, decodeSession, encodeSession } from "@/lib/server/session";
@@ -321,6 +324,29 @@ describe("deleting the account", () => {
     expect(await exists(owner.userId)).toBe(true);
   });
 
+  it("if the data can't be deleted after the Cognito user was, the person is told to press Delete again, and that finishes", async () => {
+    for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
+    const owner = await cognitoOwner();
+    const pool = new Set<string>([owner.sub]);
+    const asked: string[] = [];
+    // Like Cognito: deleting a user that's already gone counts as deleted (cognitoAdmin).
+    setSignInAdminForTests({ deleteUser: async (sub) => void (asked.push(sub), pool.delete(sub)) });
+    await db.root((tx) => tx.query("alter function app.delete_my_account(uuid[]) rename to delete_my_account_unavailable"));
+    let error: unknown;
+    try {
+      error = await deleteAccount(owner.ctx).catch((e: unknown) => e);
+    } finally {
+      await db.root((tx) => tx.query("alter function app.delete_my_account_unavailable(uuid[]) rename to delete_my_account"));
+    }
+    expect(error).toBeInstanceOf(UserError);
+    expect(error).toMatchObject({ message: expect.stringContaining("Press Delete my account again") });
+    expect(pool.has(owner.sub)).toBe(false);
+    expect(await exists(owner.userId)).toBe(true);
+    await deleteAccount(owner.ctx);
+    expect(asked).toEqual([owner.sub, owner.sub]);
+    expect(await exists(owner.userId)).toBe(false);
+  });
+
   describe("through the AWS SDK", () => {
     /** A real Cognito client whose requests are answered here, never sent. */
     function offline(answer: () => never | undefined) {
@@ -351,6 +377,33 @@ describe("deleting the account", () => {
         throw new NotAuthorizedException({ message: "not allowed", $metadata: {} });
       });
       await expect(denied.admin.deleteUser("1f2e3d4c-sub")).rejects.toBeInstanceOf(NotAuthorizedException);
+    });
+
+    it("in production, the client reaches AWS's own endpoint only: AWS_ENDPOINT_URL* is refused, a config file's endpoint_url ignored (CG-1)", async () => {
+      const production = { NODE_ENV: "production", AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/shipshape-prod-app" };
+      expect(() => cognitoClient(config, { ...production, AWS_ROLE_ARN: undefined })).toThrow("needs AWS_ROLE_ARN");
+      expect(() => cognitoClient(config, { ...production, AWS_ENDPOINT_URL_COGNITO_IDENTITY_PROVIDER: "https://elsewhere.example" })).toThrow("refuses AWS_ENDPOINT_URL_COGNITO_IDENTITY_PROVIDER");
+      const dir = await mkdtemp(path.join(os.tmpdir(), "aws-config-"));
+      await writeFile(path.join(dir, "config"), "[default]\nendpoint_url = http://127.0.0.1:9\n");
+      vi.stubEnv("AWS_CONFIG_FILE", path.join(dir, "config"));
+      vi.stubEnv("AWS_PROFILE", "default");
+      try {
+        const client = cognitoClient(config, production);
+        // Production's client, signing with test keys instead of the OIDC token (there is none here).
+        client.config.credentials = async () => ({ accessKeyId: "test", secretAccessKey: "test" });
+        let host: string | undefined;
+        client.middlewareStack.add(
+          (_next, context) => async () => {
+            host = context.endpointV2?.url.hostname;
+            return { output: { $metadata: {} }, response: {} };
+          },
+          { step: "build" },
+        );
+        await client.send(new AdminDeleteUserCommand({ UserPoolId: config.poolId, Username: "1f2e3d4c-sub" }));
+        expect(host).toBe("cognito-idp.us-east-1.amazonaws.com");
+      } finally {
+        await rm(dir, { recursive: true });
+      }
     });
   });
 });
