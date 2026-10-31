@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ShipShape front page</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&family=Libre+Franklin:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0;background:#FAF8F3}
+a{color:#B5532F}a:hover{color:#8E3F22}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid #1F5563;outline-offset:2px}
+</style>
+</helmet>
+<div style="background: #FAF8F3; color: #16150F; font-family: 'Newsreader', Georgia, serif; min-height: 100%;">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 0 32px 64px; box-sizing: border-box;">
+
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">
+      <span>Monday, October 12, 2026</span>
+      <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+        <span style="font-weight: 600; color: #16150F;">Rivera Plumbing LLC</span>
+        <a href="#" style="color: #5E5A51; text-decoration: none;">Settings</a>
+        <a href="#" style="color: #5E5A51; text-decoration: none;">Privacy</a>
+      </div>
+    </div>
+
+    <header style="text-align: center; padding: 18px 0 14px; border-top: 1px solid #16150F;">
+      <h1 style="margin: 0; font-size: 76px; line-height: 1; font-weight: 600; letter-spacing: -0.02em;">ShipShape</h1>
+      <p style="margin: 8px 0 0; font-style: italic; font-size: 18px; color: #5E5A51;">Your business, in good order.</p>
+    </header>
+
+    <nav aria-label="Sections" style="border-top: 3px double #16150F; border-bottom: 1px solid #16150F; padding: 10px 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 26px; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 0.02em;">
+      <a href="Main.dc.html" style="color: #16150F; text-decoration: none; border-bottom: 2px solid #B5532F; padding-bottom: 2px;">Front page</a>
+      <a href="Ask.dc.html" style="color: #16150F; text-decoration: none;">Ask</a>
+      <a href="#" style="color: #16150F; text-decoration: none;">Documents</a>
+      <a href="Passport.dc.html" style="color: #16150F; text-decoration: none;">Passport</a>
+      <a href="#" style="color: #16150F; text-decoration: none;">Requests</a>
+      <a href="Licenses.dc.html" style="color: #16150F; text-decoration: none;">Licenses</a>
+      <a href="Draft.dc.html" style="color: #16150F; text-decoration: none;">Drafts</a>
+      <a href="#" style="color: #16150F; text-decoration: none;">Memory</a>
+    </nav>
+
+    <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 28px; padding: 12px 0; border-bottom: 1px solid #DDD8CC; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; color: #5E5A51;">
+      <span><strong style="color: #2F6B45;">11 of 12</strong> documents current</span>
+      <span><strong style="color: #8A5A10;">1</strong> renewal due this month</span>
+      <span><strong style="color: #B5532F;">2</strong> things waiting on you</span>
+      <span>Profile last confirmed <strong style="color: #16150F;">3 days ago</strong></span>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 40px; padding-top: 32px;">
+      <article style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding-right: 8px;">
+        <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #B5532F;">Renewal</span>
+        <h2 style="margin: 0; font-size: 48px; line-height: 1.05; font-weight: 600; letter-spacing: -0.015em;">Your insurance certificate renews in 21 days</h2>
+        <p style="margin: 0; font-size: 21px; line-height: 1.45; color: #3E3B34;">Three general contractors have the current certificate on file. When your broker sends the new one, upload it here and ShipShape can send it to all three, after you approve.</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; padding-top: 6px;">
+          <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; font-weight: 700; padding: 12px 18px; border-radius: 999px; border: 1px solid #16150F; background: #16150F; color: #FAF8F3;">Upload new certificate</button>
+          <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; font-weight: 600; padding: 12px 18px; border-radius: 999px; border: 1px solid #C9C3B5; background: #FFFFFF; color: #16150F;">See who has it</button>
+        </div>
+        <div style="margin-top: 18px; border-top: 1px solid #DDD8CC; padding-top: 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; font-family: 'Libre Franklin', Arial, sans-serif;">
+          <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 12px; color: #5E5A51;">Policy</span><span style="font-size: 15px; font-weight: 600;">General liability</span></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 12px; color: #5E5A51;">Expires</span><span style="font-size: 15px; font-weight: 600;">Nov 2, 2026</span></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 12px; color: #5E5A51;">Shared with</span><span style="font-size: 15px; font-weight: 600;">3 contractors</span></div>
+        </div>
+      </article>
+
+      <aside aria-label="Waiting on you" style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px; border-left: 1px solid #DDD8CC; padding-left: 28px;">
+        <h3 style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">Waiting on you</h3>
+        <div style="display: flex; flex-direction: column; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid #DDD8CC;">
+          <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #1F5563; letter-spacing: 0.06em; text-transform: uppercase;">Request</span>
+          <p style="margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600;">Bayview Builders asked for your W-9</p>
+          <p style="margin: 0; font-size: 16px; color: #5E5A51;">Your W-9 includes your EIN. It's only sent when you approve.</p>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 700; padding: 10px 16px; border-radius: 999px; border: 1px solid #1F5563; background: #1F5563; color: #FFFFFF;">Approve and send</button>
+            <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600; padding: 10px 16px; border-radius: 999px; border: 1px solid #C9C3B5; background: #FFFFFF; color: #16150F;">Decline</button>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #8A5A10; letter-spacing: 0.06em; text-transform: uppercase;">Quick check</span>
+          <p style="margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600;">Is this still your business address?</p>
+          <p style="margin: 0; font-size: 16px; color: #3E3B34;">1420 Harbor Way, Suite 3, Oakland, CA</p>
+          <p style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">From your insurance certificate · last confirmed 7 months ago</p>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 700; padding: 10px 16px; border-radius: 999px; border: 1px solid #16150F; background: #16150F; color: #FAF8F3;">Still correct</button>
+            <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600; padding: 10px 16px; border-radius: 999px; border: 1px solid #C9C3B5; background: #FFFFFF; color: #16150F;">Edit</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div style="margin-top: 40px; border-top: 3px double #16150F; padding-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 36px;">
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <h3 style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">On file</h3>
+        <div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #DDD8CC;"><span style="font-size: 18px;">W-9</span><span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #2F6B45;">Current</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #DDD8CC;"><span style="font-size: 18px;">Insurance certificate</span><span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #8A5A10;">21 days</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #DDD8CC;"><span style="font-size: 18px;">Contractor license</span><span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #2F6B45;">To Nov 2027</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #DDD8CC;"><span style="font-size: 18px;">City business tax certificate</span><span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #2F6B45;">Current</span></div>
+        <a href="#" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; font-weight: 600;">All 12 documents</a>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <h3 style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">Ask ShipShape</h3>
+        <p style="margin: 0; font-size: 17px; color: #3E3B34;">Find an official form, look something up in your documents, or check what's expiring.</p>
+        <label for="ask-front" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Your question</label>
+        <div style="display: flex; align-items: flex-end; gap: 8px; background: #FFFFFF; border: 1px solid #C9C3B5; border-radius: 16px; padding: 12px 12px 12px 16px; box-shadow: 0 1px 2px rgba(22,21,15,0.06);">
+          <input id="ask-front" type="text" placeholder="Where's my NDA with Acme?" style="flex: 1; min-width: 0; border: 0; background: transparent; font-family: 'Newsreader', Georgia, serif; font-size: 17px; color: #16150F; padding: 6px 0;">
+          <button type="button" aria-label="Send question" style="width: 40px; height: 40px; border-radius: 12px; border: 0; background: #B5532F; color: #FFFFFF; display: flex; align-items: center; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="M5 12l7-7 7 7"></path></svg></button>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; padding: 8px 12px; border-radius: 999px; border: 1px solid #DDD8CC; background: #F3EFE6; color: #16150F;">What expires this quarter?</button>
+          <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; padding: 8px 12px; border-radius: 999px; border: 1px solid #DDD8CC; background: #F3EFE6; color: #16150F;">Find a form</button>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <h3 style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">This week</h3>
+        <div style="display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid #DDD8CC;"><span style="font-size: 18px;">Mission Property Group viewed your passport</span><span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Tuesday · license and insurance</span></div>
+        <div style="display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid #DDD8CC;"><span style="font-size: 18px;">You signed a mutual NDA with Acme Supply</span><span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Monday · sealed, audit page attached</span></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 18px;">A link to Harbor Homes expired</span><span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Sunday · after 30 days, as you set</span></div>
+      </section>
+    </div>
+
+    <footer style="margin-top: 48px; border-top: 1px solid #16150F; padding-top: 14px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">
+      <span>AI reads a document only when you say yes. Your documents are never used to train AI.</span>
+      <span>ShipShape is not a law firm and doesn't give legal advice.</span>
+    </footer>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

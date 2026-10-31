@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>License and permit finder</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&family=Libre+Franklin:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0;background:#FAF8F3}
+a{color:#B5532F}a:hover{color:#8E3F22}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid #1F5563;outline-offset:2px}
+</style>
+</helmet>
+<div style="background: #FAF8F3; color: #16150F; font-family: 'Newsreader', Georgia, serif; min-height: 100%;">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 0 32px 64px; box-sizing: border-box;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; padding: 18px 0 12px; border-bottom: 3px double #16150F;">
+      <a href="Main.dc.html" style="font-size: 32px; font-weight: 600; color: #16150F; text-decoration: none; letter-spacing: -0.01em;">ShipShape</a>
+      <nav aria-label="Sections" style="display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600;">
+        <a href="Main.dc.html" style="color: #16150F; text-decoration: none;">Front page</a>
+        <a href="Ask.dc.html" style="color: #16150F; text-decoration: none;">Ask</a>
+        <a href="#" style="color: #16150F; text-decoration: none;">Documents</a>
+        <a href="Passport.dc.html" style="color: #16150F; text-decoration: none;">Passport</a>
+        <a href="Licenses.dc.html" style="color: #16150F; text-decoration: none; border-bottom: 2px solid #B5532F;">Licenses</a>
+        <a href="Draft.dc.html" style="color: #16150F; text-decoration: none;">Drafts</a>
+      </nav>
+    </div>
+
+    <header style="padding: 36px 0 24px; display: flex; flex-direction: column; gap: 12px; max-width: 760px;">
+      <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #B5532F;">Licenses and permits</span>
+      <h1 style="margin: 0; font-size: 52px; line-height: 1.05; font-weight: 600; letter-spacing: -0.015em;">Official sources, gathered in one place</h1>
+      <p style="margin: 0; font-size: 20px; line-height: 1.5; color: #3E3B34;">Tell us your trade and city. We search federal, state, county and city agencies and show what matches, with links to the agency itself.</p>
+    </header>
+
+    <form style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 18px; background: #FFFFFF; border: 1px solid #DDD8CC; border-radius: 16px;">
+      <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 6px;">
+        <label for="trade" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 600; color: #5E5A51;">Trade or business type</label>
+        <input id="trade" type="text" value="Plumbing contractor" style="font-family: 'Newsreader', Georgia, serif; font-size: 18px; padding: 10px 12px; border: 1px solid #C9C3B5; border-radius: 10px; background: #FAF8F3; color: #16150F;">
+      </div>
+      <div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 6px;">
+        <label for="place" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 600; color: #5E5A51;">City and state</label>
+        <input id="place" type="text" value="Oakland, CA" style="font-family: 'Newsreader', Georgia, serif; font-size: 18px; padding: 10px 12px; border: 1px solid #C9C3B5; border-radius: 10px; background: #FAF8F3; color: #16150F;">
+      </div>
+      <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; font-weight: 700; padding: 13px 20px; border-radius: 999px; border: 1px solid #16150F; background: #16150F; color: #FAF8F3;">Search official sources</button>
+    </form>
+
+    <div role="note" style="margin-top: 16px; display: flex; gap: 12px; align-items: flex-start; background: #F6EAD6; border: 1px solid #E2C99B; border-radius: 12px; padding: 14px 16px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A5A10" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px;"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+      <p style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; line-height: 1.5; color: #4A3A12;"><strong>This is a starting list, not a determination.</strong> Results match your search words; they don't decide what your business legally needs. Requirements change and depend on details only each agency can confirm. Check with the agency, or a licensed professional, before relying on this.</p>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 40px; padding-top: 32px;">
+      <div style="flex: 999 1 600px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px 36px;">
+
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; padding-bottom: 6px; border-bottom: 2px solid #16150F; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">Federal</h2>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid #DDD8CC;">
+            <h3 style="margin: 0; font-size: 21px; font-weight: 600;">Employer Identification Number (EIN)</h3>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Internal Revenue Service · irs.gov</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #2F6B45;">On file · confirmed Jan 2026</span>
+          </div>
+        </section>
+
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; padding-bottom: 6px; border-bottom: 2px solid #16150F; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">State · California</h2>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid #DDD8CC;">
+            <h3 style="margin: 0; font-size: 21px; font-weight: 600;">Contractor license</h3>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Contractors State License Board · cslb.ca.gov</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #2F6B45;">On file · valid to Nov 2027</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid #DDD8CC;">
+            <h3 style="margin: 0; font-size: 21px; font-weight: 600;">LLC Statement of Information</h3>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">California Secretary of State · sos.ca.gov</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Matched: "LLC" in your profile</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px;">
+              <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 700; padding: 9px 15px; border-radius: 999px; border: 1px solid #16150F; background: #16150F; color: #FAF8F3;">Add to checklist</button>
+              <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600; padding: 9px 15px; border-radius: 999px; border: 1px solid #C9C3B5; background: #FFFFFF; color: #16150F;">Not now</button>
+            </div>
+          </div>
+        </section>
+
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; padding-bottom: 6px; border-bottom: 2px solid #16150F; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">County · Alameda</h2>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid #DDD8CC;">
+            <h3 style="margin: 0; font-size: 21px; font-weight: 600;">Fictitious Business Name Statement</h3>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Alameda County Clerk-Recorder · acgov.org</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Matched: "business name," "Oakland"</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px;">
+              <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 700; padding: 9px 15px; border-radius: 999px; border: 1px solid #16150F; background: #16150F; color: #FAF8F3;">Add to checklist</button>
+              <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600; padding: 9px 15px; border-radius: 999px; border: 1px solid #C9C3B5; background: #FFFFFF; color: #16150F;">Not now</button>
+            </div>
+          </div>
+        </section>
+
+        <section style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; padding-bottom: 6px; border-bottom: 2px solid #16150F; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;">City · Oakland</h2>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid #DDD8CC;">
+            <h3 style="margin: 0; font-size: 21px; font-weight: 600;">Business Tax Certificate</h3>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">City of Oakland, Finance Department · oaklandca.gov</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; font-weight: 700; color: #2F6B45;">On file · current</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid #DDD8CC;">
+            <h3 style="margin: 0; font-size: 21px; font-weight: 600;">Building permits</h3>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">City of Oakland, Planning &amp; Building · oaklandca.gov</span>
+            <span style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Matched: "contractor" · issued per project</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px;">
+              <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 700; padding: 9px 15px; border-radius: 999px; border: 1px solid #16150F; background: #16150F; color: #FAF8F3;">Add to checklist</button>
+              <button type="button" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 13px; font-weight: 600; padding: 9px 15px; border-radius: 999px; border: 1px solid #C9C3B5; background: #FFFFFF; color: #16150F;">Not now</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside aria-label="Your checklist" style="flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 18px;">
+        <div style="background: #FFFFFF; border: 1px solid #DDD8CC; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+          <h2 style="margin: 0; font-size: 22px; font-weight: 600;">Your checklist</h2>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px;">
+            <div style="display: flex; justify-content: space-between; gap: 8px;"><span>On file</span><strong>3</strong></div>
+            <div style="display: flex; justify-content: space-between; gap: 8px;"><span>Added, not started</span><strong>0</strong></div>
+            <div style="display: flex; justify-content: space-between; gap: 8px;"><span>Not now</span><strong>0</strong></div>
+          </div>
+          <div aria-hidden="true" style="height: 8px; border-radius: 999px; background: #EFEAE0; overflow: hidden;"><div style="width: 60%; height: 100%; background: #2F6B45;"></div></div>
+          <p style="margin: 0; font-family: 'Libre Franklin', Arial, sans-serif; font-size: 12px; color: #5E5A51;">Reminders follow the renewal dates on each document you upload.</p>
+        </div>
+        <div style="background: #F3EFE6; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+          <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Not sure what applies?</h2>
+          <p style="margin: 0; font-size: 17px; line-height: 1.5; color: #3E3B34;">Agencies answer questions directly. Free help is also available from your local Small Business Development Center and SCORE mentors.</p>
+          <a href="#" style="font-family: 'Libre Franklin', Arial, sans-serif; font-size: 14px; font-weight: 600;">Find free local help</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
