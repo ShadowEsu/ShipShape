@@ -3,6 +3,7 @@ import { fmtDay, Notice, PageHeader } from "@/components/app-ui";
 import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
 import { requireWorkspace } from "@/lib/server/session";
+import { signOut } from "../../signin/actions";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
 import { DeleteAccountForm, RenameWorkspaceForm } from "./forms";
 
@@ -102,6 +103,17 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <button className="btn-ghost">Download the export</button>
           </form>
         )}
+      </section>
+
+      {/* The sidebar's Sign out is desktop-only; on a phone this is the way out. */}
+      <section className="card flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Sign out</h2>
+          <p className="text-sm text-ink-2">Ends your session in this browser.</p>
+        </div>
+        <form action={signOut}>
+          <button className="btn-ghost">Sign out</button>
+        </form>
       </section>
 
       <section id="delete" className="card space-y-3 border-bad/30">
