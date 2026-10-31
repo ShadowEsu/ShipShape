@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ShipShape's runtime credentials (aws-plan.md, Credentials row and IAM policy drafts; Security
+  S3-1): Vercel's OIDC provider and the role shipshape-prod-app, which only the production
+  environment of the shipshape project can assume. No stored keys, no permissions boundary, one
+  inline policy. Deploy after storage.yaml and signin.yaml.
+
+Parameters:
+  VercelTeam:
+    Type: String
+    Description: Vercel team slug; the issuer is https://oidc.vercel.com/<team> (team issuer mode).
+    AllowedPattern: "^[a-z0-9][a-z0-9_-]*$"
+  Audience:
+    Type: String
+    Description: The token's aud, https://vercel.com/<team>.
+    AllowedPattern: "^https://vercel\\.com/[a-z0-9][a-z0-9_-]*$"
+  ProductionSub:
+    Type: String
+    Description: The one sub trusted, owner:<team>:project:shipshape:environment:production.
+    # Production only, and no wildcard: a preview's token (environment:preview) is refused by STS.
+    AllowedPattern: "^owner:[a-z0-9][a-z0-9_-]*:project:[a-z0-9][a-z0-9._-]*:environment:production$"
+  BucketName:
+    Type: String
+    Description: storage.yaml output BucketName.
+    AllowedPattern: "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$"
+  FileKeyArn:
+    Type: String
+    Description: storage.yaml output KeyArn.
+    AllowedPattern: "^arn:aws:kms:[a-z0-9-]+:[0-9]{12}:key/[0-9a-f-]+$"
+  UserPoolArn:
+    Type: String
+    Description: signin.yaml output UserPoolArn.
+    AllowedPattern: "^arn:aws:cognito-idp:[a-z0-9-]+:[0-9]{12}:userpool/[a-z0-9-]+_[A-Za-z0-9]+$"
+
+Resources:
+  VercelOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: !Sub "https://oidc.vercel.com/${VercelTeam}"
+      ClientIdList:
+        - !Ref Audience
+
+  AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: shipshape-prod-app
+      Description: ShipShape production on Vercel (OIDC); files, their key, and deleting sign-ins.
+      MaxSessionDuration: 3600
+      # A JSON string because the condition keys carry the team (oidc.vercel.com/<team>:sub), and a
+      # YAML key can't hold !Sub. StringEquals only, exactly aud and sub (PR-3).
+      AssumeRolePolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Federated": "${VercelOidcProvider}" },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": { "StringEquals": {
+              "oidc.vercel.com/${VercelTeam}:aud": "${Audience}",
+              "oidc.vercel.com/${VercelTeam}:sub": "${ProductionSub}"
+            } }
+          }]
+        }
+      # The one inline policy: every action the app needs, each on its one resource, no conditions
+      # (PR-2, P-b0a). No ListBucket (aws-plan TO-1), no managed policies, no boundary.
+      Policies:
+        - PolicyName: app
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Files
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${BucketName}/*"
+              - Sid: FileKey
+                Effect: Allow
+                Action:
+                  - kms:GenerateDataKey
+                  - kms:Decrypt
+                Resource: !Ref FileKeyArn
+              - Sid: DeleteAccounts
+                Effect: Allow
+                Action: cognito-idp:AdminDeleteUser
+                Resource: !Ref UserPoolArn
+
+Outputs:
+  RoleArn:
+    Description: AWS_ROLE_ARN (Vercel Production only).
+    Value: !GetAtt AppRole.Arn
+  RoleName:
+    Description: PROBE_ROLE_NAME.
+    Value: !Ref AppRole
+  OidcProviderArn:
+    Description: PROBE_OIDC_PROVIDER_ARN.
+    Value: !Ref VercelOidcProvider

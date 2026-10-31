@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ShipShape files (aws-plan.md, S3 row; Security S3-1): one customer KMS key and one private,
+  versioned S3 bucket encrypted with it. Deleted and replaced files live on for at most 7 days
+  (BOSS rule 1). Deploy first: the other stacks take its outputs.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Globally unique bucket name, e.g. shipshape-files-<account id>.
+    AllowedPattern: "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$"
+    ConstraintDescription: 3-63 lowercase letters, digits and hyphens.
+
+Resources:
+  # One customer key: S3 default encryption here, RDS storage in database.yaml. The key policy only
+  # delegates to this account's IAM; the app role gets its two KMS actions in app-role.yaml.
+  FileKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: ShipShape files and database storage
+      EnableKeyRotation: true
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AccountIamDecides
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  FileKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/shipshape-files
+      TargetKeyId: !Ref FileKey
+
+  FilesBucket:
+    Type: AWS::S3::Bucket
+    # Real documents: deleting the stack never deletes them.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+      # No ObjectLockEnabled: Object Lock would keep a deleted or old version past its 7 days.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          # The whole bucket (no filter): BOSS rule 1, /privacy's "up to 14 days" with headroom.
+          - Id: deleted-data-7-days
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+            ExpiredObjectDeleteMarker: true
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              # The key ARN, not its id: the probe compares KMSMasterKeyID with PROBE_KMS_KEY_ARN.
+              KMSMasterKeyID: !GetAtt FileKey.Arn
+            BucketKeyEnabled: true
+
+  # Its only statement is a Deny for requests without TLS; it grants nothing to anyone.
+  FilesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FilesBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyNonTLS
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt FilesBucket.Arn
+              - !Sub "${FilesBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  BucketName:
+    Description: SHIPSHAPE_S3_BUCKET (Vercel Production only) and PROBE_BUCKET.
+    Value: !Ref FilesBucket
+  KeyArn:
+    Description: PROBE_KMS_KEY_ARN; FileKeyArn for app-role.yaml and database.yaml.
+    Value: !GetAtt FileKey.Arn
+  KeyAlias:
+    Value: !Ref FileKeyAlias

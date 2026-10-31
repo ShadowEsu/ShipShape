@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ShipShape budget alarms (aws-plan.md, Budget alarms): real money past the credits, and the
+  credits' own burn. Both free (no actions). Deploy in us-east-1.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Who gets both alarms (Preston).
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+
+Resources:
+  # Alarm 1: credits included (the default, stated here), so spend the credits cover nets to about
+  # $0 and anything billed past them shows. Fires on more than $1 of actual spend in a month.
+  RealMoneyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: shipshape-real-money
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: 1
+          Unit: USD
+        CostTypes:
+          IncludeCredit: true
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 1
+            ThresholdType: ABSOLUTE_VALUE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+  # Alarm 2: credits excluded, charge type Usage only, so it measures what the credits are paying
+  # for. $25 actual or forecast in a month (about 1.4x the expected $18).
+  CreditBurnBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: shipshape-credit-burn
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: 25
+          Unit: USD
+        CostTypes:
+          IncludeCredit: false
+          IncludeRefund: false
+          IncludeTax: false
+          IncludeSupport: false
+          IncludeSubscription: false
+          IncludeOtherSubscription: false
+          IncludeRecurring: false
+          IncludeUpfront: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 25
+            ThresholdType: ABSOLUTE_VALUE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 25
+            ThresholdType: ABSOLUTE_VALUE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail

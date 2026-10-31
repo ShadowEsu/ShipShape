@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ShipShape sign-in (aws-plan.md, Sign-in row; Security's M6 pool and client list in
+  20261031-0541): a Cognito user pool, Essentials tier, with managed login and one confidential
+  app client. The app verifies the ID token itself, then its own session cookie takes over.
+
+Parameters:
+  AppUrl:
+    Type: String
+    Description: SHIPSHAPE_APP_URL, the production origin (https, no trailing slash).
+    AllowedPattern: "^https://[a-z0-9.-]+$"
+  DomainPrefix:
+    Type: String
+    Description: Managed login's domain prefix; COGNITO_DOMAIN becomes https://<prefix>.auth.<region>.amazoncognito.com.
+    AllowedPattern: "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    # Accounts: deleting the stack never deletes them (and DeletionProtection refuses it anyway).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: shipshape
+      UserPoolTier: ESSENTIALS
+      DeletionProtection: ACTIVE
+      # Sign-in by email; email required and verified (the app refuses email_verified != true).
+      UsernameAttributes:
+        - email
+      UsernameConfiguration:
+        CaseSensitive: false
+      AutoVerifiedAttributes:
+        - email
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+      # MFA required, TOTP only (no SMS, no email codes).
+      MfaConfiguration: "ON"
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      # Self-registration on.
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+
+  # Managed login (version 2), not the classic hosted UI: only managed login honours prompt=login.
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref DomainPrefix
+      UserPoolId: !Ref UserPool
+      ManagedLoginVersion: 2
+
+  AppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: shipshape-app
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+      CallbackURLs:
+        - !Sub "${AppUrl}/auth/callback"
+      SupportedIdentityProviders:
+        - COGNITO
+      # No password flows for the client; managed login signs in, refresh only renews.
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+      # Never email: else a user could change it to someone else's address.
+      ReadAttributes:
+        - email
+        - email_verified
+      WriteAttributes:
+        - name
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      IdTokenValidity: 60
+      AccessTokenValidity: 60
+      RefreshTokenValidity: 1
+      TokenValidityUnits:
+        IdToken: minutes
+        AccessToken: minutes
+        RefreshToken: days
+
+  # Managed login shows an error page for a client without a style: Cognito's default one.
+  AppClientLoginStyle:
+    Type: AWS::Cognito::ManagedLoginBranding
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref AppClient
+      UseCognitoProvidedValues: true
+
+Outputs:
+  UserPoolId:
+    Description: COGNITO_USER_POOL_ID and PROBE_COGNITO_POOL_ID.
+    Value: !Ref UserPool
+  UserPoolArn:
+    Description: UserPoolArn for app-role.yaml.
+    Value: !GetAtt UserPool.Arn
+  ClientId:
+    Description: COGNITO_CLIENT_ID and PROBE_COGNITO_CLIENT_ID (the secret stays in Cognito; read it once into Vercel).
+    Value: !Ref AppClient
+  Domain:
+    Description: COGNITO_DOMAIN.
+    Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"

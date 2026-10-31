@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ShipShape database (aws-plan.md, RDS rows; Security R-1..R-4): RDS for PostgreSQL 17,
+  db.t4g.micro, Single-AZ, 20 GB gp3, encrypted with the storage.yaml key, 7 days of automated
+  backups, deletion protection, TLS forced. PubliclyAccessible=true is Security's accepted launch
+  choice (Vercel has no fixed egress); authentication and verified TLS are the controls.
+
+Parameters:
+  FileKeyArn:
+    Type: String
+    Description: storage.yaml output KeyArn (encrypts the storage, its backups and snapshots).
+    AllowedPattern: "^arn:aws:kms:[a-z0-9-]+:[0-9]{12}:key/[0-9a-f-]+$"
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC of the subnets below (the account's default VPC is fine).
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least two public subnets in different availability zones of that VPC.
+  InstanceIdentifier:
+    Type: String
+    Default: shipshape-prod
+    Description: PROBE_DB_INSTANCE.
+    AllowedPattern: "^[a-z][a-z0-9-]{0,62}$"
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    Description: Days CloudWatch keeps the exported Postgres log (connections and failed sign-ins).
+    AllowedValues: [7, 14, 30, 60, 90]
+  EngineVersion:
+    Type: String
+    Description: >-
+      A PostgreSQL 17 minor version RDS offers today (README: describe-db-engine-versions --default-only).
+      Auto minor version upgrades keep it current afterwards.
+    AllowedPattern: "^17\\.[0-9]+$"
+
+Resources:
+  # 5432 only. From anywhere because Vercel functions have no fixed addresses (Security ACCEPTED, R-1..R-3).
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ShipShape Postgres, TLS-only port 5432
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - Description: Postgres from Vercel functions (no fixed egress)
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+
+  DatabaseSubnets:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: ShipShape Postgres (public subnets)
+      SubnetIds: !Ref SubnetIds
+
+  DatabaseParameters:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: ShipShape Postgres 17 (R-3, R-4)
+      Family: postgres17
+      Parameters:
+        # R-3: TLS required on every connection; SCRAM only.
+        rds.force_ssl: "1"
+        password_encryption: scram-sha-256
+        rds.accepted_password_auth_method: scram
+        # R-4: every connection and disconnection is logged (failed authentications are logged anyway).
+        log_connections: "1"
+        log_disconnections: "1"
+
+  # Created before the instance, so the exported log doesn't live forever.
+  DatabaseLog:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/rds/instance/${InstanceIdentifier}/postgresql"
+      RetentionInDays: !Ref LogRetentionDays
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DependsOn: DatabaseLog
+    # Retain, not CloudFormation's default Snapshot: a final snapshot is a manual snapshot, and none
+    # may outlive 7 days (BOSS rule 1). DeletionProtection refuses the delete anyway.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DBInstanceIdentifier: !Ref InstanceIdentifier
+      Engine: postgres
+      EngineVersion: !Ref EngineVersion
+      AutoMinorVersionUpgrade: true
+      DBInstanceClass: db.t4g.micro
+      MultiAZ: false
+      AllocatedStorage: "20"
+      StorageType: gp3
+      StorageEncrypted: true
+      KmsKeyId: !Ref FileKeyArn
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      CopyTagsToSnapshot: true
+      PubliclyAccessible: true
+      Port: "5432"
+      DBSubnetGroupName: !Ref DatabaseSubnets
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBParameterGroupName: !Ref DatabaseParameters
+      DBName: shipshape
+      # R-2: the master's password is generated and kept by RDS in Secrets Manager, never in Vercel.
+      MasterUsername: postgres
+      ManageMasterUserPassword: true
+      # R-4: the Postgres log (connections, failed authentications) goes to CloudWatch Logs.
+      EnableCloudwatchLogsExports:
+        - postgresql
+
+Outputs:
+  InstanceIdentifier:
+    Description: PROBE_DB_INSTANCE.
+    Value: !Ref Database
+  Endpoint:
+    Description: The host in DATABASE_URL (shipshape_app) and MIGRATE_DATABASE_URL (master).
+    Value: !GetAtt Database.Endpoint.Address
+  MasterSecretArn:
+    Description: Secrets Manager secret with the master password (operators only).
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
