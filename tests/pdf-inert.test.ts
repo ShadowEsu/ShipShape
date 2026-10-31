@@ -416,6 +416,23 @@ describe("the file a signer reviews (Security R2)", () => {
         await refusedSplit(["BT /F1 18 Tf 72 700 Td <48", "65> Tj ET"]);
       });
 
+      it("reads inline image data by its size, so an EI among the pixels doesn't end it, and refuses what it can't size (R8-1)", async () => {
+        const image = "q 200 0 0 100 72 300 cm BI /W 4 /H 4 /BPC 8 /CS /G ID ";
+        const bytes = (codes: number[]) => String.fromCharCode(...codes);
+        const fake = (b: number) => bytes([0x00, 0x20, 0x45, 0x49, 0x20, b, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0b, 0x0e]); // " EI " then < or %
+        await refusedSplit([`${image}${fake(0x3c)} EI Q BT /F1 18 Tf 72 700 Td (LATE > FEE USD ET`, "Q 1000) Tj ET"]); // N6
+        await refusedSplit([`${image}${fake(0x25)} EI Q BT /F1 18 Tf 72 700 Td (LATE FEE\nUSD ET`, "Q 1000) Tj ET"]); // N7
+        await refusedSplit([`${image}${bytes([0x00, 0x20, 0x45, 0x49, 0x20, 0x01, 0x02, 0x20])}`, `${bytes([0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0b, 0x0e])} EI Q BT /F1 18 Tf 72 700 Td (AFTER IMAGE) Tj ET`]); // N8
+        // The same pixels, with nothing open after the image: read to its real end, and the split joins.
+        const after = " EI Q BT /F1 18 Tf 72 700 Td (A) Tj ET";
+        expect(await content([`${image}${fake(0x3c)}${after}`, "Q"])).toBe(`${image}${fake(0x3c)}${after} Q`);
+        // Rows are padded to whole bytes: 10 one-bit pixels take 2 bytes a row, so 2 rows are 4 bytes.
+        const bits = `q BI /W 10 /H 2 /BPC 1 /CS /G ID ${bytes([0x01, 0x02, 0x03, 0x04])} EI Q`;
+        expect(await content([bits, "q Q"])).toBe(`${bits} q Q`);
+        await refusedSplit(["q BI /W 4 /H 1 /BPC 8 /CS /G /F /AHx ID abc> EI Q", "q Q"]); // filtered: the 4 bytes decode to 2
+        await refusedSplit(["BT /F1 18 Tf 72 700 Td <4G> Tj ET", "Q"]); // not a hex string
+      });
+
       it("inline image data isn't read as syntax: a ( in the pixels doesn't open a string", async () => {
         expect(await content(["q 10 0 0 10 50 50 cm BI /W 2 /H 1 /BPC 8 /CS /G ID (x EI Q", "BT /F1 18 Tf 72 700 Td (A) Tj ET"])).toBe(
           "q 10 0 0 10 50 50 cm BI /W 2 /H 1 /BPC 8 /CS /G ID (x EI Q BT /F1 18 Tf 72 700 Td (A) Tj ET",

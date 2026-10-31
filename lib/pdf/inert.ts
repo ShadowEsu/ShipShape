@@ -426,10 +426,11 @@ const OPERATORS = new Set(
   "b B b* B* BDC BI BMC BT BX c cm CS cs d d0 d1 Do DP EI EMC ET EX f F f* G g gs h i ID j J K k l m M MP n q Q re RG rg ri s S SC sc SCN scn sh T* Tc Td TD Tf Tj TJ TL Tm Tr Ts Tw Tz v w W W* y ' \"".split(" "),
 );
 
-/** True if the content ends inside a comment, a literal or hex string, or inline image data. */
+/** True if the content ends inside a comment, a literal or hex string, or inline image data (or can't tell). */
 function endsInside(b: Uint8Array): boolean {
   let depth = 0;
   let comment = false;
+  let imageAt = -1; // where the last BI operator starts
   for (let i = 0; i < b.length; i++) {
     const c = b[i];
     if (comment) comment = c !== 10 && c !== 13;
@@ -441,14 +442,15 @@ function endsInside(b: Uint8Array): boolean {
     else if (c === 40) depth = 1;
     else if (c === LESS && b[i + 1] === LESS) i++; // << opens a dictionary
     else if (c === LESS) {
-      // A hex string: nothing in it is a comment (R7-6), and it ends at the next >.
+      // A hex string: nothing in it is a comment (R7-6), and it ends at the next >. Anything but hex
+      // digits and white space in it means it isn't one, so where the content stands is unknown (R8-1).
       const close = b.indexOf(GREATER, i + 1);
       if (close < 0) return true;
+      for (let j = i + 1; j < close; j++) if (!WHITE.has(b[j]) && !HEX.test(String.fromCharCode(b[j]))) return true;
       i = close;
-    } else if (c === 73 && b[i + 1] === 68 && (i === 0 || (!regular(b[i - 1]) && b[i - 1] !== SLASH)) && (i + 2 >= b.length || !regular(b[i + 2]))) {
-      // The ID operator: image data follows one white-space byte, up to EI after white space.
-      if (i + 3 > b.length) return true;
-      const end = inlineImageEnd(b, i + 3);
+    } else if (operatorAt(b, i, "BI")) imageAt = i;
+    else if (operatorAt(b, i, "ID")) {
+      const end = inlineImageEnd(b, imageAt, i);
       if (end < 0) return true;
       i = end;
     }
@@ -456,13 +458,58 @@ function endsInside(b: Uint8Array): boolean {
   return comment || depth > 0;
 }
 
-/** The index of the I in the EI that ends inline image data starting at `from`, or -1 if the data runs to the end. */
-function inlineImageEnd(b: Uint8Array, from: number): number {
-  for (let j = from; j + 1 < b.length; j++) {
-    if (b[j] === 69 && b[j + 1] === 73 && WHITE.has(b[j - 1]) && (j + 2 >= b.length || !regular(b[j + 2]))) return j + 1;
-  }
-  return -1;
+/** True if the two-letter operator `op` starts at `i` (not part of a longer token or a name). */
+function operatorAt(b: Uint8Array, i: number, op: string): boolean {
+  return b[i] === op.charCodeAt(0) && b[i + 1] === op.charCodeAt(1) && (i === 0 || (!regular(b[i - 1]) && b[i - 1] !== SLASH)) && (i + 2 >= b.length || !regular(b[i + 2]));
 }
+
+/**
+ * The index of the I in the EI that ends inline image data whose BI is at `imageAt` and ID at
+ * `idAt`, or -1 if the data runs to the end or its length can't be known (Security R8-1). Viewers
+ * read the data by its size (poppler) or reject an EI followed by binary (pdf.js), so an " EI "
+ * among the pixels doesn't end it: only an unfiltered image of known size is read, and white space
+ * then EI must follow exactly there.
+ */
+function inlineImageEnd(b: Uint8Array, imageAt: number, idAt: number): number {
+  if (imageAt < 0 || idAt - imageAt > 1024 || !WHITE.has(b[idAt + 2])) return -1;
+  const size = inlineImageSize(String.fromCharCode(...b.subarray(imageAt + 2, idAt)));
+  if (size === null) return -1;
+  let at = idAt + 3 + size; // ID, one white-space byte, the data
+  if (at >= b.length || !WHITE.has(b[at])) return -1;
+  while (at < b.length && WHITE.has(b[at])) at++;
+  return operatorAt(b, at, "EI") ? at + 1 : -1;
+}
+
+/** Bytes of image data an inline image dictionary describes, if it is unfiltered and plainly sized; null otherwise. */
+function inlineImageSize(dict: string): number | null {
+  const tokens = dict.match(/\/[^\s/[\]<>(){}%]*|[[\]<>(){}%]|[^\s/[\]<>(){}%]+/g) ?? [];
+  const entries = new Map<string, string>();
+  for (let k = 0; k < tokens.length; k += 2) {
+    const key = tokens[k];
+    const value = tokens[k + 1];
+    if (!key.startsWith("/") || value === undefined || /^[[\]<>(){}%]$/.test(value)) return null; // arrays, strings, dictionaries: not plain
+    const name = INLINE_KEYS[key.slice(1)] ?? key.slice(1);
+    if (entries.has(name)) return null;
+    entries.set(name, value);
+  }
+  if (entries.has("F") || entries.has("DP")) return null;
+  const integer = (name: string) => {
+    const v = entries.get(name);
+    return v !== undefined && /^\d{1,6}$/.test(v) ? Number(v) : 0;
+  };
+  const mask = entries.get("IM") === "true";
+  const bits = mask ? 1 : integer("BPC");
+  const colours = mask ? 1 : COLOUR_COMPONENTS[entries.get("CS") ?? ""];
+  const width = integer("W");
+  const height = integer("H");
+  if (!width || !height || !colours || ![1, 2, 4, 8, 16].includes(bits)) return null;
+  return Math.ceil((width * bits * colours) / 8) * height;
+}
+
+// Inline image keys may be written in full (PDF 32000-1, Table 91); these are the ones that size the data.
+const INLINE_KEYS: Record<string, string> = { Width: "W", Height: "H", BitsPerComponent: "BPC", ColorSpace: "CS", ImageMask: "IM", Filter: "F", DecodeParms: "DP" };
+const COLOUR_COMPONENTS: Record<string, number> = { "/G": 1, "/DeviceGray": 1, "/RGB": 3, "/DeviceRGB": 3, "/CMYK": 4, "/DeviceCMYK": 4 };
+const HEX = /^[0-9A-Fa-f]$/;
 
 /** A byte that is neither white space nor a delimiter, so it belongs to the token beside it. */
 function regular(c: number): boolean {
