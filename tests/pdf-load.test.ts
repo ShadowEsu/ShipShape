@@ -3,6 +3,7 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { PDFDict, PDFDocument, PDFRef } from "pdf-lib";
 import { describe, expect, it } from "vitest";
+import { buildToSignIsolated } from "@/lib/pdf/build-isolated";
 import { loadUntrusted, MAX_INFLATED_BYTES, MAX_PACKED_OBJECTS, PdfTooComplex } from "@/lib/pdf/load";
 import { buildToSign, NotSignable } from "@/lib/pdf/to-sign";
 
@@ -141,5 +142,28 @@ describe("loading an upload", () => {
     expect((await loadUntrusted(await fixture("C0-normal-objstm.pdf"))).context.lookup(PDFRef.of(102))).toBeDefined();
     const w9 = await readFile(path.join(import.meta.dirname, "..", "templates", "fw9.pdf"));
     expect((await loadUntrusted(w9)).getForm().getFields().length).toBeGreaterThan(20);
+  });
+});
+
+describe("each upload is built in a thread of its own (Security R7-8)", () => {
+  /** One page plus an array of `count` distinct names: pdf-lib keeps every name it has seen for good. */
+  const names = (count: number) => pdfWith([[4, Buffer.from(`[${Array.from({ length: count }, (_, i) => `/n${i}`).join(" ")}]`)]]);
+
+  it("builds exactly what buildToSign builds, and passes its refusals on", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage().drawText("Fee: USD 100");
+    const bytes = await doc.save();
+    expect(Buffer.from(await buildToSignIsolated(bytes, "application/pdf")).equals(Buffer.from(await buildToSign(bytes, "application/pdf")))).toBe(true);
+    const a6 = await readFile(path.join(import.meta.dirname, "fixtures", "A6-stream-in-objstm-300.pdf"));
+    await expect(buildToSignIsolated(a6, "application/pdf")).rejects.toMatchObject({ reason: "unreadable" });
+  });
+
+  it("an upload needing more memory or time than its thread may use is refused as unreadable; under the normal limits it builds", async () => {
+    const heavy = names(300_000);
+    const outOfMemory = await buildToSignIsolated(heavy, "application/pdf", { heapMb: 16, timeoutMs: 20_000 }).catch((e: unknown) => e);
+    expect(outOfMemory).toBeInstanceOf(NotSignable);
+    expect(outOfMemory).toMatchObject({ reason: "unreadable", cause: { code: "ERR_WORKER_OUT_OF_MEMORY" } });
+    await expect(buildToSignIsolated(heavy, "application/pdf", { heapMb: 512, timeoutMs: 1 })).rejects.toMatchObject({ reason: "unreadable" });
+    expect((await buildToSignIsolated(heavy, "application/pdf")).length).toBeGreaterThan(0);
   });
 });

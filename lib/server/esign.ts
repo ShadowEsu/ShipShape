@@ -3,8 +3,9 @@ import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import { appendPages } from "@/lib/pdf/append";
+import { buildToSignIsolated } from "@/lib/pdf/build-isolated";
 import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
-import { buildToSign, NotSignable } from "@/lib/pdf/to-sign";
+import { NotSignable } from "@/lib/pdf/to-sign";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser } from "./db";
 import { downloadName } from "./documents";
@@ -54,7 +55,7 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
     if (sha256Hex(original) !== latest.sha256) throw new UserError("The stored copy of this document doesn't match its fingerprint, so it can't be sent. Upload it again as a new version.");
     let toSign: Uint8Array;
     try {
-      toSign = await buildToSign(original, latest.mime);
+      toSign = await buildToSignIsolated(original, latest.mime);
     } catch (e) {
       if (!(e instanceof NotSignable)) throw e;
       throw new UserError(
