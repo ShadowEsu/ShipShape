@@ -55,9 +55,10 @@ class FakeStripe implements StripePort {
     return s;
   }
   async cancelSubscription(id: string) {
-    this.cancelled.push(id);
     const s = this.subs.get(id);
-    if (s) s.status = "canceled";
+    if (!s || s.status === "canceled") throw new Error("subscription already canceled"); // as Stripe does
+    this.cancelled.push(id);
+    s.status = "canceled";
     return {};
   }
 }
@@ -303,6 +304,13 @@ describe("account deletion", () => {
     vi.stubEnv("STRIPE_SECRET_KEY", KEY);
     await deleteAccount(a.ctx);
     expect(fake.cancelled).toEqual([a.sub.id]);
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toEqual([]);
+  });
+
+  it("goes ahead when Stripe already ended the subscription but its webhook hasn't arrived", async () => {
+    const a = await payingWorkspace();
+    a.sub.status = "canceled"; // cancelled in Stripe; our row still says active
+    await deleteAccount(a.ctx);
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toEqual([]);
   });
 });

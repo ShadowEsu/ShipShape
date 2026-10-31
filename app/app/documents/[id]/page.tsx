@@ -67,7 +67,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         </Link>
       </nav>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <section className="space-y-6">
+        <section className="min-w-0 space-y-6">
           <article className="rounded-2xl border border-line bg-paper p-6 shadow-sm sm:p-8">
             <p className="eyebrow">{DOC_KINDS[doc.kind]}</p>
             <h1 className="mt-2 font-serif text-3xl font-semibold tracking-tight">{doc.title}</h1>
@@ -114,7 +114,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                 <li key={v.version} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <span>
                     Version {v.version} · {fmtDateTime(v.created_at)} · {size(v.size_bytes)}
-                    {v.origin === "signed" && <span className="ml-2 rounded-full bg-ok-soft px-2 py-0.5 text-xs font-medium text-ok">Signed copy</span>}
+                    {v.origin === "signed" && <span className="ml-2 rounded-full bg-ok-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-ok">Signed copy</span>}
                     <span className="ml-2 font-mono text-xs text-ink-3" title={`SHA-256 ${v.sha256}`}>
                       {v.sha256.slice(0, 12)}
                     </span>
@@ -135,7 +135,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           </section>
         </section>
 
-        <aside className="space-y-6">
+        <aside className="min-w-0 space-y-6">
           <section className="card space-y-3">
             <h2 className="font-semibold">Details</h2>
             <DetailsForm

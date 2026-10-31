@@ -323,5 +323,16 @@ export async function cancelSubscriptionsBeforeDeletion(userId: string) {
   const cfg = billingConfig();
   if (!cfg) throw new UserError("Your subscription couldn't be cancelled automatically. Cancel it under Billing first, then delete your account.");
   const stripe = stripePort(cfg);
-  for (const s of subs) await stripe.cancelSubscription(s.stripe_subscription_id);
+  for (const s of subs) {
+    try {
+      await stripe.cancelSubscription(s.stripe_subscription_id);
+    } catch {
+      // Stripe refuses to cancel a subscription that already ended (its webhook may not have
+      // reached us yet). Anything still running stops the deletion.
+      const now = await stripe.retrieveSubscription(s.stripe_subscription_id).catch(() => null);
+      if (now?.status !== "canceled" && now?.status !== "incomplete_expired") {
+        throw new UserError("Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it under Billing first.");
+      }
+    }
+  }
 }
