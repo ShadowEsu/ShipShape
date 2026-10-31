@@ -323,20 +323,23 @@ describe("spend meter", () => {
     expect(row.cost_micros).toBe(row.reserved_micros);
   });
 
-  it("a refused API key (expired or revoked) says AI is paused, charges nothing and is logged", async () => {
+  it.each([
+    { status: 401, type: "authentication_error", calls: 2 }, // the key is read again once (it may have rotated), then it stops
+    { status: 403, type: "permission_error", calls: 1 },
+  ])("a refused API key ($status) says AI is paused, charges nothing and is logged", async ({ status, type, calls: expected }) => {
     setAiProviderForTests(null);
     let calls = 0;
     vi.stubGlobal("fetch", async () => {
       calls++;
-      return Response.json({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }, { status: 401 });
+      return Response.json({ type: "error", error: { type, message: "refused" } }, { status });
     });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const err = await ask(await workspace()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(GateClosed);
     expect(String(err)).toMatch(/AI is paused right now/);
-    expect(calls).toBe(2); // the key is read again once (it may have rotated), then it stops
+    expect(calls).toBe(expected);
     expect(await meter()).toEqual([{ status: "failed", reserved_micros: expect.any(String), cost_micros: "0" }]);
-    expect(logged.mock.calls.map((c) => String(c[0]))).toEqual(["ai request_match: the provider refused the API key (provider status 401)"]);
+    expect(logged.mock.calls.map((c) => String(c[0]))).toEqual([`ai request_match: the provider refused the API key (provider status ${status})`]);
   });
 
   it("only the server can touch the meter", async () => {
