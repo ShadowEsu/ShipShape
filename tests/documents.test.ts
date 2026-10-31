@@ -127,8 +127,9 @@ describe("downloads (Security R2)", () => {
     expect(ok?.objectPath.startsWith(`${sample.orgId}/${doc.id}/`)).toBe(true);
     expect(Number(q.get("e")) - now()).toBeLessThanOrEqual(300);
     await expect(downloadUrl(other, doc.id, 1, "download")).rejects.toThrow(UserError);
-    // A mangled link (/app/documents/<id>/file) is "not found" (the route's 404), not a database error.
+    // A mangled link (/app/documents/<id>/file?v=) is "not found" (the route's 404), not a database error.
     await expect(downloadUrl(sample, "not-a-document", 1, "download")).rejects.toThrow(UserError);
+    for (const v of [2 ** 31, 1e20, Number.MAX_SAFE_INTEGER]) await expect(downloadUrl(sample, doc.id, v, "download")).rejects.toThrow(UserError);
     const audit = (await getDocument(sample, doc.id))!.audit.map((a) => a.action);
     expect(audit[0]).toBe("document.downloaded");
   });
