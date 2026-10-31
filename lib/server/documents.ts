@@ -12,7 +12,7 @@ import { UserError } from "./errors";
 import { assertCanFill, assertRealData } from "./flags";
 import { assertWithinPlan } from "./plans";
 import { factsForFill, type Ctx } from "./profile";
-import { blobStore } from "./storage";
+import { blobStore, foldName } from "./storage";
 
 export const DOC_KINDS = {
   w9: "W-9",
@@ -270,9 +270,9 @@ export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
   if (!rows.length) throw new UserError("Document not found.");
 }
 
-/** The name a downloaded file gets: the title, cut to safe characters, plus its version. */
+/** The name a downloaded file gets: the title in header-safe characters (accents folded), plus its version. */
 export function downloadName(title: string, version: number, mime: AllowedMime): string {
-  return `${title.replace(/[^\w .()-]+/g, "").slice(0, 100).trim() || "document"} v${version}.${EXTENSION[mime]}`;
+  return `${foldName(title).slice(0, 100).trim() || "document"} v${version}.${EXTENSION[mime]}`;
 }
 
 /**

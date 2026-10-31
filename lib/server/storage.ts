@@ -53,12 +53,40 @@ export function signFileParams(p: string, exp: number, inline: boolean, filename
   return createHmac("sha256", urlKey()).update(`file:${p}:${exp}:${inline ? 1 : 0}:${filename}`).digest("base64url");
 }
 
-/** The link /api/files serves, whichever store holds the file: signed here, valid at most 5 minutes. */
+/**
+ * A name in the characters /api/files writes into its Content-Disposition header as they are (the
+ * set verifyFileParams accepts): accents folded ("Müller" → "Muller"), anything else dropped.
+ */
+export function foldName(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\w .()-]+/g, "")
+    .replace(/ {2,}/g, " ")
+    .trim();
+}
+
+/** foldName, at most 120 characters, keeping the extension; "file" when nothing else is left. */
+export function headerSafeName(name: string): string {
+  const folded = foldName(name);
+  const ext = /\.[A-Za-z0-9]{1,5}$/.exec(folded)?.[0] ?? "";
+  const base = folded
+    .slice(0, folded.length - ext.length)
+    .slice(0, 120 - ext.length)
+    .trim();
+  return `${base || "file"}${ext}`;
+}
+
+/**
+ * The link /api/files serves, whichever store holds the file: signed here, valid at most 5 minutes.
+ * Any name works: it's made header-safe here, so the link always passes verifyFileParams.
+ */
 export async function fileUrl(p: string, { filename, inline, ttlSeconds = MAX_URL_SECONDS }: FileUrlOptions): Promise<string> {
   assertObjectPath(p);
   const exp = Math.floor(Date.now() / 1000) + Math.min(ttlSeconds, MAX_URL_SECONDS);
-  const q = new URLSearchParams({ p, e: String(exp), i: inline ? "1" : "0", n: filename });
-  q.set("s", signFileParams(p, exp, inline, filename));
+  const name = headerSafeName(filename);
+  const q = new URLSearchParams({ p, e: String(exp), i: inline ? "1" : "0", n: name });
+  q.set("s", signFileParams(p, exp, inline, name));
   return `/api/files?${q}`;
 }
 

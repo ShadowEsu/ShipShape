@@ -58,6 +58,17 @@ function contract(store: () => BlobStore) {
     expect(verifyFileParams(q)).toEqual({ objectPath: p, inline: false, filename: "Lease v1.pdf" });
     expect(Number(q.get("e")) - Date.now() / 1000).toBeLessThanOrEqual(MAX_URL_SECONDS);
   });
+
+  it("links a file under any name, made safe for the download header, so the link always opens", async () => {
+    const p = newPath();
+    const nameOf = async (filename: string) => verifyFileParams(new URL(await store().signedUrl(p, { filename, inline: false }), "http://x").searchParams)?.filename;
+    expect(await nameOf("Müller & O'Brien, COI 2026+.pdf")).toBe("Muller OBrien COI 2026.pdf");
+    expect(await nameOf("日本語の書類.pdf")).toBe("file.pdf");
+    const long = await nameOf(`${"Certificate ".repeat(20)}.pdf`);
+    expect(long?.length).toBeLessThanOrEqual(120);
+    expect(long?.endsWith(".pdf")).toBe(true);
+    expect(await nameOf('a"\r\nSet-Cookie: x=1.pdf')).toBe("aSet-Cookie x1.pdf");
+  });
 }
 
 describe("local file store", () => {

@@ -155,6 +155,19 @@ describe("a vendor sending files", () => {
     expect(await vendorFileUrl(ctx, "not-a-file-id")).toBeNull();
   });
 
+  it("downloads a vendor's file whatever its name: accents, apostrophes, ampersands and commas", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("owner-names@example.com");
+    const vendorId = await addVendor(ctx, { name: "Müller & O'Brien", email: "", requested: ["coi"] });
+    const { id, token } = await createVendorLink(ctx, { vendorId, days: 30 });
+    expect(await receiveFile(id, token, { kind: "coi", expiresOn: inDays(100), file: { name: "Müller & O'Brien, COI 2026+.pdf", bytes: PDF } })).toBe("sent");
+    const [file] = (await getVendor(ctx, vendorId))!.files;
+    expect(file.filename).toBe("Müller & O'Brien, COI 2026+.pdf");
+    const got = verifyFileParams(new URL((await vendorFileUrl(ctx, file.id))!, "http://x").searchParams);
+    expect(got).toMatchObject({ inline: false, filename: "Muller OBrien COI 2026.pdf" });
+    expect(sha256Hex(await blobStore().get(got!.objectPath))).toBe(sha256Hex(PDF));
+  });
+
   it("refuses an unrequested kind, a bad date, a non-PDF/image, an oversized file or no file, and stores nothing", async () => {
     withRealDocs();
     const ctx = await realWorkspace("owner2@example.com");
