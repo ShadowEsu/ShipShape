@@ -21,7 +21,7 @@ import { blobStore } from "./storage";
 export const COLLECT_DAYS = [7, 30, 90] as const;
 
 const KIND_KEYS = Object.keys(DOC_KINDS) as [DocKind, ...DocKind[]];
-const isKind = (k: string): k is DocKind => k in DOC_KINDS;
+const isKind = (k: string): k is DocKind => Object.hasOwn(DOC_KINDS, k);
 
 /** What a requested document looks like right now: received and current, close to expiry, lapsed, or not sent. */
 export type CollectState = "ok" | "expiring" | "expired" | "missing";

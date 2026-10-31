@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { ValidityChip, fmtDay } from "@/components/app-ui";
-import { FragmentOpener } from "@/components/fragment-opener";
+import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { openPassport, PASSPORT_COOKIE } from "@/lib/server/passport";
 
@@ -22,6 +22,7 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
   return (
     <main id="main" className="mx-auto min-h-screen max-w-3xl px-5 py-12 sm:py-16">
       <p className="eyebrow mb-6">ShipShape passport</p>
+      {token && <DropFragment />}
       {passport ? (
         <div className="space-y-8">
           <header className="space-y-2">

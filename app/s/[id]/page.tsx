@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { fmtDay } from "@/components/app-ui";
-import { FragmentOpener } from "@/components/fragment-opener";
+import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { fmtDateTime } from "@/components/ui";
 import { ESIGN_CONSENT_TEXT } from "@/lib/consent";
 import { openSigning, SIGN_COOKIE } from "@/lib/server/esign";
@@ -17,6 +17,7 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
   return (
     <main id="main" className="mx-auto min-h-screen max-w-2xl px-5 py-12 sm:py-16">
       <p className="eyebrow mb-6">ShipShape signature request</p>
+      {token && <DropFragment />}
       {view ? (
         <div className="space-y-6">
           <header className="space-y-2">

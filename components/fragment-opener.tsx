@@ -33,3 +33,21 @@ export function FragmentOpener({ openUrl, unavailable }: { openUrl: string; unav
   if (state === "busy") return <p className="text-ink-2">Too many tries from this network. Wait a few minutes and open the link again.</p>;
   return unavailable;
 }
+
+/**
+ * For a secret link reopened while its cookie is still set: the page renders straight from the
+ * cookie and FragmentOpener never mounts, so this takes the token out of the address bar and the
+ * history entry, on load and when the link is pasted into the same tab (a fragment-only change
+ * doesn't reload the page). Render it only where FragmentOpener isn't, or it could clear the token first.
+ */
+export function DropFragment() {
+  useEffect(() => {
+    const drop = () => {
+      if (window.location.hash) history.replaceState(history.state, "", window.location.pathname + window.location.search);
+    };
+    drop();
+    window.addEventListener("hashchange", drop);
+    return () => window.removeEventListener("hashchange", drop);
+  }, []);
+  return null;
+}

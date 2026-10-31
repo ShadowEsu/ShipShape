@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { Notice, fmtDay } from "@/components/app-ui";
-import { FragmentOpener } from "@/components/fragment-opener";
+import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { COLLECT_COOKIE, openCollect, type PublicCollect, type ReceiveOutcome } from "@/lib/server/collect";
 import { clientIp, rateLimited } from "@/lib/server/http";
 
@@ -17,7 +17,7 @@ const PROBLEMS: Record<Exclude<ReceiveOutcome, "sent">, string> = {
   type: "That file isn't a PDF, PNG or JPEG. Save it as one of those and send it again.",
 };
 
-const isProblem = (r: string): r is Exclude<ReceiveOutcome, "sent"> => r in PROBLEMS;
+const isProblem = (r: string): r is Exclude<ReceiveOutcome, "sent"> => Object.hasOwn(PROBLEMS, r);
 
 function Outcome({ r, collect }: { r: string | undefined; collect: PublicCollect }) {
   if (!r) return null;
@@ -42,6 +42,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
   return (
     <main id="main" className="mx-auto min-h-screen max-w-3xl px-5 py-12 sm:py-16">
       <p className="eyebrow mb-6">ShipShape upload link</p>
+      {token && <DropFragment />}
       {collect ? (
         <div className="space-y-8">
           <header className="space-y-2">
