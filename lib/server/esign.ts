@@ -7,11 +7,12 @@ import { BuildBusy, buildToSignIsolated } from "@/lib/pdf/build-isolated";
 import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
 import { NotSignable } from "@/lib/pdf/to-sign";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
-import { asAnon, asUser } from "./db";
+import { asAnon, asUser, type Tx } from "./db";
 import { downloadName } from "./documents";
 import { UserError } from "./errors";
 import { MAX_UPLOAD_BYTES, type AllowedMime } from "./files";
 import { GateClosed } from "./flags";
+import { rateLimited } from "./http";
 import { visitorId } from "./passport";
 import { assertWithinPlan } from "./plans";
 import type { Ctx } from "./profile";
@@ -40,32 +41,48 @@ const NewRequest = z.object({
 export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: string; token: string }> {
   if (!esignAvailable(ctx)) throw new GateClosed("Signing by email opens once ShipShape can send email.");
   const p = NewRequest.parse(input);
+  if (await rateLimited("esign-send", ctx.userId, 20, 3600)) {
+    throw new UserError("You've sent a lot of signature requests in the last hour. Try again later.");
+  }
   const { token, hash } = newToken();
   const id = randomUUID();
   const toSignPath = `${ctx.orgId}/${id}/v1.pdf`;
-  await asUser(ctx.userId, async (tx) => {
-    await assertWithinPlan(tx, ctx.orgId, "esign");
-    const [latest] = await tx.query<{ version: number; storage_path: string; mime: AllowedMime; sha256: string }>(
+  // Two short transactions with the build between them, outside both (Security R10-1): a build can
+  // wait 20 s for a slot and take 20 s more, and the pool has 3 connections.
+  const latestVersion = (tx: Tx) =>
+    tx.query<{ version: number; storage_path: string; mime: AllowedMime; sha256: string }>(
       "select v.version, v.storage_path, v.mime, v.sha256 from app.document_versions v join app.documents d on d.id = v.document_id where v.document_id = $1 and d.org_id = $2 and d.status = 'active' order by v.version desc limit 1",
       [p.documentId, ctx.orgId],
     );
-    if (!latest) throw new UserError("Document not found.");
-    const original = await blobStore().get(latest.storage_path);
-    // The certificate names the upload's fingerprint, so the file read now must be that upload (Security R3-3).
-    if (sha256Hex(original) !== latest.sha256) throw new UserError("The stored copy of this document doesn't match its fingerprint, so it can't be sent. Upload it again as a new version.");
-    let toSign: Uint8Array;
-    try {
-      toSign = await buildToSignIsolated(original, latest.mime);
-    } catch (e) {
-      if (e instanceof BuildBusy) throw new UserError("ShipShape is preparing other documents for signature right now. Try again in a minute.");
-      if (!(e instanceof NotSignable)) throw e;
-      throw new UserError(
-        e.reason === "viewer_dependent"
-          ? "This PDF can look different in different apps (hidden layers or self-updating form fields), so it can't be sent for signature. Print it to a new PDF and upload that as a new version."
-          : "ShipShape can't read this file well enough to send it for signature. If it's password-protected, remove the password, or print it to a new PDF and upload that.",
-      );
+  const latest = await asUser(ctx.userId, async (tx) => {
+    await assertWithinPlan(tx, ctx.orgId, "esign");
+    const [row] = await latestVersion(tx);
+    if (!row) throw new UserError("Document not found.");
+    return row;
+  });
+  const original = await blobStore().get(latest.storage_path);
+  // The certificate names the upload's fingerprint, so the file read now must be that upload (Security R3-3).
+  if (sha256Hex(original) !== latest.sha256) throw new UserError("The stored copy of this document doesn't match its fingerprint, so it can't be sent. Upload it again as a new version.");
+  let toSign: Uint8Array;
+  try {
+    toSign = await buildToSignIsolated(original, latest.mime);
+  } catch (e) {
+    if (e instanceof BuildBusy) throw new UserError("ShipShape is preparing other documents for signature right now. Try again in a minute.");
+    if (!(e instanceof NotSignable)) throw e;
+    throw new UserError(
+      e.reason === "viewer_dependent"
+        ? "This PDF can look different in different apps (hidden layers or self-updating form fields), so it can't be sent for signature. Print it to a new PDF and upload that as a new version."
+        : "ShipShape can't read this file well enough to send it for signature. If it's password-protected, remove the password, or print it to a new PDF and upload that.",
+    );
+  }
+  if (toSign.length > MAX_UPLOAD_BYTES) throw new UserError("This document is too large to send for signature.");
+  await asUser(ctx.userId, async (tx) => {
+    await assertWithinPlan(tx, ctx.orgId, "esign");
+    // What was built must still be the latest version of an active document: the request names it.
+    const [now] = await latestVersion(tx);
+    if (now?.version !== latest.version) {
+      throw new UserError("This document changed (a new version, or it was archived) while it was being prepared. Send it for signature again.");
     }
-    if (toSign.length > MAX_UPLOAD_BYTES) throw new UserError("This document is too large to send for signature.");
     await tx.query(
       "insert into app.signature_requests (id, org_id, document_id, version, signer_name, signer_email, token_hash, expires_at, created_by, to_sign_path, to_sign_sha256) values ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(days => $8), $9, $10, $11)",
       [id, ctx.orgId, p.documentId, latest.version, p.signerName, p.signerEmail, hash, p.days, ctx.userId, toSignPath, sha256Hex(toSign)],

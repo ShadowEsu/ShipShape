@@ -79,6 +79,39 @@ describe("signature requests", () => {
       asUser(a.userId, (tx) => tx.query("update app.signature_requests set status = 'signed' where id = $1", [id])),
     ).rejects.toThrow(/row-level security|permission denied/);
   });
+
+  it("stop if the document changes while its file is being prepared: the request must name the latest version of an active document (Security R10-1)", async () => {
+    const ctx = await sampleWorkspace();
+    const doc = await nda(ctx);
+    const real = blobStore();
+    let archived = false;
+    // The change lands after the first transaction read the latest version, before the request is stored.
+    setBlobStoreForTests({
+      ...real,
+      get: async (p) => {
+        const bytes = await real.get(p);
+        if (!archived) {
+          archived = true;
+          await db.root((tx) => tx.query("update app.documents set status = 'archived' where id = $1", [doc.id]));
+        }
+        return bytes;
+      },
+    });
+    try {
+      await expect(request(ctx)).rejects.toBeInstanceOf(UserError);
+    } finally {
+      setBlobStoreForTests(real);
+    }
+    expect(archived).toBe(true);
+    expect(await db.root((tx) => tx.query("select 1 from app.signature_requests where org_id = $1", [ctx.orgId]))).toEqual([]);
+  });
+
+  it("allow one person 20 sends an hour; the 21st is refused (Security R10-1)", async () => {
+    const ctx = await sampleWorkspace();
+    for (let i = 0; i < 20; i++) await request(ctx);
+    await expect(request(ctx)).rejects.toBeInstanceOf(UserError);
+    expect(await db.root((tx) => tx.query("select 1 from app.signature_requests where org_id = $1", [ctx.orgId]))).toHaveLength(20);
+  }, 60_000);
 });
 
 describe("signing", () => {
