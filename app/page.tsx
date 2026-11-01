@@ -75,7 +75,7 @@ export default function Home() {
             </h1>
             <p className="max-w-xl text-lg text-ink-2">
               Keep your W-9, insurance certificate, licenses and agreements together. Fill new forms from facts you confirmed once, share
-              an always-current packet with one link, and hear about renewals before they lapse.
+              the packet with one link, and see what&apos;s due before it lapses.
             </p>
             {/* The two buttons need ~356px in Geist, but its fallback font fits them in 350: at 390 wide they
                 wrapped only when Geist loaded, shifting the page (CLS 0.1). Stack them below 400px from the start. */}

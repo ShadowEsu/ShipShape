@@ -25,7 +25,7 @@ describe("the fill form's error summary", () => {
   });
 
   it("speaks of one answer in the singular, and the approval box links to its own id", async () => {
-    const html = await render([{ key: "_ack", label: "Approval", message: "Tick the box to confirm you've reviewed the document." }]);
+    const html = await render([{ key: "_ack", label: "Approval", message: "Check the box to confirm you've reviewed the document." }]);
     expect(textOf(html)).toContain("1 answer needs fixing");
     expect(actionsOf(html)[0]?.href).toBe("#ack");
   });

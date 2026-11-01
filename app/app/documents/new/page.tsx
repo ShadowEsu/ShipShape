@@ -12,7 +12,7 @@ export default async function NewDocumentPage() {
   const open = !ctx.demo && realDocsEnabled();
   return (
     <div className="max-w-2xl space-y-6">
-      <PageHeader eyebrow="Vault" title="Add a document" />
+      <PageHeader eyebrow="Documents" title="Add a document" />
       {open ? (
         <div className="card">
           <NewDocumentForm />

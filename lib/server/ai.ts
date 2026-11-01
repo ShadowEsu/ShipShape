@@ -204,7 +204,7 @@ export async function readRequest(ctx: Ctx, input: RequestInput, network: string
   if (text.length > AI_REQUEST_MAX_CHARS) {
     throw new RequestInputError("text", `That's longer than ${AI_REQUEST_MAX_CHARS} characters. Paste just the part that lists the documents.`);
   }
-  if (!input.consent) throw new RequestInputError("consent", `Tick the box to send this text to ${AI_RECIPIENT}.`);
+  if (!input.consent) throw new RequestInputError("consent", `Check the box to send this text to ${AI_RECIPIENT}.`);
   if ((await rateLimited("ai-user", ctx.userId, 10, 3600)) || (await rateLimited("ai-net", network, 30, 3600))) {
     throw new UserError("That's as many requests as ShipShape reads in an hour. Nothing was sent; try again in an hour.");
   }

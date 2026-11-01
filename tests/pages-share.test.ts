@@ -354,7 +354,7 @@ describe("form errors name the field to fix", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test-not-a-real-key");
     await signIn("form-ask@example.com");
     const text = "Before your first job we need a W-9 and a certificate of insurance.";
-    expect(await askAction({}, form({ text }))).toEqual({ error: "Tick the box to send this text to Anthropic's Claude.", field: "consent", text });
+    expect(await askAction({}, form({ text }))).toEqual({ error: "Check the box to send this text to Anthropic's Claude.", field: "consent", text });
   });
 
   it("deleting the account: a wrong confirmation goes to its field and keeps what was typed", async () => {

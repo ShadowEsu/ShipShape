@@ -20,7 +20,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Vault" title={archived ? "Archived documents" : "Documents"}>
+      <PageHeader eyebrow="Documents" title={archived ? "Archived documents" : "Documents"}>
         {docs.length > 0 && (
           <>
             <Link href="/app/make" className="btn-ghost">

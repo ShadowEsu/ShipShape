@@ -178,7 +178,7 @@ describe("signing", () => {
     const code = await lastCode(a.orgId);
     const sign = async (input: { code?: string; typedName?: string; consented?: boolean }) =>
       signProblem(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP, ...input }), sender);
-    expect(await sign({ consented: false })).toEqual({ field: "consent", message: "Tick the box to agree to sign electronically." });
+    expect(await sign({ consented: false })).toEqual({ field: "consent", message: "Check the box to agree to sign electronically." });
     expect(await sign({ typedName: " " })).toEqual({ field: "name", message: "Type your full name to sign." });
     const wrong = code === "000000" ? "111111" : "000000";
     expect(await sign({ code: wrong })).toEqual({ field: "code", message: "That code doesn't match. Type the 6 digits from the newest code we sent." });

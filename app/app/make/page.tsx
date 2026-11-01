@@ -24,8 +24,9 @@ export default async function MakePage() {
             <p className="text-xs text-ink-3">
               {t.source.version} · {t.source.license}
             </p>
+            {/* "an NDA": letters read with a vowel sound take "an". */}
             <Link href={`/app/make/${t.id}`} className="btn self-start">
-              Fill in {t.short}
+              Fill {/^[AEFHILMNORSX]/.test(t.short) ? "an" : "a"} {t.short}
             </Link>
           </li>
         ))}

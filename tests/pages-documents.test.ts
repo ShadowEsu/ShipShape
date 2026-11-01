@@ -135,6 +135,12 @@ describe("home", () => {
     expect(primaryActions(html)).toEqual([{ label: "Name your workspace", href: "/app/settings#workspace" }]);
   });
 
+  it("calls the W-9 action by one name, 'Fill a W-9', in the setup list and on its card, and the card says where the values come from", async () => {
+    await signIn("home-w9@example.com");
+    const w9 = actionsOf(await homePage()).filter((a) => a.href === "/app/make/irs-w9");
+    expect(w9.map((a) => a.label)).toEqual(["Fill a W-9 (to do)", "Fill a W-9 Filled from your business facts."]);
+  });
+
   it("with an expired document says what it means and gives one action that fixes it", async () => {
     const ctx = await signIn("home-expired@example.com");
     const id = await uploadDocument(ctx, { title: "Old permit", kind: "permit", expires_on: "2020-01-31" }, PDF);
@@ -200,7 +206,7 @@ describe("making a document", () => {
     const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
     expect(await fill({}, form({ ...w9, step: "review" }))).toEqual({ review: true });
     expect(await fill({}, form({ ...w9, name: "", step: "review" }))).toEqual({ errors: { name: "Fill this in." }, at: 0 });
-    expect(await fill({}, form(w9))).toEqual({ errors: { _ack: "Tick the box to confirm you've reviewed the document." }, review: true });
+    expect(await fill({}, form(w9))).toEqual({ errors: { _ack: "Check the box to confirm you've reviewed the document." }, review: true });
     await expect(fill({}, form({ ...w9, ack: "on" }))).rejects.toThrow(/^redirect \/app\/documents\/.+\?made=1$/);
   });
 

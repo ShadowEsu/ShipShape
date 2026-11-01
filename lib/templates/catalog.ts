@@ -154,7 +154,7 @@ export const LINK_OUTS = [
     title: "SAFE (Y Combinator)",
     summary: "Y Combinator publishes the SAFE and a free tool to send it. We link to the original; upload the signed copy to your vault.",
     url: "https://www.ycombinator.com/documents",
-    license: "No redistribution licence, so we link out",
+    license: "No redistribution license, so we link out",
   },
 ];
 

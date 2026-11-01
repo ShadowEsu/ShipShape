@@ -160,7 +160,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <div className="min-w-0 flex-1">
               <h3 className="font-semibold">Sign out on every device</h3>
               <p className="text-sm text-ink-2">
-                Lost a laptop or phone, or see a sign-in you don&apos;t recognise? This ends every session, here and everywhere
+                Lost a laptop or phone, or see a sign-in you don&apos;t recognize? This ends every session, here and everywhere
                 else. Then change your password.
               </p>
             </div>

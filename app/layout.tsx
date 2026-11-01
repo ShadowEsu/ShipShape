@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono"
 
 const TITLE = "ShipShape: your business paperwork, in one passport";
 const DESCRIPTION =
-  "Keep your W-9, insurance certificate, licenses and agreements in one place, fill new forms from facts you confirmed once, and share an always-current packet by link. Software, not a law firm.";
+  "Keep your W-9, insurance certificate, licenses and agreements in one place, fill new forms from facts you confirmed once, share the packet with one link, and see what's due before it lapses. Software, not a law firm.";
 
 // Link previews (app/opengraph-image.tsx) need absolute URLs: SHIPSHAPE_APP_URL, else Next.js's own default.
 export const metadata: Metadata = {

@@ -237,7 +237,7 @@ describe("signing in (/signin)", () => {
 
   it("an unticked box: the message is about that box, and the email typed stays", async () => {
     expect(await signIn({}, form({ mode: "email", email: "owner@harbor.example" }))).toEqual({
-      error: "Tick the box to agree to the Terms and Privacy Policy.",
+      error: "Check the box to agree to the Terms and Privacy Policy.",
       field: "terms",
       email: "owner@harbor.example",
       terms: false,

@@ -14,8 +14,8 @@ const ROWS: [feature: string, free: string, pro: string][] = [
   ["Versions, history, search", "✓", "✓"],
   ["W-9 and NDA from your business facts", "✓", "✓"],
   ["Deadlines and calendar file", "✓", "✓"],
-  ["Email reminders 90, 30 and 7 days ahead", "—", "✓"],
-  ["Signature requests", "—", "✓"],
+  ["Email reminders 90, 30 and 7 days ahead", "Not included", "✓"],
+  ["Signature requests", "Not included", "✓"],
   ["Export and account deletion", "✓", "✓"],
 ];
 
@@ -100,7 +100,7 @@ export default function PricingPage() {
                     <th scope="row" className="px-4 py-3 font-normal">
                       {feature}
                     </th>
-                    <td className="px-4 py-3">{f === "—" ? <span aria-label="Not included">—</span> : f}</td>
+                    <td className="px-4 py-3">{f}</td>
                     <td className="px-4 py-3">{p}</td>
                   </tr>
                 ))}

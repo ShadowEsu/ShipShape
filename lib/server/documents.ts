@@ -246,7 +246,7 @@ export async function checkFill(ctx: Ctx, templateId: string, values: Values): P
 /** Fills a template from the person's reviewed values; needs the not-a-law-firm acknowledgment. */
 export async function fillTemplate(ctx: Ctx, templateId: string, values: Values, acknowledged: boolean): Promise<FillResult> {
   const { t, facts, errors } = await checked(ctx, templateId, values);
-  if (!acknowledged) errors._ack = "Tick the box to confirm you've reviewed the document.";
+  if (!acknowledged) errors._ack = "Check the box to confirm you've reviewed the document.";
   if (Object.keys(errors).length) return { ok: false, errors };
   const start = prefill(t, facts, ctx.today);
   const out = await render(t, values, facts, ctx.today);

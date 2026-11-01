@@ -16,7 +16,7 @@ export default async function FactsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <PageHeader eyebrow="Memory" title="Business facts" />
+      <PageHeader eyebrow="Business facts" title="Business facts" />
       <p className="text-ink-2">
         Confirm these once. ShipShape fills them into your forms, shows where each value came from, and asks “still true?” when a
         fact is more than a year old.

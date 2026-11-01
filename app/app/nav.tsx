@@ -7,7 +7,7 @@ const NAV = [
   ["/app", "Home"],
   ["/app/documents", "Documents"],
   ["/app/make", "Make a document"],
-  ["/app/ask", "Read a request"],
+  ["/app/ask", "Check a request"],
   ["/app/passport", "Passport"],
   ["/app/collect", "Collect"],
   ["/app/deadlines", "Deadlines"],

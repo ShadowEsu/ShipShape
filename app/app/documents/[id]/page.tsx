@@ -282,7 +282,7 @@ export default async function DocumentPage({
                 </a>{" "}
                 ({template.source.version})
               </p>
-              <p className="text-ink-2">Licence: {template.source.license}</p>
+              <p className="text-ink-2">License: {template.source.license}</p>
             </section>
           )}
 
@@ -298,7 +298,7 @@ export default async function DocumentPage({
                 </li>
               ))}
             </ol>
-            <p className="text-xs text-ink-3">Each entry is chained to the one before it, so edits behind our back show up.</p>
+            <p className="text-xs text-ink-3">Each entry is linked to the one before it, so a changed or deleted entry shows up.</p>
           </section>
 
           <form action={archive}>

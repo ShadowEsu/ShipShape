@@ -154,7 +154,7 @@ function canPay(ctx: Ctx): BillingConfig {
 /** Starts a Stripe Checkout for Pro and returns its URL. One subscription per workspace. */
 export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> {
   const cfg = canPay(ctx);
-  if (!agreed) throw new UserError("Tick the box to agree to the Terms, including billing and refunds.");
+  if (!agreed) throw new UserError("Check the box to agree to the Terms, including billing and refunds.");
   const stripe = stripePort(cfg);
 
   // The price shown on the site must be the price charged.
