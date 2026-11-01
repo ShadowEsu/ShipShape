@@ -1,4 +1,5 @@
 import { Notice } from "@/components/app-ui";
+import { FocusOnLoad } from "@/components/focus-on-load";
 import type { LinkEnd } from "@/lib/server/links";
 import { dayOf } from "@/lib/today";
 
@@ -77,11 +78,11 @@ export function LinkBusy({ href }: { href: string }) {
   );
 }
 
-/** A download refused by the file route's own limit (60 or 30 per network in 10 minutes): the page says so, where the link was. */
+/** A download refused by the file route's own limit (60 or 30 per network in 10 minutes): the page says so, where the link was, and reads it out. */
 export function DownloadBusy() {
   return (
-    <div role="alert">
+    <FocusOnLoad role="alert">
       <Notice tone="bad">Too many downloads from this network. Wait 10 minutes, then try again.</Notice>
-    </div>
+    </FocusOnLoad>
   );
 }
