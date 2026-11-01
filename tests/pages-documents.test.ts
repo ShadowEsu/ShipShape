@@ -318,9 +318,9 @@ describe("home", () => {
     expect(text).toMatch(/Lease.*Renewal notice · .*Renewal notice due today\.\s+Open it/);
     expect(text).not.toMatch(/Lease.*Current ·/);
     expect(text).not.toMatch(/Vendor NDA.*No expiry date/);
-    // One chip, the row's reason; an expiry within 30 days is named on the state line (Design).
-    const in25 = new Date(Date.parse(ctx.today) + 25 * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-    expect(text).toMatch(new RegExp(`Both soon.*Renewal notice · .*Renewal notice due in 10 days\\. Expires ${in25}\\.`));
+    // One chip, the row's reason; an expiry within 30 days is named on the state line, month and day only (Design).
+    const in25 = new Date(Date.parse(ctx.today) + 25 * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    expect(text).toMatch(new RegExp(`Both soon.*Renewal notice · .*Renewal notice due in 10 days\\. Expires ${in25}\\.\\s+Open it`));
     expect(text).not.toMatch(/Lease[^.]*\.\s*Expires /);
     expect(text).not.toMatch(/Both soon.*Expires soon/);
     expect(text.split("Both soon")).toHaveLength(2);

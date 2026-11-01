@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { fmtDay, RenewalChip, ValidityChip } from "@/components/app-ui";
+import { fmtMonthDay, RenewalChip, ValidityChip } from "@/components/app-ui";
 import { ATTENTION_MAX, DOC_KINDS, homeSummary } from "@/lib/server/documents";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { listPassports } from "@/lib/server/passport";
@@ -154,7 +154,7 @@ export default async function AppHome() {
                     const renewal = d.attention_kind === "renewal";
                     // A renewal row keeps one chip (its reason); an expiry within 30 days is named on the state line instead.
                     const state = renewal
-                      ? `Renewal notice due ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}.${d.validity === "expiring" && d.expires_on ? ` Expires ${fmtDay(d.expires_on)}.` : ""}`
+                      ? `Renewal notice due ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}.${d.validity === "expiring" && d.expires_on ? ` Expires ${fmtMonthDay(d.expires_on)}.` : ""}`
                       : d.validity === "expired"
                         ? "It has lapsed."
                         : days === 0
