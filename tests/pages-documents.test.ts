@@ -1,0 +1,240 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import DocumentPage from "@/app/app/documents/[id]/page";
+import { addDocument, saveDetails } from "@/app/app/documents/actions";
+import DocumentsPage from "@/app/app/documents/page";
+import FactsPage from "@/app/app/facts/page";
+import FillPage from "@/app/app/make/[template]/page";
+import { fill } from "@/app/app/make/actions";
+import AppNotFound from "@/app/app/not-found";
+import AppHome from "@/app/app/page";
+import { ErrorPanel } from "@/components/error-panel";
+import { fillTemplate, uploadDocument } from "@/lib/server/documents";
+import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
+import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { freshDb } from "./support/db";
+import { actionsOf, renderPage, textOf } from "./support/render";
+
+// The request's cookies, as Next.js would hold them.
+const jar = vi.hoisted(() => new Map<string, { value: string; options?: Record<string, unknown> }>());
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) => {
+      const c = jar.get(name);
+      return c && { name, value: c.value };
+    },
+    set: (name: string, value: string, options?: Record<string, unknown>) => void jar.set(name, { value, options }),
+    delete: (name: string) => void jar.delete(name),
+  }),
+}));
+// The address the page is rendered at, for client components that read it.
+const at = vi.hoisted(() => ({ path: "/app" }));
+// Like Next.js, redirect() and notFound() never return.
+vi.mock("next/navigation", () => ({
+  redirect: (to: string) => {
+    throw new Error(`redirect ${to}`);
+  },
+  notFound: () => {
+    throw new Error("not found");
+  },
+  RedirectType: { push: "push", replace: "replace" },
+  usePathname: () => at.path,
+  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }),
+}));
+vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+
+const PDF = new TextEncoder().encode("%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF");
+let blobDir: string;
+
+beforeAll(async () => {
+  await freshDb();
+  blobDir = await mkdtemp(path.join(os.tmpdir(), "shipshape-blobs-"));
+  setBlobStoreForTests(localBlobStore(blobDir));
+});
+
+afterAll(async () => {
+  await rm(blobDir, { recursive: true, force: true });
+});
+
+beforeEach(() => vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1"));
+afterEach(() => {
+  jar.clear();
+  at.path = "/app";
+  vi.unstubAllEnvs();
+});
+
+/** Signs a new person in to a new (Free) workspace of their own, the way the sign-in page does. */
+async function signIn(email: string) {
+  await finishSignIn(await createLocalUser(email, false), { demo: false });
+  return requireWorkspace();
+}
+
+/** The labels of the page's primary buttons (class "btn" or "btn-accent"): each state should have exactly one. */
+function primaryActions(html: string): { label: string; href?: string }[] {
+  return [...html.matchAll(/<(a|button)\b([^>]*\bclass="btn(?:-accent)?"[^>]*)>([\s\S]*?)<\/\1>/g)].map((m) => ({
+    label: textOf(m[3]),
+    href: /\bhref="([^"]*)"/.exec(m[2])?.[1],
+  }));
+}
+
+const form = (fields: Record<string, string>) => {
+  const data = new FormData();
+  for (const [name, value] of Object.entries(fields)) data.set(name, value);
+  return data;
+};
+
+const documentsPage = (searchParams: { q?: string; kind?: string; archived?: string }) => renderPage(DocumentsPage, { searchParams: Promise.resolve(searchParams) });
+
+describe("documents list", () => {
+  it("with no documents teaches what will appear here and offers one action: add a document", async () => {
+    await signIn("docs-empty@example.com");
+    const html = await documentsPage({});
+    const text = textOf(html);
+    expect(text).toContain("No documents yet");
+    expect(text).toContain("will be listed here, each with its expiry date");
+    expect(text).toContain("For example: Insurance certificate");
+    expect(primaryActions(html)).toEqual([{ label: "Add a document", href: "/app/documents/new" }]);
+    // Nothing to search or to look back at yet.
+    expect(actionsOf(html).map((a) => a.label)).not.toContain("Search");
+    expect(text).not.toContain("See archived documents");
+  });
+
+  it("with a search that finds nothing says what was searched and offers one action: clear it", async () => {
+    const ctx = await signIn("docs-search@example.com");
+    await uploadDocument(ctx, { title: "Liability certificate", kind: "coi" }, PDF);
+    const text = textOf(await documentsPage({ q: "zebra" }));
+    expect(text).toContain("No documents match “zebra”");
+    expect(text).toContain("Try a shorter word, or clear the search");
+    expect(primaryActions(await documentsPage({ q: "zebra" }))).toEqual([{ label: "Clear the search", href: "/app/documents" }]);
+  });
+
+  it("with nothing archived says what archiving does and offers one action: back to current documents", async () => {
+    const ctx = await signIn("docs-archived@example.com");
+    await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
+    const html = await documentsPage({ archived: "1" });
+    const text = textOf(html);
+    expect(text).toContain("No archived documents");
+    expect(text).toContain("Documents you archive will be listed here");
+    expect(primaryActions(html)).toEqual([{ label: "Go to current documents", href: "/app/documents" }]);
+    expect(actionsOf(html).filter((a) => a.href === "/app/documents")).toHaveLength(1);
+  });
+});
+
+const homePage = () => renderPage(AppHome, {});
+
+describe("home", () => {
+  it("on a first visit teaches what will appear, counts only real progress, and offers one action: the next step", async () => {
+    await signIn("home-first@example.com");
+    const html = await homePage();
+    const text = textOf(html);
+    expect(text).toContain("0 of 6 done");
+    expect(text).toContain("this page lists only what needs you");
+    expect(text).toContain("Documents that have expired or expire in the next 30 days will be listed here");
+    expect(primaryActions(html)).toEqual([{ label: "Name your workspace", href: "/app/settings#workspace" }]);
+  });
+
+  it("with an expired document says what it means and gives one action that fixes it", async () => {
+    const ctx = await signIn("home-expired@example.com");
+    const id = await uploadDocument(ctx, { title: "Old permit", kind: "permit", expires_on: "2020-01-31" }, PDF);
+    const html = await homePage();
+    const text = textOf(html);
+    expect(text).toContain("Old permit");
+    expect(text).toContain("It has lapsed. Renew it with the issuer, then add the new copy so your passport links share the current one.");
+    expect(text).not.toContain("Nothing has expired");
+    const attention = html.slice(html.indexOf("Needs attention"));
+    expect(actionsOf(attention).filter((a) => a.href?.startsWith(`/app/documents/${id}`))).toEqual([
+      { tag: "a", label: "Add the renewed copy", href: `/app/documents/${id}#version-file` },
+    ]);
+  });
+});
+
+describe("business facts", () => {
+  it("with nothing confirmed says so, what the facts are for, and offers one action: save them", async () => {
+    await signIn("facts-empty@example.com");
+    const html = await renderPage(FactsPage, {});
+    expect(textOf(html)).toContain("Nothing is confirmed yet: fill in what you know, then choose Save and confirm.");
+    expect(primaryActions(html)).toEqual([{ label: "Save and confirm", href: undefined }]);
+  });
+});
+
+describe("making a document", () => {
+  it("starts with the fields and a review button; approving comes after the review", async () => {
+    await signIn("fill-start@example.com");
+    const html = await renderPage(FillPage, { params: Promise.resolve({ template: "irs-w9" }) });
+    const text = textOf(html);
+    expect(primaryActions(html)).toEqual([{ label: "Review the W-9", href: undefined }]);
+    expect(text).toContain("Nothing is saved until you approve.");
+    expect(text).not.toContain("Approve and make");
+  });
+
+  it("checks the values for the review without saving, and stays on the review when only the approval box is missing", async () => {
+    await signIn("fill-review@example.com");
+    const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
+    expect(await fill({}, form({ ...w9, step: "review" }))).toEqual({ review: true });
+    expect(await fill({}, form({ ...w9, name: "", step: "review" }))).toEqual({ errors: { name: "Fill this in." } });
+    expect(await fill({}, form(w9))).toEqual({ errors: { _ack: "Tick the box to confirm you've reviewed the document." }, review: true });
+    await expect(fill({}, form({ ...w9, ack: "on" }))).rejects.toThrow(/^redirect \/app\/documents\/.+\?made=1$/);
+  });
+
+  it("after making one, the document's page says it's done, what was kept, and what to do next", async () => {
+    const ctx = await signIn("fill-done@example.com");
+    const w9 = { name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
+    const made = await fillTemplate(ctx, "irs-w9", w9, true);
+    const id = made.ok ? made.id : "";
+    const html = await renderPage(DocumentPage, {
+      params: Promise.resolve({ id }),
+      searchParams: Promise.resolve({ made: "1" }),
+    });
+    expect(textOf(html)).toContain(
+      "Your W-9 is made and saved here, with where each value came from and your approval in its history. Next: download it and send it to whoever asked for it.",
+    );
+  });
+});
+
+describe("document forms", () => {
+  it("put an error next to the field it is about, keep what was typed, and say what to fix", async () => {
+    const ctx = await signIn("forms-field@example.com");
+    const id = await uploadDocument(ctx, { title: "Lease", kind: "agreement" }, PDF);
+    const saved = await saveDetails({}, form({ id, title: " ", kind: "agreement", issuer: "City of Springfield" }));
+    expect(saved).toMatchObject({ field: "title", error: "Give the document a title, like “General liability certificate 2026”." });
+    expect(saved.values?.issuer).toBe("City of Springfield");
+    expect(await addDocument({}, form({ title: "Permit", kind: "permit" }))).toMatchObject({ field: "file", error: "Choose a file to upload." });
+  });
+});
+
+describe("a document's page", () => {
+  const documentPage = (id: string, searchParams: { error?: string; added?: string }) => renderPage(DocumentPage, { params: Promise.resolve({ id }), searchParams: Promise.resolve(searchParams) });
+
+  it("after adding a document says it's done and that its expiry date is the next step", async () => {
+    const ctx = await signIn("doc-added@example.com");
+    const id = await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
+    expect(textOf(await documentPage(id, { added: "1" }))).toContain(
+      "Added to your documents as version 1. Every view and download goes into its history. Next: add its expiry date under Details, so Home can warn you before it lapses.",
+    );
+  });
+
+  it("at the plan's limit says why the document stays archived and links to the one fix", async () => {
+    const ctx = await signIn("doc-limit@example.com");
+    const id = await uploadDocument(ctx, { title: "Old permit", kind: "permit" }, PDF);
+    const html = await documentPage(id, { error: "limit" });
+    expect(textOf(html)).toContain("The Free plan holds 10 active documents, so this one stays archived. Archive another one, then restore this one.");
+    expect(actionsOf(html).filter((a) => a.label === "Choose one to archive")).toEqual([{ tag: "a", label: "Choose one to archive", href: "/app/documents" }]);
+  });
+});
+
+describe("error and not-found pages", () => {
+  it("an error says in one line what happened, offers one button, and keeps the reference small", async () => {
+    const html = await renderPage(ErrorPanel, { digest: "abc123", reset: () => {} });
+    expect(textOf(html)).toBe("This page didn't load because of a problem on our side. Try again Reference for support: abc123");
+    expect(actionsOf(html)).toEqual([{ tag: "button", label: "Try again", href: undefined }]);
+  });
+
+  it("a missing document links back to the documents list, and nothing else", async () => {
+    at.path = "/app/documents/00000000-0000-4000-8000-000000000000";
+    const html = await renderPage(AppNotFound, {});
+    expect(textOf(html)).toContain("This isn't in your workspace");
+    expect(actionsOf(html)).toEqual([{ tag: "a", label: "Back to your documents", href: "/app/documents" }]);
+  });
+});

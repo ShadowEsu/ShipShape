@@ -4,6 +4,7 @@ import path from "node:path";
 import { inflateSync } from "node:zlib";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { signProblem } from "@/app/s/[id]/messages";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
 import { downloadUrl, getDocument, insertDocument, listDocuments } from "@/lib/server/documents";
@@ -70,6 +71,14 @@ describe("signature requests", () => {
     await revokeSignatureRequest(a, id);
     expect(await openSigning(id, token)).toBeNull();
     expect(await sendSigningCode(id, token)).toBe("invalid");
+  });
+
+  it("for a document another workspace holds, say it isn't here and where to look", async () => {
+    const own = await sampleWorkspace();
+    const other = await nda(b);
+    await expect(requestSignature(own, { documentId: other.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 })).rejects.toThrow(
+      "This document isn't in this workspace any more. Go to Documents to see what's there.",
+    );
   });
 
   it("take a pasted signer address with a space or line break around it (review #18)", async () => {
@@ -159,6 +168,26 @@ describe("signing", () => {
     const code = await lastCode(a.orgId);
     await db.root((tx) => tx.query("update app.signature_requests set otp_expires_at = now() - interval '1 minute' where id = $1", [id]));
     expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("expired_code");
+  });
+
+  it("tells the signer what to fix, next to the field it's about, or whom to ask for a new link (signing page copy)", async () => {
+    const { id, token } = await request(a);
+    const sender = (await openSigning(id, token))?.orgName ?? "";
+    expect(sender).toBe("Sample");
+    expect(await sendSigningCode(id, token)).toBe("ok");
+    const code = await lastCode(a.orgId);
+    const sign = async (input: { code?: string; typedName?: string; consented?: boolean }) =>
+      signProblem(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP, ...input }), sender);
+    expect(await sign({ consented: false })).toEqual({ field: "consent", message: "Tick the box to agree to sign electronically." });
+    expect(await sign({ typedName: " " })).toEqual({ field: "name", message: "Type your full name to sign." });
+    const wrong = code === "000000" ? "111111" : "000000";
+    expect(await sign({ code: wrong })).toEqual({ field: "code", message: "That code doesn't match. Type the 6 digits from the newest code we sent." });
+    for (let i = 0; i < 4; i++) await sign({ code: wrong });
+    expect(await sign({})).toEqual({ field: "code", message: "That code had 5 wrong tries, so it stopped working. Send a new code and use that one." });
+    for (let i = 0; i < 4; i++) expect(await sendSigningCode(id, token)).toBe("ok");
+    expect(signProblem(await sendSigningCode(id, token), sender)).toEqual({ field: null, message: "You've had all 5 codes this signing link allows. Ask Sample for a new link." });
+    await revokeSignatureRequest(a, id);
+    expect(await sign({})).toEqual({ field: null, message: "This signing link has stopped working. Ask Sample for a new one." });
   });
 
   it("lets the sender download exactly the file the signer gets, and no other workspace; the download is in the history (Security R3-2, R4-5)", async () => {

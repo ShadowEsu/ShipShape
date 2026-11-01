@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
+import { LinkBusy, LinkUnavailable } from "@/app/link-states";
 import { fmtDay, NamedByWorkspace } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { fmtDateTime } from "@/components/ui";
@@ -15,7 +16,8 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const token = (await cookies()).get(SIGN_COOKIE)?.value;
   // Same view limit as passport and upload pages (Security F8).
-  const view = token && !(await rateLimited("sign-view", clientIp(await headers()), 60, 600)) ? await openSigning(id, token) : null;
+  const busy = token ? await rateLimited("sign-view", clientIp(await headers()), 60, 600) : false;
+  const view = token && !busy ? await openSigning(id, token) : null;
 
   return (
     <main id="main" className="mx-auto min-h-screen max-w-2xl px-5 py-12 sm:py-16">
@@ -27,7 +29,7 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
             <h1 className="font-serif text-3xl font-semibold tracking-tight sm:text-4xl">{view.title}</h1>
             <p className="text-ink-2">
               {view.orgName} asked {view.signerName} to sign this document.
-              {view.status === "pending" && <> The request is open until {fmtDay(view.expiresAt)}.</>}
+              {view.status === "pending" && <> You can sign until {fmtDay(view.expiresAt)}.</>}
             </p>
             <NamedByWorkspace contact={contactEmail()} page={`/s/${id}`} />
           </header>
@@ -37,7 +39,10 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
               <p className="font-semibold">
                 <span aria-hidden="true">✓ </span>Signed{view.signedAt && <> {fmtDateTime(view.signedAt)}</>}
               </p>
-              <p className="text-sm text-ink-2">The signed copy includes a certificate page recording how it was signed. Keep a copy for your records.</p>
+              <p className="text-sm text-ink-2">
+                There&apos;s nothing else you need to do. {view.orgName} has the signed copy, with a certificate page recording how it was
+                signed. Download yours for your records; this link works until {fmtDay(view.expiresAt)}.
+              </p>
               <a href={`/s/${id}/file`} className="btn self-start">
                 Download the signed copy
               </a>
@@ -53,7 +58,7 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
               </section>
               <section className="card space-y-3">
                 <h2 className="font-semibold">2. Sign</h2>
-                <SignForm id={id} signerName={view.signerName} email={view.signerEmail} consentText={ESIGN_CONSENT_TEXT} demo={view.demo} />
+                <SignForm id={id} sender={view.orgName} signerName={view.signerName} email={view.signerEmail} consentText={ESIGN_CONSENT_TEXT} demo={view.demo} />
               </section>
             </>
           )}
@@ -61,20 +66,13 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
             ShipShape is document software, not a law firm. It records how this document was signed and doesn&apos;t vouch for what it says.
           </p>
         </div>
+      ) : busy ? (
+        <LinkBusy href={`/s/${id}`} />
       ) : token ? (
-        <Unavailable />
+        <LinkUnavailable noun="signing link" why="closed" />
       ) : (
-        <FragmentOpener openUrl={`/s/${id}/open`} unavailable={<Unavailable />} />
+        <FragmentOpener openUrl={`/s/${id}/open`} unavailable={<LinkUnavailable noun="signing link" why="incomplete" />} />
       )}
     </main>
-  );
-}
-
-function Unavailable() {
-  return (
-    <div className="space-y-2">
-      <h1 className="font-serif text-3xl font-semibold">This signing link isn&apos;t available</h1>
-      <p className="text-ink-2">It may have expired, been withdrawn or already been used. Ask the person who sent it for a new link.</p>
-    </div>
   );
 }

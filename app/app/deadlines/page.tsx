@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, fmtDay } from "@/components/app-ui";
 import { fmtDateTime } from "@/components/ui";
+import { PLANS } from "@/lib/plans";
+import { billingView } from "@/lib/server/billing";
 import { listDeadlines, listOutbox, type Deadline } from "@/lib/server/deadlines";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { requireWorkspace } from "@/lib/server/session";
@@ -45,7 +47,10 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
 
 export default async function DeadlinesPage() {
   const ctx = await requireWorkspace();
-  const [all, outbox] = await Promise.all([listDeadlines(ctx), listOutbox(ctx)]);
+  const [all, outbox, { plan }] = await Promise.all([listDeadlines(ctx), listOutbox(ctx), billingView(ctx)]);
+  // Reminders from ShipShape are a Pro feature (lib/server/deadlines.ts runs them for Pro only); the calendar file works on every plan.
+  const reminders = PLANS[plan].emailReminders;
+  const quiet = all.length > 0 && all.every((d) => d.days_left > 90);
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -57,18 +62,26 @@ export default async function DeadlinesPage() {
         )}
       </PageHeader>
       <p className="text-ink-2">
-        Dates come from your documents&apos; expiry and renewal fields. ShipShape reminds owners and admins 90, 30 and 7 days before,
-        and on the day something lapses.
+        Dates come from your documents&apos; expiry and renewal fields.{" "}
+        {reminders
+          ? "ShipShape reminds owners and admins 90, 30 and 7 days before, and on the day something lapses."
+          : "Add them to your calendar and it reminds you 30 and 7 days before. Reminders from ShipShape come with Pro."}
       </p>
 
       {all.length === 0 ? (
         <EmptyState
           title="No dates yet"
-          body="Add an expiry or renewal date to a certificate, license or agreement and it shows up here."
-          action={{ href: "/app/documents", label: "Go to documents" }}
+          body="Expiry and renewal dates from your certificates, licenses and agreements show here, soonest first, for example: “General liability certificate · expires Mar 1, 2027 · in 121 days”. Add a date to a document to see it here."
+          action={{ href: "/app/documents", label: "Add an expiry date" }}
         />
       ) : (
         <>
+          {quiet && (
+            <p role="status" className="card text-sm text-ink-2">
+              Nothing expires in the next 90 days.{" "}
+              {reminders ? "We'll remind you 90, 30 and 7 days before." : "Add these dates to your calendar and it reminds you 30 and 7 days before."}
+            </p>
+          )}
           <Group title="Lapsed" items={all.filter((d) => d.days_left < 0)} tone="bad" />
           <Group title="Next 30 days" items={all.filter((d) => d.days_left >= 0 && d.days_left <= 30)} tone="warn" />
           <Group title="Later" items={all.filter((d) => d.days_left > 30)} tone="ok" />
@@ -79,7 +92,9 @@ export default async function DeadlinesPage() {
         <h2 className="font-semibold">Reminders sent</h2>
         <p className="text-sm text-ink-3">During the preview ShipShape doesn&apos;t send email; reminders and signing codes land here instead.</p>
         {outbox.length === 0 ? (
-          <p className="card text-sm text-ink-2">Nothing yet.</p>
+          <p className="card text-sm text-ink-2">
+            {reminders ? "Nothing yet. The first reminder lands here 90 days before a date." : "Nothing here: on the Free plan ShipShape doesn't send reminders."}
+          </p>
         ) : (
           <ul className="space-y-2">
             {outbox.map((m) => (

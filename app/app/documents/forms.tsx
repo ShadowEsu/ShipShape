@@ -26,8 +26,9 @@ export interface DetailValues {
   renews_on: string | null;
 }
 
+/** The line under a form: an error not about one field, or what was saved. Field errors show under their field. */
 function Status({ state, savedText }: { state: FormState; savedText: string }) {
-  if (state.error)
+  if (state.error && !state.field)
     return (
       <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
         {state.error}
@@ -42,41 +43,66 @@ function Status({ state, savedText }: { state: FormState; savedText: string }) {
   return null;
 }
 
+/** Marks the field an error is about as invalid and points it at the message under it. */
+function invalid(state: FormState, name: string) {
+  return state.field === name ? { "aria-invalid": true, "aria-describedby": `${name}-error` } : {};
+}
+
+function FieldError({ state, name }: { state: FormState; name: string }) {
+  if (state.field !== name) return null;
+  return (
+    <p id={`${name}-error`} className="mt-1 text-sm text-bad">
+      {state.error}
+    </p>
+  );
+}
+
+/** Moves focus to the field an error is about, once for each result the form gets back. */
+function useFocusField(state: FormState, id: string | undefined) {
+  useEffect(() => {
+    if (id) document.getElementById(id)?.focus();
+  }, [state, id]);
+}
+
 // Container queries: the same fields sit in the wide add form and the narrow document rail.
-function DetailFields({ v }: { v?: DetailValues }) {
+function DetailFields({ v, state }: { v?: DetailValues; state: FormState }) {
   return (
     <div className="@container space-y-3">
       <div>
         <label htmlFor="title" className="label">
           Title
         </label>
-        <input id="title" name="title" required maxLength={200} defaultValue={v?.title} className="input" />
+        <input id="title" name="title" required maxLength={200} defaultValue={v?.title} className="input" {...invalid(state, "title")} />
+        <FieldError state={state} name="title" />
       </div>
       <div>
         <label htmlFor="kind" className="label">
           Kind
         </label>
         {/* Keyed: React applies a select's defaultValue only when it mounts, and resets the form to that after each action. */}
-        <select key={v?.kind} id="kind" name="kind" defaultValue={v?.kind ?? "other"} className="input">
+        <select key={v?.kind} id="kind" name="kind" defaultValue={v?.kind ?? "other"} className="input" {...invalid(state, "kind")}>
           {KINDS.map(([k, l]) => (
             <option key={k} value={k}>
               {l}
             </option>
           ))}
         </select>
+        <FieldError state={state} name="kind" />
       </div>
       <div className="grid gap-3 @md:grid-cols-2">
         <div>
           <label htmlFor="issuer" className="label">
             Issued by
           </label>
-          <input id="issuer" name="issuer" maxLength={200} defaultValue={v?.issuer ?? ""} className="input" placeholder="Insurer, agency, city" />
+          <input id="issuer" name="issuer" maxLength={200} defaultValue={v?.issuer ?? ""} className="input" placeholder="Insurer, agency, city" {...invalid(state, "issuer")} />
+          <FieldError state={state} name="issuer" />
         </div>
         <div>
           <label htmlFor="counterparty" className="label">
             Other party
           </label>
-          <input id="counterparty" name="counterparty" maxLength={200} defaultValue={v?.counterparty ?? ""} className="input" />
+          <input id="counterparty" name="counterparty" maxLength={200} defaultValue={v?.counterparty ?? ""} className="input" {...invalid(state, "counterparty")} />
+          <FieldError state={state} name="counterparty" />
         </div>
       </div>
       <div className="grid gap-3 @md:grid-cols-3">
@@ -84,20 +110,23 @@ function DetailFields({ v }: { v?: DetailValues }) {
           <label htmlFor="issued_on" className="label">
             Issued
           </label>
-          <input id="issued_on" name="issued_on" type="date" defaultValue={v?.issued_on ?? ""} className="input" />
+          <input id="issued_on" name="issued_on" type="date" defaultValue={v?.issued_on ?? ""} className="input" {...invalid(state, "issued_on")} />
+          <FieldError state={state} name="issued_on" />
         </div>
         <div>
           <label htmlFor="expires_on" className="label">
             Expires
           </label>
           {/* scroll-mt: the setup checklist links to #expires_on; keep the label in view above it. */}
-          <input id="expires_on" name="expires_on" type="date" defaultValue={v?.expires_on ?? ""} className="input scroll-mt-16" />
+          <input id="expires_on" name="expires_on" type="date" defaultValue={v?.expires_on ?? ""} className="input scroll-mt-16" {...invalid(state, "expires_on")} />
+          <FieldError state={state} name="expires_on" />
         </div>
         <div>
           <label htmlFor="renews_on" className="label">
             Renewal notice
           </label>
-          <input id="renews_on" name="renews_on" type="date" defaultValue={v?.renews_on ?? ""} className="input" />
+          <input id="renews_on" name="renews_on" type="date" defaultValue={v?.renews_on ?? ""} className="input" {...invalid(state, "renews_on")} />
+          <FieldError state={state} name="renews_on" />
         </div>
       </div>
     </div>
@@ -106,10 +135,11 @@ function DetailFields({ v }: { v?: DetailValues }) {
 
 export function DetailsForm({ id, values }: { id: string; values: DetailValues }) {
   const [state, action, pending] = useActionState<FormState, FormData>(saveDetails, {});
+  useFocusField(state, state.field);
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className="space-y-3" noValidate>
       <input type="hidden" name="id" value={id} />
-      <DetailFields v={state.values ?? values} />
+      <DetailFields v={state.values ?? values} state={state} />
       <Status state={state} savedText="Saved. Reminders follow the new dates." />
       <button className="btn-ghost" disabled={pending}>
         {pending ? "Saving…" : "Save details"}
@@ -120,16 +150,30 @@ export function DetailsForm({ id, values }: { id: string; values: DetailValues }
 
 export function NewDocumentForm() {
   const [state, action, pending] = useActionState<FormState, FormData>(addDocument, {});
+  useFocusField(state, state.field);
+  const fileError = state.field === "file";
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="space-y-4" noValidate>
       <div>
         <label htmlFor="file" className="label">
           File
         </label>
-        <input id="file" name="file" type="file" required accept="application/pdf,image/png,image/jpeg" className="input py-1.5" />
-        <p className="mt-1 text-xs text-ink-3">PDF, PNG or JPEG, up to 4 MB.</p>
+        <input
+          id="file"
+          name="file"
+          type="file"
+          required
+          accept="application/pdf,image/png,image/jpeg"
+          className="input py-1.5"
+          aria-invalid={fileError || undefined}
+          aria-describedby={fileError ? "file-hint file-error" : "file-hint"}
+        />
+        <p id="file-hint" className="mt-1 text-xs text-ink-3">
+          PDF, PNG or JPEG, up to 4 MB.
+        </p>
+        <FieldError state={state} name="file" />
       </div>
-      <DetailFields v={state.values} />
+      <DetailFields v={state.values} state={state} />
       <Status state={state} savedText="" />
       <button className="btn" disabled={pending}>
         {pending ? "Uploading…" : "Add to vault"}
@@ -140,13 +184,15 @@ export function NewDocumentForm() {
 
 export function VersionForm({ id }: { id: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>(addVersion, {});
+  useFocusField(state, state.field && "version-file");
   return (
-    <form action={action} className="space-y-2">
+    <form action={action} className="space-y-2" noValidate>
       <input type="hidden" name="id" value={id} />
       <label htmlFor="version-file" className="label">
         Upload a new version
       </label>
-      <input id="version-file" name="file" type="file" required accept="application/pdf,image/png,image/jpeg" className="input py-1.5" />
+      <input id="version-file" name="file" type="file" required accept="application/pdf,image/png,image/jpeg" className="input py-1.5" {...invalid(state, "file")} />
+      <FieldError state={state} name="file" />
       <Status state={state} savedText="New version added. Earlier versions stay in the history." />
       <button className="btn-ghost" disabled={pending}>
         {pending ? "Uploading…" : "Add version"}
@@ -188,7 +234,7 @@ export function SignRequestForm({ id, days, demo }: { id: string; days: readonly
   }
 
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className="space-y-3" noValidate>
       <input type="hidden" name="id" value={id} />
       <div>
         <label htmlFor="signer-name" className="label">

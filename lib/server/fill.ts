@@ -65,6 +65,18 @@ export function formValues(t: TemplateInfo, data: FormData): Values {
   return out;
 }
 
+/** What to do about an empty required field, by the kind of field it is. */
+const MISSING: Record<FieldDef["kind"], string> = {
+  text: "Fill this in.",
+  textarea: "Fill this in.",
+  date: "Pick a date.",
+  number: "Enter a whole number from 1 to 99.",
+  radio: "Choose one of the options.",
+  checkbox: "Tick this box.",
+  secret: "Enter the number.",
+};
+const SSN_FORMAT = "Enter the SSN as 9 digits, like 123-45-6789.";
+
 export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const f of t.fields) {
@@ -74,13 +86,13 @@ export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<strin
       if (!facts.ein) errors[f.key] = "Add your EIN in Business facts first, or choose SSN.";
       continue;
     }
-    if (f.required && !value) errors[f.key] = "Required.";
-    else if (f.max && f.kind !== "number" && value.length > f.max) errors[f.key] = `Up to ${f.max} characters.`;
+    if (f.required && !value) errors[f.key] = f.key === "ssn" ? SSN_FORMAT : MISSING[f.kind];
+    else if (f.max && f.kind !== "number" && value.length > f.max) errors[f.key] = `Shorten this to ${f.max} characters or fewer.`;
     else if (!(f.kind === "textarea" ? isPrintableText(value) : isPrintable(value))) errors[f.key] = "Use letters, numbers and common punctuation.";
     else if (f.options && value && !f.options.some((o) => o.value === value)) errors[f.key] = "Choose one of the options.";
     else if (f.kind === "date" && value && !realDate(value)) errors[f.key] = "Enter a date between 1900 and 2200.";
     else if (f.kind === "number" && value && !/^[1-9][0-9]?$/.test(value)) errors[f.key] = "Enter a whole number from 1 to 99.";
-    else if (f.key === "ssn" && value && !/^[0-9]{9}$/.test(value.replace(/[\s-]/g, ""))) errors[f.key] = "An SSN has 9 digits.";
+    else if (f.key === "ssn" && value && !/^[0-9]{9}$/.test(value.replace(/[\s-]/g, ""))) errors[f.key] = SSN_FORMAT;
   }
   return errors;
 }

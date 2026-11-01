@@ -7,7 +7,7 @@ import { templateById } from "@/lib/templates/catalog";
 import type { Validity } from "@/lib/today";
 import { sha256Hex } from "./crypto";
 import { asUser, type Tx } from "./db";
-import { checkUpload, EXTENSION, type AllowedMime } from "./files";
+import { checkUpload, EXTENSION, UploadRefused, type AllowedMime } from "./files";
 import { fillRecord, prefill, render, validate, type FieldSource, type Values } from "./fill";
 import { UserError } from "./errors";
 import { assertCanFill, assertRealData } from "./flags";
@@ -172,21 +172,26 @@ const optionalText = (max: number) =>
   z
     .string()
     .trim()
-    .max(max)
+    .max(max, `Shorten this to ${max} characters or fewer.`)
     .refine(isPrintable, "Use letters, numbers and common punctuation.")
     .optional()
     .transform((s) => s || null);
 /** A YYYY-MM-DD date the database can store: a real calendar date (zod) in year 1 or later (Postgres has no year 0). */
-export const CalendarDate = z.iso.date().refine((s) => !s.startsWith("0000-"), "Use a real date.");
+export const CalendarDate = z.iso.date("Enter a real date.").refine((s) => !s.startsWith("0000-"), "Enter a real date.");
 const optionalDate = z
-  .union([z.literal(""), CalendarDate])
+  .union([z.literal(""), CalendarDate], "Enter a real date.")
   .optional()
   .transform((s) => s || null);
 
 export const DocMeta = z.object({
   // Any language (uploads keep their own titles; the certificate draws what its font can), one line.
-  title: z.string().trim().min(1, "Give it a title.").max(200).refine((s) => !Array.from(s).some(breaksOneLine), "Keep the title to one line of ordinary text."),
-  kind: z.enum(Object.keys(DOC_KINDS) as [DocKind, ...DocKind[]]),
+  title: z
+    .string()
+    .trim()
+    .min(1, "Give the document a title, like “General liability certificate 2026”.")
+    .max(200, "Shorten the title to 200 characters or fewer.")
+    .refine((s) => !Array.from(s).some(breaksOneLine), "Keep the title to one line of ordinary text."),
+  kind: z.enum(Object.keys(DOC_KINDS) as [DocKind, ...DocKind[]], "Choose a kind from the list."),
   issuer: optionalText(200),
   counterparty: optionalText(200),
   issued_on: optionalDate,
@@ -194,12 +199,15 @@ export const DocMeta = z.object({
   renews_on: optionalDate,
 });
 
+/** Shown when a form acts on a document this workspace no longer has (deleted, or open in another workspace). */
+export const DOCUMENT_GONE = "This document isn't in this workspace any more. Go to Documents to see what's there.";
+
 /** A file the person uploads (Security G3: real data, behind SHIPSHAPE_REAL_DOCS). */
 export async function uploadDocument(ctx: Ctx, meta: unknown, bytes: Uint8Array): Promise<string> {
   assertRealData(ctx);
   const m = DocMeta.parse(meta);
   const check = checkUpload(bytes);
-  if (!check.ok) throw new UserError(check.error);
+  if (!check.ok) throw new UploadRefused(check.error);
   return asUser(ctx.userId, (tx) => insertDocument(tx, ctx, m, { bytes, mime: check.mime }, "upload"));
 }
 
@@ -207,12 +215,12 @@ export async function uploadDocument(ctx: Ctx, meta: unknown, bytes: Uint8Array)
 export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Array): Promise<number> {
   assertRealData(ctx);
   const check = checkUpload(bytes);
-  if (!check.ok) throw new UserError(check.error);
+  if (!check.ok) throw new UploadRefused(check.error);
   return asUser(ctx.userId, async (tx) => {
     // Locks the document (no key update: it doesn't block readers or the version rows' key-share
     // locks) so two uploads at once get consecutive numbers instead of the same one.
     const [doc] = await tx.query("select 1 from app.documents where id = $1 and org_id = $2 for no key update", [documentId, ctx.orgId]);
-    if (!doc) throw new UserError("Document not found.");
+    if (!doc) throw new UserError(DOCUMENT_GONE);
     const [row] = await tx.query<{ next: number }>("select coalesce(max(v.version), 0) + 1 as next from app.document_versions v where v.document_id = $1", [documentId]);
     await insertVersion(tx, ctx, documentId, row.next, { bytes, mime: check.mime }, "upload", null);
     return row.next;
@@ -221,13 +229,23 @@ export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Ar
 
 export type FillResult = { ok: true; id: string } | { ok: false; errors: Record<string, string> };
 
-/** Fills a template from the person's reviewed values; needs the not-a-law-firm acknowledgment. */
-export async function fillTemplate(ctx: Ctx, templateId: string, values: Values, acknowledged: boolean): Promise<FillResult> {
+/** The template and the facts it fills from, with what's wrong in the values (field key -> what to fix). */
+async function checked(ctx: Ctx, templateId: string, values: Values) {
   assertCanFill(ctx);
   const t = templateById(templateId);
-  if (!t) throw new UserError("Unknown template.");
+  if (!t) throw new UserError("ShipShape doesn't fill that form. Pick one from Make a document.");
   const facts = await factsForFill(ctx);
-  const errors = validate(t, values, facts);
+  return { t, facts, errors: validate(t, values, facts) };
+}
+
+/** The review step: what to fix before the person approves. Nothing is saved. */
+export async function checkFill(ctx: Ctx, templateId: string, values: Values): Promise<Record<string, string>> {
+  return (await checked(ctx, templateId, values)).errors;
+}
+
+/** Fills a template from the person's reviewed values; needs the not-a-law-firm acknowledgment. */
+export async function fillTemplate(ctx: Ctx, templateId: string, values: Values, acknowledged: boolean): Promise<FillResult> {
+  const { t, facts, errors } = await checked(ctx, templateId, values);
   if (!acknowledged) errors._ack = "Tick the box to confirm you've reviewed the document.";
   if (Object.keys(errors).length) return { ok: false, errors };
   const start = prefill(t, facts, ctx.today);
@@ -259,7 +277,7 @@ export async function updateDocument(ctx: Ctx, id: string, meta: unknown) {
       [id, ctx.orgId, m.title, m.kind, m.issuer, m.counterparty, m.issued_on, m.expires_on, m.renews_on],
     ),
   );
-  if (!rows.length) throw new UserError("Document not found.");
+  if (!rows.length) throw new UserError(DOCUMENT_GONE);
 }
 
 export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
@@ -267,7 +285,7 @@ export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
     if (!archived) await assertWithinPlan(tx, ctx.orgId, "documents");
     return tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]);
   });
-  if (!rows.length) throw new UserError("Document not found.");
+  if (!rows.length) throw new UserError(DOCUMENT_GONE);
 }
 
 /** The name a downloaded file gets: the title in header-safe characters (accents folded), plus its version. */

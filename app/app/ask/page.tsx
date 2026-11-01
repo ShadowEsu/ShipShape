@@ -21,15 +21,11 @@ export default async function AskPage() {
         <AskForm />
       ) : (
         <Notice tone="info">
-          Reading requests with AI is switched off right now. You can still check the request against{" "}
+          Reading requests with AI is switched off right now, so check the request against your documents yourself; everything else works as
+          usual.{" "}
           <Link href="/app/documents" className="underline">
-            your documents
-          </Link>{" "}
-          yourself and send what they asked for with a{" "}
-          <Link href="/app/passport" className="underline">
-            passport link
+            Open your documents
           </Link>
-          .
         </Notice>
       )}
     </div>

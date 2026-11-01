@@ -8,7 +8,7 @@ import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
 import { NotSignable } from "@/lib/pdf/to-sign";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser, pgErrorCode, type Tx } from "./db";
-import { downloadName } from "./documents";
+import { DOCUMENT_GONE, downloadName } from "./documents";
 import { UserError } from "./errors";
 import { MAX_UPLOAD_BYTES, type AllowedMime } from "./files";
 import { GateClosed } from "./flags";
@@ -42,7 +42,7 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
   if (!esignAvailable(ctx)) throw new GateClosed("Signing by email opens once ShipShape can send email.");
   const p = NewRequest.parse(input);
   if (await rateLimited("esign-send", ctx.userId, 20, 3600)) {
-    throw new UserError("You've sent a lot of signature requests in the last hour. Try again later.");
+    throw new UserError("You've made 20 signing links in the last hour, which is the most ShipShape sends. Nothing was sent; try again in an hour.");
   }
   const { token, hash } = newToken();
   const id = randomUUID();
@@ -57,7 +57,7 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
   const latest = await asUser(ctx.userId, async (tx) => {
     await assertWithinPlan(tx, ctx.orgId, "esign");
     const [row] = await latestVersion(tx);
-    if (!row) throw new UserError("Document not found.");
+    if (!row) throw new UserError(DOCUMENT_GONE);
     return row;
   });
   const original = await blobStore().get(latest.storage_path);

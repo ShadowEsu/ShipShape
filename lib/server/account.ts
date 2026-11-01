@@ -197,6 +197,22 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
   };
 }
 
+/**
+ * What deleting the account would do, by workspace name, for the confirm step: the workspaces where
+ * the person is the only owner go (app.delete_my_account's rule), and they leave the others.
+ */
+export async function deletionPreview(userId: string): Promise<{ deleted: string[]; left: string[] }> {
+  const rows = await asService((tx) =>
+    tx.query<{ name: string; doomed: boolean }>(
+      `select o.name, (m.role = 'owner' and not exists (select 1 from app.members x where x.org_id = m.org_id and x.role = 'owner' and x.user_id <> $1)) as doomed
+       from app.members m join app.organizations o on o.id = m.org_id
+       where m.user_id = $1 order by o.name`,
+      [userId],
+    ),
+  );
+  return { deleted: rows.filter((r) => r.doomed).map((r) => r.name), left: rows.filter((r) => !r.doomed).map((r) => r.name) };
+}
+
 /** Requests older than this are the daily run's to finish: younger ones may still be finishing in the person's own request. */
 const PENDING_AFTER = "15 minutes";
 

@@ -1,4 +1,5 @@
 import "server-only";
+import { UserError } from "./errors";
 
 /** Uploads: PDF, PNG and JPEG only, decided by the file's first bytes, never its name (Security R3). */
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
@@ -29,11 +30,14 @@ const ACTIVE_PDF = /\/(Launch|EmbeddedFile|EmbeddedFiles|RichMedia)\b/;
 
 export type UploadCheck = { ok: true; mime: AllowedMime } | { ok: false; error: string };
 
+/** The file itself was refused (empty, too big, wrong type); forms show the message next to the file field. */
+export class UploadRefused extends UserError {}
+
 export function checkUpload(bytes: Uint8Array): UploadCheck {
-  if (bytes.length === 0) return { ok: false, error: "That file is empty." };
-  if (bytes.length > MAX_UPLOAD_BYTES) return { ok: false, error: "Files can be up to 4 MB." };
+  if (bytes.length === 0) return { ok: false, error: "That file is empty. Choose the file again, or pick another." };
+  if (bytes.length > MAX_UPLOAD_BYTES) return { ok: false, error: "That file is over 4 MB. Choose a smaller file, or save it as a smaller PDF." };
   const mime = sniffMime(bytes);
-  if (!mime) return { ok: false, error: "Upload a PDF, PNG or JPEG." };
+  if (!mime) return { ok: false, error: "That file isn't a PDF, PNG or JPEG. Save it as a PDF and choose it again." };
   if (mime === "application/pdf" && ACTIVE_PDF.test(Buffer.from(bytes).toString("latin1"))) {
     return { ok: false, error: "This PDF launches other programs or carries embedded files, which we don't accept. Print it to a new PDF and try again." };
   }

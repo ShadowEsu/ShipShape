@@ -8,10 +8,16 @@ import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 
+/** The new-vendor form's fields, as its error messages name them. */
+export type VendorField = "name" | "email" | "kinds";
+
 export interface CollectFormState {
+  /** A problem with the whole request, shown above the button. */
   error?: string;
-  /** A new upload link, shown once. */
-  link?: { id: string; token: string };
+  /** What to change in each field, shown next to it. */
+  fieldErrors?: Partial<Record<VendorField, string>>;
+  /** A new upload link, shown once, and how many days it works. */
+  link?: { id: string; token: string; days: number };
   /** What was typed into the new-vendor form, sent back with an error so the form shows it again. */
   values?: { name: string; email: string; kinds: string[] };
 }
@@ -22,13 +28,25 @@ function problem(e: unknown): CollectFormState {
   throw e;
 }
 
+const VENDOR_FIELD: Record<string, VendorField> = { name: "name", email: "email", requested: "kinds" };
+
 export async function addVendorAction(_prev: CollectFormState, data: FormData): Promise<CollectFormState> {
   const ctx = await requireWorkspace();
   let vendorId: string;
   try {
     vendorId = await addVendor(ctx, { name: data.get("name"), email: data.get("email") ?? "", requested: data.getAll("kind") });
   } catch (e) {
-    return { ...problem(e), values: { name: String(data.get("name") ?? ""), email: String(data.get("email") ?? ""), kinds: data.getAll("kind").map(String) } };
+    const values = { name: String(data.get("name") ?? ""), email: String(data.get("email") ?? ""), kinds: data.getAll("kind").map(String) };
+    if (e instanceof z.ZodError) {
+      const fieldErrors: Partial<Record<VendorField, string>> = {};
+      for (const issue of e.issues) {
+        const key = String(issue.path[0]);
+        const field = Object.hasOwn(VENDOR_FIELD, key) ? VENDOR_FIELD[key] : "name";
+        fieldErrors[field] ??= issue.message;
+      }
+      return { fieldErrors, values };
+    }
+    return { ...problem(e), values };
   }
   revalidatePath("/app/collect");
   redirect(`/app/collect/${vendorId}`);
@@ -39,7 +57,9 @@ export async function makeVendorLink(_prev: CollectFormState, data: FormData): P
   try {
     const link = await createVendorLink(ctx, { vendorId: data.get("vendor"), days: data.get("days") });
     revalidatePath("/app/collect");
-    return { link };
+    // The vendor's page lists its links: the new one shows there under Upload links.
+    revalidatePath(`/app/collect/${String(data.get("vendor"))}`);
+    return { link: { ...link, days: Number(data.get("days")) } };
   } catch (e) {
     return problem(e);
   }

@@ -32,8 +32,18 @@ export default async function StatusPage() {
       <SiteHeader />
       <main id="main" className="mx-auto max-w-3xl px-5 pt-10 pb-20">
         <p className="eyebrow">Status</p>
-        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">{db ? "Everything is running." : "Something is wrong."}</h1>
+        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">{db ? "Everything is running." : "ShipShape isn't working right now."}</h1>
         <p className="mt-2 text-sm text-ink-3">Checked {fmtDateTime(checkedAt)} · revision {process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "local"}</p>
+        {!db && (
+          <>
+            <p className="mt-4 text-ink-2">The database isn&apos;t answering, so signing in and opening documents won&apos;t work. Check again in a few minutes.</p>
+            <p className="mt-4">
+              <a href="/status" className="btn">
+                Check again
+              </a>
+            </p>
+          </>
+        )}
 
         <h2 className="mt-10 font-semibold">Service</h2>
         <ul className="mt-3 divide-y divide-line rounded-2xl border border-line bg-paper">

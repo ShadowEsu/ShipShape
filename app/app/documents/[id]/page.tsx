@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, ValidityChip, fmtDay } from "@/components/app-ui";
+import { SubmitButton } from "@/components/submit-button";
 import { fmtDateTime } from "@/components/ui";
 import { PLANS } from "@/lib/plans";
 import { FACT_LABELS } from "@/lib/profile-fields";
@@ -34,10 +35,14 @@ const ACTIONS: Record<string, string> = {
   "esign.review_downloaded": "File sent for signing downloaded",
 };
 
-/** What went wrong in a form posted from this page (see backToDocument in ../actions.ts). */
-const ERRORS: Record<string, string> = {
-  limit: `The Free plan holds ${PLANS.free.documents} active documents. Archive one, or upgrade, then restore this one.`,
-  closed: "This request was already signed or withdrawn, so there is nothing to withdraw.",
+/** What went wrong in a form posted from this page (see backToDocument in ../actions.ts), and the one thing that fixes it. */
+const ERRORS: Record<string, { text: string; fix?: { href: string; label: string } }> = {
+  limit: {
+    text: `The Free plan holds ${PLANS.free.documents} active documents, so this one stays archived. Archive another one, then restore this one.`,
+    fix: { href: "/app/documents", label: "Choose one to archive" },
+  },
+  // Nothing to fix: the request's status below is already up to date.
+  closed: { text: "That signing request was already signed or withdrawn, so there was nothing to withdraw. Its status is under Signatures." },
 };
 
 const REQUEST_STATUS: Record<SignatureRequestRow["status"], string> = {
@@ -75,10 +80,16 @@ function fieldSources(fields: Record<string, string>, template: TemplateInfo | u
     }));
 }
 
-export default async function DocumentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
+export default async function DocumentPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string; made?: string; added?: string }>;
+}) {
   const ctx = await requireWorkspace();
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, made, added } = await searchParams;
   const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
   const got = await getDocument(ctx, id);
   if (!got) notFound();
@@ -98,8 +109,39 @@ export default async function DocumentPage({ params, searchParams }: { params: P
       </nav>
       {formError && (
         <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
-          {formError}
+          {formError.text}
+          {formError.fix && (
+            <>
+              {" "}
+              <Link href={formError.fix.href} className="font-medium underline">
+                {formError.fix.label}
+              </Link>
+            </>
+          )}
         </p>
+      )}
+      {/* After making or adding it (../../make/actions.ts, ../actions.ts): done, the record, what happens next. */}
+      {made && template && (
+        <div role="status">
+          <Notice tone="ok">
+            Your {template.short} is made and saved here, with where each value came from and your approval in its history. Next:{" "}
+            {template.kind === "w9"
+              ? "download it and send it to whoever asked for it."
+              : esignAvailable(ctx)
+                ? "ask the other party to sign it under Signatures."
+                : "download it and send it to the other party to sign."}
+          </Notice>
+        </div>
+      )}
+      {added && !made && (
+        <div role="status">
+          <Notice tone="ok">
+            Added to your documents as version 1. Every view and download goes into its history.{" "}
+            {doc.expires_on
+              ? `Next: it shows under Needs attention on Home 30 days before it expires on ${fmtDay(doc.expires_on)}.`
+              : "Next: add its expiry date under Details, so Home can warn you before it lapses."}
+          </Notice>
+        </div>
       )}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="min-w-0 space-y-6">
@@ -211,7 +253,9 @@ export default async function DocumentPage({ params, searchParams }: { params: P
                               <form action={withdrawSignature}>
                                 <input type="hidden" name="id" value={doc.id} />
                                 <input type="hidden" name="request" value={r.id} />
-                                <button className="inline-flex min-h-6 items-center text-xs text-ink-2 underline">Withdraw</button>
+                                <SubmitButton className="inline-flex min-h-6 items-center text-xs text-ink-2 underline" pendingLabel="Withdrawing…">
+                                  Withdraw
+                                </SubmitButton>
                               </form>
                             )}
                           </div>
@@ -260,7 +304,9 @@ export default async function DocumentPage({ params, searchParams }: { params: P
           <form action={archive}>
             <input type="hidden" name="id" value={doc.id} />
             <input type="hidden" name="archived" value={doc.status === "archived" ? "0" : "1"} />
-            <button className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">{doc.status === "archived" ? "Restore document" : "Archive document"}</button>
+            <SubmitButton className="inline-flex min-h-6 items-center text-sm text-ink-2 underline" pendingLabel={doc.status === "archived" ? "Restoring…" : "Archiving…"}>
+              {doc.status === "archived" ? "Restore document" : "Archive document"}
+            </SubmitButton>
           </form>
         </aside>
       </div>

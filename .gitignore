@@ -8,3 +8,5 @@ node_modules
 *.tsbuildinfo
 next-env.d.ts
 coverage
+infra/launch.env
+infra/launch-*.log

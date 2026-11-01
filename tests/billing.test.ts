@@ -247,7 +247,7 @@ describe("checkout", () => {
   it("refuses checkout when the Stripe price is in another currency than the site's", async () => {
     const ctx = await realWorkspace();
     fake.price = { ...fake.price, currency: "eur" };
-    await expect(startCheckout(ctx, true)).rejects.toThrow(/price mismatch/);
+    await expect(startCheckout(ctx, true)).rejects.toThrow("Payments are paused while we fix a price mismatch. Nothing was charged; try again later.");
     expect(fake.checkouts).toEqual([]);
   });
 
@@ -265,7 +265,7 @@ describe("checkout", () => {
 
   it("refuses a second subscription; a duplicate that slipped through is cancelled and its payment refunded, once", async () => {
     const { ctx, customer, sub } = await payingWorkspace();
-    await expect(startCheckout(ctx, true)).rejects.toThrow(/already has a subscription/);
+    await expect(startCheckout(ctx, true)).rejects.toThrow("This workspace already has a subscription. Change it with Manage billing.");
     const dup = subscription("sub_Dup1", customer);
     const session = { object: "checkout.session", customer, subscription: dup.id, invoice: "in_Dup1" };
     expect(await send("checkout.session.completed", session)).toEqual({ status: 200, message: "ok" });
@@ -281,7 +281,7 @@ describe("checkout", () => {
   it("opens the billing portal only for the owner of a workspace that has a Stripe customer, and for that customer", async () => {
     await payingWorkspace(); // another workspace's customer exists
     const fresh = await realWorkspace();
-    await expect(openPortal(fresh)).rejects.toThrow(/no billing account/);
+    await expect(openPortal(fresh)).rejects.toThrow("There's no billing account for this workspace yet. It's made when you move to Pro.");
     const { ctx, customer } = await payingWorkspace();
     await expect(openPortal({ ...ctx, role: "admin" })).rejects.toThrow(/owner/);
     await expect(openPortal({ ...ctx, demo: true })).rejects.toThrow(/Sample workspaces/);
@@ -393,7 +393,9 @@ describe("account deletion", () => {
   it("cancels the subscription before deleting, and stops if it can't", async () => {
     const a = await payingWorkspace();
     vi.stubEnv("STRIPE_SECRET_KEY", "");
-    await expect(deleteAccount(a.ctx)).rejects.toThrow(/couldn't be cancelled/);
+    await expect(deleteAccount(a.ctx)).rejects.toThrow(
+      "Your subscription couldn't be cancelled automatically, so nothing was deleted. Write to us and we'll cancel it; then delete your account.",
+    );
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toHaveLength(1);
     vi.stubEnv("STRIPE_SECRET_KEY", KEY);
     await deleteAccount(a.ctx);
@@ -424,7 +426,9 @@ describe("account deletion", () => {
   it("stops if Stripe can't list the subscriptions", async () => {
     const a = await payingWorkspace();
     fake.listSubscriptions = () => Promise.reject(new Error("network"));
-    await expect(deleteAccount(a.ctx)).rejects.toThrow(/couldn't be cancelled just now/);
+    await expect(deleteAccount(a.ctx)).rejects.toThrow(
+      "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it with Manage billing under Plan first.",
+    );
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toHaveLength(1);
   });
 

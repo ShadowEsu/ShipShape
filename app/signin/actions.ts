@@ -12,24 +12,38 @@ import { seedSampleWorkspace } from "@/lib/server/sample";
 
 export interface SignInState {
   error?: string;
+  /** The field the error is about, so the page shows it next to that field. */
+  field?: "terms" | "email";
+  /** What the person typed and ticked, put back after a refusal. */
+  email?: string;
+  terms?: boolean;
 }
 
 const Form = z.object({
   mode: z.enum(["demo", "email", "account"]),
-  email: z.string().trim().toLowerCase().max(200).optional(),
+  email: z.string().trim().toLowerCase().max(200, "Use an email address of up to 200 characters.").optional(),
   terms: z.literal("on", { error: "Tick the box to agree to the Terms and Privacy Policy." }),
 });
 
 export async function signIn(_prev: SignInState, data: FormData): Promise<SignInState> {
+  const typedEmail = data.get("email");
+  const typed = { email: typeof typedEmail === "string" ? typedEmail : "", terms: data.get("terms") === "on" };
   const parsed = Form.safeParse({ mode: data.get("mode"), email: data.get("email") ?? undefined, terms: data.get("terms") ?? undefined });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
-  if (await rateLimited("signin", clientIp(await headers()), 20, 3600)) return { error: "Too many attempts. Try again in a little while." };
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const key = issue?.path[0];
+    const field = key === "terms" || key === "email" ? key : undefined;
+    return { ...typed, error: issue?.message ?? "Choose how to open ShipShape, then try again.", field };
+  }
+  if (await rateLimited("signin", clientIp(await headers()), 20, 3600)) {
+    return { ...typed, error: "Too many sign-in attempts from this network. Wait up to an hour, then try again." };
+  }
 
   const { mode, email } = parsed.data;
   if (mode === "account") {
     // To Cognito's sign-in page; /auth/callback finishes (and records the agreement ticked here).
     const cognito = cognitoConfig(process.env);
-    if (!cognito) return { error: "Accounts aren't open yet. Try the sample workspace, or join the waitlist." };
+    if (!cognito) return { ...typed, error: "Accounts aren't open yet. Try the sample workspace instead." };
     const { cookie, url } = startSignIn(cognito);
     (await cookies()).set(SIGN_IN_COOKIE, cookie, {
       httpOnly: true,
@@ -44,8 +58,8 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
   let userId: string;
   if (mode === "email") {
     // Unverified email sign-in exists only for local development; production uses Cognito accounts.
-    if (!localSignInAllowed()) return { error: "Email sign-in isn't open yet. Try the sample workspace, or join the waitlist." };
-    if (!email || !z.email().safeParse(email).success) return { error: "Enter a valid email address." };
+    if (!localSignInAllowed()) return { ...typed, error: "Email sign-in isn't open yet. Try the sample workspace instead." };
+    if (!email || !z.email().safeParse(email).success) return { ...typed, error: "Enter your email address, like you@business.com.", field: "email" };
     userId = await createLocalUser(email, false);
   } else {
     userId = await createLocalUser(null, true);

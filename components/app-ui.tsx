@@ -35,11 +35,16 @@ export function ValidityChip({ validity, expiresOn }: { validity: Validity; expi
 
 export const fmtDay = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-export function EmptyState({ title, body, action }: { title: string; body: string; action?: { href: string; label: string } }) {
+/**
+ * What an empty page shows: what will appear here, optionally one example line of it (text only),
+ * and the one action that fills it.
+ */
+export function EmptyState({ title, body, example, action }: { title: string; body: string; example?: string; action?: { href: string; label: string } }) {
   return (
     <div className="card flex flex-col items-start gap-3 py-10 text-left">
       <p className="font-serif text-2xl font-semibold">{title}</p>
       <p className="max-w-prose text-sm text-ink-2">{body}</p>
+      {example && <p className="max-w-prose font-mono text-xs text-ink-3">{example}</p>}
       {action && (
         <Link href={action.href} className="btn">
           {action.label}

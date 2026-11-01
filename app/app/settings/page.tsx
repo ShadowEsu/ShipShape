@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { fmtDay, Notice, PageHeader } from "@/components/app-ui";
+import { SubmitButton } from "@/components/submit-button";
 import { PLANS } from "@/lib/plans";
+import { deletionPreview, EXPORT_MAX_BYTES } from "@/lib/server/account";
 import { billingView } from "@/lib/server/billing";
+import { contactEmail } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { signOut } from "../../signin/actions";
 import { signOutEverywhere } from "./actions";
@@ -12,17 +16,31 @@ export const metadata: Metadata = { title: "Settings" };
 
 const ROLE: Record<"owner" | "admin" | "member", string> = { owner: "Owner", admin: "Admin", member: "Member" };
 
-const EXPORT_ERRORS: Record<string, string> = {
-  reauth: "For your security, sign in again to export.",
-  role: "Only owners and admins can export the workspace.",
-  size: "This workspace is too large to export in one file. Write to us and we'll send it another way.",
-};
+/** What a refused export (`?error=` from export/route.ts) means, and the one link that fixes it when there is one. */
+function exportProblem(error: string | undefined, contact: string | null): { text: string; fix?: { href: string; label: string } } | undefined {
+  const tooLarge = `This workspace is over ${EXPORT_MAX_BYTES / 1024 / 1024} MB, too large to export in one file.`;
+  switch (error) {
+    case "reauth":
+      return { text: "For your security, sign in again before you export.", fix: { href: "/signin", label: "Sign in again" } };
+    case "role":
+      return { text: "Only owners and admins can export this workspace. Ask one of them for the file." };
+    case "size":
+      return contact
+        ? {
+            text: `${tooLarge} Write to us and we'll send it another way.`,
+            fix: { href: `mailto:${contact}?subject=${encodeURIComponent("Export my ShipShape workspace")}`, label: "Write to us" },
+          }
+        : { text: `${tooLarge} Download what you need from each document's page.`, fix: { href: "/app/documents", label: "Open your documents" } };
+    default:
+      return undefined;
+  }
+}
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; billing?: string }> }) {
   const ctx = await requireWorkspace();
   const { error, billing } = await searchParams;
-  const exportError = error && Object.hasOwn(EXPORT_ERRORS, error) ? EXPORT_ERRORS[error] : undefined;
-  const view = await billingView(ctx);
+  const exportError = exportProblem(error, contactEmail());
+  const [view, goes] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId)]);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -47,11 +65,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       <section id="plan" className="card space-y-3">
         <h2 className="font-semibold">Plan</h2>
-        {billing === "success" && view.plan !== "pro" && (
-          <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
-            Thanks. Pro switches on as soon as Stripe confirms the payment, usually within seconds. Refresh this page in a moment.
-          </p>
-        )}
+        {billing === "success" &&
+          (view.plan === "pro" ? (
+            <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
+              You&apos;re on Pro now. The limits are gone and email reminders are on.
+            </p>
+          ) : (
+            <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
+              Thanks. Pro switches on as soon as Stripe confirms the payment, usually within seconds.{" "}
+              <Link href="/app/settings?billing=success" className="underline">
+                Check again
+              </Link>
+            </p>
+          ))}
         {billing === "cancelled" && <p className="text-sm text-ink-2">Checkout was cancelled. Nothing was charged.</p>}
         <p className="text-sm">
           <span className="font-semibold">{PLANS[view.plan].name}</span>
@@ -64,7 +90,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           )}
         </p>
         {view.status === "past_due" && (
-          <Notice>Your last payment didn&apos;t go through. Update your card under Manage billing; Pro stays on for 7 days after a payment fails.</Notice>
+          <Notice>
+            Your last payment didn&apos;t go through. Pro stays on for 7 days after a payment fails;{" "}
+            {ctx.role === "owner" ? "update your card with Manage billing below." : "ask the workspace owner to update the card."}
+          </Notice>
         )}
         {view.plan === "free" && (
           <p className="text-sm text-ink-2">
@@ -74,7 +103,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         )}
         {!ctx.demo &&
           (!view.available ? (
-            <p className="text-sm text-ink-3">Payments aren&apos;t switched on yet.</p>
+            <p className="text-sm text-ink-3">Payments aren&apos;t switched on yet, so the plan can&apos;t change for now.</p>
           ) : ctx.role !== "owner" ? (
             <p className="text-sm text-ink-3">Only the workspace owner changes the plan.</p>
           ) : (
@@ -94,10 +123,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </p>
         {exportError && (
           <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
-            {exportError}
+            {exportError.text}
           </p>
         )}
-        {ctx.role === "member" ? (
+        {exportError ? (
+          exportError.fix && (
+            <a href={exportError.fix.href} className="btn-ghost">
+              {exportError.fix.label}
+            </a>
+          )
+        ) : ctx.role === "member" ? (
           <p className="text-sm text-ink-3">Ask an owner or admin to export the workspace.</p>
         ) : (
           <form method="post" action="/app/settings/export">
@@ -114,7 +149,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <p className="text-sm text-ink-2">Ends your session in this browser.</p>
           </div>
           <form action={signOut}>
-            <button className="btn-ghost">Sign out</button>
+            <SubmitButton className="btn-ghost" pendingLabel="Signing out…">
+              Sign out
+            </SubmitButton>
           </form>
         </div>
         {/* A sample workspace's visitor has no password to come back with, so this would only lose the sample. */}
@@ -128,7 +165,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               </p>
             </div>
             <form action={signOutEverywhere} className="shrink-0">
-              <button className="btn-ghost">Sign out everywhere</button>
+              <SubmitButton className="btn-ghost" pendingLabel="Signing out…">
+                Sign out everywhere
+              </SubmitButton>
             </form>
           </div>
         )}
@@ -150,7 +189,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </p>
         </div>
         <Notice>There&apos;s no undo: once deleted, ShipShape can&apos;t bring a workspace back for you.</Notice>
-        <DeleteAccountForm />
+        <DeleteAccountForm deleted={goes.deleted} left={goes.left} />
       </section>
     </div>
   );

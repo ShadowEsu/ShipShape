@@ -2,6 +2,54 @@
 
 These templates create what the AWS hosting plan (`aws-plan.md`) specifies, so M6 is five reviewable `aws cloudformation deploy` runs instead of console clicks. They are the source of truth: if a console setting and a template disagree, the template wins. `scripts/probe-aws.mjs` is the acceptance test once they are deployed.
 
+## One command
+
+`infra/launch.sh` runs every step in "Deploy order and commands" below, from a fresh account to a probed deploy, in about 30 minutes. It prints each command before it runs it, and every line also goes to `infra/launch-<UTC time>.log` (git-ignored).
+
+**Once, before the first run (only the account owner can do these):**
+1. Create the AWS account on the **Paid plan**.
+2. Turn on MFA for the root user. Create no root access keys.
+3. Set up IAM Identity Center with MFA for yourself, and assign yourself this account with the `AdministratorAccess` permission set (the launch creates a role, a key, a database and a sign-in pool).
+
+**Then, from the repo:**
+1. Sign in: `aws configure sso` once (it names a profile), then `aws sso login --profile <profile>`.
+2. `cp infra/launch.env.example infra/launch.env` and fill in its 8 values (2 come filled in). The example says what each one is.
+3. `npm ci`, if you haven't yet: the migrations and the probe use the repo's packages.
+4. Dry run: `infra/launch.sh`. It checks `launch.env`, validates the templates (with `aws` when you're signed in, otherwise `uvx cfn-lint`, otherwise it says it skipped them) and prints the plan. Exit 0 means the plan is complete; exit 2 names the setting to fix.
+5. Apply: `LAUNCH_APPLY=1 infra/launch.sh`.
+
+The probe's "STS refuses a preview" check needs a preview deployment's OIDC token. With the Vercel CLI installed and the repo linked (`vercel link`), the script fetches it with `vercel env pull --environment=preview`. Otherwise, export `PROBE_PREVIEW_OIDC_TOKEN` before step 5.
+
+| Step | What | Time |
+| --- | --- | --- |
+| Preflight | `aws`, Node 24, `curl` and `openssl` are there; the signed-in account is `ACCOUNT_ID` and isn't root | under 1 minute |
+| 0 | Block Public Access for the whole account | under 1 minute |
+| 1 | `shipshape-storage`: the key and the bucket | about 1 minute |
+| 2 | `shipshape-signin`: the user pool and the app client | about 2 minutes |
+| 3 | `shipshape-app-role`: Vercel's OIDC provider and the role | about 1 minute |
+| 4 | `shipshape-database`: RDS | about 15 minutes |
+| 5 | `shipshape-budgets`: the 2 alarms | about 1 minute |
+| | Termination protection on stacks 1-4 | under 1 minute |
+| 6 | Migrations as the master user, `shipshape_app`'s password, the roles check | about 1 minute |
+| 7 | `scripts/probe-aws.mjs`, every variable filled in from the outputs | about 2 minutes |
+| 8 | The Vercel Production variables; the 2 secrets piped into Vercel | about 2 minutes |
+| | **Total** | **about 30 minutes** |
+
+If a step stops, the `Stopped:` line says what happened and the `Fix:` line says what to do. Do that and run the same command again: finished stacks say "Up to date" and applied migrations are skipped. Each apply gives `shipshape_app` a new password and writes it to Vercel, so redeploy production after a rerun.
+
+No secret is printed:
+- The master password goes from Secrets Manager into a variable, never to the screen or the log.
+- `COGNITO_CLIENT_SECRET` and `DATABASE_URL` (with `shipshape_app`'s password) are piped into `vercel env add` when the Vercel CLI is installed and the repo is linked. Otherwise the script prints the exact commands. `DATABASE_URL` then waits in `~/.shipshape-launch/DATABASE_URL`, which only you can read; the printed command deletes it.
+- At the end the script searches its log for the master password, the client secret, `shipshape_app`'s password and the preview token, and fails if it finds one.
+
+**Afterwards:**
+1. Add the variables step 8 prints in Vercel, Production only. Then redeploy production and open `/api/health` (aws-plan "Order at M6", step 8).
+2. Send Security the log file. They read:
+   - the probe's output (step 7): every check `PASS`, exit 0;
+   - the roles check (step 6): `password_encryption=scram-sha-256 rds.force_ssl=1`, `shipshape_app is a member of: anon, authenticated, service_role` and `Roles OK`.
+
+To undo it, see "Rollback" below.
+
 | File | Creates |
 | --- | --- |
 | `storage.yaml` | The customer KMS key (`alias/shipshape-files`) and the private, versioned S3 bucket for files, plus its TLS-only bucket policy |
@@ -38,7 +86,7 @@ The account owner does these first. Agents can't (aws-plan, "What the owner does
 2. Apply for Activate Founders with the company website and the account id. The site has to be live first, and the decision takes about 7-10 business days.
 3. Approve these steps. An agent can then run them through a short-lived Identity Center session that the owner starts (`aws sso login --profile <profile>`), never with stored keys.
 
-Then, with `AWS_PROFILE` set to that session and `AWS_REGION=us-east-1`, run these in order:
+Then, with `AWS_PROFILE` set to that session and `AWS_REGION=us-east-1`, run these in order (`infra/launch.sh` runs them for you, with the same parameters):
 
 ```sh
 # 0. Block Public Access at the account level too (aws-plan S3 row). CloudFormation can't set it.
@@ -90,6 +138,59 @@ Afterwards:
   - `npm run migrate` runs as the master. Its password is in the `MasterSecretArn` secret.
   - `shipshape_app` gets a machine-generated password of 32+ characters, kept only in Vercel Production (R-1).
 - **Acceptance:** run `scripts/probe-aws.mjs` with the values from the outputs (its header lists every variable). It must exit 0.
+
+## Rollback
+
+Deleting a stack never deletes data. The key, bucket, pool, database and log group have `DeletionPolicy: Retain`, so they stay behind:
+
+| Stack | Stays behind | Goes with the stack |
+| --- | --- | --- |
+| `shipshape-storage` | The KMS key; the bucket and every file in it | The key alias, the bucket policy |
+| `shipshape-signin` | The user pool and its accounts (the pool also has its own deletion protection) | The managed-login domain and style, the app client |
+| `shipshape-app-role` | Nothing | The OIDC provider, the role |
+| `shipshape-database` | The RDS instance (also deletion protection) and its log group | The parameter group, subnet group and security group, but only once the instance is gone: while it uses them, the stack's delete fails |
+| `shipshape-budgets` | Nothing | Both budgets |
+
+To remove everything, in this order (us-east-1; the ids are in each stack's outputs):
+
+```sh
+# 1. Let the stacks be deleted.
+for s in shipshape-storage shipshape-signin shipshape-app-role shipshape-database; do
+  aws cloudformation update-termination-protection --region us-east-1 --no-enable-termination-protection --stack-name "$s"; done
+
+# 2. The database first. Deleting the instance also deletes its master secret.
+aws rds modify-db-instance --region us-east-1 --db-instance-identifier shipshape-prod --no-deletion-protection --apply-immediately
+aws rds delete-db-instance --region us-east-1 --db-instance-identifier shipshape-prod --skip-final-snapshot --delete-automated-backups
+aws rds wait db-instance-deleted --region us-east-1 --db-instance-identifier shipshape-prod
+aws cloudformation delete-stack --region us-east-1 --stack-name shipshape-database
+aws logs delete-log-group --region us-east-1 --log-group-name /aws/rds/instance/shipshape-prod/postgresql
+
+# 3. Budgets and the app role go with their stacks.
+aws cloudformation delete-stack --region us-east-1 --stack-name shipshape-budgets
+aws cloudformation delete-stack --region us-east-1 --stack-name shipshape-app-role
+
+# 4. Sign-in. update-user-pool resets the pool's other settings, which doesn't matter for a pool being deleted.
+aws cloudformation delete-stack --region us-east-1 --stack-name shipshape-signin
+aws cloudformation wait stack-delete-complete --region us-east-1 --stack-name shipshape-signin
+aws cognito-idp update-user-pool --region us-east-1 --user-pool-id <UserPoolId> --deletion-protection INACTIVE
+aws cognito-idp delete-user-pool --region us-east-1 --user-pool-id <UserPoolId>
+
+# 5. Files. Empty the bucket in the S3 console first: its Empty button removes every version.
+aws cloudformation delete-stack --region us-east-1 --stack-name shipshape-storage
+aws s3api delete-bucket --region us-east-1 --bucket shipshape-files-<account id>
+aws kms schedule-key-deletion --region us-east-1 --key-id <KeyArn> --pending-window-in-days 7
+```
+
+The account-level Block Public Access (step 0) can stay on; it costs nothing.
+
+Cost per day if it's left up (us-east-1 on-demand, from aws-plan's cost table plus the master secret):
+
+| Left up | About per day |
+| --- | --- |
+| Everything | $0.63 ($19 a month): the instance $0.38, its public IPv4 address $0.12, 20 GB of storage $0.08, the key $0.03, the master secret in Secrets Manager $0.01 |
+| After deleting only the stacks (the instance still runs) | The same $0.63: what the stacks delete costs nothing |
+| The key, bucket, pool and log group (database deleted by hand) | $0.03 for the key, plus pennies for any stored files and logs; a pool with no active users is free |
+| Nothing | $0 |
 
 ## Not in these templates (operator or the account owner, at M6)
 

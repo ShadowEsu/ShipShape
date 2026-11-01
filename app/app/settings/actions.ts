@@ -30,15 +30,23 @@ export async function renameMyWorkspace(_prev: RenameState, data: FormData): Pro
 
 export interface DeleteState {
   error?: string;
+  /** The error is about the confirm field: shown next to it. */
+  field?: "confirm";
+  /** The sign-in is too old for this: the fix is signing in again. */
+  reauth?: boolean;
+  /** What was typed in the confirm field, so it keeps it after React resets the form. */
+  typed?: string;
 }
 
 export async function deleteMyAccount(_prev: DeleteState, data: FormData): Promise<DeleteState> {
   const ctx = await requireWorkspace();
-  if (String(data.get("confirm") ?? "").trim() !== "DELETE") return { error: "Type DELETE in capitals to confirm." };
+  const typed = String(data.get("confirm") ?? "");
+  if (typed.trim() !== "DELETE") return { error: "Type DELETE, in capitals, to confirm.", field: "confirm", typed };
   try {
     await deleteAccount(ctx);
   } catch (e) {
-    if (e instanceof NeedsRecentSignIn || e instanceof UserError) return { error: e.message };
+    if (e instanceof NeedsRecentSignIn) return { error: e.message, reauth: true };
+    if (e instanceof UserError) return { error: e.message };
     throw e;
   }
   await endSession();

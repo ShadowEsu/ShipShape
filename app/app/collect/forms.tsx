@@ -1,36 +1,78 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { addVendorAction, deleteVendorFileAction, makeVendorLink, type CollectFormState } from "./actions";
 
 function FormError({ error }: { error?: string }) {
   if (!error) return null;
   return (
-    <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+    <p role="alert" tabIndex={-1} className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
       {error}
     </p>
   );
 }
 
+function FieldError({ id, error }: { id: string; error?: string }) {
+  if (!error) return null;
+  return (
+    <p id={id} className="mt-1 text-sm text-bad">
+      {error}
+    </p>
+  );
+}
+
+/** After a refused submit, the first thing to fix gets focus. */
+function useFocusFirstError(state: CollectFormState) {
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    form.current?.querySelector<HTMLElement>('[aria-invalid="true"], [role="alert"]')?.focus();
+  }, [state]);
+  return form;
+}
+
 export function NewVendorForm({ kinds }: { kinds: { key: string; label: string }[] }) {
   const [state, action, pending] = useActionState<CollectFormState, FormData>(addVendorAction, {});
   const typed = state.values;
+  const errors = state.fieldErrors ?? {};
+  const form = useFocusFirstError(state);
   return (
-    <form action={action} className="space-y-5">
+    <form ref={form} action={action} className="space-y-5" noValidate>
       <div>
         <label htmlFor="vendor-name" className="label">
           Vendor or subcontractor
         </label>
-        <input id="vendor-name" name="name" required maxLength={120} placeholder="e.g. Rivera Electric" defaultValue={typed?.name} className="input" />
+        <input
+          id="vendor-name"
+          name="name"
+          required
+          maxLength={120}
+          placeholder="e.g. Rivera Electric"
+          defaultValue={typed?.name}
+          className="input"
+          aria-invalid={errors.name ? true : undefined}
+          aria-describedby={errors.name ? "vendor-name-error" : undefined}
+        />
+        <FieldError id="vendor-name-error" error={errors.name} />
       </div>
       <div>
         <label htmlFor="vendor-email" className="label">
           Email <span className="font-normal text-ink-3">(optional, only for you; ShipShape doesn&apos;t email vendors)</span>
         </label>
-        <input id="vendor-email" name="email" type="email" maxLength={254} autoComplete="off" defaultValue={typed?.email} className="input" />
+        <input
+          id="vendor-email"
+          name="email"
+          type="email"
+          maxLength={254}
+          autoComplete="off"
+          defaultValue={typed?.email}
+          className="input"
+          aria-invalid={errors.email ? true : undefined}
+          aria-describedby={errors.email ? "vendor-email-error" : undefined}
+        />
+        <FieldError id="vendor-email-error" error={errors.email} />
       </div>
-      <fieldset>
+      <fieldset aria-describedby={errors.kinds ? "vendor-kinds-error" : undefined}>
         <legend className="label">Documents to ask for</legend>
         <div className="mt-1 flex flex-wrap gap-2">
           {kinds.map((k) => (
@@ -41,11 +83,14 @@ export function NewVendorForm({ kinds }: { kinds: { key: string; label: string }
                 value={k.key}
                 defaultChecked={typed ? typed.kinds.includes(k.key) : k.key === "w9" || k.key === "coi"}
                 className="size-4 accent-[var(--accent)]"
+                aria-invalid={errors.kinds ? true : undefined}
+                aria-describedby={errors.kinds ? "vendor-kinds-error" : undefined}
               />
               {k.label}
             </label>
           ))}
         </div>
+        <FieldError id="vendor-kinds-error" error={errors.kinds} />
       </fieldset>
       <FormError error={state.error} />
       <button className="btn" disabled={pending}>
@@ -55,32 +100,32 @@ export function NewVendorForm({ kinds }: { kinds: { key: string; label: string }
   );
 }
 
+/** The end of making an upload link: what was made, what happens next, and the one thing to do (copy it). */
+export function VendorLinkReady({ vendorName, days, url }: { vendorName: string; days: number; url: string }) {
+  return (
+    <div className="space-y-3" role="status">
+      <h2 className="font-semibold">Upload link for {vendorName} is ready</h2>
+      <p className="text-sm text-ink-2">
+        It works for {days} days. Copy it and send it to {vendorName} yourself: ShipShape keeps only a fingerprint of it and can&apos;t show
+        it again. The files they send land under Files received.
+      </p>
+      <CopyLink id="collect-url" label="Upload link" url={url} />
+    </div>
+  );
+}
+
 export function VendorLinkForm({ vendorId, vendorName, days }: { vendorId: string; vendorName: string; days: readonly number[] }) {
   const [state, action, pending] = useActionState<CollectFormState, FormData>(makeVendorLink, {});
   const [url, setUrl] = useState<string | null>(null);
+  const form = useFocusFirstError(state);
 
   useEffect(() => {
     if (state.link) setUrl(`${window.location.origin}/c/${state.link.id}#${state.link.token}`);
   }, [state.link]);
 
-  if (url) {
-    return (
-      <div className="space-y-3">
-        <h2 className="font-semibold">Upload link ready</h2>
-        <p className="text-sm text-ink-2">
-          Copy it now and send it to {vendorName} yourself: ShipShape keeps only a fingerprint of it and can&apos;t show it again.
-          Anyone with the link can send files to this workspace until it expires or you turn it off.
-        </p>
-        <CopyLink id="collect-url" label="Upload link" url={url} />
-        <button type="button" className="text-sm text-ink-2 underline" onClick={() => window.location.reload()}>
-          Done
-        </button>
-      </div>
-    );
-  }
-
+  if (url && state.link) return <VendorLinkReady vendorName={vendorName} days={state.link.days} url={url} />;
   return (
-    <form action={action} className="space-y-4">
+    <form ref={form} action={action} className="space-y-4" noValidate>
       <input type="hidden" name="vendor" value={vendorId} />
       <fieldset>
         <legend className="label">The link stops working after</legend>

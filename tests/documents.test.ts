@@ -6,9 +6,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { downloadUrl, fillTemplate, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { checkFill, DOCUMENT_GONE, downloadUrl, fillTemplate, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
-import { checkUpload } from "@/lib/server/files";
+import { checkUpload, UploadRefused } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
 import { assertLaunchConfig, GateClosed } from "@/lib/server/flags";
 import { createPassport, openPassport } from "@/lib/server/passport";
@@ -27,6 +27,17 @@ let other: Ctx; // someone else's real workspace
 
 const PDF = new TextEncoder().encode("%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF");
 const now = () => Math.floor(Date.now() / 1000);
+
+/** The field and message of the form error a call fails with (the first zod issue, as the forms show it). */
+async function refusal(call: Promise<unknown>): Promise<{ field: unknown; message: string }> {
+  try {
+    await call;
+  } catch (e) {
+    if (e instanceof z.ZodError) return { field: e.issues[0].path[0], message: e.issues[0].message };
+    throw e;
+  }
+  throw new Error("The call was not refused.");
+}
 
 async function workspace(email: string, kind: "sample" | "real"): Promise<Ctx> {
   const userId = await db.user(email);
@@ -250,7 +261,30 @@ describe("W-9 fill", () => {
   it("reports missing and invalid fields instead of making a document", async () => {
     const res = await fillTemplate(sample, "irs-w9", { name: "", tax_class: "nope", tin_kind: "ssn", ssn: "12" }, true);
     expect(res.ok).toBe(false);
-    expect(res.ok ? {} : res.errors).toMatchObject({ name: "Required.", tax_class: "Choose one of the options.", ssn: "An SSN has 9 digits." });
+    expect(res.ok ? {} : res.errors).toMatchObject({ name: "Fill this in.", tax_class: "Choose one of the options.", ssn: "Enter the SSN as 9 digits, like 123-45-6789." });
+  });
+
+  it("says what to do about each kind of missing or over-long field", async () => {
+    const t = templateById("common-paper-mnda")!;
+    const values = { ...prefill(t, await factsForFill(sample), sample.today), effective_date: "", mnda_term: "years", mnda_years: "", conf_term: "", p2_company: "x".repeat(121) };
+    const res = await fillTemplate(sample, t.id, values, true);
+    expect(res.ok ? {} : res.errors).toMatchObject({
+      effective_date: "Pick a date.",
+      mnda_years: "Enter a whole number from 1 to 99.",
+      conf_term: "Choose one of the options.",
+      governing_law: "Fill this in.",
+      p2_company: "Shorten this to 120 characters or fewer.",
+    });
+  });
+
+  it("checks a W-9 for the review step without making or saving anything", async () => {
+    const t = templateById("irs-w9")!;
+    const ctx = await workspace("review-step@example.com", "sample");
+    const before = (await listDocuments(ctx)).length;
+    const good = { ...prefill(t, await factsForFill(ctx), ctx.today), tin_kind: "ssn", ssn: "900-12-3456" };
+    expect(await checkFill(ctx, t.id, good)).toEqual({});
+    expect(await checkFill(ctx, t.id, { ...good, ssn: "12" })).toEqual({ ssn: "Enter the SSN as 9 digits, like 123-45-6789." });
+    expect(await listDocuments(ctx)).toHaveLength(before);
   });
 });
 
@@ -344,6 +378,15 @@ describe("business facts", () => {
     expect(theirs.values.legal_name).toBe("");
     expect(theirs.ein).toBeNull();
   });
+
+  it("says how to enter a refused fact or EIN, and which field it is", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const facts = (await factsForFill(real)).values;
+    await expect(saveEin(real, "12-345")).rejects.toThrow("Enter the EIN as 9 digits, like 12-3456789.");
+    expect(await refusal(saveProfile(real, { ...facts, legal_name: "x".repeat(121) }))).toEqual({ field: "legal_name", message: "Shorten this to 120 characters or fewer." });
+    expect(await refusal(saveProfile(real, { ...facts, entity_type: "spaceship" }))).toEqual({ field: "entity_type", message: "Choose a business type from the list." });
+    vi.unstubAllEnvs();
+  });
 });
 
 describe("workspace name", () => {
@@ -433,9 +476,29 @@ describe("document details", () => {
     const [second] = await asUser(mine.userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Second') as id"));
     const inSecond: Ctx = { ...mine, demo: false, orgId: second.id, name: "Second" };
     const [doc] = await listDocuments(mine);
-    await expect(updateDocument(inSecond, doc.id, { title: "Moved?", kind: "other" })).rejects.toThrow(new UserError("Document not found."));
-    await expect(setArchived(inSecond, doc.id, true)).rejects.toThrow(new UserError("Document not found."));
+    await expect(updateDocument(inSecond, doc.id, { title: "Moved?", kind: "other" })).rejects.toThrow(
+      new UserError("This document isn't in this workspace any more. Go to Documents to see what's there."),
+    );
+    await expect(setArchived(inSecond, doc.id, true)).rejects.toThrow(new UserError(DOCUMENT_GONE));
     const after = (await getDocument(mine, doc.id))?.doc;
     expect(after).toMatchObject({ title: doc.title, kind: doc.kind, status: "active" });
+  });
+
+  it("names the field and the fix for each detail a form refuses", async () => {
+    const [doc] = await listDocuments(sample);
+    const lease = { title: "Lease", kind: "agreement" };
+    expect(await refusal(updateDocument(sample, doc.id, { ...lease, title: "  " }))).toEqual({ field: "title", message: "Give the document a title, like “General liability certificate 2026”." });
+    expect(await refusal(updateDocument(sample, doc.id, { ...lease, expires_on: "2026-02-30" }))).toEqual({ field: "expires_on", message: "Enter a real date." });
+    expect(await refusal(updateDocument(sample, doc.id, { ...lease, kind: "spaceship" }))).toEqual({ field: "kind", message: "Choose a kind from the list." });
+    expect(await refusal(updateDocument(sample, doc.id, { ...lease, issuer: "x".repeat(201) }))).toEqual({ field: "issuer", message: "Shorten this to 200 characters or fewer." });
+  });
+
+  it("refuses a file that isn't a PDF, PNG or JPEG with what to do instead", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const gif = new TextEncoder().encode("GIF89a");
+    const refused = uploadDocument(real, { title: "Scan", kind: "other" }, gif);
+    await expect(refused).rejects.toBeInstanceOf(UploadRefused);
+    await expect(refused).rejects.toThrow("That file isn't a PDF, PNG or JPEG. Save it as a PDF and choose it again.");
+    vi.unstubAllEnvs();
   });
 });

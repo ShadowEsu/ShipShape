@@ -72,7 +72,10 @@ export default async function CollectPage() {
             Vendors
           </h2>
           {vendors.length === 0 ? (
-            <EmptyState title="No vendors yet" body="Add the first company you need paperwork from, then send them an upload link." />
+            <EmptyState
+              title="No vendors yet"
+              body="Each vendor you add shows here with what you asked them for and where it stands, for example: “Rivera Electric · W-9: missing · Certificate of insurance: current”. Add the first company you need paperwork from under Add a vendor."
+            />
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
               {vendors.map((v) => (
