@@ -12,6 +12,7 @@ import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
 import { fillTemplate, uploadDocument } from "@/lib/server/documents";
+import { saveEin } from "@/lib/server/profile";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { freshDb } from "./support/db";
@@ -202,6 +203,15 @@ describe("making a document", () => {
     expect(await fill({}, form({ ...w9, name: "", step: "review" }))).toEqual({ errors: { name: "Fill this in." }, at: 0 });
     expect(await fill({}, form(w9))).toEqual({ errors: { _ack: "Tick the box to confirm you've reviewed the document." }, review: true });
     await expect(fill({}, form({ ...w9, ack: "on" }))).rejects.toThrow(/^redirect \/app\/documents\/.+\?made=1$/);
+  });
+  it("with an EIN saved, the W-9 shows the masked number (never the full one) and no 'also save it' box", async () => {
+    const ctx = await signIn("fill-ein@example.com");
+    await saveEin(ctx, "12-3456789");
+    const html = await renderPage(FillPage, { params: Promise.resolve({ template: "irs-w9" }) });
+    expect(html).not.toMatch(/<input[^>]*id="f-ein"/);
+    expect(html).not.toContain('name="save_ein"');
+    expect(textOf(html)).toContain("••-•••6789");
+    expect(html).not.toContain("12-3456789");
   });
 
   it("after making one, the document's page says it's done, what was kept, and what to do next", async () => {

@@ -13,19 +13,24 @@ export interface FactChip {
   stale: boolean;
 }
 
-/** A value as the review shows it: option labels, Yes/No, and never more than the last 4 digits of an SSN. */
-function shownValue(f: FieldDef, value: string): string {
+/** A value as the review shows it: option labels, Yes/No, and never more than the last 4 digits of a tax id. */
+function shownValue(f: FieldDef, value: string, initial: string): string {
   if (f.kind === "radio") return f.options?.find((o) => o.value === value)?.label ?? value;
   if (f.key === "sign") return value === "on" ? "Yes" : "Not signed. The PDF's signature line stays empty.";
   if (f.kind === "checkbox") return value === "on" ? "Yes" : "No";
   if (f.key === "ssn") return value ? `•••-••-${value.replace(/[\s-]/g, "").slice(-4)}` : "";
+  // A saved EIN arrives masked already; one typed here is masked the same way.
+  if (f.fact === "ein" && !initial) return value ? `••-•••${value.replace(/[\s-]/g, "").slice(-4)}` : "";
   return value;
 }
 
 /** Where a value came from, in the same terms as the record the document keeps (fillRecord in lib/server/fill.ts). */
-function sourceOf(f: FieldDef, value: string, initial: string, chip: FactChip | undefined): string {
+function sourceOf(f: FieldDef, value: string, initial: string, chip: FactChip | undefined, saving: boolean): string {
   if (f.key === "ssn") return "You typed it · used in this PDF only, not saved in Business facts";
-  if (f.fact === "ein") return "From Business facts";
+  if (f.fact === "ein") {
+    if (initial) return "From Business facts";
+    return saving ? "You typed it · saved to Business facts when you approve" : "You typed it · used in this PDF only, not saved in Business facts";
+  }
   if (f.fact && initial) {
     if (value !== initial) return "You changed it · was from Business facts";
     return `From Business facts${chip?.confirmedAt ? ` · confirmed ${chip.confirmedAt}` : ""}`;
@@ -118,7 +123,8 @@ export function FillForm({
     setValues((old) => ({ ...old, [k]: v }));
     setFixed((old) => (old.of === state ? { of: state, keys: old.keys.includes(k) ? old.keys : [...old.keys, k] } : { of: state, keys: [k] }));
   };
-  const shownFields = template.fields.filter((f) => visible(f, values));
+  // "Also save it" only exists while no EIN is saved (a saved one arrives masked in `initial`).
+  const shownFields = template.fields.filter((f) => visible(f, values) && !(f.key === "save_ein" && initial.ein));
   const problems = shownFields.filter((f) => errors[f.key]).map((f) => ({ key: f.key, label: f.label, message: errors[f.key] }));
 
   // Each result with errors moves focus to the summary (its links lead to each field) or, on the review, to the approval box.
@@ -196,13 +202,13 @@ export function FillForm({
             <dl className="grid text-sm">
               {shownFields.map((f) => {
                 const value = values[f.key] ?? "";
-                const source = sourceOf(f, value, initial[f.key] ?? "", chips[f.key]);
+                const source = sourceOf(f, value, initial[f.key] ?? "", chips[f.key], values.save_ein === "on");
                 // Under 640 px: label and Change on one line, then the value, then its source, each full width.
                 return (
                   <div key={f.key} className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-1 border-b border-line py-2 sm:grid-cols-[auto_1fr_auto]">
                     <dt className="order-1 text-ink-2">{f.label}</dt>
                     <dd className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1 sm:text-right">
-                      <span className="block break-words whitespace-pre-line">{shownValue(f, value) || "Left blank"}</span>
+                      <span className="block break-words whitespace-pre-line">{shownValue(f, value, initial[f.key] ?? "") || "Left blank"}</span>
                       {source && <span className="block font-mono text-xs text-ink-3">{source}</span>}
                     </dd>
                     <dd className="order-2 justify-self-end sm:order-3">
@@ -349,12 +355,17 @@ function Field({
       </div>
     );
   }
-  if (f.kind === "secret" && f.fact === "ein") {
+  if (f.kind === "secret" && f.fact === "ein" && initial) {
+    // Saved in Business facts: shown masked, as a labelled value (no input to type into).
     return (
       <div id={id}>
-        <p className="label">{label}</p>
-        <p className="font-mono text-sm">{value || "No EIN saved in Business facts"}</p>
-        <Help id={id} hint={f.hint} error={error} />
+        <p id={`${id}-label`} className="label">
+          {label}
+        </p>
+        <p className="font-mono text-sm" aria-labelledby={`${id}-label`} aria-describedby={describedBy}>
+          {value}
+        </p>
+        <Help id={id} hint="From your business facts. The full number goes only into the PDF." error={error} />
       </div>
     );
   }
@@ -371,7 +382,7 @@ function Field({
           name={f.key}
           type={f.kind === "date" ? "date" : f.kind === "secret" ? "password" : "text"}
           inputMode={f.kind === "number" || f.kind === "secret" ? "numeric" : undefined}
-          autoComplete={f.kind === "secret" ? "off" : undefined}
+          autoComplete={f.kind === "secret" ? "off" : f.autoComplete}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={f.key === "ssn" ? (e) => formatSsn(e.target.value) !== e.target.value && onChange(formatSsn(e.target.value)) : undefined}

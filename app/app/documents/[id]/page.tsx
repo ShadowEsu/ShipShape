@@ -57,6 +57,7 @@ const SOURCE: Record<string, string> = {
   facts_edited: "Business facts, edited",
   typed: "Typed",
   typed_not_saved: "Typed, not saved",
+  typed_saved: "Typed, saved to Business facts",
 };
 
 const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);

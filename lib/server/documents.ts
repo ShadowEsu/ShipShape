@@ -12,7 +12,7 @@ import { fillRecord, prefill, render, validate, type FieldSource, type Values } 
 import { UserError } from "./errors";
 import { assertCanFill, assertRealData } from "./flags";
 import { assertWithinPlan } from "./plans";
-import { factsForFill, type Ctx } from "./profile";
+import { factsForFill, saveEin, type Ctx } from "./profile";
 import { blobStore, foldName, putVersionFile } from "./storage";
 
 export const DOC_KINDS = {
@@ -249,6 +249,10 @@ export async function fillTemplate(ctx: Ctx, templateId: string, values: Values,
   if (!acknowledged) errors._ack = "Tick the box to confirm you've reviewed the document.";
   if (Object.keys(errors).length) return { ok: false, errors };
   const start = prefill(t, facts, ctx.today);
+  // An EIN typed here with "also save it" goes into Business facts (encrypted) before the form is made from it.
+  if (!facts.ein && values.tin_kind === "ein" && values.save_ein === "on" && t.fields.some((f) => f.fact === "ein")) {
+    await saveEin(ctx, values.ein ?? "");
+  }
   const out = await render(t, values, facts, ctx.today);
   const record = { template: t.id, templateVersion: t.source.version, fields: fillRecord(t, values, start) };
   const id = await asUser(ctx.userId, async (tx) => {
