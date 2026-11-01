@@ -1,6 +1,25 @@
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { decodePDFRawStream, PDFArray, PDFDocument, PDFName, PDFRawStream, StandardFonts } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { breakWord, wordsOf, wrapLines, type Run } from "@/lib/pdf/compose";
+import { breakWord, composePdf, wordsOf, wrapLines, type Run } from "@/lib/pdf/compose";
+
+/** Each word drawn in a generated PDF, with the pages it's on (composePdf draws word by word). */
+async function pagesOfWords(bytes: Uint8Array): Promise<Map<string, number[]>> {
+  const doc = await PDFDocument.load(bytes);
+  const at = new Map<string, number[]>();
+  for (const [i, page] of doc.getPages().entries()) {
+    const contents = page.node.lookup(PDFName.of("Contents"));
+    const streams = contents instanceof PDFArray ? contents.asArray().map((s) => doc.context.lookup(s)) : [contents];
+    for (const s of streams) {
+      if (!(s instanceof PDFRawStream)) continue;
+      const text = Buffer.from(decodePDFRawStream(s).decode()).toString("latin1");
+      for (const [, hex] of text.matchAll(/<([0-9A-Fa-f]+)> Tj/g)) {
+        const word = Buffer.from(hex, "hex").toString("latin1");
+        at.set(word, [...(at.get(word) ?? []), i]);
+      }
+    }
+  }
+  return at;
+}
 
 const texts = (words: ReturnType<typeof wordsOf>) => words.map((w) => (w === "br" ? "br" : w.map((p) => p.text).join("+")));
 
@@ -52,5 +71,31 @@ describe("generated PDFs' text layout", () => {
     const split = breakWord([{ text: "SHA-256:" }, { text: hex, bold: true }], 308, widthOf);
     expect(split.flat().map((r) => `${r.bold ? "b" : "r"}:${r.text}`).join("|")).toMatch(/^r:SHA-256:\|b:[0-9a-f]+\|b:[0-9a-f]+$/);
     expect(split.flat().map((r) => r.text).join("")).toBe(`SHA-256:${hex}`);
+  });
+
+  it("never splits a table row or a label-value row across pages, wherever the page break falls (W11-4)", async () => {
+    const alphas = Array.from({ length: 30 }, (_, i) => `alpha${i}`);
+    const charlies = Array.from({ length: 30 }, (_, i) => `charlie${i}`);
+    let crossed = 0;
+    // Push the rows down 5 pt at a time, so every position against the bottom margin comes up.
+    for (let height = 0; height <= 650; height += 5) {
+      const bytes = await composePdf(
+        [
+          { type: "space", height },
+          { type: "table", head: ["", "Party 1", "Party 2"], rows: [["Notice", alphas.join(" "), "bravo"]] },
+          { type: "rows", rows: [["Delta", charlies.join(" ")]] },
+        ],
+        { title: "Layout", footer: "Footer" },
+      );
+      const pages = await pagesOfWords(bytes);
+      const pagesOf = (words: string[]) => new Set(words.flatMap((word) => pages.get(word) ?? [NaN]));
+      const table = pagesOf(["Notice", ...alphas, "bravo"]);
+      const rows = pagesOf(["Delta", ...charlies]);
+      expect([...table], `table row at ${height}`).toHaveLength(1);
+      expect([...rows], `rows row at ${height}`).toHaveLength(1);
+      expect(table.has(NaN) || rows.has(NaN), `a word went missing at ${height}`).toBe(false);
+      if ([...table][0] > 0 || [...rows][0] > 0) crossed++;
+    }
+    expect(crossed).toBeGreaterThan(0); // some positions did put a row on the next page
   });
 });

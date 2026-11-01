@@ -2,8 +2,7 @@ import "server-only";
 import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
-import { appendPages } from "@/lib/pdf/append";
-import { BuildBusy, BuildCrashed, buildToSignIsolated } from "@/lib/pdf/build-isolated";
+import { appendPagesIsolated, BuildBusy, BuildCrashed, buildToSignIsolated } from "@/lib/pdf/build-isolated";
 import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
 import { NotSignable } from "@/lib/pdf/to-sign";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
@@ -278,6 +277,7 @@ export type SignResult =
   | "needs_name"
   | "name_chars"
   | "unsupported"
+  | "busy"
   | "too_large"
   | "file_changed";
 
@@ -351,9 +351,16 @@ export async function completeSigning(
       ["Original upload SHA-256", r.sha256],
       ["Consent text", `${ESIGN_CONSENT_VERSION} (SHA-256 ${sha256Hex(ESIGN_CONSENT_TEXT).slice(0, 16)}…)`],
     ]);
-    bytes = await appendPages(toSign, certificate);
+    // In a build process, like the review copy itself (W11-10).
+    bytes = await appendPagesIsolated(toSign, certificate);
   } catch (e) {
-    // A fault in the certificate or the merge, not a bad file: logged by name so it can be fixed.
+    // No free build slot, or the process didn't start or crashed: ShipShape's moment, not the file; nothing was signed.
+    if (e instanceof BuildBusy) return "busy";
+    if (e instanceof BuildCrashed) {
+      console.error(`esign: ${e.message}`); // exit code and signal only (REG-58)
+      return "busy";
+    }
+    // A fault in the certificate or the merge, or a file past the process's limits: logged by name so it can be fixed.
     console.error(`esign: building the signed copy failed (${e instanceof Error ? e.name : "unknown"})`);
     return "unsupported";
   }

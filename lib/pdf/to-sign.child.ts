@@ -1,14 +1,14 @@
-// One upload's buildToSign, in a process of its own (Security R7-8, R9-1). Started only by
-// build-isolated.ts, which Node runs as TypeScript as it is (no bundler), so imports carry `.ts`.
-// Says "ready" once everything is loaded, then takes one { bytes, mime }, answers once and exits.
+// One upload's buildToSign, or one signing's appendPages, in a process of its own (Security R7-8, R9-1;
+// W11-10). Started only by build-isolated.ts, which Node runs as TypeScript as it is (no bundler), so
+// imports carry `.ts`. Says "ready" once everything is loaded, then takes one job, answers once and exits.
+import { appendPages } from "./append.ts";
+import type { ChildJob } from "./build-isolated.ts";
 import { buildToSign, NotSignable } from "./to-sign.ts";
 
-type Input = { bytes: Uint8Array; mime: Parameters<typeof buildToSign>[1] };
-
-async function answer(input: Input) {
+async function answer(job: ChildJob) {
   let outcome: { built: Uint8Array } | { refused: NotSignable["reason"] } | { failed: string };
   try {
-    outcome = { built: await buildToSign(input.bytes, input.mime) };
+    outcome = { built: "base" in job ? await appendPages(job.base, job.extra) : await buildToSign(job.bytes, job.mime) };
   } catch (e) {
     outcome = e instanceof NotSignable ? { refused: e.reason } : { failed: e instanceof Error ? (e.stack ?? e.message) : String(e) };
   }
@@ -16,5 +16,5 @@ async function answer(input: Input) {
 }
 
 if (!process.send) throw new Error("to-sign.child runs only as a child process of build-isolated.ts");
-process.once("message", (input: Input) => void answer(input));
+process.once("message", (job: ChildJob) => void answer(job));
 process.send({ ready: true });

@@ -34,6 +34,7 @@ const MESSAGES: Record<SignProblem, (sender: string, chars: string[]) => string>
     return `The certificate can't print ${which}. It can print Latin letters, numbers and common punctuation, so type your name using those${twin ? ` (for example, ${twin} for ${chars[0]})` : ""}.`;
   },
   unsupported: (sender) => `This file can't be signed here; it may be password-protected. Ask ${sender} for another copy.`,
+  busy: () => "ShipShape is busy right now, so nothing was signed. Try again in a minute.",
   too_large: (sender) => `The signed copy would be over 4 MB, which ShipShape can't store. Ask ${sender} for a smaller copy.`,
   file_changed: (sender) => `This document changed after it was sent, so it can't be signed. Ask ${sender} to send it again.`,
   too_many: (sender) => `You've had all 5 codes this signing link allows. Ask ${sender} for a new link.`,

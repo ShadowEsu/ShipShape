@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
-import { PDFDocument, PDFName, PDFPage, PDFRawStream, PDFStream } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFPage, PDFRawStream, PDFStream } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
@@ -273,6 +273,22 @@ describe("W-9 fill", () => {
     expect(requesterBaselines(doc).some((y) => y < 1)).toBe(true); // the fourth line would be below the box: why it's refused
   });
 
+  it("refuses a one-line field wider than its line on the form, and a typed signature that would run into the Date label (W11-5)", async () => {
+    const t = templateById("irs-w9");
+    if (!t) throw new Error("the W-9 template is missing");
+    const base = { ...prefill(t, await factsForFill(sample), sample.today), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
+    // Helvetica's W is 0.944 em: 60 at 9 pt are 509.8 pt of the 515.4 the name line holds, 61 are 518.3.
+    expect(await checkFill(sample, t.id, { ...base, name: "W".repeat(60) })).toEqual({});
+    expect(await checkFill(sample, t.id, { ...base, name: "W".repeat(61) })).toEqual({
+      name: "This won't fit on the form's line, which holds about 114 characters. Shorten it so nothing is cut off the PDF.",
+    });
+    // Times-Italic's A is 0.611 em: 32 at 13 pt are 254.2 pt, 33 are 262.1, past the 255 before the Date label.
+    expect(await checkFill(sample, t.id, { ...base, signature: "A".repeat(32) })).toEqual({});
+    expect(await checkFill(sample, t.id, { ...base, signature: "A".repeat(33) })).toEqual({
+      signature: "This signature won't fit on the form's line, which holds about 39 characters. Shorten it so it doesn't run into the date.",
+    });
+  });
+
   it("needs the acknowledgment, records where each value came from, and never stores tax ids", async () => {
     const t = templateById("irs-w9")!;
     const facts = await factsForFill(sample);
@@ -290,6 +306,26 @@ describe("W-9 fill", () => {
     const everything = JSON.stringify(await db.root((tx) => tx.query("select * from app.document_versions v join app.documents d on d.id = v.document_id join app.profiles p on p.org_id = d.org_id")));
     for (const secret of ["900123456", "900-12-3456", "12-3456", "1234567"]) expect(everything).not.toContain(secret);
     expect(got!.audit.map((a) => a.action)).toContain("document.acknowledged");
+  });
+
+  it("makes a filled W-9 that runs nothing: the IRS file's scripts, triggers and usage-rights signature are gone, the form is drawn in (W11-11)", async () => {
+    const t = templateById("irs-w9");
+    if (!t) throw new Error("the W-9 template is missing");
+    const values = { ...prefill(t, await factsForFill(sample), sample.today), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
+    const made = await fillTemplate(sample, t.id, values, true);
+    const id = made.ok ? made.id : "";
+    const w9 = await PDFDocument.load(await blobStore().get(`${sample.orgId}/${id}/v1.pdf`));
+    const found: string[] = [];
+    for (const [, obj] of w9.context.enumerateIndirectObjects()) {
+      const dict = obj instanceof PDFDict ? obj : obj instanceof PDFStream ? obj.dict : null;
+      if (!dict) continue;
+      for (const key of ["JS", "AA", "OpenAction"]) if (dict.has(PDFName.of(key))) found.push(key);
+      if (dict.get(PDFName.of("S")) === PDFName.of("JavaScript")) found.push("JavaScript action");
+    }
+    expect(found).toEqual([]);
+    expect(w9.catalog.has(PDFName.of("Perms"))).toBe(false);
+    expect(w9.getForm().getFields()).toEqual([]);
+    expect(w9.getPageCount()).toBeGreaterThan(0);
   });
 
   it("dates a signed W-9 and a new NDA on the signer's own day, not UTC's", async () => {

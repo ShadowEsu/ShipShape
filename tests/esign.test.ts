@@ -5,6 +5,8 @@ import { inflateSync } from "node:zlib";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { signProblem } from "@/app/s/[id]/messages";
+import type * as BuildIsolated from "@/lib/pdf/build-isolated";
+import { BuildBusy, BuildCrashed } from "@/lib/pdf/build-isolated";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { downloadUrl, getDocument, insertDocument, listDocuments, setArchived, uploadVersion } from "@/lib/server/documents";
@@ -19,6 +21,23 @@ import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { freshDb, type TestDb } from "./support/db";
 
 /** E-signatures (Security R8): consent stored, email proven by a one-time code, signed copy immutable, every step audited. */
+
+/** A fault the next appendPagesIsolated call raises instead of building (W11-10); every other call runs the real build process. */
+const appendFault = vi.hoisted(() => {
+  const fault: { next: Error | null } = { next: null };
+  return fault;
+});
+vi.mock("@/lib/pdf/build-isolated", async (importOriginal) => {
+  const real = await importOriginal<typeof BuildIsolated>();
+  return {
+    ...real,
+    appendPagesIsolated: (...args: Parameters<typeof real.appendPagesIsolated>) => {
+      const fault = appendFault.next;
+      appendFault.next = null;
+      return fault ? Promise.reject(fault) : real.appendPagesIsolated(...args);
+    },
+  };
+});
 
 let db: TestDb;
 let blobDir: string;
@@ -435,6 +454,28 @@ describe("signing", () => {
     expect(file?.objectPath).toBe(`${a.orgId}/${doc.id}/v${signed.version}.pdf`);
     expect(file?.inline).toBe(false);
     expect((await getDocument(a, doc.id))!.audit[0]).toMatchObject({ action: "esign.signed_copy_downloaded", about_name: "Jordan Lee" });
+  });
+
+  it("stops with nothing signed when no build slot frees up or the build process crashes, and the same code signs after (W11-10)", async () => {
+    const doc = await nda(a);
+    const versions = async () => (await getDocument(a, doc.id))?.versions.length;
+    const { id, token } = await request(a);
+    expect(await sendSigningCode(id, token)).toBe("ok");
+    const code = await lastCode(a.orgId);
+    const before = await versions();
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const fault of [new BuildBusy(), new BuildCrashed("build process exited with signal SIGSEGV")]) {
+      appendFault.next = fault;
+      const result = await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP });
+      expect(result).toBe("busy");
+      // ShipShape's moment, not the file's: no "password-protected" line (Design wave 11 #6, the crash path too).
+      expect(signProblem(result, "Sample")).toEqual({ field: null, message: "ShipShape is busy right now, so nothing was signed. Try again in a minute." });
+      expect((await openSigning(id, token))?.status).toBe("pending");
+      expect(await versions()).toBe(before);
+    }
+    quiet.mockRestore();
+    expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
+    expect(await versions()).toBe((before ?? 0) + 1);
   });
 
   it("keeps the sender's name as it was when the request was sent: the signing page, the code and the certificate (Security RN-1)", async () => {
