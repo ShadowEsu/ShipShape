@@ -1,8 +1,9 @@
 import "server-only";
 import { realDocsEnabled } from "./flags";
 
-// Kept apart from billing.ts so that reading "is billing on?" (plan-limit messages, the status page)
-// doesn't load the Stripe SDK into every route that reaches the plan check.
+// Kept apart from billing.ts so that reading "is billing on?" (plan-limit messages, the status page) doesn't load the
+// Stripe SDK into the public share, sign and collect routes, which reach the plan check through passport, documents
+// and esign. Every /app page still loads it: app/app/layout.tsx → account.ts → billing.ts.
 
 const TEST_KEY = /^(sk|rk)_test_[A-Za-z0-9]{10,}$/;
 

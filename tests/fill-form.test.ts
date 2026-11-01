@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, createRef } from "react";
 import { prerender } from "react-dom/static";
 import { describe, expect, it } from "vitest";
 import { ErrorSummary, FillForm, formatSsn, headingFocusDue, Message, SavedEinNote } from "@/app/app/make/[template]/fill-form";
@@ -132,6 +132,13 @@ describe("the fill form's message box", () => {
     expect(html).toMatch(/<div[^>]*role="alert"[^>]*tabindex="-1"/);
     expect(textOf(html)).toMatch(/^The Free plan holds 10 active documents\.\s*Choose one to archive$/);
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Choose one to archive", href: "/app/documents" }]);
+  });
+
+  it("hands the form's ref to the alert box itself, so a refusal can move focus there", () => {
+    const ref = createRef<HTMLDivElement>();
+    const box = Message({ text: "Real documents aren't open yet.", ref });
+    expect(box.props.role).toBe("alert");
+    expect(box.props.ref).toBe(ref);
   });
 
   it("without a fix is the message alone", async () => {
