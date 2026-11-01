@@ -123,14 +123,14 @@ export default async function AppHome() {
         {attention.length === 0 ? (
           <p className="card text-sm text-ink-2">
             {docs.total === 0
-              ? "Documents that have expired or expire in the next 30 days will be listed here, each with what renews it."
+              ? "Documents that have expired or expire in the next 30 days will be listed here, with what renews them."
               : "Nothing has expired or expires in the next 30 days."}
           </p>
         ) : (
           <>
             {/* Rule 6, once for the list: what renews a document; each row then says only its own state and action. */}
             <p className="text-sm text-ink-2">
-              Renew each one with the issuer, then {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates here."}
+              Renew each one with the issuer, then {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates."}
             </p>
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
               {attention.map((d) => {
@@ -161,11 +161,11 @@ export default async function AppHome() {
         )}
         {docs.attentionTotal > ATTENTION_MAX && (
           <p className="text-sm text-ink-2">
-            The {ATTENTION_MAX} soonest are listed; {docs.attentionTotal - ATTENTION_MAX === 1 ? "1 more needs" : `${docs.attentionTotal - ATTENTION_MAX} more need`} attention.{" "}
+            The {ATTENTION_MAX} most urgent are listed; {docs.attentionTotal - ATTENTION_MAX === 1 ? "1 more needs" : `${docs.attentionTotal - ATTENTION_MAX} more need`} attention.{" "}
             <Link href="/app/documents" className="underline">
               See all documents
-            </Link>{" "}
-            (soonest first).
+            </Link>
+            .
           </p>
         )}
       </section>

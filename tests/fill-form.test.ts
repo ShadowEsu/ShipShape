@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { prerender } from "react-dom/static";
 import { describe, expect, it } from "vitest";
-import { ErrorSummary, FillForm, formatSsn, headingFocusDue } from "@/app/app/make/[template]/fill-form";
+import { ErrorSummary, FillForm, formatSsn, headingFocusDue, SavedEinNote } from "@/app/app/make/[template]/fill-form";
 import { templateById } from "@/lib/templates/catalog";
 import { actionsOf, textOf } from "./support/render";
 
@@ -36,10 +36,13 @@ describe("headingFocusDue: when a change of step moves focus to the heading", ()
   const ok = { at: 1 };
   const failed = { at: 1, errors: { tax_class: "Choose one." } };
 
-  it("moves on Continue, Back and the review arriving; not when nothing changed", () => {
-    expect(headingFocusDue({ current: 0, reviewing: false, state: ok }, { current: 1, reviewing: false, state: ok })).toBe(true);
+  it("moves on Continue, Back and the review arriving (each a fresh result without errors); not when nothing changed", () => {
+    // Continue: a new result, one step on.
+    expect(headingFocusDue({ current: 0, reviewing: false, state: { at: 0 } }, { current: 1, reviewing: false, state: { at: 1 } })).toBe(true);
+    // Back is client-only: the same result, one step back.
     expect(headingFocusDue({ current: 1, reviewing: false, state: ok }, { current: 0, reviewing: false, state: ok })).toBe(true);
-    expect(headingFocusDue({ current: 3, reviewing: false, state: ok }, { current: 3, reviewing: true, state: ok })).toBe(true);
+    // The review arriving: a new result that says so.
+    expect(headingFocusDue({ current: 3, reviewing: false, state: ok }, { current: 3, reviewing: true, state: { review: true } })).toBe(true);
     expect(headingFocusDue({ current: 1, reviewing: false, state: ok }, { current: 1, reviewing: false, state: ok })).toBe(false);
   });
 
@@ -93,5 +96,27 @@ describe("the W-9's EIN step", () => {
   it("has a step heading that can take focus, so a step change is read out instead of dropping focus to the page", async () => {
     const html = await render({ tin_kind: "ein", ein: "" });
     expect(textOf(/<h2[^>]*tabindex="-1"[^>]*>[\s\S]*?<\/h2>/.exec(html)?.[0] ?? "")).toMatch(/^Step 1 of 4\s*Who.s filling it in$/);
+  });
+});
+
+describe("the review row for a saved EIN", () => {
+  const render = async (canSaveFacts: boolean, member: boolean) => {
+    const { prelude } = await prerender(createElement(SavedEinNote, { canSaveFacts, member }));
+    return new Response(prelude).text();
+  };
+
+  it("links to Business facts for those who can change them", async () => {
+    const html = await render(true, false);
+    expect(actionsOf(html)).toEqual([{ tag: "a", label: "Change in Business facts", href: "/app/facts" }]);
+  });
+
+  it("tells a member who can, with nothing to press", async () => {
+    const html = await render(false, true);
+    expect(textOf(html)).toBe("Only an owner or admin can change this.");
+    expect(actionsOf(html)).toEqual([]);
+  });
+
+  it("says nothing in the sample workspace, where nobody can", async () => {
+    expect(await render(false, false)).toBe("");
   });
 });

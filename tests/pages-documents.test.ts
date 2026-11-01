@@ -14,7 +14,7 @@ import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
 import { DOCUMENTS_PAGE_SIZE, fillTemplate, uploadDocument } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
-import { saveEin } from "@/lib/server/profile";
+import { saveEin, type Ctx } from "@/lib/server/profile";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { freshDb, type TestDb } from "./support/db";
@@ -203,53 +203,67 @@ describe("home", () => {
     ]);
   });
 
-  it("on Pro with many lapsing documents: lists the 20 soonest, counts them all, and points at the list for the rest", async () => {
+  // Rows are dated from the page's own "today" (ctx.today), not the database's clock, so a non-UTC server can't shift them.
+  const seedDated = (ctx: Ctx, rows: [title: string, daysFromToday: number][], kind = "license") =>
+    db.root(async (tx) => {
+      for (const [title, days] of rows) {
+        await tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, $2, $3, $4::date + $5::int)", [ctx.orgId, title, kind, ctx.today, days]);
+      }
+    });
+
+  it("on Pro with many lapsing documents: lists the 20 most urgent, counts them all, and points at the list for the rest", async () => {
     const ctx = await signIn("home-many@example.com");
     await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeMany', 'active', 'pro')", [ctx.orgId]));
-    // 22 lapsing (days 1..22 from today), 3 current (one dated far off, two undated).
-    await db.root(async (tx) => {
-      for (let i = 1; i <= 22; i++) {
-        await tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, $2, 'license', current_date + $3::int)", [ctx.orgId, `License ${String(i).padStart(2, "0")}`, i]);
-      }
-      await tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Far-off permit', 'permit', current_date + 400)", [ctx.orgId]);
-      await tx.query("insert into app.documents (org_id, title, kind) values ($1, 'Undated A', 'other'), ($1, 'Undated B', 'other')", [ctx.orgId]);
-    });
+    // 22 lapsing (days 1..21 from today, and the last day of the window, +30); 3 current (+31, one just outside the window, and two undated);
+    // one archived lapsed document that counts nowhere.
+    await seedDated(ctx, [...Array.from({ length: 21 }, (_, i): [string, number] => [`License ${String(i + 1).padStart(2, "0")}`, i + 1]), ["Window edge", 30], ["Just outside", 31]]);
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind) values ($1, 'Undated A', 'other'), ($1, 'Undated B', 'other')", [ctx.orgId]));
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, status, expires_on) values ($1, 'Archived old', 'other', 'archived', $2::date - 5)", [ctx.orgId, ctx.today]));
     const html = await homePage();
     const text = textOf(html);
     expect(text).toMatch(/3 of 25 documents current/);
     expect(text).toContain("License 01");
     expect(text).toContain("License 20");
     expect(text).not.toContain("License 21");
-    expect(text).toContain("The 20 soonest are listed; 2 more need attention.");
+    expect(text).not.toContain("Window edge");
+    expect(text).not.toContain("Archived old");
+    expect(text).toContain("The 20 most urgent are listed; 2 more need attention.");
     expect(text.split("Renew each one with the issuer")).toHaveLength(2);
     expect(actionsOf(html).filter((a) => a.label === "See all documents")).toEqual([{ tag: "a", label: "See all documents", href: "/app/documents" }]);
-    // The setup list reads the same summary: a document exists, with a date, and the first in list order is the soonest.
+    // The setup list reads the same summary: a document exists and one has a date.
     expect(text).not.toContain("Add an expiry date (to do)");
+  });
+
+  it("lists what can still be renewed in time before what has lapsed, so old lapsed documents can't hide one expiring this week", async () => {
+    const ctx = await signIn("home-urgent@example.com");
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeUrgent', 'active', 'pro')", [ctx.orgId]));
+    // 21 lapsed long ago (the list's own order would fill the 20 slots with them), one lapsed yesterday, one expiring in 3 days.
+    await seedDated(ctx, [...Array.from({ length: 21 }, (_, i): [string, number] => [`Old COI ${String(i + 1).padStart(2, "0")}`, -400 - i]), ["Lapsed yesterday", -1], ["Expiring soon", 3]]);
+    const text = textOf(await homePage());
+    const at = (title: string) => text.indexOf(title);
+    expect(at("Expiring soon")).toBeGreaterThan(-1);
+    expect(at("Lapsed yesterday")).toBeGreaterThan(at("Expiring soon"));
+    expect(at("Old COI 01")).toBeGreaterThan(at("Lapsed yesterday"));
+    expect(at("Old COI 21")).toBe(-1);
+    expect(text).toContain("The 20 most urgent are listed; 3 more need attention.");
   });
 
   it("with up to 20 lapsing documents lists them all and says nothing about more; at 21 it says '1 more needs attention'", async () => {
     const ctx = await signIn("home-twenty@example.com");
     await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeTwenty', 'active', 'pro')", [ctx.orgId]));
-    await db.root((tx) =>
-      tx.query("insert into app.documents (org_id, title, kind, expires_on) select $1, 'Permit ' || lpad(n::text, 2, '0'), 'permit', current_date + n from generate_series(1, 20) n", [ctx.orgId]),
-    );
+    await seedDated(ctx, Array.from({ length: 20 }, (_, i): [string, number] => [`Permit ${String(i + 1).padStart(2, "0")}`, i + 1]), "permit");
     const text = textOf(await homePage());
     expect(text).toMatch(/0 of 20 documents current/);
     expect(text).toContain("Permit 01");
     expect(text).toContain("Permit 20");
     expect(text).not.toContain("need attention");
-    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Permit 21', 'permit', current_date + 21)", [ctx.orgId]));
-    expect(textOf(await homePage())).toContain("The 20 soonest are listed; 1 more needs attention.");
+    await seedDated(ctx, [["Permit 21", 21]], "permit");
+    expect(textOf(await homePage())).toContain("The 20 most urgent are listed; 1 more needs attention.");
   });
 
   it("each row says how long is left in plain words: 'Expires today.', '1 day left.', 'N days left.'", async () => {
     const ctx = await signIn("home-days@example.com");
-    await db.root((tx) =>
-      tx.query(
-        "insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Today permit', 'permit', current_date), ($1, 'Tomorrow permit', 'permit', current_date + 1), ($1, 'Week permit', 'permit', current_date + 7)",
-        [ctx.orgId],
-      ),
-    );
+    await seedDated(ctx, [["Today permit", 0], ["Tomorrow permit", 1], ["Week permit", 7]], "permit");
     const text = textOf(await homePage());
     expect(text).toMatch(/Today permit.*Expires today\./);
     expect(text).toMatch(/Tomorrow permit.*1 day left\./);

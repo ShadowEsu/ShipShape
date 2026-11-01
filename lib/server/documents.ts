@@ -103,7 +103,10 @@ export interface HomeSummary {
   hasDates: boolean;
   /** The first document in the list's order (none when there are none): the setup step's "start with" document. */
   first: { id: string; title: string } | null;
-  /** Expired or expiring, soonest first, at most ATTENTION_MAX; `attentionTotal` counts them all. */
+  /**
+   * Expired or expiring, at most ATTENTION_MAX, most urgent first: the ones that can still be renewed in time
+   * (soonest first), then the ones that have lapsed (most recent first). `attentionTotal` counts them all.
+   */
   attention: DocRow[];
   attentionTotal: number;
 }
@@ -115,14 +118,21 @@ const SUMMARY_SQL = `
          coalesce(bool_or(d.expires_on is not null or d.renews_on is not null), false) as has_dates
   from app.documents d where d.org_id = $2 and d.status = 'active'`;
 const FIRST_SQL = `select d.id, d.title from app.documents d where d.org_id = $1 and d.status = 'active'` + LIST_ORDER + " limit 1";
-const ATTENTION_SQL = DOC_SELECT + LIST_WHERE + " and d.expires_on <= $1::date + 30" + LIST_ORDER + " limit $6";
+// The total comes from the same statement as the rows (a window count runs before the limit), so the
+// "N more" line can't disagree with the list when a document lands between two statements.
+const ATTENTION_SQL =
+  `select a.*, count(*) over ()::int as attention_total from (` +
+  DOC_SELECT +
+  LIST_WHERE +
+  ` and d.expires_on <= $1::date + 30) a` +
+  ` order by (a.validity = 'expired'), abs(a.expires_on::date - $1::date), a.created_at::timestamptz desc, a.id limit $6`;
 
 /** What Home needs, without reading every document: Pro has no document limit. */
 export async function homeSummary(ctx: Ctx): Promise<HomeSummary> {
   return asUser(ctx.userId, async (tx) => {
     const [counts] = await tx.query<{ total: number; current: number; has_w9: boolean; has_dates: boolean }>(SUMMARY_SQL, [ctx.today, ctx.orgId]);
     const [first] = await tx.query<{ id: string; title: string }>(FIRST_SQL, [ctx.orgId]);
-    const attention = await tx.query<DocRow>(ATTENTION_SQL, [...listParams(ctx, {}), ATTENTION_MAX]);
+    const attention = await tx.query<DocRow & { attention_total: number }>(ATTENTION_SQL, [...listParams(ctx, {}), ATTENTION_MAX]);
     return {
       total: counts.total,
       current: counts.current,
@@ -130,7 +140,7 @@ export async function homeSummary(ctx: Ctx): Promise<HomeSummary> {
       hasDates: counts.has_dates,
       first: first ?? null,
       attention,
-      attentionTotal: counts.total - counts.current,
+      attentionTotal: attention[0]?.attention_total ?? 0,
     };
   });
 }

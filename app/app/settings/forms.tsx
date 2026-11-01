@@ -117,7 +117,7 @@ export function DeleteAccountForm({ deleted, left }: { deleted: string[]; left: 
                 and we&apos;ll cancel it; then delete your account.
               </>
             ) : (
-              " Payments are switched off right now, so it can't be cancelled yet. Try again once they're back on: deleting cancels it for you."
+              " Your subscription is still active, and ShipShape can't cancel it until payments are back on. Try again later: deleting cancels it for you."
             ))}
         </div>
       )}

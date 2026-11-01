@@ -110,6 +110,21 @@ export function ErrorSummary({ problems, onPick, ref }: { problems: Problem[]; o
   );
 }
 
+/**
+ * The review row's action cell for a saved EIN, which has no field on the step: the way to change it is
+ * Business facts, for those who can; a member is told who can; the sample workspace gets nothing.
+ */
+export function SavedEinNote({ canSaveFacts, member }: { canSaveFacts: boolean; member: boolean }) {
+  if (canSaveFacts) {
+    return (
+      <Link href="/app/facts" className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
+        Change in Business facts
+      </Link>
+    );
+  }
+  return member ? <span className="inline-flex min-h-6 items-center text-sm text-ink-2">Only an owner or admin can change this.</span> : null;
+}
+
 export function FillForm({
   template,
   initial,
@@ -255,15 +270,8 @@ export function FillForm({
                       {source && <span className="block font-mono text-xs text-ink-3">{source}</span>}
                     </dd>
                     <dd className="order-2 justify-self-end sm:order-3">
-                      {/* A saved EIN has no field on the step: the way to change it is Business facts, for those who can. */}
                       {f.fact === "ein" && initial[f.key] ? (
-                        canSaveFacts ? (
-                          <Link href="/app/facts" className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
-                            Change in Business facts
-                          </Link>
-                        ) : (
-                          member && <span className="inline-flex min-h-6 items-center text-sm text-ink-2">Only an owner or admin can change this.</span>
-                        )
+                        <SavedEinNote canSaveFacts={canSaveFacts} member={member} />
                       ) : (
                         <button type="button" onClick={() => change(f.key)} className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
                           Change<span className="sr-only"> {f.label}</span>
