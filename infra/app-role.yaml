@@ -62,8 +62,9 @@ Resources:
           }]
         }
       # The one inline policy: every action the app needs, each on its one resource (PR-2, P-b0a).
-      # One condition: listing only under one workspace's "<org id>/" prefix, which the daily run
-      # sweeps after an account deletion (W11-7, aws-plan TO-1). No managed policies, no boundary.
+      # Two conditions, which the probe pins exactly: listing only under a workspace's "<org id>/" prefix
+      # (the daily sweep after an account deletion, W11-7, aws-plan TO-1; and telling a missing file from
+      # a refused one, W12-1), and the key only through S3 (W12-11). No managed policies, no boundary.
       Policies:
         - PolicyName: app
           PolicyDocument:
@@ -82,14 +83,21 @@ Resources:
                 Resource: !Sub "arn:${AWS::Partition}:s3:::${BucketName}"
                 Condition:
                   StringLike:
-                    # A workspace id and a slash (36 + 1 characters); the app checks the exact shape first.
-                    s3:prefix: "????????-????-????-????-????????????/"
+                    # A workspace id, a slash, then anything: the sweep lists "<id>/", and the app asks
+                    # for one exact key to tell a missing file from a refused one (W12-1). Listing "<id>/"
+                    # already returned every key under it, so this adds nothing a role session could see.
+                    # The app checks the id's exact shape before it lists.
+                    s3:prefix: "????????-????-????-????-????????????/*"
               - Sid: FileKey
                 Effect: Allow
                 Action:
                   - kms:GenerateDataKey
                   - kms:Decrypt
                 Resource: !Ref FileKeyArn
+                # Only S3's SSE-KMS uses the key for the app: a leaked role session can't call KMS directly.
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
               - Sid: DeleteAccounts
                 Effect: Allow
                 Action: cognito-idp:AdminDeleteUser
