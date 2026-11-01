@@ -11,7 +11,12 @@ import { useEffect } from "react";
  */
 export function HashLanding() {
   useEffect(() => {
-    const id = decodeURIComponent(window.location.hash.slice(1));
+    let id = "";
+    try {
+      id = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return; // "#%" and the like: nothing to land on.
+    }
     const target = id ? document.getElementById(id) : null;
     if (!target) return;
     target.scrollIntoView();
