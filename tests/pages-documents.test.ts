@@ -432,6 +432,7 @@ describe("making a document", () => {
       review: true,
     });
     // Payments on, and this person is the owner: the Pro half comes back; the fix link stays.
+    vi.stubEnv("BILLING_ENABLED", "1");
     vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
     vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");
