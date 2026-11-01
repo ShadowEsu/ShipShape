@@ -333,6 +333,21 @@ describe("making a document", () => {
     expect(await fill({}, form({ ...w9, name: "", address: "", step: "review" }))).toEqual({ errors: { name: "Fill this in.", address: "Fill this in." }, at: 0 });
   });
 
+  it("an approval refused with a message (the plan's limit) keeps the review in view with the message; a check refused keeps its step", async () => {
+    const ctx = await signIn("fill-limit@example.com");
+    // The Free plan holds 10 active documents: fill the workspace up.
+    await db.root((tx) =>
+      tx.query("insert into app.documents (org_id, title, kind) select $1, 'Doc ' || n, 'other' from generate_series(1, 10) n", [ctx.orgId]),
+    );
+    const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
+    expect(await fill({}, form({ ...w9, step: "review" }))).toEqual({ review: true });
+    expect(await fill({}, form({ ...w9, ack: "on", at: "3" }))).toEqual({ error: expect.stringMatching(/^The Free plan holds 10 active documents\./), review: true });
+    // A check that can't run (real documents closed) keeps the step the person is on.
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    expect(await fill({}, form({ ...w9, step: "next", at: "2" }))).toEqual({ error: expect.any(String), at: 2 });
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+  });
+
   it("checks the values for the review without saving, and stays on the review when only the approval box is missing", async () => {
     await signIn("fill-review@example.com");
     const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };

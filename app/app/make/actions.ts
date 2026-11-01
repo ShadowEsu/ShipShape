@@ -33,11 +33,11 @@ export async function fill(_prev: FillState, data: FormData): Promise<FillState>
   const t = templateById(String(data.get("template") ?? ""));
   if (!t) return { error: "ShipShape doesn't fill that form. Pick one from Make a document." };
   const values = formValues(t, data);
+  const step = data.get("step");
+  const at = Math.max(0, Math.trunc(Number(data.get("at")) || 0));
   let id: string;
   try {
-    const step = data.get("step");
     if (step === "next") {
-      const at = Math.max(0, Math.trunc(Number(data.get("at")) || 0));
       const all = await checkFill(ctx, t.id, values);
       const own = Object.fromEntries(Object.entries(all).filter(([k]) => stepOf(t, k) === at));
       return Object.keys(own).length ? { errors: own, at } : { at: at + 1 };
@@ -54,7 +54,9 @@ export async function fill(_prev: FillState, data: FormData): Promise<FillState>
     }
     id = res.id;
   } catch (e) {
-    if (e instanceof GateClosed || e instanceof UserError) return { error: e.message };
+    // A message, not a field problem (the plan's limit, a closed gate): the view stays where the person was,
+    // the review for an approval, the step for a check, with the message above it.
+    if (e instanceof GateClosed || e instanceof UserError) return step === "next" || step === "review" ? { error: e.message, at } : { error: e.message, review: true };
     throw e;
   }
   redirect(`/app/documents/${id}?made=1`);
