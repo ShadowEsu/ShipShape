@@ -116,6 +116,7 @@ export function FillForm({
   chips,
   ackText,
   canSaveFacts,
+  member = false,
 }: {
   template: TemplateInfo;
   initial: Record<string, string>;
@@ -123,6 +124,8 @@ export function FillForm({
   ackText: string;
   /** Whether this person may save a typed EIN to Business facts (owners and admins of a real workspace, once real documents are open). */
   canSaveFacts: boolean;
+  /** A member of someone else's workspace: can't change its facts, and the review says who can. */
+  member?: boolean;
 }) {
   const [values, setValues] = useState(initial);
   const [ack, setAck] = useState(false);
@@ -254,10 +257,12 @@ export function FillForm({
                     <dd className="order-2 justify-self-end sm:order-3">
                       {/* A saved EIN has no field on the step: the way to change it is Business facts, for those who can. */}
                       {f.fact === "ein" && initial[f.key] ? (
-                        canSaveFacts && (
+                        canSaveFacts ? (
                           <Link href="/app/facts" className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
                             Change in Business facts
                           </Link>
+                        ) : (
+                          member && <span className="inline-flex min-h-6 items-center text-sm text-ink-2">Only an owner or admin can change this.</span>
                         )
                       ) : (
                         <button type="button" onClick={() => change(f.key)} className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
