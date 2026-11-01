@@ -1,5 +1,5 @@
 import "server-only";
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { TransactionSql } from "postgres";
 import { migrate, type MigrationStep } from "./migrations";
@@ -52,6 +52,8 @@ export interface LocalDriver extends Driver {
 export async function createLocalDriver(dataDir?: string, { supabaseStorage = true }: { supabaseStorage?: boolean } = {}): Promise<LocalDriver> {
   // Runtime-selected driver: production never loads the PGlite WebAssembly bundle.
   const { PGlite } = await import("@electric-sql/pglite");
+  // PGlite makes only the last folder of dataDir: a fresh clone has no .data yet, and the local database never started.
+  if (dataDir) await mkdir(dataDir, { recursive: true });
   const pg = await PGlite.create(dataDir ? { dataDir } : undefined);
   const step = (t: { exec(sql: string): Promise<unknown>; query<R>(text: string, params?: unknown[]): Promise<{ rows: R[] }> }): MigrationStep => ({
     exec: async (sql) => {
