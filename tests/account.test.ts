@@ -5,11 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteAccount, deletionPreview, EXPORT_MAX_BYTES, exportWorkspace, finishDeletions, purgeSampleAccounts, retryStorageCleanup } from "@/lib/server/account";
+import { TERMS_VERSION } from "@/lib/legal";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
-import { requestSignature } from "@/lib/server/esign";
-import { createPassport, openPassport } from "@/lib/server/passport";
+import { completeSigning, requestSignature, sendSigningCode } from "@/lib/server/esign";
+import { createPassport, openPassport, passportFileUrl } from "@/lib/server/passport";
 import { NeedsRecentSignIn, type Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, newSessionId } from "@/lib/server/session";
@@ -107,6 +108,111 @@ describe("export", () => {
     for (const s of sessions) expect(Object.keys(s)).toEqual(["ua_family", "created_at", "last_seen_at", "revoked_at"]);
     expect(sessions.find((s) => s.ua_family === "Chrome on an iPhone")?.revoked_at).not.toBeNull();
     expect(sessions.find((s) => s.ua_family === "Safari on a Mac")?.revoked_at).toBeNull();
+  });
+
+  it("holds the passport links with their opens and downloads, the signature requests and the person's own agreements, and never a token or code hash (W9-9)", async () => {
+    const ctx = await sampleWorkspace();
+    const visitorIp = "198.51.100.9";
+    const [doc] = await db.root((tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1 and status = 'active' order by created_at, id limit 1", [ctx.orgId]));
+    const link = await createPassport(ctx, { label: "Northwind", days: 7, documentIds: [doc.id] });
+    expect(await openPassport(link.id, link.token, visitorIp)).not.toBeNull();
+    expect(await passportFileUrl(link.id, link.token, doc.id, visitorIp)).not.toBeNull();
+
+    // One request waiting with a code sent (so it has a code hash), and one signed.
+    const [nda] = await db.root((tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1 and kind = 'nda' limit 1", [ctx.orgId]));
+    const pending = await requestSignature(ctx, { documentId: nda.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    expect(await sendSigningCode(pending.id, pending.token)).toBe("ok");
+    const signed = await requestSignature(ctx, { documentId: nda.id, signerName: "Sam Rivera", signerEmail: "sam@northwind.example", days: 7 });
+    expect(await sendSigningCode(signed.id, signed.token)).toBe("ok");
+    const [mail] = await db.root((tx) => tx.query<{ body: string }>("select body from app.outbox where org_id = $1 order by created_at desc limit 1", [ctx.orgId]));
+    const code = /\b(\d{6})\b/.exec(mail.body)?.[1] ?? "";
+    expect(await completeSigning(signed.id, signed.token, { code, typedName: "Sam Rivera", consented: true, ip: "198.51.100.4" })).toBe("ok");
+
+    // The person's own Terms agreement, and another member's agreement about this same workspace.
+    await asUser(ctx.userId, (tx) => tx.query("insert into app.consents (user_id, item, policy_version) values ($1, 'terms_privacy', $2)", [ctx.userId, TERMS_VERSION]));
+    const partner = await db.user("export-agreements-partner@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'admin')", [ctx.orgId, partner]));
+    await asUser(partner, (tx) => tx.query("insert into app.consents (user_id, item, policy_version, object_id) values ($1, 'billing', $2, $3)", [partner, TERMS_VERSION, ctx.orgId]));
+
+    const { bytes } = await exportWorkspace(ctx);
+    const file = path.join(blobDir, "export-passports.zip");
+    await writeFile(file, bytes);
+    const names = execFileSync("unzip", ["-Z1", file]).toString().trim().split("\n");
+    expect(names.slice(6, 9)).toEqual(["passports.json", "signatures.json", "agreements.json"]);
+    const readme = execFileSync("unzip", ["-p", file, "README.txt"]).toString();
+    for (const name of ["passports.json", "signatures.json", "agreements.json"]) expect(readme).toContain(`\n${name} `);
+
+    const passports: Record<string, unknown>[] = JSON.parse(execFileSync("unzip", ["-p", file, "passports.json"]).toString());
+    expect(passports).toEqual([
+      {
+        id: link.id,
+        label: "Northwind",
+        created_at: expect.any(String),
+        expires_at: expect.any(String),
+        revoked_at: null,
+        documents: [doc.id],
+        access: [
+          { at: expect.any(String), action: "opened", document_id: null, visitor: expect.stringMatching(/^[0-9a-f]{16}$/) },
+          { at: expect.any(String), action: "downloaded", document_id: doc.id, visitor: expect.stringMatching(/^[0-9a-f]{16}$/) },
+        ],
+      },
+    ]);
+    const [access] = await db.root((tx) => tx.query<{ visitor: string }>("select visitor from app.share_access where link_id = $1 limit 1", [link.id]));
+    expect(JSON.stringify(passports)).toContain(`"visitor":"${access.visitor}"`);
+
+    const signatures: Record<string, unknown>[] = JSON.parse(execFileSync("unzip", ["-p", file, "signatures.json"]).toString());
+    const columns = [
+      "id",
+      "document_id",
+      "version",
+      "signed_version",
+      "signer_name",
+      "signer_email",
+      "status",
+      "created_at",
+      "expires_at",
+      "signed_at",
+      "consented_at",
+      "consent_version",
+      "signed_name",
+      "to_sign_sha256",
+    ];
+    const stored = await db.root((tx) =>
+      tx.query<Record<string, unknown>>(
+        "select id, document_id, version, signed_version, signer_name, signer_email, status, created_at::text as created_at, expires_at::text as expires_at, signed_at::text as signed_at, consented_at::text as consented_at, consent_version, signed_name, to_sign_sha256 from app.signature_requests where org_id = $1 order by created_at, id",
+        [ctx.orgId],
+      ),
+    );
+    expect(signatures).toEqual(stored);
+    for (const s of signatures) expect(Object.keys(s)).toEqual(columns);
+    expect(signatures.map((s) => [s.id, s.status])).toEqual([
+      [pending.id, "pending"],
+      [signed.id, "signed"],
+    ]);
+    expect(signatures[1]).toMatchObject({ signed_name: "Sam Rivera", signed_at: expect.any(String), consented_at: expect.any(String), consent_version: expect.any(String) });
+
+    const agreements: Record<string, unknown>[] = JSON.parse(execFileSync("unzip", ["-p", file, "agreements.json"]).toString());
+    expect(agreements).toEqual([{ item: "terms_privacy", policy_version: TERMS_VERSION, object_id: null, at: expect.any(String) }]);
+
+    // No token or code hash and no storage path anywhere in the archive, in any file.
+    const secrets = await db.root((tx) =>
+      tx.query<{ secret: string }>(
+        "select token_hash as secret from app.share_links where org_id = $1 union all select unnest(array[token_hash, otp_hash, to_sign_path]) from app.signature_requests where org_id = $1",
+        [ctx.orgId],
+      ),
+    );
+    // The link's and both requests' token hashes, the waiting request's code hash and both files to sign.
+    expect(secrets.filter((s) => s.secret !== null)).toHaveLength(6);
+    const archive = Buffer.from(bytes);
+    for (const { secret } of secrets) if (secret !== null) expect(archive.includes(secret)).toBe(false);
+  });
+
+  it("is named for the owner's day, not the UTC one (W9-7)", async () => {
+    const ctx = await sampleWorkspace();
+    // Evening in California: the owner's calendar is still on the day before UTC's.
+    const ownersDay = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const { filename } = await exportWorkspace({ ...ctx, today: ownersDay });
+    expect(filename).toBe(`ShipShape export ${ownersDay}.zip`);
   });
 
   it("is for owners and admins only, and needs a recent sign-in in a real workspace", async () => {

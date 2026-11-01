@@ -79,19 +79,61 @@ interface ExportSession {
   revoked_at: string | null;
 }
 
+interface ExportLink {
+  id: string;
+  label: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+}
+
+interface ExportLinkAccess {
+  link_id: string;
+  at: string;
+  action: string;
+  document_id: string | null;
+  visitor: string;
+}
+
+/** A signature request without its token or code hashes and without storage paths. */
+interface ExportSignature {
+  id: string;
+  document_id: string;
+  version: number;
+  signed_version: number | null;
+  signer_name: string;
+  signer_email: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  signed_at: string | null;
+  consented_at: string | null;
+  consent_version: string | null;
+  signed_name: string | null;
+  to_sign_sha256: string | null;
+}
+
+interface ExportAgreement {
+  item: string;
+  policy_version: string;
+  object_id: string | null;
+  at: string;
+}
+
 const csvCell = (v: string | null) => (v === null ? "" : /[",\n]/.test(v) ? `"${v.replaceAll('"', '""')}"` : v);
 
 /**
  * Everything in the workspace as a ZIP: every version of every document, their details, the
- * business facts (tax ID only as its last 4 digits), the full history, and the exporting person's
- * own sessions (browser and system name and times, Design row 34). Owners and admins only, after a
- * recent sign-in; the export itself is recorded in the history.
+ * business facts (tax ID only as its last 4 digits), the full history, the passport links with their
+ * access log and the signature requests (never a token or code hash, W9-9), and the exporting
+ * person's own sessions (browser and system name and times, Design row 34) and agreements. Owners
+ * and admins only, after a recent sign-in; the export itself is recorded in the history.
  */
 export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; bytes: Uint8Array }> {
   if (ctx.role === "member") throw new UserError("Only owners and admins can export the workspace.");
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to export.");
 
-  const { docs, versions, vendors, vendorFiles, sessions } = await asUser(ctx.userId, async (tx) => {
+  const { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements } = await asUser(ctx.userId, async (tx) => {
     const docs = await tx.query<ExportDoc>(
       "select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on, d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.created_at::text as created_at from app.documents d where d.org_id = $1 order by d.created_at, d.id",
       [ctx.orgId],
@@ -116,8 +158,34 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
       "select ua_family, created_at::text as created_at, last_seen_at::text as last_seen_at, revoked_at::text as revoked_at from app.sessions where user_id = $1 order by created_at, id",
       [ctx.userId],
     );
-    return { docs, versions, vendors, vendorFiles, sessions };
+    const links = await tx.query<ExportLink>(
+      "select id, label, created_at::text as created_at, expires_at::text as expires_at, revoked_at::text as revoked_at from app.share_links where org_id = $1 order by created_at, id",
+      [ctx.orgId],
+    );
+    const linkDocs = await tx.query<{ link_id: string; document_id: string }>(
+      "select link_id, document_id from app.share_link_documents where org_id = $1 order by link_id, document_id",
+      [ctx.orgId],
+    );
+    const linkAccess = await tx.query<ExportLinkAccess>(
+      "select link_id, at::text as at, action, document_id, visitor from app.share_access where org_id = $1 order by at, seq",
+      [ctx.orgId],
+    );
+    const signatures = await tx.query<ExportSignature>(
+      "select id, document_id, version, signed_version, signer_name, signer_email, status, created_at::text as created_at, expires_at::text as expires_at, signed_at::text as signed_at, consented_at::text as consented_at, consent_version, signed_name, to_sign_sha256 from app.signature_requests where org_id = $1 order by created_at, id",
+      [ctx.orgId],
+    );
+    // The exporting person's own agreements only, as with sessions.
+    const agreements = await tx.query<ExportAgreement>(
+      "select item, policy_version, object_id, at::text as at from app.consents where user_id = $1 order by at, id",
+      [ctx.userId],
+    );
+    return { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements };
   });
+
+  const passports: (ExportLink & { documents: string[]; access: Omit<ExportLinkAccess, "link_id">[] })[] = links.map((l) => ({ ...l, documents: [], access: [] }));
+  const passportById = new Map(passports.map((p) => [p.id, p]));
+  for (const d of linkDocs) passportById.get(d.link_id)?.documents.push(d.document_id);
+  for (const { link_id, ...a } of linkAccess) passportById.get(link_id)?.access.push(a);
 
   const profile = await loadProfile(ctx);
   const store = blobStore();
@@ -182,13 +250,16 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     "vendors.json     your vendors, what you asked each for, and the files they sent with SHA-256 fingerprints",
     "history.csv      the workspace history, oldest first",
     "sessions.json    the browsers you signed in on: browser and system name, when you signed in, were last active and signed out",
+    "passports.json   your passport links: who each is for, when it was made, expires or was revoked, its documents, and every open, view and download with the visitor's keyed network fingerprint (a short code, not their address)",
+    "signatures.json  your signature requests: the document and version, the signer's name and email, the status, when it was made, expires and was signed, the name they typed, when and to which version of the consent they agreed, and the reviewed file's SHA-256 fingerprint",
+    "agreements.json  what you agreed to (such as the Terms and Privacy Policy), which version, and when",
     "",
     "Check a file against its fingerprint with: shasum -a 256 <file>",
     ...(missing.length ? ["", "NOT INCLUDED: the stored copy of these files could not be found. Their details and fingerprints are still listed.", ...missing.map((m) => `  ${m}`)] : []),
   ].join("\n");
 
   return {
-    filename: `ShipShape export ${now.toISOString().slice(0, 10)}.zip`,
+    filename: `ShipShape export ${ctx.today}.zip`,
     bytes: zip(
       [
         { name: "README.txt", data: enc.encode(readme) },
@@ -205,6 +276,9 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
           ),
         },
         { name: "sessions.json", data: enc.encode(JSON.stringify(sessions, null, 2)) },
+        { name: "passports.json", data: enc.encode(JSON.stringify(passports, null, 2)) },
+        { name: "signatures.json", data: enc.encode(JSON.stringify(signatures, null, 2)) },
+        { name: "agreements.json", data: enc.encode(JSON.stringify(agreements, null, 2)) },
         ...files,
       ],
       now,
