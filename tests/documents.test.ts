@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { checkFill, DOCUMENT_GONE, downloadUrl, fillTemplate, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { canSaveFacts, checkFill, DOCUMENT_GONE, downloadUrl, fillTemplate, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import { checkUpload, UploadRefused } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
@@ -285,6 +285,66 @@ describe("W-9 fill", () => {
     expect(await checkFill(ctx, t.id, good)).toEqual({});
     expect(await checkFill(ctx, t.id, { ...good, ssn: "12" })).toEqual({ ssn: "Enter the SSN as 9 digits, like 123-45-6789." });
     expect(await listDocuments(ctx)).toHaveLength(before);
+  });
+
+  it("with no EIN saved, the one typed into the form goes on the W-9; 'also save it' puts it in Business facts first", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const t = templateById("irs-w9")!;
+    const ctx = await workspace("typed-ein@example.com", "real");
+    const base = { name: "Typed EIN Co", tax_class: "c_corp", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ein" };
+    // Nothing typed and nothing saved: the field says what to do. A short number: the format line.
+    expect(await checkFill(ctx, t.id, { ...base, ein: "" })).toEqual({ ein: "Enter your EIN, add it in Business facts first, or choose SSN." });
+    expect(await checkFill(ctx, t.id, { ...base, ein: "12" })).toEqual({ ein: "Enter your EIN as 9 digits, like 12-3456789." });
+
+    // Typed, not saved: the form fields carry it, the record says so, and Business facts still have none.
+    const facts = await factsForFill(ctx);
+    const doc = await loadW9();
+    fillW9Form(doc, { ...base, ein: "98 7654321" }, facts);
+    const field = (n: string) => doc.getForm().getTextField(`topmostSubform[0].Page1[0].${n}`).getText();
+    expect([field("f1_14[0]"), field("f1_15[0]")]).toEqual(["98", "7654321"]);
+    const made = await fillTemplate(ctx, t.id, { ...base, ein: "98 7654321" }, true);
+    expect(made.ok).toBe(true);
+    const got = await getDocument(ctx, made.ok ? made.id : "");
+    expect(got?.versions[0].fill_record?.fields).toMatchObject({ ein: "typed_not_saved" });
+    expect((await factsForFill(ctx)).ein).toBeNull();
+
+    // Typed with "also save it": Business facts get it (encrypted; last 4 in clear), and the record says saved.
+    const saved = await fillTemplate(ctx, t.id, { ...base, ein: "98-7654321", save_ein: "on" }, true);
+    expect(saved.ok).toBe(true);
+    expect((await getDocument(ctx, saved.ok ? saved.id : ""))?.versions[0].fill_record?.fields).toMatchObject({ ein: "typed_saved" });
+    expect(await factsForFill(ctx)).toMatchObject({ ein: "98-7654321", einLast4: "4321" });
+    // From now on the saved one wins, whatever the form posts for `ein`.
+    expect(await checkFill(ctx, t.id, { ...base, ein: "" })).toEqual({});
+    vi.unstubAllEnvs();
+  });
+
+  it("'also save it' is refused as a field error, not a database error, for a member, a sample workspace or a closed gate", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const t = templateById("irs-w9")!;
+    const ctx = await workspace("save-ein-owner@example.com", "real");
+    const memberId = await db.user("save-ein-member@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, memberId]));
+    const member: Ctx = { ...ctx, userId: memberId, role: "member" };
+    const values = { name: "Member Co", tax_class: "c_corp", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ein", ein: "98-7654321", save_ein: "on" };
+
+    const before = (await listDocuments(ctx)).length;
+    const refused = await fillTemplate(member, t.id, values, true);
+    expect(refused).toEqual({ ok: false, errors: { save_ein: "Only owners and admins can save business facts. Untick this, or ask one of them to add the EIN." } });
+    expect(await listDocuments(ctx)).toHaveLength(before);
+    expect((await factsForFill(ctx)).ein).toBeNull();
+    // Without the box the member makes the W-9 with the typed number, like anyone else.
+    expect((await fillTemplate(member, t.id, { ...values, save_ein: "" }, true)).ok).toBe(true);
+    expect((await factsForFill(ctx)).ein).toBeNull();
+
+    // The sample workspace already holds an EIN, so the box never applies there; canSaveFacts still says no.
+    expect(await checkFill(sample, t.id, { ...values, name: "Harbor Plumbing LLC" })).toEqual({});
+    expect(canSaveFacts(ctx)).toBe(true);
+    expect(canSaveFacts(member)).toBe(false);
+    expect(canSaveFacts(sample)).toBe(false);
+    // With real documents closed, an owner can still fill (local development) but not save facts.
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    expect(canSaveFacts(ctx)).toBe(false);
+    vi.unstubAllEnvs();
   });
 });
 

@@ -10,9 +10,9 @@ import { asUser, type Tx } from "./db";
 import { checkUpload, EXTENSION, UploadRefused, type AllowedMime } from "./files";
 import { fillRecord, prefill, render, validate, type FieldSource, type Values } from "./fill";
 import { UserError } from "./errors";
-import { assertCanFill, assertRealData } from "./flags";
+import { assertCanFill, assertRealData, realDocsEnabled } from "./flags";
 import { assertWithinPlan } from "./plans";
-import { factsForFill, type Ctx } from "./profile";
+import { factsForFill, saveEin, type Ctx } from "./profile";
 import { blobStore, foldName, putVersionFile } from "./storage";
 
 export const DOC_KINDS = {
@@ -229,13 +229,27 @@ export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Ar
 
 export type FillResult = { ok: true; id: string } | { ok: false; errors: Record<string, string> };
 
+/** Who may tick "also save it to my business facts" on a W-9: the same people who can edit Business facts. */
+export function canSaveFacts(ctx: Pick<Ctx, "demo" | "role">): boolean {
+  return !ctx.demo && realDocsEnabled() && ctx.role !== "member";
+}
+
 /** The template and the facts it fills from, with what's wrong in the values (field key -> what to fix). */
 async function checked(ctx: Ctx, templateId: string, values: Values) {
   assertCanFill(ctx);
   const t = templateById(templateId);
   if (!t) throw new UserError("ShipShape doesn't fill that form. Pick one from Make a document.");
   const facts = await factsForFill(ctx);
-  return { t, facts, errors: validate(t, values, facts) };
+  const errors = validate(t, values, facts);
+  // The box is hidden for people who can't change Business facts; a post that carries it anyway is refused here, not at the database.
+  if (values.save_ein === "on" && !facts.ein && !canSaveFacts(ctx)) {
+    errors.save_ein = ctx.demo
+      ? "A sample workspace can't save business facts. Untick this to make the W-9 with the number typed above."
+      : ctx.role === "member"
+        ? "Only owners and admins can save business facts. Untick this, or ask one of them to add the EIN."
+        : "Business facts open after our security review. Untick this to make the W-9 with the number typed above.";
+  }
+  return { t, facts, errors };
 }
 
 /** The review step: what to fix before the person approves. Nothing is saved. */
@@ -250,6 +264,10 @@ export async function fillTemplate(ctx: Ctx, templateId: string, values: Values,
   if (Object.keys(errors).length) return { ok: false, errors };
   const start = prefill(t, facts, ctx.today);
   const out = await render(t, values, facts, ctx.today);
+  // An EIN typed here with "also save it" goes into Business facts (encrypted) once the form rendered, before the document is stored.
+  if (!facts.ein && values.tin_kind === "ein" && values.save_ein === "on" && t.fields.some((f) => f.fact === "ein")) {
+    await saveEin(ctx, values.ein ?? "");
+  }
   const record = { template: t.id, templateVersion: t.source.version, fields: fillRecord(t, values, start) };
   const id = await asUser(ctx.userId, async (tx) => {
     const docId = await insertDocument(

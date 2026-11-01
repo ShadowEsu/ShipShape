@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { prerender } from "react-dom/static";
 import { describe, expect, it } from "vitest";
-import { ErrorSummary, formatSsn } from "@/app/app/make/[template]/fill-form";
+import { ErrorSummary, FillForm, formatSsn } from "@/app/app/make/[template]/fill-form";
+import { templateById } from "@/lib/templates/catalog";
 import { actionsOf, textOf } from "./support/render";
 
 async function render(problems: { key: string; label: string; message: string }[]) {
@@ -39,5 +40,34 @@ describe("formatSsn", () => {
     expect(formatSsn("90012345")).toBe("90012345");
     expect(formatSsn("9001234567")).toBe("9001234567");
     expect(formatSsn("")).toBe("");
+  });
+});
+
+describe("the W-9's EIN step", () => {
+  const w9 = templateById("irs-w9")!;
+  const render = async (initial: Record<string, string>, canSaveFacts = true) => {
+    const { prelude } = await prerender(createElement(FillForm, { template: w9, initial, chips: {}, ackText: "I agree.", canSaveFacts }));
+    return new Response(prelude).text();
+  };
+
+  it("with no EIN saved offers a field to type it (hidden from autofill) and a box to save it to Business facts", async () => {
+    const html = await render({ tin_kind: "ein", ein: "" });
+    expect(html).toMatch(/<input[^>]*id="f-ein"[^>]*type="password"[^>]*autocomplete="off"/i);
+    expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*name="save_ein"/);
+    expect(textOf(html)).toContain("Also save it to my business facts, stored encrypted");
+    expect(textOf(html)).toContain("9 digits, like 12-3456789. It's on the IRS letter that confirmed your EIN (CP 575).");
+  });
+
+  it("with an EIN saved shows it masked as a labelled value, with no field and no save box", async () => {
+    const html = await render({ tin_kind: "ein", ein: "••-•••6789" });
+    expect(html).not.toMatch(/<input[^>]*id="f-ein"/);
+    expect(html).not.toContain('name="save_ein"');
+    expect(html).toMatch(/<p[^>]*aria-labelledby="f-ein-label"[^>]*>••-•••6789<\/p>/);
+  });
+
+  it("for someone who can't change Business facts (a member, a sample workspace) the field is there but the save box isn't", async () => {
+    const html = await render({ tin_kind: "ein", ein: "" }, false);
+    expect(html).toMatch(/<input[^>]*id="f-ein"[^>]*type="password"/);
+    expect(html).not.toContain('name="save_ein"');
   });
 });

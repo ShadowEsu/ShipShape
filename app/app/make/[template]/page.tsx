@@ -5,6 +5,7 @@ import { Notice, PageHeader } from "@/components/app-ui";
 import { ACK_TEXT } from "@/lib/legal";
 import { FACT_LABELS, STALE_AFTER_DAYS } from "@/lib/profile-fields";
 import { prefill } from "@/lib/server/fill";
+import { canSaveFacts } from "@/lib/server/documents";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { loadProfile } from "@/lib/server/profile";
 import { requireWorkspace } from "@/lib/server/session";
@@ -69,7 +70,7 @@ export default async function FillPage({ params }: { params: Promise<{ template:
         Fields marked “From Business facts” were filled from facts you confirmed. Change anything that isn&apos;t right for this
         document; your saved facts stay as they are.
       </p>
-      <FillForm template={t} initial={initial} chips={chips} ackText={ACK_TEXT} />
+      <FillForm template={t} initial={initial} chips={chips} ackText={ACK_TEXT} canSaveFacts={canSaveFacts(ctx)} />
     </div>
   );
 }

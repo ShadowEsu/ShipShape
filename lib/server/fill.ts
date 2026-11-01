@@ -13,7 +13,7 @@ const ROOT = process.cwd();
 const W9_SHA256 = "2d420cbb4123dcf1fb82595b2359cfbb5d81f00b9df9d359fcc7af361d093f53";
 
 export type Values = Record<string, string>;
-export type FieldSource = "facts" | "facts_edited" | "typed" | "typed_not_saved";
+export type FieldSource = "facts" | "facts_edited" | "typed" | "typed_not_saved" | "typed_saved";
 
 const TAX_CLASS: Partial<Record<EntityType, [string, string?]>> = {
   individual: ["individual"],
@@ -76,6 +76,20 @@ const MISSING: Record<FieldDef["kind"], string> = {
   secret: "Enter the number.",
 };
 const SSN_FORMAT = "Enter the SSN as 9 digits, like 123-45-6789.";
+export const EIN_FORMAT = "Enter your EIN as 9 digits, like 12-3456789.";
+
+/** Nine digits of a typed tax id, or null when it isn't one (dashes and spaces allowed). */
+export function taxIdDigits(value: string): string | null {
+  const d = value.replace(/[\s-]/g, "");
+  return /^[0-9]{9}$/.test(d) ? d : null;
+}
+
+/** The EIN that goes on the form: the saved one, else what was typed for this document. */
+export function einFor(v: Values, facts: Facts): string {
+  if (facts.ein) return facts.ein;
+  const d = taxIdDigits(v.ein ?? "");
+  return d ? `${d.slice(0, 2)}-${d.slice(2)}` : "";
+}
 
 export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<string, string> {
   const errors: Record<string, string> = {};
@@ -83,7 +97,8 @@ export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<strin
     if (!visible(f, v)) continue;
     const value = (v[f.key] ?? "").trim();
     if (f.kind === "secret" && f.fact === "ein") {
-      if (!facts.ein) errors[f.key] = "Add your EIN in Business facts first, or choose SSN.";
+      // Saved in Business facts: nothing to check. Otherwise the number typed here goes on the form.
+      if (!facts.ein && !taxIdDigits(value)) errors[f.key] = value ? EIN_FORMAT : "Enter your EIN, add it in Business facts first, or choose SSN.";
       continue;
     }
     if (f.required && !value) errors[f.key] = f.key === "ssn" ? SSN_FORMAT : MISSING[f.kind];
@@ -109,7 +124,7 @@ export function fillRecord(t: TemplateInfo, v: Values, start: Values): Record<st
   for (const f of t.fields) {
     if (!visible(f, v)) continue;
     if (f.key === "ssn") out[f.key] = "typed_not_saved";
-    else if (f.fact === "ein") out[f.key] = "facts";
+    else if (f.fact === "ein") out[f.key] = start[f.key] ? "facts" : v.save_ein === "on" ? "typed_saved" : "typed_not_saved";
     else if (f.fact && start[f.key]) out[f.key] = (v[f.key] ?? "") === start[f.key] ? "facts" : "facts_edited";
     else if ((v[f.key] ?? "") !== "") out[f.key] = "typed";
   }
@@ -150,7 +165,7 @@ export function fillW9Form(doc: PDFDocument, v: Values, facts: Facts) {
     text("f1_12[0]", d.slice(3, 5));
     text("f1_13[0]", d.slice(5));
   } else {
-    const d = (facts.ein ?? "").replace(/-/g, "");
+    const d = einFor(v, facts).replace(/-/g, "");
     text("f1_14[0]", d.slice(0, 2));
     text("f1_15[0]", d.slice(2));
   }

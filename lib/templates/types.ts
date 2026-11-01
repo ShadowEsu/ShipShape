@@ -9,6 +9,8 @@ export interface FieldDef {
   options?: { value: string; label: string }[];
   required?: boolean;
   max?: number;
+  /** The browser's autofill hint (HTML autocomplete token); secrets are always `off`. */
+  autoComplete?: string;
   /** Prefilled from this business fact (shown with a source chip). */
   fact?: ProfileKey | "ein" | "city_state_zip" | "address";
   /** Only shown when another field has this value. */
