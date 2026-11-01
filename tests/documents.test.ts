@@ -285,7 +285,7 @@ describe("W-9 fill", () => {
     // Times-Italic's A is 0.611 em: 32 at 13 pt are 254.2 pt, 33 are 262.1, past the 255 before the Date label.
     expect(await checkFill(sample, t.id, { ...base, signature: "A".repeat(32) })).toEqual({});
     expect(await checkFill(sample, t.id, { ...base, signature: "A".repeat(33) })).toEqual({
-      signature: "This won't fit on the form's line, which holds about 39 characters. Shorten it so nothing is cut off the PDF.",
+      signature: "This signature won't fit on the form's line, which holds about 39 characters. Shorten it so it doesn't run into the date.",
     });
   });
 

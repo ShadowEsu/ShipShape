@@ -117,9 +117,14 @@ async function fitsBox(value: string, fits: NonNullable<FieldDef["fits"]>): Prom
   return layoutMultilineText(value, { alignment: TextAlignment.Left, fontSize: fits.size, font, bounds: { x: 1, y: 1, width: fits.width, height: fits.size * fits.lines * 1.2 } }).lines.length <= fits.lines;
 }
 
-/** What to say when a value won't fit its box. About how many characters a line holds: mixed text averages half the size per character. */
+/**
+ * What to say when a value won't fit its box. About how many characters a line holds: mixed text
+ * averages half the size per character. A typed signature (the italic one ShipShape draws) isn't cut
+ * off but runs into the printed "Date", so it says that (Design, wave 11).
+ */
 function tooWide(fits: NonNullable<FieldDef["fits"]>): string {
   const chars = Math.floor(fits.width / (fits.size / 2));
+  if (fits.italic) return `This signature won't fit on the form's line, which holds about ${chars} characters. Shorten it so it doesn't run into the date.`;
   return fits.lines === 1
     ? `This won't fit on the form's line, which holds about ${chars} characters. Shorten it so nothing is cut off the PDF.`
     : `This won't fit in the form's box, which holds ${fits.lines} lines of about ${chars} characters. Shorten it so nothing is cut off the PDF.`;

@@ -62,7 +62,7 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Waitlist:</strong> the email address you gave us, and whether you asked to hear about Collect, only to tell you when
-          ShipShape opens or, if you asked, when Collect goes on sale.
+          ShipShape opens or, if you asked, when Collect goes on sale. Deleting your account removes it too.
         </li>
       </ul>
 
@@ -120,7 +120,7 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Sample workspaces:</strong> a &ldquo;Try the sample&rdquo; visit makes a workspace of made-up data and no email
-          address. It is deleted by itself two days after it was made, files included.
+          address. It is deleted by itself within two days of being made, files included.
         </li>
         <li>
           Deleted data can remain in our providers&apos; backups until those backups expire; the exact period will be stated here
