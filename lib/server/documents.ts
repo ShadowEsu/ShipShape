@@ -95,6 +95,12 @@ export async function listDocuments(ctx: Ctx, opts: ListOpts = {}): Promise<DocR
 /** How many documents Home lists under "Needs attention" at once; the rest are a count and a link to the list. */
 export const ATTENTION_MAX = 20;
 
+/** A document on Home's "Needs attention": the date that put it there, and whether that's its expiry or a renewal notice. */
+export interface AttentionRow extends DocRow {
+  attention_kind: "expiry" | "renewal";
+  attention_on: string;
+}
+
 export interface HomeSummary {
   /** Active documents, and how many of those are current (no date, or more than 30 days left). */
   total: number;
@@ -104,11 +110,11 @@ export interface HomeSummary {
   /** The first document in the list's order (none when there are none): the setup step's "start with" document. */
   first: { id: string; title: string } | null;
   /**
-   * Expired or expiring, at most ATTENTION_MAX, most urgent first: the ones that can still be renewed in time
-   * (soonest first), then the ones that have lapsed (most recent first). `attentionTotal` counts them all,
-   * `lapsedTotal` those of them that have lapsed.
+   * Expired, expiring, or with a renewal notice due in the next 30 days; at most ATTENTION_MAX, most urgent first:
+   * what can still be acted on in time (soonest date first), then what has lapsed (most recent first).
+   * `attentionTotal` counts them all, `lapsedTotal` those that have lapsed.
    */
-  attention: DocRow[];
+  attention: AttentionRow[];
   attentionTotal: number;
   lapsedTotal: number;
 }
@@ -120,21 +126,28 @@ const SUMMARY_SQL = `
          coalesce(bool_or(d.expires_on is not null or d.renews_on is not null), false) as has_dates
   from app.documents d where d.org_id = $2 and d.status = 'active'`;
 const FIRST_SQL = `select d.id, d.title from app.documents d where d.org_id = $1 and d.status = 'active'` + LIST_ORDER + " limit 1";
-// The totals come from the same statement as the rows (window counts run before the limit), so the
-// "N more" line can't disagree with the list when a document lands between two statements.
+// Each document once: a lapsed expiry always decides the row; otherwise the sooner of an expiring expiry and an
+// upcoming renewal date (today..+30; a passed renewal date drops off Home, Deadlines keeps it). The totals come from
+// the same statement as the rows (window counts run before the limit), so the "N more" line can't disagree with the list.
 const ATTENTION_SQL =
-  `select a.*, count(*) over ()::int as attention_total, count(*) filter (where a.validity = 'expired') over ()::int as lapsed_total from (` +
+  `with a as (` +
   DOC_SELECT +
   LIST_WHERE +
-  ` and d.expires_on <= $1::date + 30) a` +
-  ` order by (a.validity = 'expired'), abs(a.expires_on::date - $1::date), a.created_at::timestamptz desc, a.id limit $6`;
+  ` and (d.expires_on <= $1::date + 30 or d.renews_on between $1::date and $1::date + 30))` +
+  ` select a.*, k.attention_kind, k.attention_on::text as attention_on,` +
+  ` count(*) over ()::int as attention_total, count(*) filter (where a.validity = 'expired') over ()::int as lapsed_total` +
+  ` from a cross join lateral (select case when a.validity in ('expired', 'expiring')` +
+  ` and (a.renews_on is null or a.renews_on::date < $1::date or a.renews_on::date > $1::date + 30 or a.expires_on::date <= a.renews_on::date)` +
+  ` then 'expiry' else 'renewal' end as attention_kind) k0` +
+  ` cross join lateral (select k0.attention_kind, case when k0.attention_kind = 'expiry' then a.expires_on::date else a.renews_on::date end as attention_on) k` +
+  ` order by (a.validity = 'expired'), abs(k.attention_on - $1::date), a.created_at::timestamptz desc, a.id limit $6`;
 
 /** What Home needs, without reading every document: Pro has no document limit. */
 export async function homeSummary(ctx: Ctx): Promise<HomeSummary> {
   return asUser(ctx.userId, async (tx) => {
     const [counts] = await tx.query<{ total: number; current: number; has_w9: boolean; has_dates: boolean }>(SUMMARY_SQL, [ctx.today, ctx.orgId]);
     const [first] = await tx.query<{ id: string; title: string }>(FIRST_SQL, [ctx.orgId]);
-    const attention = await tx.query<DocRow & { attention_total: number; lapsed_total: number }>(ATTENTION_SQL, [...listParams(ctx, {}), ATTENTION_MAX]);
+    const attention = await tx.query<AttentionRow & { attention_total: number; lapsed_total: number }>(ATTENTION_SQL, [...listParams(ctx, {}), ATTENTION_MAX]);
     return {
       total: counts.total,
       current: counts.current,

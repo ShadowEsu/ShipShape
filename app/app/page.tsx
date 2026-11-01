@@ -148,7 +148,16 @@ export default async function AppHome() {
                 <h3 className="eyebrow">{g.label}</h3>
                 <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
                   {g.rows.map((d) => {
-                    const daysLeft = d.expires_on ? Math.round((Date.parse(d.expires_on) - Date.parse(ctx.today)) / 86_400_000) : 0;
+                    // Days from today to the date that put the document here (its expiry, or a renewal notice).
+                    const days = Math.round((Date.parse(d.attention_on) - Date.parse(ctx.today)) / 86_400_000);
+                    const renewal = d.attention_kind === "renewal";
+                    const state = renewal
+                      ? `Renewal notice due ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}.`
+                      : d.validity === "expired"
+                        ? "It has lapsed."
+                        : days === 0
+                          ? "Expires today."
+                          : `${days} ${days === 1 ? "day" : "days"} left.`;
                     return (
                       <li key={d.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                         <span className="min-w-0 space-y-1">
@@ -157,15 +166,13 @@ export default async function AppHome() {
                             <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
                             <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
                           </span>
-                          <span className="block text-sm text-ink-2">
-                            {d.validity === "expired" ? "It has lapsed." : daysLeft === 0 ? "Expires today." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`}
-                          </span>
+                          <span className="block text-sm text-ink-2">{state}</span>
                         </span>
                         <Link
-                          href={canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
+                          href={renewal ? `/app/documents/${d.id}` : canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
                           className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline"
                         >
-                          {canUpload ? "Add the renewed copy" : "Update its dates"}
+                          {renewal ? "Open it" : canUpload ? "Add the renewed copy" : "Update its dates"}
                         </Link>
                       </li>
                     );

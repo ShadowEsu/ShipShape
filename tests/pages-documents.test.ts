@@ -286,6 +286,58 @@ describe("home", () => {
     expect(text).toMatch(/Week permit.*7 days left\./);
     expect(text).not.toContain("0 days left");
   });
+
+  it("a renewal notice due in the next 30 days is 'Coming up', sorted with the expiries by date, with its own words and 'Open it'; a passed one drops off", async () => {
+    const ctx = await signIn("home-renewals@example.com");
+    const ins = (title: string, expires: number | null, renews: number | null) =>
+      db.root(async (tx) => {
+        const [row] = await tx.query<{ id: string }>(
+          "insert into app.documents (org_id, title, kind, expires_on, renews_on) values ($1, $2, 'agreement', case when $4::int is null then null else $3::date + $4::int end, case when $5::int is null then null else $3::date + $5::int end) returning id",
+          [ctx.orgId, title, ctx.today, expires, renews],
+        );
+        return row.id;
+      });
+    const nda = await ins("Vendor NDA", null, 5);
+    await ins("Lease", 400, 0);
+    await ins("Old notice", null, -1);
+    await ins("Edge notice", null, 30);
+    await ins("Far notice", null, 31);
+    await ins("Permit", 3, null);
+    // Both dates in the window: the sooner one decides the row (the renewal here), and the document appears once.
+    await ins("Both soon", 25, 10);
+    const html = await homePage();
+    const text = textOf(html);
+    const at = (s: string) => text.indexOf(s);
+    expect(text).toMatch(/Vendor NDA.*Renewal notice due in 5 days\./);
+    expect(text).toMatch(/Lease.*Renewal notice due today\./);
+    expect(text).toMatch(/Both soon.*Renewal notice due in 10 days\./);
+    expect(text.split("Both soon")).toHaveLength(2);
+    expect(text).toMatch(/Edge notice.*Renewal notice due in 30 days\./);
+    expect(text).not.toContain("Old notice");
+    expect(text).not.toContain("Far notice");
+    // Sorted by date with the expiries: Lease (today), Permit (3 days), Vendor NDA (5), Both soon (10), Edge notice (30).
+    expect(at("Lease")).toBeLessThan(at("Permit"));
+    expect(at("Permit")).toBeLessThan(at("Vendor NDA"));
+    expect(at("Vendor NDA")).toBeLessThan(at("Both soon"));
+    expect(at("Both soon")).toBeLessThan(at("Edge notice"));
+    expect(text).toContain("Coming up");
+    expect(text).not.toContain("Already lapsed");
+    const attention = html.slice(html.indexOf("Needs attention"));
+    expect(actionsOf(attention).filter((a) => a.href?.startsWith(`/app/documents/${nda}`))).toEqual([{ tag: "a", label: "Open it", href: `/app/documents/${nda}` }]);
+    // The checklist's "Add an expiry date" is ticked by a renewal date too, and Home now agrees: that document is listed.
+    expect(text).not.toContain("Add an expiry date (to do)");
+  });
+
+  it("a lapsed expiry decides the row even with a renewal notice due", async () => {
+    const ctx = await signIn("home-lapsed-renewal@example.com");
+    await db.root((tx) =>
+      tx.query("insert into app.documents (org_id, title, kind, expires_on, renews_on) values ($1, 'Lapsed with notice', 'agreement', $2::date - 2, $2::date + 4)", [ctx.orgId, ctx.today]),
+    );
+    const text = textOf(await homePage());
+    expect(text).toMatch(/Already lapsed.*Lapsed with notice.*It has lapsed\./);
+    expect(text).not.toContain("Renewal notice");
+    expect(text).not.toContain("Coming up");
+  });
 });
 
 describe("business facts", () => {
