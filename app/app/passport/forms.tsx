@@ -59,19 +59,34 @@ function FieldError({ id, error }: { id: string; error?: string }) {
   );
 }
 
-export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc[]; days: readonly number[]; preselected: string[] }) {
+export function NewPassportForm({
+  docs,
+  days,
+  preselected,
+  initial = { label: "", days: Number.NaN },
+}: {
+  docs: PickableDoc[];
+  days: readonly number[];
+  preselected: string[];
+  /** What the person had typed before opening the preview (the preview's "Back" carries it in the address). */
+  initial?: { label: string; days: number };
+}) {
   const [state, action, pending] = useActionState<PassportFormState, FormData>(makePassport, {});
   const typed = state.values;
   const errors = state.fieldErrors ?? {};
   const [url, setUrl] = useState<string | null>(null);
   const form = useRef<HTMLFormElement>(null);
+  const startLabel = typed?.label ?? initial.label;
+  const startDays = typed ? Number(typed.days) : days.includes(initial.days) ? initial.days : days[1];
   // The days picked since the page loaded (null: the default, or what was sent last).
   const [picked, setPicked] = useState<number | null>(null);
-  const chosen = picked ?? (typed ? Number(typed.days) : days[1]);
-  // Mirrors of the label and the ticked documents, for the "Who can open it" box.
-  const [label, setLabel] = useState(typed?.label ?? "");
+  const chosen = picked ?? startDays;
+  // Mirrors of the label and the ticked documents, for the "Who can open it" box and the preview's address.
+  const [label, setLabel] = useState(startLabel);
   const [ticked, setTicked] = useState<string[]>(typed?.docs ?? preselected);
   const tick = (id: string, on: boolean) => setTicked((old) => (on ? [...new Set([...old, id])] : old.filter((x) => x !== id)));
+  const chosenDocs = ticked.filter((id) => docs.some((d) => d.id === id));
+  const previewHref = `/app/passport/preview?${new URLSearchParams({ docs: chosenDocs.join(","), label, days: String(chosen) })}`;
 
   useEffect(() => {
     if (state.created) setUrl(`${window.location.origin}/p/${state.created.id}#${state.created.token}`);
@@ -107,7 +122,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
           required
           maxLength={120}
           placeholder="e.g. Northwind Builders onboarding"
-          defaultValue={typed?.label}
+          defaultValue={startLabel}
           onChange={(e) => setLabel(e.target.value)}
           className="input"
           aria-invalid={errors.label ? true : undefined}
@@ -147,13 +162,13 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
       <fieldset aria-describedby={[days.includes(chosen) ? "days-end" : null, errors.days ? "days-error" : null].filter(Boolean).join(" ") || undefined}>
         <legend className="label">The link stops working after</legend>
         <div className="mt-1 flex flex-wrap gap-2">
-          {days.map((d, i) => (
+          {days.map((d) => (
             <label key={d} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm has-[:checked]:border-ink">
               <input
                 type="radio"
                 name="days"
                 value={d}
-                defaultChecked={typed ? typed.days === String(d) : i === 1}
+                defaultChecked={d === startDays}
                 onChange={() => setPicked(d)}
                 className="accent-[var(--accent)]"
                 aria-invalid={errors.days ? true : undefined}
@@ -171,7 +186,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
         )}
         <FieldError id="days-error" error={errors.days} />
       </fieldset>
-      <WhoCanOpen label={label} documents={ticked.filter((id) => docs.some((d) => d.id === id)).length} taxId={docs.some((d) => d.holdsTaxId && ticked.includes(d.id))} />
+      <WhoCanOpen label={label} documents={chosenDocs.length} taxId={docs.some((d) => d.holdsTaxId && ticked.includes(d.id))} />
       {state.error && (
         <div role="alert" tabIndex={-1} className="space-y-2 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
           <p>{state.error}</p>
@@ -182,9 +197,16 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
           )}
         </div>
       )}
-      <button className="btn" disabled={pending}>
-        {pending ? "Making the link…" : "Make the link"}
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button className="btn" disabled={pending}>
+          {pending ? "Making the link…" : "Make the link"}
+        </button>
+        {chosenDocs.length > 0 && (
+          <Link href={previewHref} className="btn-ghost">
+            Preview what they&apos;ll see
+          </Link>
+        )}
+      </div>
     </form>
   );
 }
