@@ -119,9 +119,25 @@ export async function archive(data: FormData) {
 
 export interface SignFormState {
   error?: string;
+  /** The input the error is about: the form shows the message there and moves focus to it. */
+  field?: "signer_name" | "signer_email" | "days";
   created?: { id: string; token: string };
   /** What was typed, sent back with an error so the form shows it again after React resets it. */
   values?: { signer_name: string; signer_email: string; days: string };
+}
+
+/** requestSignature's input keys (zod's issue path) as the form's input names. */
+function signField(field: string | undefined): SignFormState["field"] {
+  switch (field) {
+    case "signerName":
+      return "signer_name";
+    case "signerEmail":
+      return "signer_email";
+    case "days":
+      return "days";
+    default:
+      return undefined;
+  }
 }
 
 export async function askToSign(_prev: SignFormState, data: FormData): Promise<SignFormState> {
@@ -138,7 +154,8 @@ export async function askToSign(_prev: SignFormState, data: FormData): Promise<S
     return { created };
   } catch (e) {
     const typed = (name: string) => String(data.get(name) ?? "");
-    return { error: problem(e).error, values: { signer_name: typed("signer_name"), signer_email: typed("signer_email"), days: typed("days") } };
+    const { error, field } = problem(e);
+    return { error, field: signField(field), values: { signer_name: typed("signer_name"), signer_email: typed("signer_email"), days: typed("days") } };
   }
 }
 

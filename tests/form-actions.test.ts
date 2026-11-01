@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { turnOffVendorLink } from "@/app/app/collect/actions";
-import { archive } from "@/app/app/documents/actions";
+import { archive, askToSign } from "@/app/app/documents/actions";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
 import { getDocument, setArchived, uploadDocument } from "@/lib/server/documents";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
@@ -94,5 +94,29 @@ describe("plain form actions", () => {
 
     expect(await sentTo(turnOffVendorLink(turnOff))).toBe(`/app/collect/${vendorId}`);
     expect(await sentTo(turnOffVendorLink(turnOff))).toBe(`/app/collect/${vendorId}?error=off`);
+  });
+
+  it("a signing request with a bad email names the email field and keeps what was typed; a workspace-wide problem names no field", async () => {
+    const ctx = await signIn("signer@example.com");
+    const id = await uploadDocument(ctx, { title: "Lease", kind: "agreement" }, PDF);
+
+    const bad = await askToSign({}, form({ id, signer_name: "Pat Lee", signer_email: "pat-at-example", days: "14" }));
+    expect(bad).toEqual({
+      error: "Enter the signer's email address.",
+      field: "signer_email",
+      values: { signer_name: "Pat Lee", signer_email: "pat-at-example", days: "14" },
+    });
+
+    const noName = await askToSign({}, form({ id, signer_name: " ", signer_email: "pat@example.com", days: "14" }));
+    expect(noName.field).toBe("signer_name");
+    expect(noName.error).toBe("Who should sign?");
+
+    // A valid form on a Free workspace meets the plan gate: nothing on the form is wrong, so the message stands on its own.
+    const gated = await askToSign({}, form({ id, signer_name: "Pat Lee", signer_email: "pat@example.com", days: "14" }));
+    expect(gated).toEqual({
+      error: "Asking for signatures is part of Pro.",
+      field: undefined,
+      values: { signer_name: "Pat Lee", signer_email: "pat@example.com", days: "14" },
+    });
   });
 });

@@ -43,12 +43,18 @@ function Status({ state, savedText }: { state: FormState; savedText: string }) {
   return null;
 }
 
+/** What the field helpers need from a form's state: which input the error is about, and the message. */
+interface FieldState {
+  error?: string;
+  field?: string;
+}
+
 /** Marks the field an error is about as invalid and points it at the message under it. */
-function invalid(state: FormState, name: string) {
+function invalid(state: FieldState, name: string) {
   return state.field === name ? { "aria-invalid": true, "aria-describedby": `${name}-error` } : {};
 }
 
-function FieldError({ state, name }: { state: FormState; name: string }) {
+function FieldError({ state, name }: { state: FieldState; name: string }) {
   if (state.field !== name) return null;
   return (
     <p id={`${name}-error`} className="mt-1 text-sm text-bad">
@@ -58,7 +64,7 @@ function FieldError({ state, name }: { state: FormState; name: string }) {
 }
 
 /** Moves focus to the field an error is about, once for each result the form gets back. */
-function useFocusField(state: FormState, id: string | undefined) {
+function useFocusField(state: FieldState, id: string | undefined) {
   useEffect(() => {
     if (id) document.getElementById(id)?.focus();
   }, [state, id]);
@@ -201,10 +207,14 @@ export function VersionForm({ id }: { id: string }) {
   );
 }
 
+/** The sign form's input ids by input name, for focus. */
+const SIGN_IDS = { signer_name: "signer-name", signer_email: "signer-email", days: "sign-days" };
+
 export function SignRequestForm({ id, days, demo }: { id: string; days: readonly number[]; demo: boolean }) {
   const [state, action, pending] = useActionState<SignFormState, FormData>(askToSign, {});
   const [url, setUrl] = useState<string | null>(null);
   const created = state.created;
+  useFocusField(state, state.field && SIGN_IDS[state.field]);
 
   useEffect(() => {
     if (created) setUrl(`${window.location.origin}/s/${created.id}#${created.token}`);
@@ -240,27 +250,30 @@ export function SignRequestForm({ id, days, demo }: { id: string; days: readonly
         <label htmlFor="signer-name" className="label">
           Signer&apos;s name
         </label>
-        <input id="signer-name" name="signer_name" required maxLength={120} autoComplete="off" defaultValue={state.values?.signer_name} className="input" />
+        <input id="signer-name" name="signer_name" required maxLength={120} autoComplete="off" defaultValue={state.values?.signer_name} className="input" {...invalid(state, "signer_name")} />
+        <FieldError state={state} name="signer_name" />
       </div>
       <div>
         <label htmlFor="signer-email" className="label">
           Signer&apos;s email
         </label>
-        <input id="signer-email" name="signer_email" type="email" required maxLength={200} autoComplete="off" defaultValue={state.values?.signer_email} className="input" />
+        <input id="signer-email" name="signer_email" type="email" required maxLength={200} autoComplete="off" defaultValue={state.values?.signer_email} className="input" {...invalid(state, "signer_email")} />
+        <FieldError state={state} name="signer_email" />
       </div>
       <div>
         <label htmlFor="sign-days" className="label">
           Open for
         </label>
-        <select key={state.values?.days} id="sign-days" name="days" defaultValue={state.values?.days ?? days[1]} className="input">
+        <select key={state.values?.days} id="sign-days" name="days" defaultValue={state.values?.days ?? days[1]} className="input" {...invalid(state, "days")}>
           {days.map((d) => (
             <option key={d} value={d}>
               {d} days
             </option>
           ))}
         </select>
+        <FieldError state={state} name="days" />
       </div>
-      {state.error && (
+      {state.error && !state.field && (
         <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
           {state.error}
         </p>
