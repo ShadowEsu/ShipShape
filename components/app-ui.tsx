@@ -58,7 +58,7 @@ export function EmptyState({
       <p className="font-serif text-2xl font-semibold">{title}</p>
       <p className="max-w-prose text-sm text-ink-2">{body}</p>
       {example && (
-        <div aria-hidden="true" className="w-full max-w-prose opacity-60 select-none">
+        <div aria-hidden="true" className="w-full max-w-prose select-none">
           <p className="mb-1 font-mono text-xs tracking-wide text-ink-3 uppercase">Example</p>
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line text-sm text-ink-3">
             {example.map((row) => (
