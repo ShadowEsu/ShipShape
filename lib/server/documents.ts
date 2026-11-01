@@ -167,9 +167,10 @@ export async function firstDocument(ctx: Ctx): Promise<{ id: string; title: stri
   return row ?? null;
 }
 
-const BY_ID_SQL = DOC_SELECT + ` where d.org_id = $2 and d.status = 'active' and d.id = any($3::uuid[])`;
+// Ordered as passport_open lists a link's documents (0003), so the preview shows them as the link will (W14-10).
+const BY_ID_SQL = DOC_SELECT + ` where d.org_id = $2 and d.status = 'active' and d.id = any($3::uuid[]) order by d.kind, d.title`;
 
-/** The given active documents of this workspace (others' ids and unknown ids drop out), in no particular order. */
+/** The given active documents of this workspace (others' ids and unknown ids drop out), in the order a passport link lists them. */
 export async function documentsById(ctx: Ctx, ids: readonly string[]): Promise<DocRow[]> {
   if (ids.length === 0) return [];
   return asUser(ctx.userId, (tx) => tx.query<DocRow>(BY_ID_SQL, [ctx.today, ctx.orgId, ids]));
@@ -392,6 +393,10 @@ async function checked(ctx: Ctx, templateId: string, values: Values) {
         ? "Only owners and admins can save business facts. Untick this, or ask one of them to add the EIN."
         : "Business facts open after our security review. Untick this to make the W-9 with the number typed above.";
   }
+  // A sample never takes a real tax number (G3): its EIN is the made-up one, and an SSN can only be the visitor's own (W14-2).
+  if (ctx.demo && values.tin_kind === "ssn" && t.fields.some((f) => f.key === "ssn")) {
+    errors.ssn = "This sample uses its made-up EIN, so choose EIN. Your own SSN can go in once real accounts open.";
+  }
   return { t, facts, errors };
 }
 
@@ -406,7 +411,7 @@ export async function fillTemplate(ctx: Ctx, templateId: string, values: Values,
   if (!acknowledged) errors._ack = "Check the box to confirm you've reviewed the document.";
   if (Object.keys(errors).length) return { ok: false, errors };
   const start = prefill(t, facts, ctx.today);
-  const out = await render(t, values, facts, ctx.today);
+  const out = await render(t, values, facts, ctx.today, ctx.demo);
   // An EIN typed here with "also save it" goes into Business facts (encrypted) once the form rendered, before the document is stored.
   if (!facts.ein && values.tin_kind === "ein" && values.save_ein === "on" && t.fields.some((f) => f.fact === "ein")) {
     await saveEin(ctx, values.ein ?? "");

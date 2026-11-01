@@ -146,17 +146,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <p className="text-sm text-ink-2">One ZIP file with:</p>
         <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
           <li>every version of every document, with its details and fingerprint</li>
-          <li>your business facts (the tax ID only as its last 4 digits)</li>
+          <li>your business facts (the tax ID only as its last 4 digits; a W-9 you made holds the full number)</li>
           <li>your vendors and the files they sent</li>
-          <li>your passport links, with who opened them and what was downloaded</li>
+          <li>your passport links, with when they were opened and what was downloaded</li>
           <li>your signature requests</li>
           <li>the browsers you&apos;ve signed in on and the agreements you&apos;ve accepted</li>
           <li>the workspace history</li>
         </ul>
         {!ctx.demo && (
           <p className="text-sm text-ink-3">
-            Showing your full EIN, exporting and deleting need a sign-in from the last {RECENT_AUTH_SECONDS / 60} minutes. If it has been
-            longer, ShipShape asks you to sign in again first.
+            Showing your full EIN in Business facts, exporting and deleting need a sign-in from the last {RECENT_AUTH_SECONDS / 60} minutes;
+            otherwise ShipShape asks you to sign in again first. A W-9 you made carries the full number, as the IRS form requires, so anyone
+            in this workspace who opens it can read it.
           </p>
         )}
         {exportError && (

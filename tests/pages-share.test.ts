@@ -17,6 +17,7 @@ import { DeleteRefused } from "@/app/app/settings/forms";
 import SettingsPage from "@/app/app/settings/page";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
+import { setArchived } from "@/lib/server/documents";
 import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
@@ -267,6 +268,22 @@ describe("Passport", () => {
     expect(actionsOf(step2?.[2] ?? "").map((a) => a.label)).toEqual(["Turn off the link", "Cancel"]);
   });
 
+  it("a working link whose documents were all archived says it shows nothing, and keeps Turn off (W14-3)", async () => {
+    const ctx = await signIn("passport-emptied@example.com");
+    const doc = await addDoc(ctx, "Liability certificate");
+    const { id } = await createPassport(ctx, { label: "Northwind", days: 7, documentIds: [doc] });
+    const detail = () => renderPage(PassportDetail, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
+    const notice = "Every document on this link was archived, so it shows nothing. Turn it off, or make a new link.";
+    expect(textOf(await detail())).not.toContain(notice);
+    await setArchived(ctx, doc, true);
+    const html = await detail();
+    expect(textOf(html)).toContain(notice);
+    expect(actionsOf(html).map((a) => a.label)).toContain("Turn off this link");
+    // Restoring doesn't put it back, so the notice stays.
+    await setArchived(ctx, doc, false);
+    expect(textOf(await detail())).toContain(notice);
+  });
+
   it("a made link ends calmly: who it's for, what it shares, what happens next, and only Copy link", async () => {
     const html = await renderPage(PassportReady, { label: "Northwind onboarding", documents: 2, days: 30, url: "https://example.test/p/x#y" });
     expect(textOf(html)).toContain("Your link for Northwind onboarding is ready It shares 2 documents for 30 days.");
@@ -484,10 +501,12 @@ describe("Settings", () => {
     expect(actionsOf(html).find((a) => a.label === "Check again")?.href).toBe("/app/settings?billing=success");
   });
 
-  it("says up front which actions need a recent sign-in and how recent, before anything fails", async () => {
+  it("says up front which actions need a recent sign-in and how recent, and that a W-9 carries the full EIN (W14-1)", async () => {
     await signIn("settings-rule@example.com");
     const html = await settings();
-    expect(textOf(html)).toContain(`Showing your full EIN, exporting and deleting need a sign-in from the last ${RECENT_AUTH_SECONDS / 60} minutes.`);
+    expect(textOf(html)).toContain(
+      `Showing your full EIN in Business facts, exporting and deleting need a sign-in from the last ${RECENT_AUTH_SECONDS / 60} minutes; otherwise ShipShape asks you to sign in again first. A W-9 you made carries the full number, as the IRS form requires, so anyone in this workspace who opens it can read it.`,
+    );
     expect(RECENT_AUTH_SECONDS / 60).toBe(10);
   });
 
@@ -589,7 +608,7 @@ describe("Settings", () => {
     await signIn("settings-export-list@example.com");
     const text = textOf(await settings());
     expect(text).toContain(
-      "One ZIP file with: every version of every document, with its details and fingerprint your business facts (the tax ID only as its last 4 digits) your vendors and the files they sent your passport links, with who opened them and what was downloaded your signature requests the browsers you've signed in on and the agreements you've accepted the workspace history",
+      "One ZIP file with: every version of every document, with its details and fingerprint your business facts (the tax ID only as its last 4 digits; a W-9 you made holds the full number) your vendors and the files they sent your passport links, with when they were opened and what was downloaded your signature requests the browsers you've signed in on and the agreements you've accepted the workspace history",
     );
     expect(text).toContain("This ends every session, here and everywhere else.");
     expect(text).not.toContain("change your password");

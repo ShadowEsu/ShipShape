@@ -36,12 +36,15 @@ export default async function FactsPage() {
       </section>
       <section className="card space-y-3">
         <h2 className="font-semibold">Employer identification number (EIN)</h2>
-        <EinPanel masked={maskEin(profile.einLast4)} readOnly={readOnly} />
+        <EinPanel masked={maskEin(profile.einLast4)} readOnly={readOnly} sample={ctx.demo} />
       </section>
-      <p className="text-xs text-ink-3">
-        We don&apos;t keep social security numbers in your business facts. If a form needs one, you type it for that form, and it
-        is saved only inside that document&apos;s PDF.
-      </p>
+      {/* A sample takes no SSN (W14-2), so this applies to real workspaces only. */}
+      {!ctx.demo && (
+        <p className="text-xs text-ink-3">
+          We don&apos;t keep social security numbers in your business facts. If a form needs one, you type it for that form, and it
+          is saved only inside that document&apos;s PDF.
+        </p>
+      )}
     </div>
   );
 }

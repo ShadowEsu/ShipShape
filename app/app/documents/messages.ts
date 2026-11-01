@@ -13,6 +13,11 @@ export function archiveQuestion(signers: string[]): string {
   return `Archiving withdraws ${openRequestsFor(signers)}. Restoring the document won't bring ${them} back; you'd send ${them} again.`;
 }
 
+/** Under Archive (and in its confirm) while the document is on links that still work: archiving takes it off them for good (0041; Design, wave 14). */
+export function archiveLinksWarning(links: number): string {
+  return `Archiving takes it off ${links} passport ${links === 1 ? "link" : "links"} for good; restoring won't add it back.`;
+}
+
 /** Under the Add version file field, only while a request is open: a warning, not a question (Design, wave 8 #7). */
 export function versionWarning(signers: string[]): string {
   return `Adding a version withdraws ${openRequestsFor(signers)}.`;

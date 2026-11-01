@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Notice, PageHeader } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { DOC_KINDS } from "@/lib/server/documents";
-import { getPassport } from "@/lib/server/passport";
+import { getPassport, PASSPORT_ACCESS_SHOWN } from "@/lib/server/passport";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf, timeOf } from "@/lib/today";
 import { turnOff } from "../actions";
@@ -53,7 +53,11 @@ export default async function PassportDetail({ params, searchParams }: { params:
           </Link>
         </div>
       ) : (
-        <p className="text-ink-2">Works until {dayOf(p.link.expires_at, zone)}. The link itself was shown once when you made it.</p>
+        <>
+          <p className="text-ink-2">Works until {dayOf(p.link.expires_at, zone)}. The link itself was shown once when you made it.</p>
+          {/* Archiving takes a document off every link (0041), so a link can end up holding nothing. */}
+          {p.documents.length === 0 && <Notice>Every document on this link was archived, so it shows nothing. Turn it off, or make a new link.</Notice>}
+        </>
       )}
 
       <section className="card space-y-2">
@@ -71,7 +75,7 @@ export default async function PassportDetail({ params, searchParams }: { params:
       </section>
 
       <section className="card space-y-2">
-        <h2 className="font-semibold">Who opened it</h2>
+        <h2 className="font-semibold">When it was opened</h2>
         {p.access.length === 0 ? (
           <p className="text-sm text-ink-3">Nobody has opened this link yet.</p>
         ) : (
@@ -92,6 +96,7 @@ export default async function PassportDetail({ params, searchParams }: { params:
             ))}
           </ol>
         )}
+        {p.moreAccess && <p className="text-xs text-ink-3">Showing the latest {PASSPORT_ACCESS_SHOWN}. Your export has every one.</p>}
       </section>
 
       {/* Turning off can't be undone, so it asks once first. */}

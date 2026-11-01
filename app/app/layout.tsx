@@ -39,8 +39,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
             {ws.demo && (
               <p className="border-b border-line bg-warn-soft px-4 py-2 text-center text-xs text-warn">
-                Sample workspace: every business, person and number here is made up. Uploading real documents is off until our
-                security review is done.
+                Sample workspace: the business, people and documents are made up, and it never takes real files. Don&apos;t type real tax
+                numbers or personal details here.
               </p>
             )}
           </section>

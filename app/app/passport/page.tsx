@@ -49,7 +49,8 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
               title: d.title,
               kindLabel: DOC_KINDS[d.kind],
               note: d.validity === "expired" ? "expired" : d.validity === "expiring" ? "expires soon" : null,
-              holdsTaxId: d.kind === "w9",
+              // A filled W-9 keeps its template whatever kind it's filed under (W14-6).
+              holdsTaxId: d.kind === "w9" || d.template_id === "irs-w9",
             }))}
           />
         </section>

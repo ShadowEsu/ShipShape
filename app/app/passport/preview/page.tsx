@@ -26,13 +26,10 @@ export default async function PassportPreviewPage({ searchParams }: { searchPara
   const days = PASSPORT_DAYS.find((d) => String(d) === q.days) ?? PASSPORT_DAYS[1];
   const back = `/app/passport?${new URLSearchParams({ docs: ids.join(","), label, days: String(days) })}`;
 
-  // Only this workspace's documents, in the order they were ticked; unknown ids (or another workspace's) drop out.
+  // Only this workspace's documents, in the order the link will list them (by kind, then title); unknown ids (or another workspace's) drop out.
   const mine = await documentsById(ctx, ids);
   const latest = new Map(mine.map((m) => [m.id, m.versions]));
-  const documents = ids.flatMap((id) => {
-    const d = mine.find((m) => m.id === id);
-    return d ? [{ id: d.id, title: d.title, kind: d.kind, kindLabel: DOC_KINDS[d.kind], issuer: d.issuer, issued_on: d.issued_on, expires_on: d.expires_on }] : [];
-  });
+  const documents = mine.map((d) => ({ id: d.id, title: d.title, kind: d.kind, kindLabel: DOC_KINDS[d.kind], issuer: d.issuer, issued_on: d.issued_on, expires_on: d.expires_on }));
   const passport = {
     orgName: ctx.name,
     label: label || "Who is it for?",
