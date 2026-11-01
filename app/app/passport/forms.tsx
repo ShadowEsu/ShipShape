@@ -65,7 +65,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
   }
 
   return (
-    <form ref={form} action={action} className="space-y-5">
+    <form ref={form} action={action} className="space-y-5" noValidate>
       <div>
         <label htmlFor="label" className="label">
           Who is it for?

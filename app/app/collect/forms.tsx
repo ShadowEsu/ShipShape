@@ -37,7 +37,7 @@ export function NewVendorForm({ kinds }: { kinds: { key: string; label: string }
   const errors = state.fieldErrors ?? {};
   const form = useFocusFirstError(state);
   return (
-    <form ref={form} action={action} className="space-y-5">
+    <form ref={form} action={action} className="space-y-5" noValidate>
       <div>
         <label htmlFor="vendor-name" className="label">
           Vendor or subcontractor
@@ -125,7 +125,7 @@ export function VendorLinkForm({ vendorId, vendorName, days }: { vendorId: strin
 
   if (url && state.link) return <VendorLinkReady vendorName={vendorName} days={state.link.days} url={url} />;
   return (
-    <form ref={form} action={action} className="space-y-4">
+    <form ref={form} action={action} className="space-y-4" noValidate>
       <input type="hidden" name="vendor" value={vendorId} />
       <fieldset>
         <legend className="label">The link stops working after</legend>

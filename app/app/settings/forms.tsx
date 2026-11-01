@@ -17,7 +17,7 @@ export function RenameWorkspaceForm({ name }: { name: string }) {
   const [state, action, pending] = useActionState<RenameState, FormData>(renameMyWorkspace, {});
   const form = useFocusFirstError(state);
   return (
-    <form ref={form} action={action} className="space-y-3">
+    <form ref={form} action={action} className="space-y-3" noValidate>
       <div>
         <label htmlFor="workspace-name" className="label">
           Name
@@ -64,7 +64,7 @@ export function DeleteAccountForm({ deleted, left }: { deleted: string[]; left: 
   const confirmError = state.field === "confirm" ? state.error : undefined;
   const formError = state.field ? undefined : state.error;
   return (
-    <form ref={form} action={action} className="space-y-3">
+    <form ref={form} action={action} className="space-y-3" noValidate>
       <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
         <dt className="text-ink-2">Deleted with everything in it</dt>
         <dd>{deleted.length ? deleted.join(", ") : "None: every workspace you're in has another owner"}</dd>

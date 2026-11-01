@@ -137,7 +137,7 @@ export function DetailsForm({ id, values }: { id: string; values: DetailValues }
   const [state, action, pending] = useActionState<FormState, FormData>(saveDetails, {});
   useFocusField(state, state.field);
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className="space-y-3" noValidate>
       <input type="hidden" name="id" value={id} />
       <DetailFields v={state.values ?? values} state={state} />
       <Status state={state} savedText="Saved. Reminders follow the new dates." />
@@ -153,7 +153,7 @@ export function NewDocumentForm() {
   useFocusField(state, state.field);
   const fileError = state.field === "file";
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="space-y-4" noValidate>
       <div>
         <label htmlFor="file" className="label">
           File
@@ -186,7 +186,7 @@ export function VersionForm({ id }: { id: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>(addVersion, {});
   useFocusField(state, state.field && "version-file");
   return (
-    <form action={action} className="space-y-2">
+    <form action={action} className="space-y-2" noValidate>
       <input type="hidden" name="id" value={id} />
       <label htmlFor="version-file" className="label">
         Upload a new version
@@ -234,7 +234,7 @@ export function SignRequestForm({ id, days, demo }: { id: string; days: readonly
   }
 
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className="space-y-3" noValidate>
       <input type="hidden" name="id" value={id} />
       <div>
         <label htmlFor="signer-name" className="label">

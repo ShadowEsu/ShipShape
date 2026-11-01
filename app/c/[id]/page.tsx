@@ -110,6 +110,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
                     action={`/c/${id}/upload?k=${encodeURIComponent(item.kind)}`}
                     encType="multipart/form-data"
                     className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+                    noValidate
                   >
                     <input type="hidden" name="kind" value={item.kind} />
                     <div className="grid gap-4 sm:grid-cols-2">
