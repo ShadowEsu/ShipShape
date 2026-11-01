@@ -16,6 +16,7 @@ export interface FactChip {
 /** A value as the review shows it: option labels, Yes/No, and never more than the last 4 digits of an SSN. */
 function shownValue(f: FieldDef, value: string): string {
   if (f.kind === "radio") return f.options?.find((o) => o.value === value)?.label ?? value;
+  if (f.key === "sign") return value === "on" ? "Yes" : "Not signed. The PDF's signature line stays empty.";
   if (f.kind === "checkbox") return value === "on" ? "Yes" : "No";
   if (f.key === "ssn") return value ? `•••-••-${value.replace(/[\s-]/g, "").slice(-4)}` : "";
   return value;
@@ -196,14 +197,15 @@ export function FillForm({
               {shownFields.map((f) => {
                 const value = values[f.key] ?? "";
                 const source = sourceOf(f, value, initial[f.key] ?? "", chips[f.key]);
+                // Under 640 px: label and Change on one line, then the value, then its source, each full width.
                 return (
-                  <div key={f.key} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-line py-2">
-                    <dt className="text-ink-2">{f.label}</dt>
-                    <dd className="min-w-0 flex-1 text-right">
+                  <div key={f.key} className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-1 border-b border-line py-2 sm:grid-cols-[auto_1fr_auto]">
+                    <dt className="order-1 text-ink-2">{f.label}</dt>
+                    <dd className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1 sm:text-right">
                       <span className="block break-words whitespace-pre-line">{shownValue(f, value) || "Left blank"}</span>
                       {source && <span className="block font-mono text-xs text-ink-3">{source}</span>}
                     </dd>
-                    <dd className="shrink-0">
+                    <dd className="order-2 justify-self-end sm:order-3">
                       <button type="button" onClick={() => change(f.key)} className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
                         Change<span className="sr-only"> {f.label}</span>
                       </button>
