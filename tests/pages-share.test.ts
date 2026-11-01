@@ -157,6 +157,9 @@ describe("Passport", () => {
     expect(text).not.toContain("Someone else's certificate");
     expect(html).toMatch(new RegExp(`<a href="/app/documents/${coi}/file" aria-label="Download Liability certificate"`));
     expect(actionsOf(html).find((a) => a.label === "← Back to the link")?.href).toBe(`/app/passport?docs=${coi}%2C${theirs}&amp;label=Northwind+onboarding&amp;days=7`);
+    // One page, one h1: the embedded recipient's page keeps its heading, a level down.
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html).toMatch(new RegExp(`<h2[^>]*>${ctx.name}</h2>`));
 
     const empty = textOf(await renderPage(PassportPreviewPage, { searchParams: Promise.resolve({}) }));
     expect(empty).toContain("No documents are ticked yet. Go back and tick at least one.");

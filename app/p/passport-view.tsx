@@ -13,6 +13,7 @@ export function PassportView({
   contact,
   page,
   fileHref,
+  heading: Heading = "h1",
 }: {
   passport: PublicPassport;
   /** The viewer's date, so "current" means current where they are. */
@@ -21,11 +22,13 @@ export function PassportView({
   /** The page's path, for the report link. */
   page: string;
   fileHref: (documentId: string) => string;
+  /** The workspace name's heading level: h1 on the public page; h2 inside the owner's preview, whose own title is the h1. */
+  heading?: "h1" | "h2";
 }) {
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="font-serif text-4xl font-semibold tracking-tight">{passport.orgName}</h1>
+        <Heading className="font-serif text-4xl font-semibold tracking-tight">{passport.orgName}</Heading>
         <p className="text-ink-2">
           {passport.label} · this link works until {fmtDay(passport.expiresAt)}
         </p>

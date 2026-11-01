@@ -55,7 +55,7 @@ export default async function PassportPreviewPage({ searchParams }: { searchPara
       ) : (
         <section aria-label="The recipient's page" className="rounded-3xl border border-line bg-canvas p-5 sm:p-8">
           <p className="eyebrow mb-6">ShipShape passport</p>
-          <PassportView passport={passport} today={ctx.today} contact={contactEmail()} page="/app/passport/preview" fileHref={(id) => `/app/documents/${id}/file`} />
+          <PassportView passport={passport} today={ctx.today} contact={contactEmail()} page="/app/passport/preview" fileHref={(id) => `/app/documents/${id}/file`} heading="h2" />
         </section>
       )}
     </div>
