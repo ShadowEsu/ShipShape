@@ -9,7 +9,7 @@ import PassportPage from "@/app/p/[id]/page";
 import { signProblem } from "@/app/s/[id]/messages";
 import SigningPage from "@/app/s/[id]/page";
 import { SignFormView } from "@/app/s/[id]/sign-form";
-import { fmtDay } from "@/components/app-ui";
+import { dayOf } from "@/lib/today";
 import { addVendor, createVendorLink, receiveFile } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
 import { listDocuments } from "@/lib/server/documents";
@@ -268,7 +268,7 @@ describe("an upload link's answers (/c)", () => {
     const rows = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => m[1]);
     const w9 = rows.find((r) => r.includes('id="file-w9"')) ?? "";
     const coi = rows.find((r) => r.includes('id="file-coi"')) ?? "";
-    expect(said(w9)).toContain(`W-9 ✓ Received ${fmtDay(row.at)}`);
+    expect(said(w9)).toContain(`W-9 ✓ Received ${dayOf(row.at, "UTC")}`);
     expect(actionsOf(w9)).toEqual([{ tag: "button", label: "Send a newer one", href: undefined }]);
     expect(said(coi)).toContain("Insurance certificate Not sent yet");
     expect(actionsOf(coi)).toEqual([{ tag: "button", label: "Send", href: undefined }]);
@@ -282,7 +282,7 @@ describe("the dates and labels on a passport and a signing page", () => {
     const [row] = await db.root((tx) => tx.query<{ at: string }>("select expires_at::text as at from app.share_links where id = $1", [id]));
     jar.set("ss_passport", token);
     const html = await renderPage(PassportPage, props(id));
-    expect(said(html)).toContain(`For Northwind · this link works until ${fmtDay(row.at)}`);
+    expect(said(html)).toContain(`For Northwind · this link works until ${dayOf(row.at, "UTC")}`);
     const labels = [...html.matchAll(/<a [^>]*aria-label="([^"]*)"[^>]*>\s*Download\s*<\/a>/g)].map((m) => textOf(m[1]));
     expect(labels.toSorted()).toEqual(docs.map((d) => `Download ${d.title}`).toSorted());
   });
@@ -293,6 +293,6 @@ describe("the dates and labels on a passport and a signing page", () => {
     const { id, token } = await requestSignature(sample, { documentId: nda.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
     const [row] = await db.root((tx) => tx.query<{ at: string }>("select expires_at::text as at from app.signature_requests where id = $1", [id]));
     jar.set("ss_sign", token);
-    expect(said(await renderPage(SigningPage, props(id)))).toContain(`Harbor Plumbing (sample) asked Jordan Lee to sign this document. You can sign until ${fmtDay(row.at)}.`);
+    expect(said(await renderPage(SigningPage, props(id)))).toContain(`Harbor Plumbing (sample) asked Jordan Lee to sign this document. You can sign until ${dayOf(row.at, "UTC")}.`);
   });
 });
