@@ -96,11 +96,14 @@ export function FillForm({
   initial,
   chips,
   ackText,
+  canSaveFacts,
 }: {
   template: TemplateInfo;
   initial: Record<string, string>;
   chips: Record<string, FactChip>;
   ackText: string;
+  /** Whether this person may save a typed EIN to Business facts (owners and admins of a real workspace, once real documents are open). */
+  canSaveFacts: boolean;
 }) {
   const [values, setValues] = useState(initial);
   const [ack, setAck] = useState(false);
@@ -123,8 +126,8 @@ export function FillForm({
     setValues((old) => ({ ...old, [k]: v }));
     setFixed((old) => (old.of === state ? { of: state, keys: old.keys.includes(k) ? old.keys : [...old.keys, k] } : { of: state, keys: [k] }));
   };
-  // "Also save it" only exists while no EIN is saved (a saved one arrives masked in `initial`).
-  const shownFields = template.fields.filter((f) => visible(f, values) && !(f.key === "save_ein" && initial.ein));
+  // "Also save it" only exists while no EIN is saved (a saved one arrives masked in `initial`) and for people who may save facts.
+  const shownFields = template.fields.filter((f) => visible(f, values) && !(f.key === "save_ein" && (initial.ein || !canSaveFacts)));
   const problems = shownFields.filter((f) => errors[f.key]).map((f) => ({ key: f.key, label: f.label, message: errors[f.key] }));
 
   // Each result with errors moves focus to the summary (its links lead to each field) or, on the review, to the approval box.

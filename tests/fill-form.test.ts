@@ -45,8 +45,8 @@ describe("formatSsn", () => {
 
 describe("the W-9's EIN step", () => {
   const w9 = templateById("irs-w9")!;
-  const render = async (initial: Record<string, string>) => {
-    const { prelude } = await prerender(createElement(FillForm, { template: w9, initial, chips: {}, ackText: "I agree." }));
+  const render = async (initial: Record<string, string>, canSaveFacts = true) => {
+    const { prelude } = await prerender(createElement(FillForm, { template: w9, initial, chips: {}, ackText: "I agree.", canSaveFacts }));
     return new Response(prelude).text();
   };
 
@@ -63,5 +63,11 @@ describe("the W-9's EIN step", () => {
     expect(html).not.toMatch(/<input[^>]*id="f-ein"/);
     expect(html).not.toContain('name="save_ein"');
     expect(html).toMatch(/<p[^>]*aria-labelledby="f-ein-label"[^>]*>••-•••6789<\/p>/);
+  });
+
+  it("for someone who can't change Business facts (a member, a sample workspace) the field is there but the save box isn't", async () => {
+    const html = await render({ tin_kind: "ein", ein: "" }, false);
+    expect(html).toMatch(/<input[^>]*id="f-ein"[^>]*type="password"/);
+    expect(html).not.toContain('name="save_ein"');
   });
 });
