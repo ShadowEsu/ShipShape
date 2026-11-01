@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ValidityChip } from "@/components/app-ui";
-import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { ATTENTION_MAX, DOC_KINDS, homeSummary } from "@/lib/server/documents";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { listPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
@@ -14,9 +14,8 @@ const TASKS = [
 
 export default async function AppHome() {
   const ctx = await requireWorkspace();
-  const [docs, profile, links] = await Promise.all([listDocuments(ctx), loadProfile(ctx), listPassports(ctx)]);
-  const attention = docs.filter((d) => d.validity === "expired" || d.validity === "expiring");
-  const current = docs.filter((d) => d.validity === "ok" || d.validity === "none").length;
+  const [docs, profile, links] = await Promise.all([homeSummary(ctx), loadProfile(ctx), listPassports(ctx)]);
+  const { attention, current, first } = docs;
   const canUpload = !ctx.demo && realDocsEnabled();
 
   // First-run checklist, worked out from what's actually in the workspace.
@@ -28,14 +27,14 @@ export default async function AppHome() {
       body: "People you share with see this name on your links.",
     },
     { done: Object.keys(profile.confirmed).length > 0, href: "/app/facts", title: "Confirm your business facts", body: "Name, address, EIN: typed once, used everywhere." },
-    { done: docs.length > 0, href: "/app/documents/new", title: "Add a document you already have", body: "A certificate, license or signed agreement." },
-    { done: docs.some((d) => d.template_id === "irs-w9"), href: "/app/make/irs-w9", title: "Fill a W-9", body: "The official IRS form, filled from your facts." },
+    { done: docs.total > 0, href: "/app/documents/new", title: "Add a document you already have", body: "A certificate, license or signed agreement." },
+    { done: docs.hasW9, href: "/app/make/irs-w9", title: "Fill a W-9", body: "The official IRS form, filled from your facts." },
     {
-      done: docs.some((d) => d.expires_on || d.renews_on),
+      done: docs.hasDates,
       // Straight to the Expires field: the first document (none has dates yet), or a new one.
-      href: docs[0] ? `/app/documents/${docs[0].id}#expires_on` : "/app/documents/new#expires_on",
+      href: first ? `/app/documents/${first.id}#expires_on` : "/app/documents/new#expires_on",
       title: "Add an expiry date",
-      body: docs[0] ? `Start with ${docs[0].title}, so ShipShape can warn you before it lapses.` : "So ShipShape can warn you before it lapses.",
+      body: first ? `Start with ${first.title}, so ShipShape can warn you before it lapses.` : "So ShipShape can warn you before it lapses.",
     },
     { done: links.length > 0, href: "/app/passport", title: "Share a passport link", body: "One link with the documents a customer asked for." },
   ];
@@ -115,15 +114,15 @@ export default async function AppHome() {
       <section className="space-y-3">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="font-serif text-2xl font-semibold">Needs attention</h2>
-          {docs.length > 0 && (
+          {docs.total > 0 && (
             <p className="text-sm text-ink-2">
-              {current} of {docs.length} documents current
+              {current} of {docs.total} documents current
             </p>
           )}
         </div>
         {attention.length === 0 ? (
           <p className="card text-sm text-ink-2">
-            {docs.length === 0
+            {docs.total === 0
               ? "Documents that have expired or expire in the next 30 days will be listed here, each with what renews it."
               : "Nothing has expired or expires in the next 30 days."}
           </p>
@@ -155,6 +154,15 @@ export default async function AppHome() {
               );
             })}
           </ul>
+        )}
+        {docs.attentionTotal > ATTENTION_MAX && (
+          <p className="text-sm text-ink-2">
+            The {ATTENTION_MAX} soonest are listed; {docs.attentionTotal - ATTENTION_MAX} more need attention.{" "}
+            <Link href="/app/documents" className="underline">
+              See all documents
+            </Link>{" "}
+            (soonest first).
+          </p>
         )}
       </section>
     </div>

@@ -199,6 +199,42 @@ describe("home", () => {
       { tag: "a", label: "Add the renewed copy", href: `/app/documents/${id}#version-file` },
     ]);
   });
+
+  it("on Pro with many lapsing documents: lists the 20 soonest, counts them all, and points at the list for the rest", async () => {
+    const ctx = await signIn("home-many@example.com");
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeMany', 'active', 'pro')", [ctx.orgId]));
+    // 22 lapsing (days 1..22 from today), 3 current (one dated far off, two undated).
+    await db.root(async (tx) => {
+      for (let i = 1; i <= 22; i++) {
+        await tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, $2, 'license', current_date + $3::int)", [ctx.orgId, `License ${String(i).padStart(2, "0")}`, i]);
+      }
+      await tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Far-off permit', 'permit', current_date + 400)", [ctx.orgId]);
+      await tx.query("insert into app.documents (org_id, title, kind) values ($1, 'Undated A', 'other'), ($1, 'Undated B', 'other')", [ctx.orgId]);
+    });
+    const html = await homePage();
+    const text = textOf(html);
+    expect(text).toMatch(/3 of 25 documents current/);
+    expect(text).toContain("License 01");
+    expect(text).toContain("License 20");
+    expect(text).not.toContain("License 21");
+    expect(text).toContain("The 20 soonest are listed; 2 more need attention.");
+    expect(actionsOf(html).filter((a) => a.label === "See all documents")).toEqual([{ tag: "a", label: "See all documents", href: "/app/documents" }]);
+    // The setup list reads the same summary: a document exists, with a date, and the first in list order is the soonest.
+    expect(text).not.toContain("Add an expiry date (to do)");
+  });
+
+  it("with up to 20 lapsing documents lists them all and says nothing about more", async () => {
+    const ctx = await signIn("home-twenty@example.com");
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeTwenty', 'active', 'pro')", [ctx.orgId]));
+    await db.root((tx) =>
+      tx.query("insert into app.documents (org_id, title, kind, expires_on) select $1, 'Permit ' || lpad(n::text, 2, '0'), 'permit', current_date + n from generate_series(1, 20) n", [ctx.orgId]),
+    );
+    const text = textOf(await homePage());
+    expect(text).toMatch(/0 of 20 documents current/);
+    expect(text).toContain("Permit 01");
+    expect(text).toContain("Permit 20");
+    expect(text).not.toContain("more need attention");
+  });
 });
 
 describe("business facts", () => {
