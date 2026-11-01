@@ -232,7 +232,9 @@ describe("home", () => {
     expect(text).not.toContain("Archived old");
     expect(text).toContain("The 20 most urgent are listed; 2 more need attention.");
     expect(text.split("renew it with the issuer")).toHaveLength(2);
-    expect(actionsOf(html).filter((a) => a.label === "See all documents")).toEqual([{ tag: "a", label: "See all documents", href: "/app/documents" }]);
+    // Past the cap, the only list that shows why each hidden row is there (expiry or renewal date) is Deadlines (Design).
+    expect(actionsOf(html).filter((a) => a.label === "See every date")).toEqual([{ tag: "a", label: "See every date", href: "/app/deadlines" }]);
+    expect(text).not.toContain("See all documents");
     // The setup list reads the same summary: a document exists and one has a date.
     expect(text).not.toContain("Add an expiry date (to do)");
   });
@@ -313,10 +315,13 @@ describe("home", () => {
     const at = (s: string) => text.indexOf(s);
     expect(text).toMatch(/Vendor NDA.*Renewal notice · \w{3} \d{1,2}, \d{4}.*Renewal notice due in 5 days\./);
     // The chip shows the row's reason: no "Current" or "No expiry date" chip beside a renewal notice (Design MUST).
-    expect(text).toMatch(/Lease.*Renewal notice · .*Renewal notice due today\./);
+    expect(text).toMatch(/Lease.*Renewal notice · .*Renewal notice due today\.\s+Open it/);
     expect(text).not.toMatch(/Lease.*Current ·/);
     expect(text).not.toMatch(/Vendor NDA.*No expiry date/);
-    expect(text).toMatch(/Both soon.*Renewal notice · .*Renewal notice due in 10 days\./);
+    // One chip, the row's reason; an expiry within 30 days is named on the state line (Design).
+    const in25 = new Date(Date.parse(ctx.today) + 25 * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+    expect(text).toMatch(new RegExp(`Both soon.*Renewal notice · .*Renewal notice due in 10 days\\. Expires ${in25}\\.`));
+    expect(text).not.toMatch(/Lease[^.]*\.\s*Expires /);
     expect(text).not.toMatch(/Both soon.*Expires soon/);
     expect(text.split("Both soon")).toHaveLength(2);
     expect(text).toMatch(/Edge notice.*Renewal notice due in 30 days\./);
