@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { fmtDay } from "@/components/app-ui";
 import { CopyLink } from "@/components/copy-link";
+import { plusDays } from "@/lib/today";
 import { makePassport, type PassportFormState } from "./actions";
 
 export interface PickableDoc {
@@ -63,11 +64,14 @@ export function NewPassportForm({
   docs,
   days,
   preselected,
+  today,
   initial = { label: "", days: Number.NaN },
 }: {
   docs: PickableDoc[];
   days: readonly number[];
   preselected: string[];
+  /** Today's date in UTC (YYYY-MM-DD), from the server: the browser must not count from its own clock, or hydration differs around midnight. */
+  today: string;
   /** What the person had typed before opening the preview (the preview's "Back" carries it in the address). */
   initial?: { label: string; days: number };
 }) {
@@ -181,7 +185,7 @@ export function NewPassportForm({
         {/* The server counts the days from the moment the link is made, and dates show in UTC (fmtDay). */}
         {days.includes(chosen) && (
           <p id="days-end" className="mt-2 text-sm text-ink-2">
-            {`Stops working on ${fmtDay(new Date(Date.now() + chosen * 86_400_000).toISOString())}. You can turn it off sooner.`}
+            {`Stops working on ${fmtDay(plusDays(today, chosen))}. You can turn it off sooner.`}
           </p>
         )}
         <FieldError id="days-error" error={errors.days} />

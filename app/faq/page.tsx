@@ -41,7 +41,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Does ShipShape use AI?",
-    a: `One feature uses it, and it's switched on only after our security review: "What are they asking for?" reads a message you paste and lists the documents it asks for, then ShipShape checks your vault for them. It runs only when you tick a box for that message, sends ${AI_RECIPIENT} only the text you pasted (numbers shaped like an SSN or EIN removed, never your documents), and nothing is used to train AI models. The answer is a draft you check, not legal advice.`,
+    a: `One feature uses it, and it's switched on only after our security review: "What are they asking for?" reads a message you paste and lists the documents it asks for, then ShipShape checks your documents for them. It runs only when you tick a box for that message and sends ${AI_RECIPIENT} only the text you pasted (numbers shaped like an SSN or EIN removed, never your documents). Anthropic says that by default it doesn't train on what its API receives. The answer is a draft you check, not legal advice.`,
   },
   {
     q: "Can I get my data out, or delete it?",

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Notice, PageHeader } from "@/components/app-ui";
+import { HashLanding } from "@/components/hash-landing";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { NewDocumentForm } from "../forms";
@@ -12,6 +13,7 @@ export default async function NewDocumentPage() {
   const open = !ctx.demo && realDocsEnabled();
   return (
     <div className="max-w-2xl space-y-6">
+      <HashLanding />
       <PageHeader eyebrow="Documents" title="Add a document" />
       {open ? (
         <div className="card">

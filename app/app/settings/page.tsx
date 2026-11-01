@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { fmtDay, Notice, PageHeader } from "@/components/app-ui";
+import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
 import { PLANS } from "@/lib/plans";
 import { deletionPreview, EXPORT_MAX_BYTES } from "@/lib/server/account";
@@ -57,6 +58,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="max-w-2xl space-y-6">
+      <HashLanding />
       <PageHeader eyebrow="Settings" title="Account and workspace" />
 
       <section id="workspace" className="card space-y-3">

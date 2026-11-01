@@ -97,7 +97,7 @@ describe("documents list", () => {
     const html = await documentsPage({});
     const text = textOf(html);
     expect(text).toContain("No documents yet");
-    expect(text).toContain("Your W-9, insurance certificate and licenses live here, with the date each one runs out and who you've shared it with.");
+    expect(text).toContain("Your W-9, insurance certificate and licenses live here, with the date each one runs out, every version, and its history.");
     // Three example rows under an Example label, hidden from screen readers.
     const example = /<div aria-hidden="true"[^>]*>([\s\S]*?)<\/ul><\/div>/.exec(html)?.[1] ?? "";
     expect(textOf(example)).toMatch(/^Example W-9 · /);

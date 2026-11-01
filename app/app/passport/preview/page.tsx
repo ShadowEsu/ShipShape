@@ -15,7 +15,8 @@ const Ids = z.array(z.uuid()).max(50);
 /**
  * What the person with the link will see, before the link exists (Design row 29): the same page as /p, built
  * from the documents ticked in the form, for the signed-in workspace only. Downloads point at the owner's own
- * copies; nothing is shared, logged or made here. The form's state travels in the address and back.
+ * copies (the latest version of each, the one a passport link shares; each download is recorded in the history like any
+ * other); nothing is shared or made here. The form's state travels in the address and back.
  */
 export default async function PassportPreviewPage({ searchParams }: { searchParams: Promise<{ docs?: string; label?: string; days?: string }> }) {
   const [ctx, q] = await Promise.all([requireWorkspace(), searchParams]);
@@ -27,6 +28,7 @@ export default async function PassportPreviewPage({ searchParams }: { searchPara
 
   // Only this workspace's documents, in the order they were ticked; unknown ids (or another workspace's) drop out.
   const mine = await listDocuments(ctx);
+  const latest = new Map(mine.map((m) => [m.id, m.versions]));
   const documents = ids.flatMap((id) => {
     const d = mine.find((m) => m.id === id);
     return d ? [{ id: d.id, title: d.title, kind: d.kind, kindLabel: DOC_KINDS[d.kind], issuer: d.issuer, issued_on: d.issued_on, expires_on: d.expires_on }] : [];
@@ -55,7 +57,7 @@ export default async function PassportPreviewPage({ searchParams }: { searchPara
       ) : (
         <section aria-label="The recipient's page" className="rounded-3xl border border-line bg-canvas p-5 sm:p-8">
           <p className="eyebrow mb-6">ShipShape passport</p>
-          <PassportView passport={passport} today={ctx.today} contact={contactEmail()} page="/app/passport/preview" fileHref={(id) => `/app/documents/${id}/file`} heading="h2" />
+          <PassportView passport={passport} today={ctx.today} contact={contactEmail()} page="/app/passport/preview" fileHref={(id) => `/app/documents/${id}/file?v=${latest.get(id)}&mode=download`} heading="h2" />
         </section>
       )}
     </div>
