@@ -170,6 +170,42 @@ describe("each upload is built in a process of its own, at most two at once (Sec
     expect((await buildToSign(png, "image/png")).length).toBeGreaterThan(0);
   });
 
+  it("reads a PNG's size the way the decoder will: one IHDR, first; no animation chunks; every chunk inside the file, up to IEND (Security MUST-P1)", async () => {
+    const png = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
+    const [signature, ihdr, idat, iend] = [png.subarray(0, 8), png.subarray(8, 33), png.subarray(33, 58), png.subarray(58)];
+    expect(Buffer.from(iend.subarray(4, 8)).toString("latin1")).toBe("IEND");
+    // CRCs stay zero: the decoder doesn't check them.
+    const chunk = (type: string, data: Uint8Array) => {
+      const out = Buffer.alloc(12 + data.length);
+      out.writeUInt32BE(data.length, 0);
+      out.write(type, 4, "latin1");
+      out.set(data, 8);
+      return out;
+    };
+    const huge = Buffer.alloc(26);
+    huge.writeUInt32BE(8000, 4);
+    huge.writeUInt32BE(8000, 8);
+    const of = (...parts: Uint8Array[]) => Uint8Array.from(Buffer.concat(parts));
+    const cause = async (bytes: Uint8Array) => {
+      const refused = await buildToSign(bytes, "image/png").catch((e: unknown) => e);
+      expect(refused).toMatchObject({ reason: "unreadable" });
+      return refused instanceof NotSignable && refused.cause instanceof Error ? refused.cause.message : "";
+    };
+    // The decoder sizes the image by the last IHDR it meets, so a later one claiming 8,000 × 8,000 isn't skipped.
+    expect(await cause(of(signature, ihdr, idat, chunk("IHDR", huge.subarray(4, 17)), iend))).toBe("a second IHDR");
+    // An animated PNG's frames are each decoded at their fcTL size before pdf-lib refuses animation.
+    for (const type of ["acTL", "fcTL", "fdAT"]) expect(await cause(of(signature, ihdr, chunk(type, huge), idat, iend))).toBe("an animated PNG");
+    expect(await cause(of(signature, idat, ihdr, iend))).toBe("no IHDR first");
+    expect(await cause(of(signature, chunk("IHDR", huge.subarray(4, 18)), idat, iend))).toBe("an IHDR that isn't 13 bytes");
+    expect(await cause(png.subarray(0, 58))).toBe("the PNG ends before IEND");
+    const long = of(png);
+    new DataView(long.buffer).setUint32(33, 1000);
+    expect(await cause(long)).toBe("the IDAT chunk runs past the end");
+    expect(await cause(of(Buffer.from("not a png at all")))).toBe("no PNG signature");
+    // The decoder stops at IEND, and so does the walk: what follows isn't read.
+    expect((await buildToSign(of(png, chunk("fcTL", huge)), "image/png")).length).toBeGreaterThan(0);
+  });
+
   it("an upload needing more memory or time than its process may use is refused as unreadable; under the normal limits it builds", async () => {
     const heavy = names(300_000);
     const outOfMemory = await buildToSignIsolated(heavy, "application/pdf", { ...ISOLATION_LIMITS, heapMb: 32 }).catch((e: unknown) => e);
