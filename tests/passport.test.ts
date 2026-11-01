@@ -146,9 +146,19 @@ describe("passport links", () => {
     expect(detail?.access.map((x) => x.action)).toEqual(["downloaded", "opened"]);
     expect(detail?.access.every((x) => /^[0-9a-f]{16}$/.test(x.visitor))).toBe(true);
     expect(JSON.stringify(detail)).not.toContain(IP);
-    // The document's own History has the download too (wave 8 #3): an outsider's row, not the owner's.
+    // The document's own History has the download too (wave 8 #3): an outsider's row that names the link, in the hash chain.
     const history = (await getDocument(a, w9))!.audit.filter((e) => e.action.startsWith("document.link_"));
-    expect(history.map((e) => [e.action, e.actor_is_me])).toEqual([["document.link_downloaded", false]]);
+    expect(history.map((e) => [e.action, e.actor_is_me, e.about_name])).toEqual([["document.link_downloaded", false, "Logged"]]);
+    const verify = async () => (await asUser(a.userId, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1)::text as broken", [a.orgId])))[0].broken;
+    expect(await verify()).toBeNull();
+    // Pointing the row at another link breaks the chain (0038: `about` is hashed with the rest).
+    const other = await createPassport(a, { label: "Other", days: 7, documentIds: [w9] });
+    const [row] = await db.root((tx) =>
+      tx.query<{ seq: string }>("update app.audit_log set about = $2 where org_id = $1 and action = 'document.link_downloaded' returning seq::text", [a.orgId, other.id]),
+    );
+    expect(await verify()).toBe(row.seq);
+    await db.root((tx) => tx.query("update app.audit_log set about = $2 where org_id = $1 and action = 'document.link_downloaded'", [a.orgId, id]));
+    expect(await verify()).toBeNull();
 
     // Events in the same instant (PGlite's clock counts milliseconds) still list newest first.
     await db.root((tx) => tx.query("update app.share_access set at = '2026-10-31 12:00:00+00' where link_id = $1", [id]));

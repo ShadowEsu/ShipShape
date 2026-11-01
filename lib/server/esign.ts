@@ -229,7 +229,9 @@ export async function signingFileUrl(id: string, token: string): Promise<string 
   if (!r) return null;
   const path = r.status === "signed" ? r.storage_path : r.to_sign_path;
   if (!path) return null;
-  await asAnon((tx) => tx.query("select app.esign_file_opened($1, $2)", [id, sha256Hex(token)]));
+  // Withdrawn or expired between open() and here: no History row was written, so no file either (Security H1).
+  const [row] = await asAnon((tx) => tx.query<{ ok: boolean }>("select app.esign_file_opened($1, $2) as ok", [id, sha256Hex(token)]));
+  if (!row?.ok) return null;
   return blobStore().signedUrl(path, { filename: downloadName(r.title, r.version, r.status === "signed" ? r.mime : "application/pdf"), inline: false });
 }
 

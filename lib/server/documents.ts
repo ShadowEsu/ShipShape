@@ -214,6 +214,8 @@ export interface AuditRow {
   at: string;
   action: string;
   actor_is_me: boolean;
+  /** Who or what the row is about, when it names one (0038): a signing request's signer, a passport link's label. Null once that's gone. */
+  about_name: string | null;
 }
 
 export async function getDocument(ctx: Ctx, id: string) {
@@ -227,7 +229,11 @@ export async function getDocument(ctx: Ctx, id: string) {
     );
     const audit = await tx.query<AuditRow>(
       // Order by the table's bigint column; the text alias `seq` would sort "10" before "9".
-      "select a.seq::text as seq, a.at::text as at, a.action, coalesce(a.actor = $3, false) as actor_is_me from app.audit_log a where a.org_id = $1 and a.object_id = $2 order by a.seq desc limit 50",
+      `select a.seq::text as seq, a.at::text as at, a.action, coalesce(a.actor = $3, false) as actor_is_me, coalesce(r.signer_name, l.label) as about_name
+       from app.audit_log a
+       left join app.signature_requests r on r.id = a.about and r.document_id = $2
+       left join app.share_links l on l.id = a.about and l.org_id = $1
+       where a.org_id = $1 and a.object_id = $2 order by a.seq desc limit 50`,
       [ctx.orgId, id, ctx.userId],
     );
     return { doc, versions, audit };

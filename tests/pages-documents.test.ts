@@ -509,7 +509,7 @@ describe("a document's page", () => {
     const { id: linkId, token } = await createPassport(ctx, { label: "Northwind", days: 7, documentIds: [id] });
     expect(await passportFileUrl(linkId, token, id, "198.51.100.9")).toBeTruthy();
     const history = /<ol[^>]*>([\s\S]*?)<\/ol>/.exec((await documentPage(id, {})).split("History")[1] ?? "")?.[1] ?? "";
-    expect(textOf(history)).toContain("Downloaded through a passport link");
+    expect(textOf(history)).toContain("Downloaded through a passport link: Northwind");
   });
 
   it("at the plan's limit says why the document stays archived and links to the one fix", async () => {

@@ -30,8 +30,6 @@ const ACTIONS: Record<string, string> = {
   "document.acknowledged": "Reviewed and acknowledged",
   "document.viewed": "Opened",
   "document.downloaded": "Downloaded",
-  "document.link_viewed": "Viewed through a passport link",
-  "document.link_downloaded": "Downloaded through a passport link",
   "document.signed_version_added": "Signed copy added",
   "esign.requested": "Signature requested",
   "esign.opened": "Signer opened the link",
@@ -39,9 +37,26 @@ const ACTIONS: Record<string, string> = {
   "esign.signed": "Signed",
   "esign.revoked": "Signature request withdrawn",
   "esign.review_downloaded": "File sent for signing downloaded",
-  "esign.file_downloaded": "Signer downloaded the file to sign",
-  "esign.signed_copy_downloaded": "Signer downloaded the signed copy",
 };
+
+/**
+ * An outsider's row says who or which when the row knows it (`about_name`, 0038): the signer's name, the passport
+ * link's label. Without it (the link or request is gone), the plain label.
+ */
+function historyLabel(action: string, about: string | null): string {
+  switch (action) {
+    case "document.link_viewed":
+      return about ? `Viewed through a passport link: ${about}` : "Viewed through a passport link";
+    case "document.link_downloaded":
+      return about ? `Downloaded through a passport link: ${about}` : "Downloaded through a passport link";
+    case "esign.file_downloaded":
+      return `${about ?? "Signer"} downloaded the file to sign`;
+    case "esign.signed_copy_downloaded":
+      return `${about ?? "Signer"} downloaded the signed copy`;
+    default:
+      return ACTIONS[action] ?? action;
+  }
+}
 
 /** What went wrong in a form posted from this page (see backToDocument in ../actions.ts), and the one thing that fixes it. */
 const ERRORS: Record<string, { text: string; fix?: { href: string; label: string } }> = {
@@ -306,7 +321,7 @@ export default async function DocumentPage({
             <ol className="space-y-2 text-sm">
               {audit.map((a) => (
                 <li key={a.seq} className="flex justify-between gap-3">
-                  <span>{ACTIONS[a.action] ?? a.action}</span>
+                  <span>{historyLabel(a.action, a.about_name)}</span>
                   <time className="shrink-0 text-xs text-ink-3" dateTime={a.at}>
                     {fmtDateTime(a.at)}
                   </time>
