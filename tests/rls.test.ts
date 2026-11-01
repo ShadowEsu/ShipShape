@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -662,6 +663,53 @@ describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
       expect(await migrate(conn, setup, files)).toEqual([]);
       expect((await pg.query("select current_user as u, (select rolsuper from pg_roles where rolname = current_user) as s")).rows).toEqual([{ u: "rds_master", s: false }]);
       expect(await roleProblems(step(pg))).toEqual([]);
+    } finally {
+      await pg.close();
+    }
+  });
+
+  it("records each migration's hash, and refuses before changing anything when an applied one changed or a new one sorts before an applied one (W12-8)", async () => {
+    const pg = await PGlite.create();
+    try {
+      const step = (t: Pick<PGlite, "exec" | "query">): MigrationStep => ({
+        exec: async (s) => void (await t.exec(s)),
+        query: async (text, params) => (await t.query<Record<string, unknown>>(text, params)).rows,
+      });
+      const conn = { ...step(pg), transaction: (fn: (t: MigrationStep) => Promise<void>) => pg.transaction((t) => fn(step(t))) };
+      const setup = [await readFile("supabase/platform/plain-postgres.sql", "utf8")];
+      const file = (name: string, sql = `create schema s_${name.slice(0, 5)}`) => ({ name, sql });
+      const sha = (sql: string) => createHash("sha256").update(sql).digest("hex");
+      const recorded = async () => (await pg.query<{ name: string; sha256: string | null }>("select name, sha256 from meta.migrations order by name")).rows;
+      const schemas = async () => (await pg.query<{ s: string }>("select nspname as s from pg_namespace where nspname like 's\\_%' order by 1")).rows.map((r) => r.s);
+      const [a, b] = [file("0001_a.sql"), file("0002_b.sql")];
+      expect(await migrate(conn, setup, [b, a])).toEqual(["0001_a.sql", "0002_b.sql"]);
+      expect(await recorded()).toEqual([
+        { name: "0001_a.sql", sha256: sha(a.sql) },
+        { name: "0002_b.sql", sha256: sha(b.sql) },
+      ]);
+
+      // An applied migration edited since: production would skip the edit every fresh test database runs.
+      const c = file("0003_c.sql");
+      await expect(migrate(conn, setup, [{ ...a, sql: `${a.sql}; create schema s_edit` }, b, c])).rejects.toThrow(
+        `Nothing was changed: 0001_a.sql changed after it was applied (recorded ${sha(a.sql).slice(0, 12)}, now ${sha(`${a.sql}; create schema s_edit`).slice(0, 12)})`,
+      );
+      // A new one numbered before an applied one (a branch merged late) stops the run too, until it is named.
+      const late = file("0001b_late.sql", "create schema s_late");
+      await expect(migrate(conn, setup, [a, b, late, c])).rejects.toThrow("0001b_late.sql sorts before 0002_b.sql, which is applied");
+      // Neither run changed anything: 0003 waited although it sorts after both.
+      expect(await schemas()).toEqual(["s_0001_", "s_0002_"]);
+      expect((await recorded()).length).toBe(2);
+      await expect(migrate(conn, setup, [a, b, late, c], { allowLate: ["0001b"] })).rejects.toThrow("0001b_late.sql sorts before");
+      expect(await migrate(conn, setup, [a, b, late, c], { allowLate: ["0001b_late.sql"] })).toEqual(["0001b_late.sql", "0003_c.sql"]);
+
+      // A database migrated before hashes were kept: each applied one's hash is recorded once, and said.
+      await pg.exec("alter table meta.migrations drop column sha256");
+      const said: string[] = [];
+      expect(await migrate(conn, setup, [a, b, late, c], { log: (line) => said.push(line) })).toEqual([]);
+      expect(said).toEqual([a, late, b, c].map((f) => `Recorded the hash of ${f.name} (applied before hashes were kept): ${sha(f.sql)}`));
+      expect((await recorded()).map((r) => r.sha256)).toEqual([a, late, b, c].map((f) => sha(f.sql)));
+      expect(await migrate(conn, setup, [a, b, late, c], { log: (line) => said.push(line) })).toEqual([]);
+      expect(said.length).toBe(4);
     } finally {
       await pg.close();
     }

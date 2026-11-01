@@ -5,6 +5,7 @@
  * argument made Next's dev server watch the whole project, local database included, and reload
  * every page on each query.)
  */
+import { createHash } from "node:crypto";
 
 type Row = Record<string, unknown>;
 
@@ -21,7 +22,15 @@ export interface MigrationConn extends MigrationStep {
 
 export interface SqlFile {
   name: string;
+  /** The file as read (UTF-8): its hash is over these bytes. */
   sql: string;
+}
+
+export interface MigrateOptions {
+  /** Pending migrations that may run although a later-named one is applied: exact names only. */
+  allowLate?: string[];
+  /** Where to say which applied migrations had their hash recorded for the first time. */
+  log?: (line: string) => void;
 }
 
 /**
@@ -30,10 +39,16 @@ export interface SqlFile {
  * meta.migrations, each in its own transaction as shipshape_owner, never as the user who
  * connected. Returns the names applied.
  *
+ * Each applied migration's SHA-256 is recorded (W12-8). Before anything changes, the run refuses
+ * when an applied migration's file no longer matches its hash (production would skip the edit that
+ * every fresh test database runs), or when a pending one sorts before the newest applied one (a
+ * branch merged after a later number shipped) unless `allowLate` names it. Migrations applied
+ * before hashes were kept have theirs recorded once, and logged.
+ *
  * The connecting user needn't be a superuser (RDS's master isn't, Security MG-1): it only reads the
  * catalog itself, and reads meta.migrations as shipshape_owner, which it may become but doesn't inherit.
  */
-export async function migrate(conn: MigrationConn, setup: string[], migrations: SqlFile[]): Promise<string[]> {
+export async function migrate(conn: MigrationConn, setup: string[], migrations: SqlFile[], options: MigrateOptions = {}): Promise<string[]> {
   const [state] = await conn.query(
     `select exists (select 1 from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where n.nspname = 'meta' and c.relname = 'migrations') as tracked,
             exists (select 1 from pg_catalog.pg_namespace where nspname = 'app') as has_app`,
@@ -49,16 +64,37 @@ export async function migrate(conn: MigrationConn, setup: string[], migrations: 
   let recorded: Row[] = [];
   await conn.transaction(async (t) => {
     await t.exec("set local role shipshape_owner");
-    recorded = await t.query("select name from meta.migrations");
+    // Through to_jsonb: a database set up before W12-8 has no sha256 column yet.
+    recorded = await t.query("select m.name, to_jsonb(m) ->> 'sha256' as sha256 from meta.migrations m");
   });
-  const applied = new Set(recorded.map((r) => String(r.name)));
+  const applied = new Map(recorded.map((r) => [String(r.name), typeof r.sha256 === "string" ? r.sha256 : null]));
+  const files = [...migrations].sort((a, b) => a.name.localeCompare(b.name)).map((f) => ({ ...f, sha256: createHash("sha256").update(f.sql, "utf8").digest("hex") }));
+  const newest = [...applied.keys()].sort((a, b) => a.localeCompare(b)).at(-1);
+  const allowLate = options.allowLate ?? [];
+  const problems: string[] = [];
+  for (const f of files) {
+    const hash = applied.get(f.name);
+    if (hash && hash !== f.sha256) problems.push(`${f.name} changed after it was applied (recorded ${hash.slice(0, 12)}, now ${f.sha256.slice(0, 12)})`);
+    if (hash === undefined && newest !== undefined && f.name.localeCompare(newest) < 0 && !allowLate.includes(f.name)) {
+      problems.push(`${f.name} sorts before ${newest}, which is applied (to run it anyway, name it with --allow-late)`);
+    }
+  }
+  if (problems.length) throw new Error(`Nothing was changed: ${problems.join("; ")}. Locally: delete .data/pglite (sample data only) and restart.`);
+
+  const unhashed = files.filter((f) => applied.get(f.name) === null);
+  await conn.transaction(async (t) => {
+    await t.exec("set local role shipshape_owner");
+    await t.exec("alter table meta.migrations add column if not exists sha256 text");
+    for (const f of unhashed) await t.query("update meta.migrations set sha256 = $1 where name = $2 and sha256 is null", [f.sha256, f.name]);
+  });
+  for (const f of unhashed) options.log?.(`Recorded the hash of ${f.name} (applied before hashes were kept): ${f.sha256}`);
   const done: string[] = [];
-  for (const f of [...migrations].sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const f of files) {
     if (applied.has(f.name)) continue;
     await conn.transaction(async (t) => {
       await t.exec("set local role shipshape_owner");
       await t.exec(f.sql);
-      await t.query("insert into meta.migrations (name) values ($1)", [f.name]);
+      await t.query("insert into meta.migrations (name, sha256) values ($1, $2)", [f.name, f.sha256]);
     });
     done.push(f.name);
   }

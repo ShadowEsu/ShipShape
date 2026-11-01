@@ -12,7 +12,8 @@ import { UserError } from "@/lib/server/errors";
 import { planLimit } from "@/lib/server/plans";
 import { checkUpload, UploadRefused } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill, render } from "@/lib/server/fill";
-import { assertLaunchConfig, GateClosed } from "@/lib/server/flags";
+import { GateClosed } from "@/lib/server/flags";
+import { assertLaunchConfig, launchProblems } from "@/lib/server/launch-check";
 import { createPassport, openPassport } from "@/lib/server/passport";
 import { factsForFill, NeedsRecentSignIn, renameWorkspace, revealEin, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
@@ -168,6 +169,56 @@ describe("real documents gate (Security G3)", () => {
     expect(() => assertLaunchConfig({ ...prod, CONTACT_EMAIL: "support@shipshape.example" })).not.toThrow();
     expect(() => assertLaunchConfig({ NODE_ENV: "production" })).not.toThrow(); // sample workspaces only
     expect(() => assertLaunchConfig({ NODE_ENV: "development", SHIPSHAPE_REAL_DOCS: "1" })).not.toThrow();
+  });
+
+  it("a production deployment won't serve with a secret or setting missing, and names what, never the value (W12-2)", () => {
+    const full = {
+      NODE_ENV: "production",
+      VERCEL_ENV: "production",
+      SHIPSHAPE_SESSION_SECRET: "s".repeat(32),
+      SHIPSHAPE_HASH_KEY: "h".repeat(32),
+      SHIPSHAPE_FIELD_KEY: Buffer.alloc(32, 7).toString("base64"),
+      CRON_SECRET: "c".repeat(32),
+      DATABASE_URL: "postgres://shipshape_app@db.example:5432/shipshape",
+      DATABASE_CA_CERT: "-----BEGIN CERTIFICATE-----",
+      SHIPSHAPE_APP_URL: "https://shipshape.example",
+      SHIPSHAPE_S3_BUCKET: "shipshape-files",
+      AWS_REGION: "us-east-1",
+      AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/shipshape-prod-app",
+    };
+    expect(launchProblems(full)).toEqual([]);
+    // Previews run production builds without AWS by design; only Vercel's production is held to all of it.
+    expect(launchProblems({ NODE_ENV: "production", VERCEL_ENV: "preview" })).toEqual([]);
+    const secret = "a-secret-value-too-short";
+    const broken = launchProblems({
+      ...full,
+      SHIPSHAPE_HASH_KEY: secret,
+      SHIPSHAPE_FIELD_KEY: "AAAA",
+      CRON_SECRET: undefined,
+      DATABASE_URL: "",
+      DATABASE_CA_CERT: undefined,
+      SHIPSHAPE_APP_URL: "http://shipshape.example",
+      SHIPSHAPE_S3_BUCKET: undefined,
+    });
+    expect(broken).toEqual([
+      "SHIPSHAPE_HASH_KEY must be at least 32 characters",
+      "SHIPSHAPE_FIELD_KEY must be 32 bytes, base64",
+      "CRON_SECRET must be at least 32 characters",
+      "DATABASE_URL is not set",
+      "DATABASE_CA_CERT is not set",
+      "SHIPSHAPE_APP_URL must be an https:// URL",
+      "Production storage needs SHIPSHAPE_S3_BUCKET (not configured)",
+    ]);
+    expect(broken.join(" ")).not.toContain(secret);
+    expect(launchProblems({ ...full, AWS_ROLE_ARN: undefined })).toEqual(["Production S3 storage needs AWS_ROLE_ARN"]);
+    // Account sign-in: half set up is refused; real documents need it set up.
+    expect(launchProblems({ ...full, COGNITO_DOMAIN: "https://auth.shipshape.example" })).toEqual([
+      "Account sign-in needs COGNITO_DOMAIN, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET and SHIPSHAPE_APP_URL",
+    ]);
+    expect(launchProblems({ ...full, SHIPSHAPE_REAL_DOCS: "1", CONTACT_EMAIL: "support@shipshape.example" })).toEqual(["Real documents need account sign-in (COGNITO_*)"]);
+    expect(() => assertLaunchConfig({ ...full, SHIPSHAPE_SESSION_SECRET: undefined })).toThrow(
+      "ShipShape isn't configured for this deployment: SHIPSHAPE_SESSION_SECRET must be at least 32 characters",
+    );
   });
 });
 

@@ -177,6 +177,23 @@ export function localBlobStore(root: string): BlobStore {
  * linked to.
  */
 export function s3BlobStore(client: S3Client, bucket: string): BlobStore {
+  /**
+   * Whether a key S3 just refused (403) is simply not stored. S3 answers GetObject on a missing key
+   * with 403, not 404, unless the caller may list the bucket, and the app role may list only under a
+   * workspace's prefix (W12-1, Security 2026-11-01 1741), so the key itself is listed: exactly that
+   * key, since the prefix also matches longer ones (v1.pdf.bak). Anything short of a clear "not
+   * there" — not a workspace's key, the list failing, the key listed — keeps the original error.
+   */
+  async function refusedAsMissing(p: string): Promise<boolean> {
+    if (!WORKSPACE_PREFIX.test(p.slice(0, p.indexOf("/") + 1))) return false;
+    try {
+      const { Contents } = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: p, MaxKeys: 1 }));
+      return Contents?.[0]?.Key !== p;
+    } catch {
+      return false;
+    }
+  }
+
   return {
     async put(p, bytes, mime) {
       assertObjectPath(p);
@@ -196,6 +213,7 @@ export function s3BlobStore(client: S3Client, bucket: string): BlobStore {
         return await Body.transformToByteArray();
       } catch (e) {
         if (e instanceof S3ServiceException && (e.name === "NoSuchKey" || e.$metadata.httpStatusCode === 404)) throw new ObjectMissing(p);
+        if (e instanceof S3ServiceException && e.name === "AccessDenied" && (await refusedAsMissing(p))) throw new ObjectMissing(p);
         throw e;
       }
     },
