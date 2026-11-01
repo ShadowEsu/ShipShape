@@ -1,4 +1,4 @@
-import { fmtDay } from "@/components/app-ui";
+import { fmtDay } from "@/lib/today";
 import type { CollectState } from "@/lib/server/collect";
 
 export const COLLECT_STATES: Record<CollectState, { label: string; cls: string; icon: string }> = {

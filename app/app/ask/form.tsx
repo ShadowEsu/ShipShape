@@ -63,6 +63,7 @@ export function AskForm() {
             type="checkbox"
             name="consent"
             value="yes"
+            defaultChecked={state.consent}
             aria-required="true"
             aria-invalid={consentError ? true : undefined}
             aria-describedby={consentError ? "consent-error consent-source" : "consent-source"}

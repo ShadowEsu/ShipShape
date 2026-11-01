@@ -15,14 +15,13 @@ import PassportPreviewPage from "@/app/app/passport/preview/page";
 import { deleteMyAccount, renameMyWorkspace, signOutSession, upgrade } from "@/app/app/settings/actions";
 import { DeleteRefused } from "@/app/app/settings/forms";
 import SettingsPage from "@/app/app/settings/page";
-import { fmtDay } from "@/components/app-ui";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
 import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, newSessionId, RECENT_AUTH_SECONDS, requireWorkspace, startSession, type SignedIn } from "@/lib/server/session";
-import { plusDays, todayIn } from "@/lib/today";
+import { fmtDay, plusDays, todayIn } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
@@ -289,6 +288,18 @@ describe("Collect", () => {
     expect(primary(html)).toEqual(["Add vendor"]);
   });
 
+  it("with only archived vendors: the empty state says 'active', and the button doesn't call the next one the first (W10-11)", async () => {
+    const ctx = await signIn("collect-only-archived@example.com");
+    const vendorId = await addVendor(ctx, { name: "Old Supplier", email: "", requested: ["w9"] });
+    await db.root((tx) => tx.query("update app.vendors set status = 'archived' where id = $1", [vendorId]));
+    const html = await renderPage(CollectPage, {});
+    expect(textOf(html)).toContain("No active vendors Each vendor you add shows here");
+    expect(textOf(html)).not.toContain("No vendors yet");
+    expect(actionsOf(html).map((a) => a.label)).toContain("Add a vendor");
+    expect(actionsOf(html).map((a) => a.label)).not.toContain("Add your first vendor");
+    expect(textOf(html)).toMatch(/Archived vendors \( ?1 ?\)/);
+  });
+
   it("a vendor without files or a link: says to make a link and send it", async () => {
     const ctx = await signIn("collect-nolink@example.com");
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
@@ -323,9 +334,25 @@ describe("Collect", () => {
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
     await db.root((tx) => tx.query("update app.vendors set status = 'archived' where id = $1", [vendorId]));
     const html = await renderPage(VendorPage, { params: Promise.resolve({ id: vendorId }), searchParams: Promise.resolve({}) });
-    expect(textOf(html)).toContain("Restore it to ask for files again.");
+    expect(textOf(html)).toContain("This vendor is archived: its upload links are off, and it isn't counted on the Collect page. Restoring it turns its unexpired links back on.");
     expect(primary(html)).toEqual([]);
     expect(actionsOf(html).map((a) => a.label)).toContain("Restore");
+  });
+
+  it("an archived vendor's unexpired link reads 'Off while archived' with no Turn off; restored, it's Working again (W10-1)", async () => {
+    const ctx = await signIn("collect-archived-link@example.com");
+    const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
+    await createVendorLink(ctx, { vendorId, days: 7 });
+    await db.root((tx) => tx.query("update app.vendors set status = 'archived' where id = $1", [vendorId]));
+    const page = () => renderPage(VendorPage, { params: Promise.resolve({ id: vendorId }), searchParams: Promise.resolve({}) });
+    const archived = await page();
+    expect(textOf(archived)).toContain("Off while archived Made");
+    expect(textOf(archived)).not.toContain("Working");
+    expect(actionsOf(archived).map((a) => a.label)).not.toContain("Turn off");
+    await db.root((tx) => tx.query("update app.vendors set status = 'active' where id = $1", [vendorId]));
+    const restored = await page();
+    expect(textOf(restored)).toContain("Working Made");
+    expect(actionsOf(restored).map((a) => a.label)).toContain("Turn off");
   });
 
   it("a made upload link ends calmly: for whom, how long, what happens next, and only Copy link", async () => {
@@ -342,7 +369,7 @@ describe("Deadlines", () => {
     const html = await renderPage(DeadlinesPage, {});
     expect(textOf(html)).toContain("No dates yet Expiry and renewal dates from your certificates, licenses and agreements show here, soonest first");
     expect(primary(html)).toEqual(["Add an expiry date"]);
-    expect(textOf(html)).toContain("Add them to your calendar and it reminds you 30 and 7 days before.");
+    expect(textOf(html)).toContain("Add these dates to your calendar and set reminders there for 30 and 7 days before.");
     expect(textOf(html)).not.toContain("ShipShape reminds owners and admins");
     expect(textOf(html)).toContain("Nothing here: on the Free plan ShipShape doesn't send reminders.");
   });
@@ -359,7 +386,7 @@ describe("Deadlines", () => {
     const ctx = await signIn("deadlines-quiet@example.com");
     await addDoc(ctx, "Liability certificate", 120);
     const html = await renderPage(DeadlinesPage, {});
-    expect(textOf(html)).toContain("Nothing expires in the next 90 days. Add these dates to your calendar and it reminds you 30 and 7 days before.");
+    expect(textOf(html)).toContain("Nothing expires in the next 90 days. Add these dates to your calendar and set reminders there for 30 and 7 days before.");
     expect(primary(html)).toEqual([]);
   });
 
@@ -668,7 +695,14 @@ describe("form errors name the field to fix", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test-not-a-real-key");
     await signIn("form-ask@example.com");
     const text = "Before your first job we need a W-9 and a certificate of insurance.";
-    expect(await askAction({}, form({ text }))).toEqual({ error: "Check the box to send this text to Anthropic's Claude.", field: "consent", text });
+    expect(await askAction({}, form({ text }))).toEqual({ error: "Check the box to send this text to Anthropic's Claude.", field: "consent", text, consent: false });
+    // A refusal about the text keeps the tick, so the retry isn't refused for the box (W10-7).
+    expect(await askAction({}, form({ text: "too short", consent: "yes" }))).toEqual({
+      error: "Paste the request: the email or checklist that asks for your documents.",
+      field: "text",
+      text: "too short",
+      consent: true,
+    });
   });
 
   it("deleting the account: a wrong confirmation goes to its field and keeps what was typed", async () => {

@@ -1,5 +1,5 @@
 import "server-only";
-import { isoToday } from "@/lib/today";
+import { fmtDay, isoToday } from "@/lib/today";
 import { asService, asUser, pgErrorCode } from "./db";
 import { DOC_KINDS, type DocKind } from "./documents";
 import type { Ctx } from "./profile";
@@ -105,7 +105,7 @@ const DUE_SQL = `
   )
   order by due.org_id, due.due_on`;
 
-interface DueReminder {
+interface DueRow {
   document_id: string;
   org_id: string;
   title: string;
@@ -115,13 +115,33 @@ interface DueReminder {
   days_before: number;
 }
 
+/** One reminder per document and day: a document whose expiry and renewal fall on the same day gets one message that says both (W10-8). */
+interface DueReminder extends Omit<DueRow, "date_kind"> {
+  kinds: DateKind[];
+}
+
+function mergeSameDay(rows: DueRow[]): DueReminder[] {
+  const byKey = new Map<string, DueReminder>();
+  for (const { date_kind, ...r } of rows) {
+    const key = `${r.document_id}|${r.due_on}`;
+    const seen = byKey.get(key);
+    if (seen) seen.kinds.push(date_kind);
+    else byKey.set(key, { ...r, kinds: [date_kind] });
+  }
+  // "expires" before "renewal", whatever order the rows came in.
+  for (const r of byKey.values()) r.kinds.sort((a, b) => (a === b ? 0 : a === "expires" ? -1 : 1));
+  return [...byKey.values()];
+}
+
 function reminderText(r: DueReminder): { subject: string; body: string } {
-  const what = r.date_kind === "expires" ? "expires" : "is due for renewal";
+  const ahead = r.kinds.map((k) => (k === "expires" ? "expires" : "is due for renewal")).join(" and ");
+  const passed = r.kinds.map((k) => (k === "expires" ? "expired" : "passed its renewal date")).join(" and ");
   const days = `${r.days_left} ${r.days_left === 1 ? "day" : "days"}`;
-  const when = r.days_left > 0 ? `in ${days} (${r.due_on})` : r.days_left === 0 ? "today" : `on ${r.due_on}`;
-  const subject = (r.days_left >= 0 ? `${r.title} ${what} ${r.days_left > 0 ? `in ${days}` : "today"}` : `${r.title} has lapsed`).slice(0, 200);
+  const day = fmtDay(r.due_on);
+  const when = r.days_left > 0 ? `in ${days} (${day})` : r.days_left === 0 ? "today" : `on ${day}`;
+  const subject = (r.days_left >= 0 ? `${r.title} ${ahead} ${r.days_left > 0 ? `in ${days}` : "today"}` : `${r.title} has lapsed`).slice(0, 200);
   const body = [
-    `${r.title} ${r.days_left >= 0 ? what : r.date_kind === "expires" ? "expired" : "passed its renewal date"} ${when}.`,
+    `${r.title} ${r.days_left >= 0 ? ahead : passed} ${when}.`,
     "Renew it, then upload the new version in ShipShape so your passport links share the current one.",
     "You get this reminder because you're an owner or admin of the workspace.",
   ].join("\n\n");
@@ -139,7 +159,7 @@ function reminderText(r: DueReminder): { subject: string; body: string } {
  */
 export async function runReminders(today = isoToday(), onlyOrg: string | null = null): Promise<{ sent: number; failed: number }> {
   return asService(async (tx) => {
-    const due = await tx.query<DueReminder>(DUE_SQL, [today, onlyOrg]);
+    const due = mergeSameDay(await tx.query<DueRow>(DUE_SQL, [today, onlyOrg]));
     let sent = 0;
     let failed = 0;
     for (const r of due) {

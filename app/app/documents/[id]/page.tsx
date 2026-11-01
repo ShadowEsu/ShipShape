@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Notice, ValidityChip, fmtDay } from "@/components/app-ui";
+import { Notice, ValidityChip } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
@@ -12,7 +12,7 @@ import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequest
 import { realDocsEnabled } from "@/lib/server/flags";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
-import { dayOf, timeOf } from "@/lib/today";
+import { dayOf, fmtDay, timeOf } from "@/lib/today";
 import type { TemplateInfo } from "@/lib/templates/types";
 import { archive, withdrawSignature } from "../actions";
 import { DetailsForm, SignRequestForm, VersionForm } from "../forms";

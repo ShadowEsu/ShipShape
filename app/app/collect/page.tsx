@@ -74,13 +74,13 @@ export default async function CollectPage() {
           </h2>
           {vendors.length === 0 ? (
             <EmptyState
-              title="No vendors yet"
+              title={archived.length > 0 ? "No active vendors" : "No vendors yet"}
               body="Each vendor you add shows here with what you asked them for and where it stands."
               example={["Ace Electric · W-9 ✓ · Insurance missing"]}
             >
               {/* The form is beside this list (below it on a phone), with the page's one primary button: this one takes you to its first field. */}
               <FocusButton target="vendor-name" className="btn-ghost">
-                Add your first vendor
+                {archived.length > 0 ? "Add a vendor" : "Add your first vendor"}
               </FocusButton>
             </EmptyState>
           ) : (

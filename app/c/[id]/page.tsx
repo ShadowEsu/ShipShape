@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { LinkBusy, LinkUnavailable } from "@/app/link-states";
-import { NamedByWorkspace, Notice, fmtDay } from "@/components/app-ui";
+import { NamedByWorkspace, Notice } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { FocusOnLoad } from "@/components/focus-on-load";
 import { COLLECT_COOKIE, openCollect, type PublicCollect, type ReceiveOutcome } from "@/lib/server/collect";
@@ -10,7 +10,7 @@ import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
 import { viewerZone } from "@/lib/server/session";
-import { dayOf } from "@/lib/today";
+import { dayOf, fmtDay } from "@/lib/today";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { SendButton } from "./send-button";
 

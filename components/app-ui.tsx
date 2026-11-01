@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Validity } from "@/lib/today";
+import { fmtDay, type Validity } from "@/lib/today";
 
 export function PageHeader({ eyebrow, title, children }: { eyebrow?: string; title: string; children?: React.ReactNode }) {
   return (
@@ -33,7 +33,6 @@ export function ValidityChip({ validity, expiresOn }: { validity: Validity; expi
   );
 }
 
-export const fmtDay = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 /** The same date without the year, for a sentence about a date within 30 days (the year is unambiguous there and would orphan at 390). */
 export const fmtMonthDay = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 

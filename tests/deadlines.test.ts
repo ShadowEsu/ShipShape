@@ -9,7 +9,7 @@ import { listDocuments } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
-import { isoToday } from "@/lib/today";
+import { fmtDay, isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 let db: TestDb;
@@ -147,7 +147,28 @@ describe("reminders", () => {
     expect(await runReminders(today, pro.orgId)).toEqual({ sent: 1, failed: 0 });
     const [m] = await db.root((tx) => tx.query<{ subject: string; body: string }>("select subject, body from app.outbox where org_id = $1", [pro.orgId]));
     expect(m.subject).toBe("Dumpster permit expires in 1 day");
-    expect(m.body).toContain("Dumpster permit expires in 1 day (");
+    expect(m.body).toContain(`Dumpster permit expires in 1 day (${fmtDay(addDays(today, 1))}).`);
+  });
+
+  it("a document whose expiry and renewal fall on the same day gets one reminder that says both, ahead and once lapsed (W10-8)", async () => {
+    const pro = await proWorkspace("same-day@example.com");
+    await asUser(pro.owner, (tx) =>
+      tx.query("insert into app.documents (org_id, title, kind, expires_on, renews_on, created_by) values ($1, 'Liquor license', 'permit', $2, $2, $3)", [
+        pro.orgId,
+        addDays(today, 7),
+        pro.owner,
+      ]),
+    );
+    expect(await runReminders(today, pro.orgId)).toEqual({ sent: 1, failed: 0 });
+    const messages = () => db.root((tx) => tx.query<{ subject: string; body: string }>("select subject, body from app.outbox where org_id = $1 order by created_at", [pro.orgId]));
+    const [ahead] = await messages();
+    expect(ahead.subject).toBe("Liquor license expires and is due for renewal in 7 days");
+    expect(ahead.body).toContain(`Liquor license expires and is due for renewal in 7 days (${fmtDay(addDays(today, 7))}).`);
+    // Eight days on, both have passed: still one message.
+    expect(await runReminders(addDays(today, 8), pro.orgId)).toEqual({ sent: 1, failed: 0 });
+    const [, lapsed] = await messages();
+    expect(lapsed.subject).toBe("Liquor license has lapsed");
+    expect(lapsed.body).toContain(`Liquor license expired and passed its renewal date on ${fmtDay(addDays(today, 7))}.`);
   });
 
   it("a date exactly 7 days out gets the 7-day reminder; 8 days out still gets the 30-day one", async () => {

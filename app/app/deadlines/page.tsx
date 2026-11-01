@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EmptyState, PageHeader, fmtDay } from "@/components/app-ui";
+import { EmptyState, PageHeader } from "@/components/app-ui";
 import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
 import { listDeadlines, listOutbox, type Deadline } from "@/lib/server/deadlines";
 import { DOC_KINDS, firstDocument } from "@/lib/server/documents";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
-import { timeOf } from "@/lib/today";
+import { fmtDay, timeOf } from "@/lib/today";
 
 export const metadata: Metadata = { title: "Deadlines" };
 
@@ -68,7 +68,7 @@ export default async function DeadlinesPage() {
         Dates come from your documents&apos; expiry and renewal fields.{" "}
         {reminders
           ? "ShipShape reminds owners and admins 90, 30 and 7 days before, and on the day something lapses."
-          : "Add them to your calendar and it reminds you 30 and 7 days before. Reminders from ShipShape come with Pro."}
+          : "Add these dates to your calendar and set reminders there for 30 and 7 days before. Reminders from ShipShape come with Pro."}
       </p>
 
       {all.length === 0 ? (
@@ -86,7 +86,7 @@ export default async function DeadlinesPage() {
           {quiet && (
             <p role="status" className="card text-sm text-ink-2">
               Nothing expires in the next 90 days.{" "}
-              {reminders ? "We'll remind you 90, 30 and 7 days before." : "Add these dates to your calendar and it reminds you 30 and 7 days before."}
+              {reminders ? "We'll remind owners and admins 90, 30 and 7 days before." : "Add these dates to your calendar and set reminders there for 30 and 7 days before."}
             </p>
           )}
           <Group title="Lapsed" items={all.filter((d) => d.days_left < 0)} tone="bad" />

@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
-import { fmtDay } from "@/components/app-ui";
 import { CopyLink } from "@/components/copy-link";
-import { plusDays } from "@/lib/today";
+import { fmtDay, plusDays } from "@/lib/today";
 import { makePassport, type PassportFormState } from "./actions";
 
 export interface PickableDoc {
