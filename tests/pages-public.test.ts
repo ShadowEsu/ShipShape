@@ -6,6 +6,7 @@ import CollectPage from "@/app/c/[id]/page";
 import { POST as upload } from "@/app/c/[id]/upload/route";
 import PassportPage from "@/app/p/[id]/page";
 import { fmtDay } from "@/components/app-ui";
+import { ESIGN_CONSENT_FULL, ESIGN_CONSENT_SUMMARY, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import SigningPage from "@/app/s/[id]/page";
 import { SignButton } from "@/app/s/[id]/sign-form";
 import { signIn } from "@/app/signin/actions";
@@ -192,6 +193,19 @@ describe("a signing link (/s)", () => {
     const { id, token } = await request();
     jar.set("ss_sign", token);
     expect(said(await signingPage(id))).toMatch(/Harbor Plumbing \(sample\) asked Jordan Lee to sign this document\. You can sign until \w{3} \d{1,2}, \d{4}\./);
+  });
+
+  it("the consent box: the summary and its version beside the box, the full consent (every disclosure) under 'Read the full consent'", async () => {
+    const { id, token } = await request();
+    jar.set("ss_sign", token);
+    const html = await signingPage(id);
+    const label = /<label[^>]*>(?:(?!<\/label>)[\s\S])*id="sign-consent"[\s\S]*?<\/label>/.exec(html)?.[0] ?? "";
+    expect(textOf(label)).toMatch(new RegExp(`^${ESIGN_CONSENT_SUMMARY.replace(/[.()]/g, "\\$&")}\\s*Version ${ESIGN_CONSENT_VERSION}$`));
+    const details = /<details[^>]*>[\s\S]*?<\/details>/.exec(html)?.[0] ?? "";
+    expect(textOf(/<summary[^>]*>[\s\S]*?<\/summary>/.exec(details)?.[0] ?? "")).toBe("Read the full consent");
+    expect(details.match(/<li>/g)).toHaveLength(ESIGN_CONSENT_FULL.length);
+    for (const p of ESIGN_CONSENT_FULL) expect(textOf(details)).toContain(`${p.heading} ${p.text}`);
+    expect(textOf(details)).toContain("Paper copy. You can ask the sender for a paper copy of this document at any time, before or after signing.");
   });
 
   it("the button that signs names the document", async () => {

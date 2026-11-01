@@ -4,7 +4,7 @@ import { LinkBusy, LinkUnavailable } from "@/app/link-states";
 import { fmtDay, NamedByWorkspace } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { fmtDateTime } from "@/components/ui";
-import { ESIGN_CONSENT_TEXT } from "@/lib/consent";
+import { ESIGN_CONSENT_FULL, ESIGN_CONSENT_SUMMARY, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import { openSigning, SIGN_COOKIE } from "@/lib/server/esign";
 import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
@@ -71,7 +71,7 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
                   sender={view.orgName}
                   signerName={view.signerName}
                   email={view.signerEmail}
-                  consentText={ESIGN_CONSENT_TEXT}
+                  consent={{ summary: ESIGN_CONSENT_SUMMARY, full: ESIGN_CONSENT_FULL, version: ESIGN_CONSENT_VERSION }}
                   demo={view.demo}
                 />
               </section>

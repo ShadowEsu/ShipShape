@@ -1,10 +1,10 @@
 import "server-only";
 import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
+import { ESIGN_CONSENT_FULL, ESIGN_CONSENT_SUMMARY, ESIGN_CONSENT_TEXT, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import { appendPages } from "@/lib/pdf/append";
 import { BuildBusy, BuildCrashed, buildToSignIsolated } from "@/lib/pdf/build-isolated";
-import { composePdf, isPrintable, printableOnly } from "@/lib/pdf/compose";
+import { composePdf, isPrintable, printableOnly, type Block } from "@/lib/pdf/compose";
 import { NotSignable } from "@/lib/pdf/to-sign";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser, pgErrorCode, type Tx } from "./db";
@@ -274,7 +274,8 @@ function certificatePdf(rows: [string, string][]): Promise<Uint8Array> {
       { type: "rows", rows: rows.map(([k, v]) => [k, printableOnly(v)]) },
       { type: "space", height: 12 },
       { type: "heading", text: "What the signer agreed to" },
-      { type: "para", runs: [{ text: ESIGN_CONSENT_TEXT }] },
+      { type: "para", runs: [{ text: ESIGN_CONSENT_SUMMARY }] },
+      ...ESIGN_CONSENT_FULL.map((p): Block => ({ type: "para", size: 9, runs: [{ text: `${p.heading} `, bold: true }, { text: p.text }] })),
     ],
     { title: "Signature certificate", footer: "ShipShape signature certificate" },
   );

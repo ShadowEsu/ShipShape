@@ -5,6 +5,7 @@ import { inflateSync } from "node:zlib";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { signProblem } from "@/app/s/[id]/messages";
+import { ESIGN_CONSENT_FULL, ESIGN_CONSENT_SUMMARY, ESIGN_CONSENT_VERSION } from "@/lib/consent";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
 import { downloadUrl, getDocument, insertDocument, listDocuments } from "@/lib/server/documents";
@@ -305,17 +306,20 @@ describe("signing", () => {
     expect(signed).toMatchObject({ version: before[0].version + 1, origin: "signed", mime: "application/pdf" });
     const bytes = await blobStore().get(`${a.orgId}/${doc.id}/v${signed.version}.pdf`);
     expect(sha256Hex(bytes)).toBe(signed.sha256);
-    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(original.getPageCount() + 1);
+    // The certificate follows the reviewed pages (one page, or two now that it prints the full consent).
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBeGreaterThan(original.getPageCount());
     // The signed copy starts with exactly the bytes the signer reviewed; the certificate only follows them.
     expect(sha256Hex(bytes.subarray(0, reviewed.length))).toBe(recorded.to_sign_sha256);
 
     const [req] = await db.root((tx) =>
-      tx.query<{ status: string; consent_version: string; signed_name: string; otp_hash: string | null; signer_visitor: string }>(
-        "select status, consent_version, signed_name, otp_hash, signer_visitor from app.signature_requests where id = $1",
+      tx.query<{ status: string; consent_version: string; consent_sha256: string; signed_name: string; otp_hash: string | null; signer_visitor: string }>(
+        "select status, consent_version, consent_sha256, signed_name, otp_hash, signer_visitor from app.signature_requests where id = $1",
         [id],
       ),
     );
-    expect(req).toMatchObject({ status: "signed", consent_version: "esign-2026-10-31", signed_name: "Jordan Lee", otp_hash: null });
+    // What's recorded is the hash of exactly the text the signer saw: the summary beside the box and every disclosure under it.
+    const seen = [ESIGN_CONSENT_SUMMARY, ...ESIGN_CONSENT_FULL.map((p) => `${p.heading} ${p.text}`)].join("\n");
+    expect(req).toMatchObject({ status: "signed", consent_version: ESIGN_CONSENT_VERSION, consent_sha256: sha256Hex(seen), signed_name: "Jordan Lee", otp_hash: null });
     expect(req.signer_visitor).toMatch(/^[0-9a-f]{16}$/);
 
     const actions = after.audit.map((x) => x.action).reverse();
@@ -361,6 +365,8 @@ describe("signing", () => {
     const word = (s: string) => `<${Buffer.from(s, "latin1").toString("hex").toUpperCase()}>`;
     expect(certificate).toContain(word("Sent"));
     expect(certificate).toContain(word("Sample"));
+    // The certificate prints what the signer agreed to, the full consent included.
+    expect(certificate).toContain(word("Paper"));
     expect(certificate).not.toContain(word("Renamed"));
   });
 

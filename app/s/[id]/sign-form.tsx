@@ -21,7 +21,7 @@ export function SignForm({
   sender,
   signerName,
   email,
-  consentText,
+  consent,
   demo,
 }: {
   id: string;
@@ -29,7 +29,8 @@ export function SignForm({
   sender: string;
   signerName: string;
   email: string;
-  consentText: string;
+  /** The summary sits beside the box; the full consent opens under it; the version shows beside the box. */
+  consent: { summary: string; full: { heading: string; text: string }[]; version: string };
   demo: boolean;
 }) {
   const router = useRouter();
@@ -92,8 +93,20 @@ export function SignForm({
             className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
             {...described("consent")}
           />
-          <span>{consentText}</span>
+          <span>
+            {consent.summary} <span className="whitespace-nowrap text-ink-3">Version {consent.version}</span>
+          </span>
         </label>
+        <details className="mt-2 pl-7 text-sm">
+          <summary className="cursor-pointer text-ink-2">Read the full consent</summary>
+          <ul className="mt-2 space-y-2 text-ink-2">
+            {consent.full.map((p) => (
+              <li key={p.heading}>
+                <span className="font-medium text-ink">{p.heading}</span> {p.text}
+              </li>
+            ))}
+          </ul>
+        </details>
         {fieldError("consent") && (
           <p id={`${FIELD_ID.consent}-error`} className="mt-1 text-sm text-bad">
             {fieldError("consent")}
