@@ -35,6 +35,8 @@ export const isPrintable = (s: string) => PRINTABLE_LINE.test(s);
 export const isPrintableText = (s: string) => PRINTABLE_TEXT.test(s);
 /** For one-line text that must be drawn whatever it holds (a certificate row): line breaks become spaces, anything else the fonts can't draw becomes "?". */
 export const printableOnly = (s: string) => s.replace(/\r\n?|\n/g, " ").replace(UNPRINTABLE, "?");
+/** The distinct characters of a one-line value the fonts can't draw, in order (a line break reads as "a line break"), so a refusal can name them. */
+export const unprintableChars = (s: string): string[] => [...new Set(s.match(UNPRINTABLE) ?? [])].map((c) => (/[\r\n]/.test(c) ? "a line break" : c));
 
 /** Parses the inline markdown used in the Common Paper source: **bold**, [links](…), <span> tags. */
 export function inlineRuns(md: string): Run[] {

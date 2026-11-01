@@ -42,7 +42,7 @@ export default async function PassportPage({ params, searchParams }: { params: P
         <FragmentOpener
           openUrl={`/p/${id}/open`}
           opening="Opening the shared documents…"
-          unavailable={<LinkUnavailable noun="link" why={r === "reopen" ? "stale" : "incomplete"} undone="the download didn't start" zone={zone} />}
+          unavailable={<LinkUnavailable noun="link" why={r === "reopen" ? "stale" : "incomplete"} undone="The download didn't start." zone={zone} />}
         />
       )}
     </main>

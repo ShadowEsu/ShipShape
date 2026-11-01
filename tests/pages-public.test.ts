@@ -13,7 +13,7 @@ import { GET as signFile } from "@/app/s/[id]/file/route";
 import SigningPage from "@/app/s/[id]/page";
 import { POST as signPost } from "@/app/s/[id]/sign/route";
 import { SignButton } from "@/app/s/[id]/sign-form";
-import { signProblem } from "@/app/s/[id]/messages";
+import { plainTwin, signProblem } from "@/app/s/[id]/messages";
 import { signIn } from "@/app/signin/actions";
 import SignInPage from "@/app/signin/page";
 import { addVendor, createVendorLink, receiveFile, revokeVendorLink } from "@/lib/server/collect";
@@ -159,7 +159,7 @@ describe("a passport link (/p)", () => {
 
     jar.set("ss_passport", otherToken(token));
     const wrong = await passportPage(id);
-    expect(textOf(wrong)).toContain("This link has stopped working It has expired, been turned off, or what it shared is no longer available. Ask whoever sent it for a new one.");
+    expect(textOf(wrong)).toContain("This link has stopped working This link has expired, been turned off, or what it shared was removed. Ask whoever sent it for a new one.");
     expect(textOf(wrong)).not.toContain("stopped working on");
   });
 
@@ -198,8 +198,8 @@ describe("a passport link (/p)", () => {
     // The page hands FragmentOpener the stale state (seen once the browser finds no token in the address); the copy itself, rendered directly:
     const page = await renderPage(PassportPage, props(id, { r: "reopen" }));
     expect(page).toContain("Opening the shared documents…");
-    const stale = textOf(await renderPage(LinkUnavailable, { noun: "link", why: "stale", undone: "the download didn't start", zone: "UTC" }));
-    expect(stale).toBe("Open the full link you were sent This page was open too long, so the download didn't start. Open the link from your message again, or ask whoever sent it for a new one. Ask for a new link");
+    const stale = textOf(await renderPage(LinkUnavailable, { noun: "link", why: "stale", undone: "The download didn't start.", zone: "UTC" }));
+    expect(stale).toBe("This page was open too long The download didn't start. Open the link from your message again, or ask whoever sent it for a new one. Ask for a new link");
     const incomplete = textOf(await renderPage(LinkUnavailable, { noun: "link", why: "incomplete", zone: "UTC" }));
     expect(incomplete).toBe("Open the full link you were sent This page opens only from the complete link in your message. Open that link again, or ask whoever sent it for a new one. Ask for a new link");
     // With the cookie, a good download goes to the file; after the link is turned off, back to the page, which says so.
@@ -289,7 +289,7 @@ describe("a signing link (/s)", () => {
     expect(said(html)).toContain(`This signing link has expired It stopped working on ${fmtDay(row.at)}. Ask whoever sent it for a new link, or for a copy of what you signed.`);
     expectAskForNewLink(html);
     jar.set("ss_sign", otherToken(token));
-    expect(textOf(await signingPage(id))).toContain("This signing link has stopped working It has expired, been turned off, or what it shared is no longer available.");
+    expect(textOf(await signingPage(id))).toContain("This signing link has stopped working This signing link has expired, been turned off, or what it shared was removed.");
   });
 
   it("once signed, ends calmly: done, who has the record, until when this copy stays here, and one action", async () => {
@@ -347,13 +347,21 @@ describe("a signing link (/s)", () => {
     expect(await (await postCode(id)).json()).toEqual({ result: "ok" });
     const [m] = await db.root((tx) => tx.query<{ body: string }>("select body from app.outbox where org_id = $1 order by created_at desc limit 1", [sample.orgId]));
     const code = /\b(\d{6})\b/.exec(m.body)?.[1] ?? "";
-    // A name the certificate can't print: its own words, under the name field.
+    // A name the certificate can't print: the answer names the characters, and the words give the rule with a plain twin when one exists (Design).
     const chars = await postSign(id, { code, typedName: "Łukasz Nowak", consented: true });
-    expect(await chars.json()).toEqual({ result: "name_chars" });
-    expect(signProblem("name_chars", "x")).toEqual({
+    expect(await chars.json()).toEqual({ result: "name_chars", chars: ["Ł"] });
+    expect(signProblem("name_chars", "x", ["Ł"])).toEqual({
       field: "name",
-      message: "The certificate can only print Latin letters, numbers and common punctuation. Type your name with those, for example Lukasz Nowak.",
+      message: 'The certificate can\'t print "Ł". It can print Latin letters, numbers and common punctuation, so type your name using those (for example, L for Ł).',
     });
+    expect(signProblem("name_chars", "x", ["ř", "ß"]).message).toBe(
+      'The certificate can\'t print "ř" or "ß". It can print Latin letters, numbers and common punctuation, so type your name using those (for example, r for ř).',
+    );
+    expect(signProblem("name_chars", "x", ["И"]).message).toBe('The certificate can\'t print "И". It can print Latin letters, numbers and common punctuation, so type your name using those.');
+    expect(plainTwin("ß")).toBe("ss");
+    expect(plainTwin("李")).toBeNull();
+    expect(await (await postSign(id, { code, typedName: "Jordan\nLee", consented: true })).json()).toEqual({ result: "name_chars", chars: ["a line break"] });
+    expect(signProblem("name_chars", "x", ["a line break"]).message).toMatch(/^The certificate can't print a line break\. It can print/);
     expect(await (await postSign(id, { code, typedName: "Lukasz Nowak", consented: true })).json()).toEqual({ result: "ok" });
     // The stale tab posts again.
     const again = await postSign(id, { code, typedName: "Lukasz Nowak", consented: true });
@@ -473,7 +481,7 @@ describe("an upload link (/c)", () => {
     expect(said(html)).toContain(`This upload link has expired It stopped working on ${fmtDay(row.at)}. Ask whoever sent it for a new one.`);
     expectAskForNewLink(html);
     jar.set("ss_collect", otherToken(token));
-    expect(textOf(await collectPage(id))).toContain("This upload link has stopped working It has expired, been turned off, or what it shared is no longer available.");
+    expect(textOf(await collectPage(id))).toContain("This upload link has stopped working This upload link has expired, been turned off, or what it shared was removed.");
   });
 
   it("a post after the page's cookie ran out comes back as 'reopen', and the page says nothing was sent and to open the link again", async () => {
@@ -500,8 +508,8 @@ describe("an upload link (/c)", () => {
     expect(await db.root((tx) => tx.query("select 1 from app.vendor_files f join app.vendor_links l on l.vendor_id = f.vendor_id where l.id = $1", [id]))).toHaveLength(0);
     // The page (no cookie) opens from the address first; the state it falls back to names what didn't happen.
     expect(await collectPage(id, { r: "reopen", k: "coi" })).toContain("Opening the link…");
-    expect(textOf(await renderPage(LinkUnavailable, { noun: "upload link", why: "stale", undone: "nothing was sent", zone: "UTC" }))).toContain(
-      "Open the full upload link you were sent This page was open too long, so nothing was sent. Open the link from your message again, or ask whoever sent it for a new one.",
+    expect(textOf(await renderPage(LinkUnavailable, { noun: "upload link", why: "stale", undone: "Nothing was sent.", zone: "UTC" }))).toContain(
+      "This page was open too long Nothing was sent. Open the link from your message again, or ask whoever sent it for a new one.",
     );
   });
 

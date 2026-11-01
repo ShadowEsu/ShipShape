@@ -94,7 +94,7 @@ export default async function SigningPage({ params, searchParams }: { params: Pr
         <FragmentOpener
           openUrl={`/s/${id}/open`}
           opening="Opening the document to sign…"
-          unavailable={<LinkUnavailable noun="signing link" why={r === "reopen" ? "stale" : "incomplete"} undone="the download didn't start" zone={zone} />}
+          unavailable={<LinkUnavailable noun="signing link" why={r === "reopen" ? "stale" : "incomplete"} undone="The download didn't start." zone={zone} />}
         />
       )}
     </main>

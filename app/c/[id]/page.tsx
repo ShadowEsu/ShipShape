@@ -193,7 +193,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
       ) : token ? (
         <LinkUnavailable noun="upload link" why="closed" end={end} zone={zone} />
       ) : (
-        <FragmentOpener openUrl={`/c/${id}/open`} unavailable={<LinkUnavailable noun="upload link" why={r === "reopen" ? "stale" : "incomplete"} undone="nothing was sent" zone={zone} />} />
+        <FragmentOpener openUrl={`/c/${id}/open`} unavailable={<LinkUnavailable noun="upload link" why={r === "reopen" ? "stale" : "incomplete"} undone="Nothing was sent." zone={zone} />} />
       )}
     </main>
   );

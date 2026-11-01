@@ -6,7 +6,7 @@ import { dayOf } from "@/lib/today";
 /**
  * Why a page can't show its link: `closed` (the token is right but the link no longer opens), `incomplete`
  * (opened without its token), `stale` (its 30-minute token cookie ran out while the page sat open, so the
- * last thing the visitor did didn't happen: `undone` says what).
+ * last thing the visitor did didn't happen: `undone` is that sentence).
  */
 export type LinkWhy = "closed" | "incomplete" | "stale";
 
@@ -16,12 +16,12 @@ function explain(noun: string, why: LinkWhy, end: LinkEnd | null | undefined, zo
     return [`Open the full ${noun} you were sent`, "This page opens only from the complete link in your message. Open that link again, or ask whoever sent it for a new one."];
   }
   if (why === "stale") {
-    return [`Open the full ${noun} you were sent`, `This page was open too long, so ${undone}. Open the link from your message again, or ask whoever sent it for a new one.`];
+    return ["This page was open too long", `${undone} Open the link from your message again, or ask whoever sent it for a new one.`];
   }
   if (end?.state === "expired") return [`This ${noun} has expired`, `It stopped working on ${dayOf(end.endedAt, zone)}. ${expiredAsk}`];
   if (end?.state === "revoked") return [`This ${noun} was turned off`, "Whoever sent it turned it off. Ask them for a new one."];
   // No end for the right token: what the link pointed to is gone (every document archived, the vendor archived, the workspace deleted).
-  return [`This ${noun} has stopped working`, "It has expired, been turned off, or what it shared is no longer available. Ask whoever sent it for a new one."];
+  return [`This ${noun} has stopped working`, `This ${noun} has expired, been turned off, or what it shared was removed. Ask whoever sent it for a new one.`];
 }
 
 /**
@@ -36,7 +36,7 @@ export function LinkUnavailable({
   why,
   end,
   zone,
-  undone = "it needs the link again",
+  undone = "It needs the link again.",
   expiredAsk = "Ask whoever sent it for a new one.",
 }: {
   noun: string;
