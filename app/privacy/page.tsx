@@ -58,6 +58,10 @@ export default function PrivacyPage() {
           Stripe and never reach ShipShape.
         </li>
         <li>
+          <strong>The reminders and signing codes</strong> ShipShape would have emailed, as they appear in the app: reminders for 90
+          days, signing codes for 1 day.
+        </li>
+        <li>
           <strong>Waitlist:</strong> the email address you gave us, and whether you asked to hear about Collect, only to tell you when
           ShipShape opens or, if you asked, when Collect goes on sale.
         </li>

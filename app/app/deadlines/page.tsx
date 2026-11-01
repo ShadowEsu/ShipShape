@@ -48,7 +48,9 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
 export default async function DeadlinesPage() {
   const ctx = await requireWorkspace();
   const zone = await viewerZone();
-  const [all, outbox, { plan }] = await Promise.all([listDeadlines(ctx), listOutbox(ctx), billingView(ctx)]);
+  // Only owners and admins can read the outbox (0039), so a member's page doesn't ask for it.
+  const member = ctx.role === "member";
+  const [all, outbox, { plan }] = await Promise.all([listDeadlines(ctx), member ? [] : listOutbox(ctx), billingView(ctx)]);
   // Reminders from ShipShape are a Pro feature (lib/server/deadlines.ts runs them for Pro only); the calendar file works on every plan.
   const reminders = PLANS[plan].emailReminders;
   const quiet = all.length > 0 && all.every((d) => d.days_left > 90);
@@ -97,8 +99,16 @@ export default async function DeadlinesPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold">Reminders sent</h2>
-        <p className="text-sm text-ink-3">During the preview ShipShape doesn&apos;t send email; reminders and signing codes land here instead.</p>
-        {outbox.length === 0 ? (
+        {member ? (
+          <p className="card text-sm text-ink-2">Reminders go to owners and admins, and only they can see what was sent.</p>
+        ) : (
+          <p className="text-sm text-ink-3">
+            {ctx.demo
+              ? "During the preview ShipShape doesn't send email; reminders and signing codes land here instead."
+              : "During the preview ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown."}
+          </p>
+        )}
+        {member ? null : outbox.length === 0 ? (
           <p className="card text-sm text-ink-2">
             {reminders ? "Nothing yet. The first reminder lands here 90 days before a date." : "Nothing here: on the Free plan ShipShape doesn't send reminders."}
           </p>
