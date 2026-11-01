@@ -4,9 +4,9 @@ import { SiteFooter, SiteHeader, StatusLabel } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { PLANS } from "@/lib/plans";
 
-export const metadata: Metadata = { title: "Pricing", description: "ShipShape is free for up to 10 documents. Pro is $15 a month." };
-
 const { free, pro } = PLANS;
+
+export const metadata: Metadata = { title: "Pricing", description: `ShipShape is free for up to ${free.documents} documents. Pro is $${pro.price} a month.` };
 
 const ROWS: [feature: string, free: string, pro: string][] = [
   ["Active documents", `${free.documents}`, "No limit"],
@@ -23,7 +23,7 @@ const BILLING: [q: string, a: string][] = [
   ["Can I cancel any time?", "Yes, from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free."],
   ["What happens to my documents if I go back to Free?", "Nothing is deleted. You just can't add more than Free allows until you're under its limits."],
   ["What if a payment fails?", "Pro stays on for 7 days from the first failed attempt while the payment is retried, then the workspace moves to Free."],
-  ["Refunds?", "Your first Pro payment is refunded in full if you ask within 14 days. After that you can cancel any time, but earlier payments aren't refunded, in whole or in part. A full refund or a disputed charge ends Pro straight away."],
+  ["Refunds?", "Your first Pro payment can be refunded in full if you ask within 14 days. The terms will give the address to ask before real payments start. After that you can cancel any time, but earlier payments aren't refunded, in whole or in part. A full refund or a disputed charge ends Pro straight away."],
   ["Am I charged now?", "No. During the preview, payments run in Stripe's test mode and no real money moves."],
 ];
 
@@ -108,7 +108,8 @@ export default function PricingPage() {
             </table>
           </div>
           <p className="mt-3 text-base text-ink-3 sm:text-sm">
-            Email reminders and signing codes go out once ShipShape has an email provider; until then they appear inside the app.
+            Email reminders and signature requests by email start once ShipShape has an email provider. Until then, the sample workspace
+            shows them inside the app.
           </p>
         </section>
 

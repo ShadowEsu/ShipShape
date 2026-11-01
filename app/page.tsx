@@ -12,12 +12,12 @@ const WHO: { who: string; asks: string }[] = [
 const STEPS: { title: string; body: string }[] = [
   { title: "Keep", body: "Every document in one place, with each version, its dates and a history of who opened or shared it." },
   { title: "Fill", body: "Confirm your business facts once. ShipShape fills the official IRS W-9 and the Common Paper Mutual NDA from them, and shows where every field came from." },
-  { title: "Share", body: "One link holds exactly the documents you pick. It expires when you say, shows who opened it, and turns off in a click." },
+  { title: "Share", body: "One link holds exactly the documents you pick. It expires when you say, shows each time it's opened and what was downloaded, and turns off in a click." },
   { title: "Stay current", body: "Expiry and renewal dates become deadlines and a calendar file with alerts; on Pro, also reminders 90, 30 and 7 days ahead." },
 ];
 
 const CAPABILITIES: { title: string; body: string; status: Status }[] = [
-  { title: "Documents, versions and history", body: "Upload, search, archive; every change and download recorded.", status: "Works today" },
+  { title: "Documents, versions and history", body: "Search, archive and see every version; every change and download recorded.", status: "Works today" },
   { title: "W-9 and NDA from your facts", body: "Official IRS form and Common Paper's standard NDA, filled and saved.", status: "Works today" },
   { title: "Passport links", body: "Expiry up to 90 days, access log, turn off any time.", status: "Works today" },
   { title: "Deadlines and calendar file", body: "Lapsed, due soon and later, with an .ics download.", status: "Works today" },
@@ -25,7 +25,8 @@ const CAPABILITIES: { title: string; body: string; status: Status }[] = [
   { title: "Export and account deletion", body: "One ZIP of everything; deletion removes files and links.", status: "Works today" },
   { title: "Collect", body: "Ask your own vendors for W-9s and certificates through an upload link and see who's current. Not in a plan yet.", status: "Works today" },
   { title: "Accounts for real documents", body: "Pending our security review and the production database.", status: "Awaiting setup" },
-  { title: "Email reminders and signing codes", body: "Pending an email provider; they show inside the app meanwhile.", status: "Awaiting setup" },
+  { title: "Upload your own files", body: "PDF, PNG or JPEG, up to 4 MB each, once real accounts open.", status: "Awaiting setup" },
+  { title: "Email reminders and signing codes", body: "Pending an email provider; the sample shows them inside the app meanwhile.", status: "Awaiting setup" },
   { title: "Payments", body: "Checkout, billing portal and webhooks, checked against a simulated Stripe; the Stripe sandbox run is pending. No real charges.", status: "Awaiting setup" },
   { title: "“What are they asking for?”", body: "Paste a request and see which documents it asks for and which you have. Built; opt-in per request, switched on after our security review.", status: "Awaiting setup" },
   { title: "Dates read off certificates", body: "Expiry dates filled in from an uploaded certificate, with your OK. Opt-in AI.", status: "Planned" },
@@ -151,12 +152,12 @@ export default function Home() {
           </div>
           <ul className="space-y-3 text-base text-ink-2 sm:text-sm">
             {[
-              "Tax IDs are encrypted with a key kept outside the database and shown as the last 4 digits unless you ask.",
+              "Tax IDs in your business facts are encrypted with a key kept outside the database and shown as the last 4 digits unless you ask.",
               "Files sit in private storage and open through links that expire after 5 minutes.",
               "Each workspace is walled off from every other in the database itself, checked with a second account in our tests.",
               "Every change, view, share and signature lands in a history where each entry is chained to the one before.",
               "No ads, no analytics trackers, and we don't train AI on your documents.",
-              "Export everything or delete your account from Settings, any time.",
+              "Owners and admins can export everything from Settings (one ZIP, up to 200 MB); anyone can delete their account there, any time.",
             ].map((t) => (
               <li key={t} className="flex gap-3">
                 <span aria-hidden="true" className="mt-0.5 text-ok">

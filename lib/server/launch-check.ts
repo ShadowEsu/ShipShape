@@ -22,9 +22,12 @@ export function launchProblems(env: Env): string[] {
       problems.push(e instanceof Error ? e.message : "a setting is invalid");
     }
   };
+  const noContact = !contactEmail(env);
   // Any production build with real documents open: /privacy and every shared page's "Report this page" use it.
-  if (env.NODE_ENV === "production" && env.SHIPSHAPE_REAL_DOCS === "1" && !contactEmail(env)) problems.push("Production with real documents needs CONTACT_EMAIL (not configured)");
+  if (env.NODE_ENV === "production" && env.SHIPSHAPE_REAL_DOCS === "1" && noContact) problems.push("Production with real documents needs CONTACT_EMAIL (not configured)");
   if (env.VERCEL_ENV !== "production") return problems;
+  // Before real documents too: the waitlist takes addresses now, and /privacy tells people to write to it to come off (W13-9).
+  if (noContact && env.SHIPSHAPE_REAL_DOCS !== "1") problems.push("CONTACT_EMAIL is not set: /privacy tells people to write to it");
   check(() => sessionSecret(env));
   check(() => hashKey(env));
   check(() => fieldKey(env));

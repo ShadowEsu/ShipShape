@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Logo, NotLegalAdvice } from "@/components/ui";
 import { cognitoConfig, type SignInProblem } from "@/lib/server/cognito";
+import { realDocsEnabled } from "@/lib/server/flags";
 import { localSignInAllowed } from "@/lib/server/session";
 import { RETURN_TO, returnTo } from "@/lib/return-to";
 import { SignInForm } from "./form";
@@ -57,7 +58,9 @@ export default async function SignInPage({
               {back
                 ? `Sign in again to continue in ${RETURN_TO[back].where}.`
                 : accounts
-                  ? "Sign in, or create an account with your email. You can also explore a sample business with made-up documents."
+                  ? realDocsEnabled()
+                    ? "Sign in, or create an account with your email. You can also explore a sample business with made-up documents."
+                    : "Create an account with your email now; real documents open after our security review. Until then, explore a sample business with made-up documents."
                   : "Accounts for real documents open after our security review. Until then, explore a sample business with made-up documents."}
             </p>
           </div>

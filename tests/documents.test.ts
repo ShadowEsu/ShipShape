@@ -185,6 +185,7 @@ describe("real documents gate (Security G3)", () => {
       SHIPSHAPE_S3_BUCKET: "shipshape-files",
       AWS_REGION: "us-east-1",
       AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/shipshape-prod-app",
+      CONTACT_EMAIL: "support@shipshape.example",
     };
     expect(launchProblems(full)).toEqual([]);
     // Previews run production builds without AWS by design; only Vercel's production is held to all of it.
@@ -211,6 +212,12 @@ describe("real documents gate (Security G3)", () => {
     ]);
     expect(broken.join(" ")).not.toContain(secret);
     expect(launchProblems({ ...full, AWS_ROLE_ARN: undefined })).toEqual(["Production S3 storage needs AWS_ROLE_ARN"]);
+    // The waitlist is open and /privacy tells people to write to come off it, so production needs the address before real documents too (W13-9), named once.
+    expect(launchProblems({ ...full, CONTACT_EMAIL: undefined })).toEqual(["CONTACT_EMAIL is not set: /privacy tells people to write to it"]);
+    expect(launchProblems({ ...full, CONTACT_EMAIL: "not an address", SHIPSHAPE_REAL_DOCS: "1" })).toEqual([
+      "Production with real documents needs CONTACT_EMAIL (not configured)",
+      "Real documents need account sign-in (COGNITO_*)",
+    ]);
     // Account sign-in: half set up is refused; real documents need it set up.
     expect(launchProblems({ ...full, COGNITO_DOMAIN: "https://auth.shipshape.example" })).toEqual([
       "Account sign-in needs COGNITO_DOMAIN, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET and SHIPSHAPE_APP_URL",
