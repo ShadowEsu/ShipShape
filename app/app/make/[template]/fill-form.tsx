@@ -62,7 +62,7 @@ export interface Problem {
  */
 export function ErrorSummary({ problems, onPick, ref }: { problems: Problem[]; onPick?: (key: string) => void; ref?: Ref<HTMLDivElement> }) {
   return (
-    <div ref={ref} tabIndex={-1} role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad">
+    <div ref={ref} tabIndex={-1} role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad focus:outline-2 focus:outline-offset-2 focus:outline-accent">
       <h2 className="font-semibold">{problems.length === 1 ? "1 answer needs fixing" : `${problems.length} answers need fixing`}</h2>
       <ul className="mt-1 list-disc space-y-1 pl-5">
         {problems.map((p) => (
