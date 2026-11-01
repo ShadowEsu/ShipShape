@@ -149,26 +149,21 @@ class Writer {
     if (this.y - height < PAGE.margin + 24) this.newPage();
   }
 
-  /** Lays out runs as wrapped lines starting at x; returns nothing, moves y down. */
-  flow(runs: Run[], { x = PAGE.margin, width = this.width, size = 10.5, leading = 1.45, color = INK, sans = false } = {}) {
-    const fontOf = (r: Run) => (sans ? (r.bold ? this.f.sansBold : this.f.sans) : r.bold ? this.f.bold : this.f.regular);
+  private fontFor(sans: boolean) {
+    return (r: Run) => (sans ? (r.bold ? this.f.sansBold : this.f.sans) : r.bold ? this.f.bold : this.f.regular);
+  }
+
+  /** The lines `runs` wrap to in `width` at `size`: each a list of words, each word its runs. A line break or empty text is an empty line. */
+  private layout(runs: Run[], width: number, size: number, sans: boolean): Run[][][] {
+    const fontOf = this.fontFor(sans);
     const words = wordsOf(runs);
-    const lineHeight = size * leading;
     const widthOf = (w: Run[]) => w.reduce((n, p) => n + fontOf(p).widthOfTextAtSize(p.text, size), 0);
     const space = (w: Run[]) => fontOf(w[0]).widthOfTextAtSize(" ", size);
+    const lines: Run[][][] = [];
     let line: Run[][] = [];
     let lineWidth = 0;
     const flush = () => {
-      this.ensure(lineHeight);
-      let cx = x;
-      for (const [wi, w] of line.entries()) {
-        if (wi > 0) cx += space(w);
-        for (const p of w) {
-          this.page.drawText(p.text, { x: cx, y: this.y - size, size, font: fontOf(p), color });
-          cx += fontOf(p).widthOfTextAtSize(p.text, size);
-        }
-      }
-      this.y -= lineHeight;
+      lines.push(line);
       line = [];
       lineWidth = 0;
     };
@@ -188,6 +183,30 @@ class Writer {
     }
     // Empty text still takes one line (an empty table cell keeps its row height).
     if (line.length || !words.length) flush();
+    return lines;
+  }
+
+  /** How far flow moves y for these runs, so a block can be kept on one page before any of it is drawn. */
+  height(runs: Run[], { width = this.width, size = 10.5, leading = 1.45, sans = false } = {}) {
+    return this.layout(runs, width, size, sans).length * size * leading;
+  }
+
+  /** Lays out runs as wrapped lines starting at x; returns nothing, moves y down. */
+  flow(runs: Run[], { x = PAGE.margin, width = this.width, size = 10.5, leading = 1.45, color = INK, sans = false } = {}) {
+    const fontOf = this.fontFor(sans);
+    const lineHeight = size * leading;
+    for (const line of this.layout(runs, width, size, sans)) {
+      this.ensure(lineHeight);
+      let cx = x;
+      for (const [wi, w] of line.entries()) {
+        if (wi > 0) cx += fontOf(w[0]).widthOfTextAtSize(" ", size);
+        for (const p of w) {
+          this.page.drawText(p.text, { x: cx, y: this.y - size, size, font: fontOf(p), color });
+          cx += fontOf(p).widthOfTextAtSize(p.text, size);
+        }
+      }
+      this.y -= lineHeight;
+    }
   }
 }
 
@@ -235,12 +254,16 @@ export async function composePdf(
       }
       case "rows":
         for (const [label, value] of b.rows) {
-          w.ensure(30);
+          // The whole row on one page: a label and value laid out from one top, one of them carried
+          // onto the next page, would put the other at the old page's height there (W11-4).
+          const labelRuns = [{ text: label, bold: true }];
+          const valueRuns = [{ text: value || "—" }];
+          w.ensure(Math.max(30, w.height(labelRuns, { width: 150, size: 9.5, sans: true }), w.height(valueRuns, { width: w.width - 160 })));
           const top = w.y;
-          w.flow([{ text: label, bold: true }], { width: 150, size: 9.5, sans: true });
+          w.flow(labelRuns, { width: 150, size: 9.5, sans: true });
           const afterLabel = w.y;
           w.y = top;
-          w.flow([{ text: value || "—" }], { x: PAGE.margin + 160, width: w.width - 160 });
+          w.flow(valueRuns, { x: PAGE.margin + 160, width: w.width - 160 });
           w.y = Math.min(w.y, afterLabel) - 6;
           w.page.drawLine({ start: { x: PAGE.margin, y: w.y + 3 }, end: { x: PAGE.w - PAGE.margin, y: w.y + 3 }, thickness: 0.4, color: rgb(0.85, 0.85, 0.85) });
         }
@@ -252,14 +275,21 @@ export async function composePdf(
         const colW = (w.width - labelW) / (cols - 1);
         const rowsAll = [b.head, ...b.rows];
         for (const [ri, row] of rowsAll.entries()) {
-          w.ensure(28);
+          const cells = row.map((cell, ci) => {
+            const heading = ri === 0 || ci === 0;
+            return {
+              runs: [{ text: cell || " ", bold: heading }],
+              x: ci === 0 ? PAGE.margin : PAGE.margin + labelW + colW * (ci - 1),
+              opts: { width: ci === 0 ? labelW - 8 : colW - 8, size: heading ? 9.5 : 10.5, sans: heading },
+            };
+          });
+          // Every cell of a row on one page, as with "rows" (W11-4).
+          w.ensure(Math.max(28, ...cells.map((c) => w.height(c.runs, c.opts))));
           const top = w.y;
           let bottom = top;
-          for (const [ci, cell] of row.entries()) {
+          for (const c of cells) {
             w.y = top;
-            const x = ci === 0 ? PAGE.margin : PAGE.margin + labelW + colW * (ci - 1);
-            const width = ci === 0 ? labelW - 8 : colW - 8;
-            w.flow([{ text: cell || " ", bold: ri === 0 || ci === 0 }], { x, width, size: ri === 0 || ci === 0 ? 9.5 : 10.5, sans: ri === 0 || ci === 0 });
+            w.flow(c.runs, { x: c.x, ...c.opts });
             bottom = Math.min(bottom, w.y);
           }
           w.y = Math.min(bottom, top - 22) - 4;

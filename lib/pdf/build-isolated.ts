@@ -94,14 +94,31 @@ const Message = z.union([
 export async function buildToSignIsolated(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits = ISOLATION_LIMITS): Promise<Uint8Array> {
   const release = await slots.take(SLOT_WAIT_MS);
   try {
-    return await buildInChild(bytes, mime, limits, CHILD);
+    return await buildInChild({ bytes, mime }, limits, CHILD);
   } finally {
     release();
   }
 }
 
-/** Exported for tests, which pass a child that crashes; everything else goes through buildToSignIsolated. */
-export function buildInChild(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits, script: string): Promise<Uint8Array> {
+/**
+ * appendPages (the certificate after the reviewed file) in a process of its own, with the same slots
+ * and limits as a build (W11-10). The reviewed file keeps every name the upload's pages had, and
+ * loading it in the server process would put them in pdf-lib's never-cleared tables at every signing.
+ */
+export async function appendPagesIsolated(base: Uint8Array, extra: Uint8Array, limits: IsolationLimits = ISOLATION_LIMITS): Promise<Uint8Array> {
+  const release = await slots.take(SLOT_WAIT_MS);
+  try {
+    return await buildInChild({ base, extra }, limits, CHILD);
+  } finally {
+    release();
+  }
+}
+
+/** What a build process is given: an upload to build the review copy from, or a review copy and the certificate to append. */
+export type ChildJob = { bytes: Uint8Array; mime: Parameters<typeof buildToSign>[1] } | { base: Uint8Array; extra: Uint8Array };
+
+/** Exported for tests, which pass a child that crashes; everything else goes through buildToSignIsolated and appendPagesIsolated. */
+export function buildInChild(job: ChildJob, limits: IsolationLimits, script: string): Promise<Uint8Array> {
   const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
   // fork() would do, but Turbopack's build resolves fork()'s path as a module and fails
   // (vercel/next.js#97952); spawn with an "ipc" channel is the same thing.
@@ -131,8 +148,8 @@ export function buildInChild(bytes: Uint8Array, mime: Parameters<typeof buildToS
       ready = true;
       clearTimeout(timer);
       timer = setTimeout(() => finish(() => reject(new NotSignable("unreadable", new Error(`not built within ${limits.timeoutMs} ms`)))), limits.timeoutMs);
-      child.send({ bytes, mime });
-    } else finish(() => ("built" in m ? resolve(m.built) : "refused" in m ? reject(new NotSignable(m.refused)) : reject(new Error(`buildToSign failed in its process: ${m.failed}`))));
+      child.send(job);
+    } else finish(() => ("built" in m ? resolve(m.built) : "refused" in m ? reject(new NotSignable(m.refused)) : reject(new Error(`the build failed in its process: ${m.failed}`))));
   });
   child.on("error", (e) => finish(() => reject(e)));
   child.on("exit", (code, signal) =>

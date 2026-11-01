@@ -41,6 +41,13 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
     }
     attachLinkTargets(out);
   } else {
+    // pdf-lib decodes a whole PNG (about 9 bytes a pixel, outside V8's heap, which the build's heap
+    // limit doesn't cap), and a small, flat PNG can declare 100 megapixels (W11-3), so its declared
+    // size is checked first. A JPEG is copied into the PDF as it is, never decoded here.
+    if (mime === "image/png") {
+      const pixels = pngPixels(original);
+      if (pixels === null || pixels > MAX_PNG_PIXELS) throw new NotSignable("unreadable", new Error(pixels === null ? "no PNG header" : `${pixels} pixels is over the limit`));
+    }
     try {
       // pdf-lib 1.17 reads a JPEG through `new DataView(bytes.buffer)`, ignoring where the view
       // starts. Bytes that reach the build process over IPC sit at an offset in a larger buffer, so
@@ -55,4 +62,17 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
   }
   makeInert(out);
   return out.save({ useObjectStreams: false });
+}
+
+/**
+ * The most pixels a PNG sent for signature may have: about 360 MB decoded per build (MAX_BUILDS
+ * at once), and more than a scan needs (a letter page at 600 dpi is 34 megapixels).
+ */
+export const MAX_PNG_PIXELS = 40_000_000;
+
+/** A PNG's width × height from its IHDR (bytes 16-23), without decoding it; null without one. */
+function pngPixels(bytes: Uint8Array): number | null {
+  if (bytes.length < 24) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return view.getUint32(16) * view.getUint32(20);
 }

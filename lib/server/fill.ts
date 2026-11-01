@@ -1,9 +1,10 @@
 import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument, StandardFonts, TextAlignment, layoutMultilineText, rgb, type PDFFont } from "pdf-lib";
+import { PDFDocument, PDFName, StandardFonts, TextAlignment, layoutMultilineText, rgb, type PDFFont } from "pdf-lib";
 import { z } from "zod";
 import { composePdf, inlineRuns, isPrintable, isPrintableText, type Block } from "@/lib/pdf/compose";
+import { makeInert } from "@/lib/pdf/inert";
 import type { EntityType, ProfileKey } from "@/lib/profile-fields";
 import { isVisible as visible, NDA_DEFAULT_PURPOSE } from "@/lib/templates/catalog";
 import type { Facts, FieldDef, Rendered, TemplateInfo } from "@/lib/templates/types";
@@ -91,17 +92,37 @@ export function einFor(v: Values, facts: Facts): string {
   return d ? `${d.slice(0, 2)}-${d.slice(2)}` : "";
 }
 
-/** Helvetica as the flattened form's text is set in it: what pdf-lib lays out with this is what the page shows. */
-let helvetica: Promise<PDFFont> | undefined;
-function measuringFont(): Promise<PDFFont> {
-  helvetica ??= PDFDocument.create().then((d) => d.embedStandardFont(StandardFonts.Helvetica));
-  return helvetica;
+/**
+ * The fonts a form's text is measured in: Helvetica as the flattened form's fields are set in it,
+ * Times-Italic as ShipShape draws a typed signature. What pdf-lib lays out with these is what the page shows.
+ */
+const fonts = new Map<StandardFonts, Promise<PDFFont>>();
+function measuringFont(name: StandardFonts): Promise<PDFFont> {
+  let font = fonts.get(name);
+  if (!font) {
+    font = PDFDocument.create().then((d) => d.embedStandardFont(name));
+    fonts.set(name, font);
+  }
+  return font;
 }
 
-/** How many lines pdf-lib lays `value` out on in a box of `fits` (the same function and bounds the field's appearance uses). */
-async function linesInBox(value: string, fits: NonNullable<FieldDef["fits"]>): Promise<number> {
-  const font = await measuringFont();
-  return layoutMultilineText(value, { alignment: TextAlignment.Left, fontSize: fits.size, font, bounds: { x: 1, y: 1, width: fits.width, height: fits.size * fits.lines * 1.2 } }).lines.length;
+/**
+ * Whether `value` stays inside the box `fits` describes. One line: its width at that size (a single
+ * line is never wrapped, so anything wider is clipped or runs into the next box, W11-5). More lines:
+ * how many pdf-lib lays it out on (the same function and bounds the field's appearance uses).
+ */
+async function fitsBox(value: string, fits: NonNullable<FieldDef["fits"]>): Promise<boolean> {
+  const font = await measuringFont(fits.italic ? StandardFonts.TimesRomanItalic : StandardFonts.Helvetica);
+  if (fits.lines === 1) return font.widthOfTextAtSize(value, fits.size) <= fits.width;
+  return layoutMultilineText(value, { alignment: TextAlignment.Left, fontSize: fits.size, font, bounds: { x: 1, y: 1, width: fits.width, height: fits.size * fits.lines * 1.2 } }).lines.length <= fits.lines;
+}
+
+/** What to say when a value won't fit its box. About how many characters a line holds: mixed text averages half the size per character. */
+function tooWide(fits: NonNullable<FieldDef["fits"]>): string {
+  const chars = Math.floor(fits.width / (fits.size / 2));
+  return fits.lines === 1
+    ? `This won't fit on the form's line, which holds about ${chars} characters. Shorten it so nothing is cut off the PDF.`
+    : `This won't fit in the form's box, which holds ${fits.lines} lines of about ${chars} characters. Shorten it so nothing is cut off the PDF.`;
 }
 
 export async function validate(t: TemplateInfo, v: Values, facts: Facts): Promise<Record<string, string>> {
@@ -117,9 +138,7 @@ export async function validate(t: TemplateInfo, v: Values, facts: Facts): Promis
     if (f.required && !value) errors[f.key] = f.key === "ssn" ? SSN_FORMAT : MISSING[f.kind];
     else if (f.max && f.kind !== "number" && value.length > f.max) errors[f.key] = `Shorten this to ${f.max} characters or fewer.`;
     else if (!(f.kind === "textarea" ? isPrintableText(value) : isPrintable(value))) errors[f.key] = "Use letters, numbers and common punctuation.";
-    else if (f.fits && value && (await linesInBox(value, f.fits)) > f.fits.lines)
-      // About how many characters a line holds: Helvetica's mixed text averages half the size per character.
-      errors[f.key] = `This won't fit in the form's box, which holds ${f.fits.lines} lines of about ${Math.floor(f.fits.width / (f.fits.size / 2))} characters. Shorten it so nothing is cut off the PDF.`;
+    else if (f.fits && value && !(await fitsBox(value, f.fits))) errors[f.key] = tooWide(f.fits);
     else if (f.options && value && !f.options.some((o) => o.value === value)) errors[f.key] = "Choose one of the options.";
     else if (f.kind === "date" && value && !realDate(value)) errors[f.key] = "Enter a date between 1900 and 2200.";
     else if (f.kind === "number" && value && !/^[1-9][0-9]?$/.test(value)) errors[f.key] = "Enter a whole number from 1 to 99.";
@@ -200,6 +219,11 @@ async function renderW9(v: Values, facts: Facts, today: string): Promise<Rendere
     page.drawText(today, { x: 410, y: 197, size: 10, font: plain, color: rgb(0.05, 0.1, 0.35) });
   }
   form.flatten();
+  // The IRS file carries document-level JavaScript (its own field scripts) and a usage-rights
+  // signature (/Perms) that filling breaks, so Reader would warn the form was changed. Like every PDF
+  // ShipShape serves, the W-9 runs nothing (W11-11).
+  makeInert(doc);
+  doc.catalog.delete(PDFName.of("Perms"));
   doc.setProducer("ShipShape");
   return {
     bytes: await doc.save(),

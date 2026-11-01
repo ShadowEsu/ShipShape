@@ -18,8 +18,9 @@ const W9: TemplateInfo = {
   finishNote:
     "Signing a W-9 certifies, under penalties of perjury, that the taxpayer identification number and the statements in Part II are correct. Read the certification on the form before you sign.",
   fields: [
-    { section: "Who is filling it in", key: "name", label: "Line 1: Name", hint: "As shown on your income tax return.", kind: "text", required: true, max: 120, autoComplete: "organization", fact: "legal_name" },
-    { section: "Who is filling it in", key: "business_name", label: "Line 2: Business name or disregarded entity name", hint: "If different from line 1.", kind: "text", max: 120, autoComplete: "organization", fact: "dba" },
+    // The one-line fields are set at 9 pt with 1 pt of padding and never wrap: wider text is cut off at the box's edge (W11-5).
+    { section: "Who is filling it in", key: "name", label: "Line 1: Name", hint: "As shown on your income tax return.", kind: "text", required: true, max: 120, fits: { lines: 1, width: 515.4, size: 9 }, autoComplete: "organization", fact: "legal_name" },
+    { section: "Who is filling it in", key: "business_name", label: "Line 2: Business name or disregarded entity name", hint: "If different from line 1.", kind: "text", max: 120, fits: { lines: 1, width: 515.4, size: 9 }, autoComplete: "organization", fact: "dba" },
     {
       section: "Federal tax classification (line 3a)",
       key: "tax_class",
@@ -51,15 +52,15 @@ const W9: TemplateInfo = {
         { value: "P", label: "P (Partnership)" },
       ],
     },
-    { section: "Federal tax classification (line 3a)", key: "other_class", label: "Other (describe)", kind: "text", required: true, max: 60, when: { key: "tax_class", equals: "other" } },
+    { section: "Federal tax classification (line 3a)", key: "other_class", label: "Other (describe)", kind: "text", required: true, max: 60, fits: { lines: 1, width: 282, size: 9 }, when: { key: "tax_class", equals: "other" } },
     { section: "Federal tax classification (line 3a)", key: "foreign_partners", label: "Line 3b: I have foreign partners, owners or beneficiaries", hint: "Only for partnerships, trusts and estates that check it per the instructions.", kind: "checkbox" },
     { section: "Exemptions (line 4)", key: "exempt_payee", label: "Exempt payee code", hint: "Most businesses leave this blank.", kind: "text", max: 2 },
     { section: "Exemptions (line 4)", key: "fatca", label: "FATCA exemption code", hint: "Most businesses leave this blank.", kind: "text", max: 4 },
-    { section: "Address", key: "address", label: "Line 5: Address", kind: "text", required: true, max: 120, autoComplete: "street-address", fact: "address" },
-    { section: "Address", key: "city_state_zip", label: "Line 6: City, state and ZIP code", hint: "Like Portland, OR 97201.", kind: "text", required: true, max: 120, fact: "city_state_zip" },
+    { section: "Address", key: "address", label: "Line 5: Address", kind: "text", required: true, max: 120, fits: { lines: 1, width: 327.4, size: 9 }, autoComplete: "street-address", fact: "address" },
+    { section: "Address", key: "city_state_zip", label: "Line 6: City, state and ZIP code", hint: "Like Portland, OR 97201.", kind: "text", required: true, max: 120, fits: { lines: 1, width: 327.4, size: 9 }, fact: "city_state_zip" },
     // f1_09 is 186.2 × 38 pt with 1 pt of padding, set at 9 pt: baselines at 27, 17 and 7 pt; a fourth line lands below the box.
     { section: "Address", key: "requester", label: "Requester's name and address", hint: "Optional. Who asked you for this W-9.", kind: "textarea", max: 160, fits: { lines: 3, width: 184.2, size: 9 } },
-    { section: "Address", key: "accounts", label: "Line 7: Account numbers", hint: "Optional.", kind: "text", max: 80 },
+    { section: "Address", key: "accounts", label: "Line 7: Account numbers", hint: "Optional.", kind: "text", max: 80, fits: { lines: 1, width: 515.4, size: 9 } },
     {
       section: "Taxpayer identification number (Part I)",
       key: "tin_kind",
@@ -91,7 +92,8 @@ const W9: TemplateInfo = {
       when: { key: "tin_kind", equals: "ssn" },
     },
     { section: "Sign (Part II)", key: "sign", label: "Sign the certification with my typed name and today's date", kind: "checkbox" },
-    { section: "Sign (Part II)", key: "signature", label: "Signature (type your full name)", kind: "text", max: 80, required: true, autoComplete: "name", fact: "signer_name", when: { key: "sign", equals: "on" } },
+    // Drawn by ShipShape in Times-Italic 13 pt from x = 125; the "Date" label starts at x = 385.6, so 255 pt leaves a gap before it.
+    { section: "Sign (Part II)", key: "signature", label: "Signature (type your full name)", kind: "text", max: 80, required: true, fits: { lines: 1, width: 255, size: 13, italic: true }, autoComplete: "name", fact: "signer_name", when: { key: "sign", equals: "on" } },
   ],
   steps: [
     { title: "Who's filling it in", sections: ["Who is filling it in"] },

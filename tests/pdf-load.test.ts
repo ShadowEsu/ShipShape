@@ -3,7 +3,7 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { PDFDict, PDFDocument, PDFRef } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { BuildBusy, BuildCrashed, BuildSlots, buildInChild, buildToSignIsolated, ISOLATION_LIMITS } from "@/lib/pdf/build-isolated";
+import { appendPagesIsolated, BuildBusy, BuildCrashed, BuildSlots, buildInChild, buildToSignIsolated, ISOLATION_LIMITS } from "@/lib/pdf/build-isolated";
 import { loadUntrusted, MAX_INFLATED_BYTES, MAX_PACKED_OBJECTS, PdfTooComplex } from "@/lib/pdf/load";
 import { buildToSign, NotSignable } from "@/lib/pdf/to-sign";
 
@@ -158,6 +158,18 @@ describe("each upload is built in a process of its own, at most two at once (Sec
     await expect(buildToSignIsolated(a6, "application/pdf")).rejects.toMatchObject({ reason: "unreadable" });
   });
 
+  it("refuses a PNG that declares more than 40 megapixels before decoding any of it (W11-3)", async () => {
+    // A real 1×1 PNG whose header then claims 8,000 × 8,000: decoding that would take about 576 MB.
+    const png = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
+    const huge = png.slice();
+    new DataView(huge.buffer).setUint32(16, 8000);
+    new DataView(huge.buffer).setUint32(20, 8000);
+    const refused = await buildToSign(huge, "image/png").catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(NotSignable);
+    expect(refused).toMatchObject({ reason: "unreadable", cause: new Error("64000000 pixels is over the limit") });
+    expect((await buildToSign(png, "image/png")).length).toBeGreaterThan(0);
+  });
+
   it("an upload needing more memory or time than its process may use is refused as unreadable; under the normal limits it builds", async () => {
     const heavy = names(300_000);
     const outOfMemory = await buildToSignIsolated(heavy, "application/pdf", { ...ISOLATION_LIMITS, heapMb: 32 }).catch((e: unknown) => e);
@@ -167,16 +179,34 @@ describe("each upload is built in a process of its own, at most two at once (Sec
     expect((await buildToSignIsolated(heavy, "application/pdf")).length).toBeGreaterThan(0);
   });
 
+  it("appends the certificate in a process of its own: the signed copy starts with the reviewed file's exact bytes, and one needing more memory than the process may use is refused there (W11-10)", async () => {
+    const certificate = await PDFDocument.create();
+    certificate.addPage().drawText("Signature certificate");
+    const extra = await certificate.save();
+    const reviewed = pdfWith([]);
+    const signed = await appendPagesIsolated(reviewed, extra);
+    expect(Buffer.from(signed.subarray(0, reviewed.length)).equals(Buffer.from(reviewed))).toBe(true);
+    expect((await PDFDocument.load(signed)).getPageCount()).toBe(2);
+    // Names under a key on the page itself, which the review copy keeps: pdf-lib would hold every one for good.
+    const list = `[${Array.from({ length: 300_000 }, (_, i) => `/n${i}`).join(" ")}]`;
+    const heavy = pdfWith([
+      [3, Buffer.from("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /PieceInfo 4 0 R >>")],
+      [4, Buffer.from(list)],
+    ]);
+    const refused = await appendPagesIsolated(heavy, extra, { ...ISOLATION_LIMITS, heapMb: 32 }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(NotSignable);
+  });
+
   it("a build process that crashes after taking the file is BuildCrashed (try again), not a refused file (REG-58)", async () => {
     const crashing = path.join(import.meta.dirname, "fixtures", "crashing-build-child.mjs");
-    const crashed = await buildInChild(new Uint8Array([1]), "application/pdf", ISOLATION_LIMITS, crashing).catch((e: unknown) => e);
+    const crashed = await buildInChild({ bytes: new Uint8Array([1]), mime: "application/pdf" }, ISOLATION_LIMITS, crashing).catch((e: unknown) => e);
     expect(crashed).toBeInstanceOf(BuildCrashed);
     expect(String(crashed)).toContain("SIGSEGV");
   });
 
   it("a build process that isn't ready in time is BuildCrashed (try again), not a refused file; the file's time starts when it is ready (W11-13)", async () => {
     const neverReady = path.join(import.meta.dirname, "fixtures", "never-ready-build-child.mjs");
-    const slow = await buildInChild(new Uint8Array([1]), "application/pdf", { ...ISOLATION_LIMITS, timeoutMs: 1, startMs: 300 }, neverReady).catch((e: unknown) => e);
+    const slow = await buildInChild({ bytes: new Uint8Array([1]), mime: "application/pdf" }, { ...ISOLATION_LIMITS, timeoutMs: 1, startMs: 300 }, neverReady).catch((e: unknown) => e);
     expect(slow).toBeInstanceOf(BuildCrashed);
     expect(String(slow)).toContain("didn't start within 300 ms");
   });

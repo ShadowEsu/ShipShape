@@ -45,7 +45,7 @@ const nextConfig: NextConfig = {
       "./templates/**/*",
       "./supabase/**/*.sql",
       "./package.json",
-      "./lib/pdf/{to-sign.child,to-sign,inert,load}.ts",
+      "./lib/pdf/{to-sign.child,to-sign,inert,load,append}.ts",
       "./node_modules/pdf-lib/package.json",
       "./node_modules/pdf-lib/cjs/**/*.js",
       "./node_modules/pdf-lib/node_modules/tslib/**/*",
