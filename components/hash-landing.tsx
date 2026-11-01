@@ -20,8 +20,11 @@ export function HashLanding() {
     const target = id ? document.getElementById(id) : null;
     if (!target) return;
     target.scrollIntoView();
-    // A field as the target (#expires_on, #version-file) takes focus too, as a browser does after a fragment link.
+    // A field as the target (#expires_on, #version-file) takes focus too, as a browser does after a fragment link;
+    // a section (#export, #delete) hands focus to its heading when the heading can take it (tabIndex -1), so a
+    // screen reader starts where the person was heading after signing in again (Design, wave 9 #7).
     if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) target.focus({ preventScroll: true });
+    else target.querySelector<HTMLElement>("h2[tabindex='-1']")?.focus({ preventScroll: true });
   }, []);
   return null;
 }

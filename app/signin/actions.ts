@@ -9,6 +9,7 @@ import { runReminders } from "@/lib/server/deadlines";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { createLocalUser, finishSignIn, localSignInAllowed, signOutHere, viewerToday } from "@/lib/server/session";
 import { seedSampleWorkspace } from "@/lib/server/sample";
+import { landing, returnTo } from "@/lib/return-to";
 
 export interface SignInState {
   error?: string;
@@ -40,11 +41,13 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
   }
 
   const { mode, email } = parsed.data;
+  // Where a re-sign-in for export, delete or Show full EIN goes afterwards: an allow-listed choice, else Home (W9-12).
+  const back = returnTo(data.get("next"));
   if (mode === "account") {
     // To Cognito's sign-in page; /auth/callback finishes (and records the agreement ticked here).
     const cognito = cognitoConfig(process.env);
     if (!cognito) return { ...typed, error: "Accounts aren't open yet. Try the sample workspace instead." };
-    const { cookie, url } = startSignIn(cognito);
+    const { cookie, url } = startSignIn(cognito, { returnTo: back });
     (await cookies()).set(SIGN_IN_COOKIE, cookie, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -72,7 +75,8 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
     await runReminders(undefined, org.id);
   }
   await finishSignIn(userId, { demo: mode === "demo", userAgent: (await headers()).get("user-agent") });
-  redirect("/app");
+  // The sample workspace has nothing to export or delete: it lands on Home.
+  redirect(mode === "demo" ? "/app" : landing(back));
 }
 
 export async function signOut() {

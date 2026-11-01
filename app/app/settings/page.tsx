@@ -7,7 +7,7 @@ import { PLANS } from "@/lib/plans";
 import { deletionPreview, EXPORT_MAX_BYTES } from "@/lib/server/account";
 import { billingView } from "@/lib/server/billing";
 import { signInMethod } from "@/lib/server/cognito";
-import { contactEmail } from "@/lib/server/flags";
+import { contactEmail, realDocsEnabled } from "@/lib/server/flags";
 import { liveSessions, RECENT_AUTH_SECONDS, requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf } from "@/lib/today";
 import { signOut } from "../../signin/actions";
@@ -36,7 +36,7 @@ function exportProblem(error: string | undefined, contact: string | null): { tex
   const tooLarge = `This workspace is over ${EXPORT_MAX_BYTES / 1024 / 1024} MB, too large to export in one file.`;
   switch (error) {
     case "reauth":
-      return { text: "For your security, sign in again before you export.", fix: { href: "/signin", label: "Sign in again" } };
+      return { text: "For your security, sign in again before you export.", fix: { href: "/signin?next=export", label: "Sign in again" } };
     case "role":
       return { text: "Only owners and admins can export this workspace. Ask one of them for the file." };
     case "size":
@@ -55,8 +55,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const ctx = await requireWorkspace();
   const zone = await viewerZone();
   const { error, billing } = await searchParams;
-  const exportError = exportProblem(error, contactEmail());
+  const contact = contactEmail();
+  const exportError = exportProblem(error, contact);
   const [view, goes, method, sessions] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId), ctx.demo ? "local" : signInMethod(ctx.userId), liveSessions(ctx)]);
+  const canRename = !ctx.demo && ctx.role !== "member" && realDocsEnabled();
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -65,9 +67,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       <section id="workspace" className="card space-y-3">
         <h2 className="font-semibold">Workspace</h2>
-        {!ctx.demo && ctx.role !== "member" && <RenameWorkspaceForm name={ctx.name} />}
+        {canRename ? <RenameWorkspaceForm name={ctx.name} /> : null}
+        {!ctx.demo && ctx.role !== "member" && !realDocsEnabled() && <Notice>Naming the workspace opens after our security review.</Notice>}
         <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
-          {(ctx.demo || ctx.role === "member") && (
+          {!canRename && (
             <>
               <dt className="text-ink-2">Name</dt>
               <dd>{ctx.name}</dd>
@@ -108,8 +111,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </p>
         {view.status === "past_due" && (
           <Notice>
-            Your last payment didn&apos;t go through. Pro stays on for 7 days after a payment fails;{" "}
-            {ctx.role === "owner" ? "update your card with Manage billing below." : "ask the workspace owner to update the card."}
+            Your last payment didn&apos;t go through. Pro stays on for 7 days after a failed payment.{" "}
+            {!view.available
+              ? `Card updates are paused on our side right now; if Pro ends before they're back, write to ${contact ?? "us"}.`
+              : ctx.role === "owner"
+                ? "Update your card with Manage billing below."
+                : "Ask the workspace owner to update the card."}
           </Notice>
         )}
         {view.plan === "free" && (
@@ -120,7 +127,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         )}
         {!ctx.demo &&
           (!view.available ? (
-            <p className="text-sm text-ink-3">Payments aren&apos;t switched on yet, so the plan can&apos;t change for now.</p>
+            <p className="text-sm text-ink-3">Payments are switched off right now, so the plan can&apos;t change.</p>
           ) : ctx.role !== "owner" ? (
             <p className="text-sm text-ink-3">Only the workspace owner changes the plan.</p>
           ) : (
@@ -132,12 +139,20 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           ))}
       </section>
 
-      <section className="card space-y-3">
-        <h2 className="font-semibold">Export everything</h2>
-        <p className="text-sm text-ink-2">
-          One ZIP file with every version of every document, their details and fingerprints, your business facts (the tax ID only as its
-          last 4 digits) and the workspace history.
-        </p>
+      <section id="export" className="card space-y-3">
+        <h2 tabIndex={-1} className="font-semibold">
+          Export everything
+        </h2>
+        <p className="text-sm text-ink-2">One ZIP file with:</p>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
+          <li>every version of every document, with its details and fingerprint</li>
+          <li>your business facts (the tax ID only as its last 4 digits)</li>
+          <li>your vendors and the files they sent</li>
+          <li>your passport links, with who opened them and what was downloaded</li>
+          <li>your signature requests</li>
+          <li>the browsers you&apos;ve signed in on and the agreements you&apos;ve accepted</li>
+          <li>the workspace history</li>
+        </ul>
         {!ctx.demo && (
           <p className="text-sm text-ink-3">
             Showing your full EIN, exporting and deleting need a sign-in from the last {RECENT_AUTH_SECONDS / 60} minutes. If it has been
@@ -228,7 +243,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <h3 className="font-semibold">Sign out on every device</h3>
               <p className="text-sm text-ink-2">
                 Lost a laptop or phone, or see a sign-in you don&apos;t recognize? This ends every session, here and everywhere
-                else. Then change your password.
+                else.
               </p>
             </div>
             <form action={signOutEverywhere} className="shrink-0">
@@ -241,7 +256,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </section>
 
       <section id="delete" className="card space-y-3 border-bad/30">
-        <h2 className="font-semibold text-bad">Delete your account</h2>
+        <h2 tabIndex={-1} className="font-semibold text-bad">
+          Delete your account
+        </h2>
         <div className="space-y-2 text-sm text-ink-2">
           <p>This can&apos;t be undone. Right away, ShipShape deletes:</p>
           <ul className="list-disc space-y-1 pl-5">

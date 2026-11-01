@@ -9,6 +9,7 @@ import { type CallbackParams, type CognitoConfig, cognitoAdmin, cognitoClient, c
 import { asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
 import { authIsRecent, decodeSession, encodeSession } from "@/lib/server/session";
+import type { ReturnTo } from "@/lib/return-to";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
@@ -59,13 +60,15 @@ interface Flow {
   cookie?: (cookie: string) => string | undefined;
   startedAt?: number;
   now?: number;
+  /** Where the sign-in should land afterwards (export, delete, ein), carried in the cookie. */
+  returnTo?: ReturnTo | null;
 }
 
 /** One trip through Cognito: startSignIn, a fake Cognito that checks what the real one checks, the callback. */
 function signInWith(flow: Flow = {}) {
   const cfg = flow.cfg ?? config;
   const startedAt = flow.startedAt ?? NOW;
-  const { cookie, url } = startSignIn(cfg, startedAt);
+  const { cookie, url } = startSignIn(cfg, { now: startedAt, returnTo: flow.returnTo ?? null });
   const sent = new URL(url).searchParams;
   const calls: string[] = [];
   const t = Math.floor(startedAt / 1000) + 5;
@@ -148,7 +151,21 @@ describe("a sign-in", () => {
 
     const again = await signInWith({ sub, email: "owner@example.test", startedAt: NOW + 3_600_000 }).result;
     expect(again.userId).toBe(userId);
+    expect(again.returnTo).toBeNull();
     expect(await users()).toBe(before + 1);
+  });
+
+  it("carries where a re-sign-in should land (export, delete, ein) in the signed cookie, and only that (W9-12)", async () => {
+    const sub = randomUUID();
+    expect((await signInWith({ sub, email: "back@example.test", returnTo: "export" }).result).returnTo).toBe("export");
+    expect((await signInWith({ sub, email: "back@example.test", returnTo: "ein" }).result).returnTo).toBe("ein");
+    // The choice lives in the MAC'd payload: a cookie rewritten to point elsewhere is refused outright (no valid sign-in cookie).
+    const forged = (cookie: string) => {
+      const [payload, mac] = cookie.split(".");
+      const txn: Record<string, unknown> = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+      return `${Buffer.from(JSON.stringify({ ...txn, r: "delete" })).toString("base64url")}.${mac}`;
+    };
+    await expect(signInWith({ sub, email: "back@example.test", returnTo: "export", cookie: forged }).result).rejects.toMatchObject({ reason: "expired" });
   });
 
   it("an email that already belongs to another user is refused, not joined to it", async () => {

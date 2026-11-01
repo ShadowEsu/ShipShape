@@ -114,7 +114,7 @@ export function DeleteRefused({ error, reauth, write }: Pick<DeleteState, "reaut
       {reauth && (
         <>
           {" "}
-          <Link href="/signin" className="underline">
+          <Link href="/signin?next=delete" className="underline">
             Sign in again
           </Link>
         </>

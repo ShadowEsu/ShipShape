@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
+import type { ReturnTo } from "@/lib/return-to";
 import { signIn, type SignInState } from "./actions";
 
 /** One way in; only the button that was pressed says it's working, and every button waits. */
@@ -15,7 +16,7 @@ function ModeButton({ mode, label, working, primary }: { mode: "account" | "demo
   );
 }
 
-export function SignInForm({ allowEmail, accounts }: { allowEmail: boolean; accounts: boolean }) {
+export function SignInForm({ allowEmail, accounts, next }: { allowEmail: boolean; accounts: boolean; next: ReturnTo | null }) {
   const [state, action] = useActionState<SignInState, FormData>(signIn, {});
   const email = useRef<HTMLInputElement>(null);
   const terms = useRef<HTMLInputElement>(null);
@@ -27,6 +28,7 @@ export function SignInForm({ allowEmail, accounts }: { allowEmail: boolean; acco
   const general = state.error && !state.field;
   return (
     <form action={action} className="space-y-4" noValidate>
+      {next && <input type="hidden" name="next" value={next} />}
       {allowEmail && (
         <div>
           <label htmlFor="email" className="label">
