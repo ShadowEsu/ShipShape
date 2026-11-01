@@ -239,12 +239,22 @@ export async function revokeVendorLink(ctx: Ctx, id: string) {
   if (!rows.length) throw new UserError("That link is already off.");
 }
 
-/** A 5-minute download link for a file a vendor sent. Always a download: these files come from outside the workspace. */
+/**
+ * A 5-minute download link for a file a vendor sent (always a download: these files come from outside the workspace),
+ * or null if it isn't this workspace's. The download goes into the workspace history ("collect.file_downloaded",
+ * about the vendor) in the same transaction, before the link is made, like every other download: these files can
+ * carry the vendor's tax ID (W15-4, 0042).
+ */
 export async function vendorFileUrl(ctx: Ctx, fileId: string): Promise<string | null> {
   if (!VendorId.safeParse(fileId).success) return null;
-  const [row] = await asUser(ctx.userId, (tx) =>
-    tx.query<{ storage_path: string; filename: string }>("select storage_path, filename from app.vendor_files where id = $1 and org_id = $2", [fileId, ctx.orgId]),
-  );
+  const row = await asUser(ctx.userId, async (tx) => {
+    const [file] = await tx.query<{ storage_path: string; filename: string; vendor_id: string }>(
+      "select storage_path, filename, vendor_id from app.vendor_files where id = $1 and org_id = $2",
+      [fileId, ctx.orgId],
+    );
+    if (file) await tx.query("select app.audit_append($1, 'collect.file_downloaded', $2)", [ctx.orgId, file.vendor_id]);
+    return file;
+  });
   if (!row) return null;
   return blobStore().signedUrl(row.storage_path, { filename: row.filename, inline: false });
 }

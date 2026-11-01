@@ -155,7 +155,7 @@ export default function Home() {
               "Tax IDs in your business facts are encrypted with a key kept outside the database and shown as the last 4 digits unless you ask.",
               "Files sit in private storage and open through links that expire after 5 minutes.",
               "Each workspace is walled off from every other in the database itself, checked with a second account in our tests.",
-              "Every change, view, share and signature lands in a history where each entry is chained to the one before.",
+              "Every change to a document, and every in-app view, download, share and signature of it, lands in a history where each entry is chained to the one before. Passport links keep their own list of opens.",
               "No ads, no analytics trackers, and we don't train AI on your documents.",
               "Owners and admins can export everything from Settings (one ZIP, up to 200 MB); anyone can delete their account there, any time.",
             ].map((t) => (

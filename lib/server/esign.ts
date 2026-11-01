@@ -329,6 +329,13 @@ export async function completeSigning(
   if (!r) return "invalid";
   if (r.status === "signed") return "already_signed";
   if (!r.to_sign_path || !r.to_sign_sha256) return "invalid";
+  // The code first, before the file is read or the signed copy built: a wrong, expired or locked code costs one
+  // database round trip, not a build slot (W15-6, 0042). A wrong one counts toward the 5-try lockout here;
+  // esign_complete checks everything again when it signs.
+  const [check] = await asAnon((tx) =>
+    tx.query<{ result: SignResult }>("select app.esign_check_code($1, $2, $3) as result", [id, sha256Hex(token), codeHash(id, input.code)]),
+  );
+  if (check?.result !== "ok") return check?.result ?? "invalid";
 
   const toSign = await blobStore().get(r.to_sign_path);
   // The signature covers what the signer downloaded; a stored file that changed since is never signed (R3-4).

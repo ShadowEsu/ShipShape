@@ -369,10 +369,17 @@ describe("audit chain", () => {
     expect((await verify())[0].broken).toBeNull();
   });
 
-  it("members can only append view-type events, never forge e-sign or data events", async () => {
-    for (const action of ["esign.completed", "document.signed", "document.created", "workspace.created"]) {
+  it("members can append only the user events (views, downloads, the reveal, the export, an AI read), never forge e-sign or data events", async () => {
+    for (const action of ["esign.completed", "document.signed", "document.created", "workspace.created", "collect.file_deleted"]) {
       await expectDenied(asUser(a, (tx) => tx.query("select app.audit_append($1, $2, $3)", [orgA, action, docA])));
     }
+    // The seven it takes, 0042's vendor-file download among them; a re-created function must keep the older six (Security S-2).
+    const events = ["document.viewed", "document.downloaded", "esign.review_downloaded", "profile.tax_id_revealed", "workspace.exported", "ai.request_read", "collect.file_downloaded"];
+    for (const action of events) {
+      const [row] = await asUser(a, (tx) => tx.query<{ seq: string }>("select app.audit_append($1, $2, $3)::text as seq", [orgA, action, docA]));
+      expect(row.seq).toMatch(/^\d+$/);
+    }
+    expect(await asUser(a, (tx) => tx.query("select app.audit_verify($1) as bad", [orgA]))).toEqual([{ bad: null }]);
   });
 
   it("service role can't verify without a member, or rewrite history", async () => {
@@ -487,6 +494,24 @@ describe("security review E2-E7", () => {
       ),
     );
     expect(open.map((r) => r.fn)).toEqual([]);
+  });
+
+  it("every security definer function in app runs with an empty search_path, so a caller's schema can't shadow what it calls (Security S-2)", async () => {
+    const unpinned = await db.root((tx) =>
+      tx.query<{ fn: string }>(
+        `select p.oid::regprocedure::text as fn from pg_proc p
+         where p.pronamespace = 'app'::regnamespace and p.prosecdef
+           and not coalesce('search_path=""' = any(p.proconfig), false)
+         order by 1`,
+      ),
+    );
+    expect(unpinned.map((r) => r.fn)).toEqual([]);
+    const [append] = await db.root((tx) =>
+      tx.query<{ definer: boolean; config: string[] }>(
+        "select p.prosecdef as definer, p.proconfig as config from pg_proc p where p.oid = 'app.audit_append(uuid, text, uuid)'::regprocedure",
+      ),
+    );
+    expect(append).toEqual({ definer: true, config: ['search_path=""'] });
   });
 
   it("a member can't write or forge history rows directly, in any workspace (Security F2-1)", async () => {

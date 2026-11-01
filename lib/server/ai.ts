@@ -25,8 +25,27 @@ import type { Validity } from "@/lib/today";
 /** Pinned: the cheapest Claude model; tests/ai.test.ts holds the provider-free evals. */
 export const AI_MODEL = "claude-haiku-5-5";
 const MAX_TOKENS = 1200;
-/** Security G4 §2: $1 a day (UTC) and $10 in total, in micro-dollars. */
-export const AI_CAPS = { dayMicros: 1_000_000, totalMicros: 10_000_000 } as const;
+/**
+ * Security G4 §2: $1 a day (UTC) and $10 in total over every workspace, in micro-dollars. Inside those (W15-1, 0042):
+ * every sample workspace together gets $0.10 a day and $2 in total, so visitors trying the sample can't spend real
+ * customers' share; each real workspace gets $0.25 a day.
+ */
+export const AI_CAPS = {
+  dayMicros: 1_000_000,
+  totalMicros: 10_000_000,
+  sampleDayMicros: 100_000,
+  sampleTotalMicros: 2_000_000,
+  workspaceDayMicros: 250_000,
+} as const;
+
+/** What a refused reservation tells the person, by the cap that refused it (`app.ai_reserve`): a lifetime cap doesn't end tomorrow (W10-6). */
+const CAP_REFUSED: Record<string, string> = {
+  total: "ShipShape's AI reading is paused right now. Everything else works as usual.",
+  sample_total: "ShipShape's AI reading is paused right now. Everything else works as usual.",
+  day: "ShipShape's AI has reached its spending limit for today. Try again tomorrow.",
+  sample_day: "The sample's AI reading is used up for today. Everything else in the sample works as usual.",
+  workspace_day: "Your workspace has used today's AI reading. Try again tomorrow; everything else works as usual.",
+};
 
 /**
  * Anthropic list price for claude-haiku-5-5 with prompts up to 100k tokens, read 2026-10-30 at
@@ -206,7 +225,7 @@ export async function readRequest(ctx: Ctx, input: RequestInput, network: string
   }
   if (!input.consent) throw new RequestInputError("consent", `Check the box to send this text to ${AI_RECIPIENT}.`);
   if ((await rateLimited("ai-user", ctx.userId, 10, 3600)) || (await rateLimited("ai-net", network, 30, 3600))) {
-    throw new UserError("That's as many requests as ShipShape reads in an hour. Nothing was sent; try again in an hour.");
+    throw new UserError("That's the hourly limit for AI reading. Nothing was sent; try again in an hour.");
   }
 
   const redacted = scrub(text);
@@ -223,19 +242,21 @@ export async function readRequest(ctx: Ctx, input: RequestInput, network: string
   );
   // Fails closed: if the meter can't be read or written, this throws and no call is made.
   const [reservation] = await asService((tx) =>
-    tx.query<{ id: string | null; total: string }>(
-      // The lifetime total beside the answer, so a refusal can say which cap it was (W10-6): the daily
-      // one ends tomorrow, the lifetime one only when someone raises it.
-      "select app.ai_reserve($1, 'request_match', $2, $3, $4, $5) as id, (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0)::text from app.ai_calls) as total",
-      [ctx.orgId, AI_MODEL, reserve, AI_CAPS.dayMicros, AI_CAPS.totalMicros],
-    ),
+    tx.query<{ id: string | null; refused: string | null }>("select id, refused from app.ai_reserve($1, 'request_match', $2, $3, $4, $5, $6, $7, $8)", [
+      ctx.orgId,
+      AI_MODEL,
+      reserve,
+      AI_CAPS.dayMicros,
+      AI_CAPS.totalMicros,
+      AI_CAPS.sampleDayMicros,
+      AI_CAPS.sampleTotalMicros,
+      AI_CAPS.workspaceDayMicros,
+    ]),
   );
   if (!reservation?.id) {
-    throw new UserError(
-      Number(reservation?.total ?? 0) + reserve > AI_CAPS.totalMicros
-        ? "ShipShape's AI reading is paused right now. Everything else works as usual."
-        : "ShipShape's AI has reached its spending limit for today. Try again tomorrow.",
-    );
+    const message = reservation?.refused ? CAP_REFUSED[reservation.refused] : undefined;
+    if (!message) throw new Error(`ai_reserve refused without a known reason (${reservation?.refused ?? "no row"})`);
+    throw new UserError(message);
   }
   const reservationId = reservation.id;
   const settle = (status: "done" | "failed", inTok: number | null, outTok: number | null, cost: number) =>

@@ -501,6 +501,21 @@ describe("signing", () => {
     expect(await versions()).toBe((before ?? 0) + 1);
   });
 
+  it("checks the code before building: a wrong or locked code never takes a build slot, and still counts toward the lockout (W15-6)", async () => {
+    const { id, token } = await request(a);
+    expect(await sendSigningCode(id, token)).toBe("ok");
+    const code = await lastCode(a.orgId);
+    const wrong = code === "000000" ? "111111" : "000000";
+    // An armed fault would turn any build into "busy"; it stays armed, so no build was tried.
+    appendFault.next = new BuildBusy();
+    for (let i = 0; i < 5; i++) expect(await completeSigning(id, token, { code: wrong, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("bad_code");
+    expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("locked");
+    expect(appendFault.next).toBeInstanceOf(BuildBusy);
+    appendFault.next = null;
+    const [row] = await db.root((tx) => tx.query<{ otp_attempts: number; status: string }>("select otp_attempts, status from app.signature_requests where id = $1", [id]));
+    expect(row).toEqual({ otp_attempts: 5, status: "pending" });
+  });
+
   it("keeps the sender's name as it was when the request was sent: the signing page, the code and the certificate (Security RN-1)", async () => {
     const ctx = await sampleWorkspace();
     const { id, token } = await request(ctx);

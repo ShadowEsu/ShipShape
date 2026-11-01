@@ -7,7 +7,7 @@ import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
 import { PLANS } from "@/lib/plans";
 import { FACT_LABELS } from "@/lib/profile-fields";
-import { DOC_KINDS, getDocument } from "@/lib/server/documents";
+import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, getDocument } from "@/lib/server/documents";
 import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { openLinksWith } from "@/lib/server/passport";
@@ -119,7 +119,7 @@ export default async function DocumentPage({
   const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
   const got = await getDocument(ctx, id);
   if (!got) notFound();
-  const { doc, versions, audit } = got;
+  const { doc, versions, audit, moreAudit } = got;
   const latest = versions[0];
   const template = doc.template_id ? templateById(doc.template_id) : undefined;
   const canUpload = !ctx.demo && realDocsEnabled();
@@ -335,6 +335,7 @@ export default async function DocumentPage({
                 </li>
               ))}
             </ol>
+            {moreAudit && <p className="text-xs text-ink-3">Showing the latest {DOCUMENT_HISTORY_SHOWN} entries. Your export has every one.</p>}
             <p className="text-xs text-ink-3">Entries can&apos;t be edited or deleted through ShipShape, and each is linked to the one before it.</p>
           </section>
 

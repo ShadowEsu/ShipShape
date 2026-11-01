@@ -933,4 +933,20 @@ describe("document details", () => {
     await expect(refused).rejects.toThrow("That file isn't a PDF, PNG or JPEG. Save it as a PDF and choose it again.");
     vi.unstubAllEnvs();
   });
+
+  it("shows a document's latest 50 history entries, newest first, and says so only when there are older ones (W15-5)", async () => {
+    const mine = await workspace("long-history@example.com", "sample");
+    const [doc] = await listDocuments(mine);
+    const view = () => asUser(mine.userId, (tx) => tx.query("select app.audit_append($1, 'document.viewed', $2)", [mine.orgId, doc.id]));
+    const history = async () => {
+      const got = await getDocument(mine, doc.id);
+      return { count: got?.audit.length, more: got?.moreAudit, newest: got?.audit[0]?.seq };
+    };
+    const start = (await getDocument(mine, doc.id))?.audit.length ?? 0;
+    for (let i = start; i < 50; i++) await view();
+    expect(await history()).toMatchObject({ count: 50, more: false });
+    await view();
+    const [last] = await asUser(mine.userId, (tx) => tx.query<{ seq: string }>("select max(seq)::text as seq from app.audit_log where object_id = $1", [doc.id]));
+    expect(await history()).toEqual({ count: 50, more: true, newest: last.seq });
+  });
 });

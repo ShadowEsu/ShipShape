@@ -221,6 +221,9 @@ export interface AuditRow {
   about_name: string | null;
 }
 
+/** How many History entries a document's page shows; the export has every one (W15-5). */
+export const DOCUMENT_HISTORY_SHOWN = 50;
+
 export async function getDocument(ctx: Ctx, id: string) {
   if (!z.uuid().safeParse(id).success) return null;
   return asUser(ctx.userId, async (tx) => {
@@ -230,16 +233,17 @@ export async function getDocument(ctx: Ctx, id: string) {
       "select version, mime, size_bytes, sha256, origin, fill_record, created_at::text as created_at from app.document_versions where document_id = $1 order by version desc",
       [id],
     );
+    // One more than is shown, so the page knows whether to say there are older entries.
     const audit = await tx.query<AuditRow>(
       // Order by the table's bigint column; the text alias `seq` would sort "10" before "9".
       `select a.seq::text as seq, a.at::text as at, a.action, coalesce(a.actor = $3, false) as actor_is_me, coalesce(r.signer_name, l.label) as about_name
        from app.audit_log a
        left join app.signature_requests r on r.id = a.about and r.document_id = $2
        left join app.share_links l on l.id = a.about and l.org_id = $1
-       where a.org_id = $1 and a.object_id = $2 order by a.seq desc limit 50`,
-      [ctx.orgId, id, ctx.userId],
+       where a.org_id = $1 and a.object_id = $2 order by a.seq desc limit $4`,
+      [ctx.orgId, id, ctx.userId, DOCUMENT_HISTORY_SHOWN + 1],
     );
-    return { doc, versions, audit };
+    return { doc, versions, audit: audit.slice(0, DOCUMENT_HISTORY_SHOWN), moreAudit: audit.length > DOCUMENT_HISTORY_SHOWN };
   });
 }
 
