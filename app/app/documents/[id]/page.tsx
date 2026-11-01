@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, ValidityChip, fmtDay } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
+import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
 import { fmtDateTime } from "@/components/ui";
 import { PLANS } from "@/lib/plans";
@@ -104,6 +105,7 @@ export default async function DocumentPage({
 
   return (
     <div className="space-y-6">
+      <HashLanding />
       <nav className="text-sm">
         <Link href="/app/documents" className="inline-flex min-h-6 items-center text-ink-2 hover:underline">
           ← Documents

@@ -23,13 +23,16 @@ export function NavLinks() {
   // Below md the strip scrolls sideways and the active tab can sit out of view (Design row 45, interim):
   // bring it into view on load and on every route change by moving the strip's own scroll position.
   // Not scrollIntoView: that scrolls the page as well, and would undo a landing on a #fragment (an
-  // "Add an expiry date" link to #expires_on, the banner's #delete).
+  // "Add an expiry date" link to #expires_on, the banner's #delete). And only when the tab is out of
+  // view: any scroll before the page has loaded cancels the browser's own #fragment landing, so the
+  // pages that are link targets finish it themselves (components/hash-landing.tsx).
   useEffect(() => {
     const strip = nav.current;
     const active = strip?.querySelector<HTMLElement>('[aria-current="page"]');
     if (!strip || !active || strip.scrollWidth <= strip.clientWidth) return;
     const tab = active.getBoundingClientRect();
     const box = strip.getBoundingClientRect();
+    if (tab.left >= box.left && tab.right <= box.right) return;
     strip.scrollLeft += tab.left - box.left - (box.width - tab.width) / 2;
   }, [path]);
 
