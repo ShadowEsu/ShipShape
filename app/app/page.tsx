@@ -17,6 +17,17 @@ export default async function AppHome() {
   const [docs, profile, links] = await Promise.all([homeSummary(ctx), loadProfile(ctx), listPassports(ctx)]);
   const { attention, current, first } = docs;
   const canUpload = !ctx.demo && realDocsEnabled();
+  // The list comes most-urgent first: what can still be renewed, then what has lapsed. Shown as two labelled
+  // groups, since the date order flips between them.
+  const groups = [
+    { label: "Coming up", rows: attention.filter((d) => d.validity !== "expired") },
+    { label: "Already lapsed", rows: attention.filter((d) => d.validity === "expired") },
+  ].filter((g) => g.rows.length > 0);
+  // Past the cap: how many are hidden, and whether every one of them has lapsed (the lapsed come last).
+  const hidden = docs.attentionTotal - ATTENTION_MAX;
+  const hiddenLapsed = docs.lapsedTotal - groups.reduce((n, g) => n + (g.label === "Already lapsed" ? g.rows.length : 0), 0);
+  const moreLine =
+    hidden === hiddenLapsed ? (hidden === 1 ? "1 more has lapsed" : `${hidden} more have lapsed`) : hidden === 1 ? "1 more needs attention" : `${hidden} more need attention`;
 
   // First-run checklist, worked out from what's actually in the workspace.
   const setup = [
@@ -132,36 +143,41 @@ export default async function AppHome() {
             <p className="text-sm text-ink-2">
               Renew each one with the issuer, then {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates."}
             </p>
-            <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
-              {attention.map((d) => {
-                const daysLeft = d.expires_on ? Math.round((Date.parse(d.expires_on) - Date.parse(ctx.today)) / 86_400_000) : 0;
-                return (
-                  <li key={d.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                    <span className="min-w-0 space-y-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{d.title}</span>
-                        <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
-                        <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
-                      </span>
-                      <span className="block text-sm text-ink-2">
-                        {d.validity === "expired" ? "It has lapsed." : daysLeft === 0 ? "Expires today." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`}
-                      </span>
-                    </span>
-                    <Link
-                      href={canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
-                      className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline"
-                    >
-                      {canUpload ? "Add the renewed copy" : "Update its dates"}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            {groups.map((g) => (
+              <div key={g.label} className="space-y-2">
+                <h3 className="eyebrow">{g.label}</h3>
+                <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
+                  {g.rows.map((d) => {
+                    const daysLeft = d.expires_on ? Math.round((Date.parse(d.expires_on) - Date.parse(ctx.today)) / 86_400_000) : 0;
+                    return (
+                      <li key={d.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <span className="min-w-0 space-y-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{d.title}</span>
+                            <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
+                            <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                          </span>
+                          <span className="block text-sm text-ink-2">
+                            {d.validity === "expired" ? "It has lapsed." : daysLeft === 0 ? "Expires today." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`}
+                          </span>
+                        </span>
+                        <Link
+                          href={canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
+                          className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline"
+                        >
+                          {canUpload ? "Add the renewed copy" : "Update its dates"}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
           </>
         )}
         {docs.attentionTotal > ATTENTION_MAX && (
           <p className="text-sm text-ink-2">
-            The {ATTENTION_MAX} most urgent are listed; {docs.attentionTotal - ATTENTION_MAX === 1 ? "1 more needs" : `${docs.attentionTotal - ATTENTION_MAX} more need`} attention.{" "}
+            {`The ${ATTENTION_MAX} most urgent are listed; ${moreLine}.`}{" "}
             <Link href="/app/documents" className="underline">
               See all documents
             </Link>
