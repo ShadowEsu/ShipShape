@@ -2,9 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { signProblem, type SignField } from "./messages";
 
 const FIELD_ID: Record<SignField, string> = { consent: "sign-consent", name: "typed-name", code: "code" };
+
+/** A message for the signer: about one field, or (`field: null`) about the whole form. */
+type SignError = { field: SignField | null; message: string };
 
 /** The button that signs names what is signed ("Sign the Mutual NDA"); while signing it says so and can't be pressed. */
 export function SignButton({ title, busy, signing }: { title: string; busy: boolean; signing: boolean }) {
@@ -39,7 +43,7 @@ export function SignForm({
   const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState<"code" | "sign" | null>(null);
   const [sent, setSent] = useState<string | null>(null);
-  const [error, setError] = useState<{ field: SignField | null; message: string } | null>(null);
+  const [error, setError] = useState<SignError | null>(null);
   // These buttons work only with JavaScript; until the page has hydrated, a click would do nothing.
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
@@ -47,6 +51,10 @@ export function SignForm({
   useEffect(() => {
     if (error?.field) document.getElementById(FIELD_ID[error.field])?.focus();
   }, [error]);
+  // Once a code is on its way, the field it goes in takes focus: the button just pressed may be gone.
+  useEffect(() => {
+    if (sent) document.getElementById(FIELD_ID.code)?.focus();
+  }, [sent]);
 
   async function post(path: "code" | "sign", body?: object) {
     setBusy(path);
@@ -77,6 +85,77 @@ export function SignForm({
     } else if (result) setError(signProblem(result, sender));
   }
 
+  async function sign(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const result = await post("sign", { code, typedName: name, consented });
+    if (result === "ok") router.refresh();
+    else if (result) setError(signProblem(result, sender));
+  }
+
+  return (
+    <SignFormView
+      title={title}
+      signerName={signerName}
+      email={email}
+      consentText={consentText}
+      demo={demo}
+      ready={ready}
+      consented={consented}
+      name={name}
+      code={code}
+      codeSent={codeSent}
+      busy={busy}
+      sent={sent}
+      error={error}
+      onConsent={setConsented}
+      onName={setName}
+      onCode={setCode}
+      onSendCode={sendCode}
+      onSign={sign}
+    />
+  );
+}
+
+/** The form drawn from SignForm's state; it holds none itself, so any state of it can be rendered. */
+export function SignFormView({
+  title,
+  signerName,
+  email,
+  consentText,
+  demo,
+  ready,
+  consented,
+  name,
+  code,
+  codeSent,
+  busy,
+  sent,
+  error,
+  onConsent,
+  onName,
+  onCode,
+  onSendCode,
+  onSign,
+}: {
+  title: string;
+  signerName: string;
+  email: string;
+  consentText: string;
+  demo: boolean;
+  ready: boolean;
+  consented: boolean;
+  name: string;
+  code: string;
+  codeSent: boolean;
+  busy: "code" | "sign" | null;
+  sent: string | null;
+  error: SignError | null;
+  onConsent: (checked: boolean) => void;
+  onName: (name: string) => void;
+  onCode: (code: string) => void;
+  onSendCode: () => void;
+  onSign: (e: FormEvent<HTMLFormElement>) => void;
+}) {
   const fieldError = (field: SignField) => (error?.field === field ? error.message : null);
   const described = (field: SignField) => (error?.field === field ? { "aria-invalid": true, "aria-describedby": `${FIELD_ID[field]}-error` } : {});
 
@@ -88,7 +167,7 @@ export function SignForm({
             id={FIELD_ID.consent}
             type="checkbox"
             checked={consented}
-            onChange={(e) => setConsented(e.target.checked)}
+            onChange={(e) => onConsent(e.target.checked)}
             className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
             {...described("consent")}
           />
@@ -107,7 +186,7 @@ export function SignForm({
         <input
           id={FIELD_ID.name}
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => onName(e.target.value)}
           maxLength={120}
           autoComplete="name"
           placeholder={signerName}
@@ -121,32 +200,22 @@ export function SignForm({
         )}
       </div>
 
+      {/* Always here, empty until a code is sent: a screen reader reads out a live region's new text, not one mounted with it. */}
+      <p role="status" className={sent ? "text-sm text-ink-2" : "sr-only"}>
+        {sent}
+      </p>
       {!codeSent ? (
         <div className="space-y-2">
           <p className="text-sm text-ink-2">
             To confirm it&apos;s you, ShipShape sends a 6-digit code to {email}.
             {demo && " In this sample workspace the code appears under Deadlines → Reminders sent instead of in an inbox."}
           </p>
-          <button type="button" className="btn-ghost" disabled={busy !== null} onClick={sendCode}>
+          <button type="button" className="btn-ghost" disabled={busy !== null} onClick={onSendCode}>
             {busy === "code" ? "Sending…" : "Send me a code"}
           </button>
         </div>
       ) : (
-        <form
-          className="space-y-2"
-          noValidate
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const result = await post("sign", { code, typedName: name, consented });
-            if (result === "ok") router.refresh();
-            else if (result) setError(signProblem(result, sender));
-          }}
-        >
-          {sent && (
-            <p role="status" className="text-sm text-ink-2">
-              {sent}
-            </p>
-          )}
+        <form className="space-y-2" noValidate onSubmit={onSign}>
           <label htmlFor={FIELD_ID.code} className="label">
             6-digit code
           </label>
@@ -154,7 +223,7 @@ export function SignForm({
             <input
               id={FIELD_ID.code}
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => onCode(e.target.value)}
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={6}
@@ -168,7 +237,7 @@ export function SignForm({
               {fieldError("code")}
             </p>
           )}
-          <button type="button" className="text-sm text-ink-2 underline" disabled={busy !== null} onClick={sendCode}>
+          <button type="button" className="text-sm text-ink-2 underline" disabled={busy !== null} onClick={onSendCode}>
             {busy === "code" ? "Sending…" : "Send a new code"}
           </button>
         </form>

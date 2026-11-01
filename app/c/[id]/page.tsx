@@ -4,7 +4,9 @@ import { cookies, headers } from "next/headers";
 import { LinkBusy, LinkUnavailable } from "@/app/link-states";
 import { NamedByWorkspace, Notice, fmtDay } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
+import { FocusOnLoad } from "@/components/focus-on-load";
 import { COLLECT_COOKIE, openCollect, type PublicCollect, type ReceiveOutcome } from "@/lib/server/collect";
+import { MAX_UPLOAD_BYTES } from "@/lib/server/files";
 import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
@@ -73,17 +75,21 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
             </p>
             <NamedByWorkspace contact={contactEmail()} page={`/c/${id}`} />
           </header>
-          <div aria-live="polite">
-            {result && "sent" in result && (
+          {result && "sent" in result && (
+            <FocusOnLoad role="status">
               <Notice tone="ok">
                 Sent. {collect.orgName} now has your {result.sent.label}.{" "}
                 {left === 0
                   ? `That's everything ${collect.orgName} asked for, so you can close this page.`
                   : `${left} more ${left === 1 ? "document" : "documents"} to send below.`}
               </Notice>
-            )}
-            {result && "message" in result && !result.onField && <Notice tone="bad">{result.message}</Notice>}
-          </div>
+            </FocusOnLoad>
+          )}
+          {result && "message" in result && !result.onField && (
+            <FocusOnLoad role="alert">
+              <Notice tone="bad">{result.message}</Notice>
+            </FocusOnLoad>
+          )}
           {collect.sample && (
             <Notice tone="info">
               This link belongs to a sample workspace, so it takes no files. Each button sends a made-up sample document instead.
@@ -161,7 +167,11 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
                         )}
                       </div>
                     </div>
-                    <SendButton label={collect.sample ? "Send a sample" : item.receivedAt ? "Send a newer one" : "Send"} />
+                    <SendButton
+                      label={collect.sample ? "Send a sample" : item.receivedAt ? "Send a newer one" : "Send"}
+                      maxBytes={MAX_UPLOAD_BYTES}
+                      tooBigHref={`/c/${id}?r=too_big&k=${encodeURIComponent(item.kind)}`}
+                    />
                   </form>
                 </li>
               );
