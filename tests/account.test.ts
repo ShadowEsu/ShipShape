@@ -176,12 +176,10 @@ describe("export", () => {
       "consent_version",
       "signed_name",
       "to_sign_sha256",
-      "sender_name",
-      "signer_visitor",
     ];
     const stored = await db.root((tx) =>
       tx.query<Record<string, unknown>>(
-        "select id, document_id, version, signed_version, signer_name, signer_email, status, created_at::text as created_at, expires_at::text as expires_at, signed_at::text as signed_at, consented_at::text as consented_at, consent_version, signed_name, to_sign_sha256, sender_name, signer_visitor from app.signature_requests where org_id = $1 order by created_at, id",
+        "select id, document_id, version, signed_version, signer_name, signer_email, status, created_at::text as created_at, expires_at::text as expires_at, signed_at::text as signed_at, consented_at::text as consented_at, consent_version, signed_name, to_sign_sha256 from app.signature_requests where org_id = $1 order by created_at, id",
         [ctx.orgId],
       ),
     );
@@ -191,7 +189,7 @@ describe("export", () => {
       [pending.id, "pending"],
       [signed.id, "signed"],
     ]);
-    expect(signatures[1]).toMatchObject({ signed_name: "Sam Rivera", signer_visitor: expect.stringMatching(/^[0-9a-f]{16}$/), sender_name: expect.any(String) });
+    expect(signatures[1]).toMatchObject({ signed_name: "Sam Rivera", signed_at: expect.any(String), consented_at: expect.any(String), consent_version: expect.any(String) });
 
     const agreements: Record<string, unknown>[] = JSON.parse(execFileSync("unzip", ["-p", file, "agreements.json"]).toString());
     expect(agreements).toEqual([{ item: "terms_privacy", policy_version: TERMS_VERSION, object_id: null, at: expect.any(String) }]);

@@ -133,7 +133,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
   if (ctx.role === "member") throw new UserError("Only owners and admins can export the workspace.");
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to export.");
 
-  const { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatureRows, agreements } = await asUser(ctx.userId, async (tx) => {
+  const { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements } = await asUser(ctx.userId, async (tx) => {
     const docs = await tx.query<ExportDoc>(
       "select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on, d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.created_at::text as created_at from app.documents d where d.org_id = $1 order by d.created_at, d.id",
       [ctx.orgId],
@@ -170,7 +170,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
       "select link_id, at::text as at, action, document_id, visitor from app.share_access where org_id = $1 order by at, seq",
       [ctx.orgId],
     );
-    const signatureRows = await tx.query<ExportSignature>(
+    const signatures = await tx.query<ExportSignature>(
       "select id, document_id, version, signed_version, signer_name, signer_email, status, created_at::text as created_at, expires_at::text as expires_at, signed_at::text as signed_at, consented_at::text as consented_at, consent_version, signed_name, to_sign_sha256 from app.signature_requests where org_id = $1 order by created_at, id",
       [ctx.orgId],
     );
@@ -179,21 +179,8 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
       "select item, policy_version, object_id, at::text as at from app.consents where user_id = $1 order by at, id",
       [ctx.userId],
     );
-    return { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatureRows, agreements };
+    return { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements };
   });
-  // The name the request went out under and the signer's keyed network fingerprint have no select
-  // grant for members (0003, 0025): read as the service, for only the requests RLS showed above.
-  const signerDetails = new Map(
-    (
-      await asService((tx) =>
-        tx.query<{ id: string; sender_name: string; signer_visitor: string | null }>(
-          "select id, sender_name, signer_visitor from app.signature_requests where org_id = $1 and id = any($2::uuid[])",
-          [ctx.orgId, signatureRows.map((s) => s.id)],
-        ),
-      )
-    ).map((r) => [r.id, r]),
-  );
-  const signatures = signatureRows.map((s) => ({ ...s, sender_name: signerDetails.get(s.id)?.sender_name ?? null, signer_visitor: signerDetails.get(s.id)?.signer_visitor ?? null }));
 
   const passports: (ExportLink & { documents: string[]; access: Omit<ExportLinkAccess, "link_id">[] })[] = links.map((l) => ({ ...l, documents: [], access: [] }));
   const passportById = new Map(passports.map((p) => [p.id, p]));
@@ -264,7 +251,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     "history.csv      the workspace history, oldest first",
     "sessions.json    the browsers you signed in on: browser and system name, when you signed in, were last active and signed out",
     "passports.json   your passport links: who each is for, when it was made, expires or was revoked, its documents, and every open, view and download with the visitor's keyed network fingerprint (a short code, not their address)",
-    "signatures.json  your signature requests: the document and version, the name it was sent under, the signer's name and email, the status, when it was made, expires and was signed, the name they typed, when and to which version of the consent they agreed, the reviewed file's SHA-256 fingerprint and the signer's keyed network fingerprint (a short code, not their address)",
+    "signatures.json  your signature requests: the document and version, the signer's name and email, the status, when it was made, expires and was signed, the name they typed, when and to which version of the consent they agreed, and the reviewed file's SHA-256 fingerprint",
     "agreements.json  what you agreed to (such as the Terms and Privacy Policy), which version, and when",
     "",
     "Check a file against its fingerprint with: shasum -a 256 <file>",
