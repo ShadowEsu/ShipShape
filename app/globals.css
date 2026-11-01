@@ -86,6 +86,10 @@ body {
   .input {
     @apply min-h-11 w-full rounded-lg border border-field bg-paper px-3 py-2 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent focus:ring-2 focus:ring-accent focus:ring-offset-2 sm:min-h-10 sm:text-sm;
   }
+  /* A field with an error: 2px of error red (border plus a 1px ring, so nothing shifts); focus still shows the accent ring. */
+  .input[aria-invalid="true"] {
+    @apply border-bad ring-1 ring-bad focus:border-bad focus:ring-2 focus:ring-accent;
+  }
   .label {
     @apply mb-1 block text-sm font-medium text-ink;
   }
