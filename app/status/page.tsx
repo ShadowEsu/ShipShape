@@ -28,12 +28,13 @@ export default async function StatusPage() {
   const db = await dbUp();
   const checkedAt = new Date();
   const payments = billingConfig();
+  const realDocs = realDocsEnabled();
   return (
     <>
       <SiteHeader />
       <main id="main" className="mx-auto max-w-3xl px-5 pt-10 pb-20">
         <p className="eyebrow">Status</p>
-        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">{db ? "Everything is running." : "ShipShape isn't working right now."}</h1>
+        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">{db ? "The app and its database are answering." : "ShipShape isn't working right now."}</h1>
         <p className="mt-2 text-sm text-ink-3">Checked {fmtDateTime(checkedAt)} · revision {process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "local"}</p>
         {!db && (
           <>
@@ -54,14 +55,14 @@ export default async function StatusPage() {
 
         <h2 className="mt-10 font-semibold">Features during the preview</h2>
         <ul className="mt-3 divide-y divide-line rounded-2xl border border-line bg-paper">
-          <Row name="Sample workspaces" state="On" tone="ok" note="Made-up business and documents; every feature to try." />
+          <Row name="Sample workspaces" state="On" tone="ok" note="Made-up business and documents; everything except uploading your own files." />
           <Row
             name="Real documents"
-            state={realDocsEnabled() ? "On" : "Off"}
-            tone={realDocsEnabled() ? "ok" : "off"}
-            note="Opens after our security review."
+            state={realDocs ? "On" : "Off"}
+            tone={realDocs ? "ok" : "off"}
+            note={realDocs ? "Open since our security review." : "Opens after our security review."}
           />
-          <Row name="Email" state="Off" tone="off" note="Reminders and signing codes show inside the app instead." />
+          <Row name="Email" state="Off" tone="off" note="In the sample, reminders and signing codes show inside the app instead." />
           {payments?.live ? (
             <Row name="Payments" state="Live payments" tone="ok" note="Real cards are charged through Stripe." />
           ) : (

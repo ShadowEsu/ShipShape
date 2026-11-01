@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { asAnon, asService, asUser, createLocalDriver, type Tx } from "@/lib/server/db";
@@ -641,6 +643,24 @@ describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
       expect(await roleProblems(root)).toEqual(["shipshape_app isn't a member of service_role", "shipshape_app has ADMIN on authenticated"]);
     } finally {
       await plain.close();
+    }
+  });
+
+  it("the local database starts in a fresh checkout, where .data doesn't exist yet, and keeps its data", async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "shipshape-checkout-"));
+    const dir = path.join(tmp, ".data", "pglite");
+    try {
+      const first = await createLocalDriver(dir);
+      await first.root((tx) => tx.query("create table public.kept (x int)"));
+      await first.close();
+      const again = await createLocalDriver(dir);
+      try {
+        expect(await again.root((tx) => tx.query("select count(*)::int as n from public.kept"))).toEqual([{ n: 0 }]);
+      } finally {
+        await again.close();
+      }
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
     }
   });
 

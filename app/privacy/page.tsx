@@ -24,12 +24,12 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>The browsers you&apos;re signed in on:</strong> browser and system name, when you signed in, were last active and
-          signed out, so you can sign each one out; each is deleted 30 days after it ends. No IP addresses.
+          signed out, so you can sign each one out; each is deleted 30 to 31 days after it ends. No IP addresses.
         </li>
         <li>
           <strong>Business facts:</strong> the details you save to fill forms (legal name, address, entity type, signer). A tax ID
           (EIN) is encrypted with a key kept outside the database; the app shows only its last 4 digits unless you ask to see it
-          after signing in recently, and that request is recorded.
+          after signing in recently, and that request is recorded. A W-9 you fill holds the full number, as the paper form does.
         </li>
         <li>
           <strong>Documents:</strong> the files you upload or make, every version, their dates and details, and a SHA-256 fingerprint
@@ -58,11 +58,17 @@ export default function PrivacyPage() {
           Stripe and never reach ShipShape.
         </li>
         <li>
-          <strong>The reminders and signing codes</strong> ShipShape would have emailed: reminders for 90 days, signing codes for 1 day.
+          <strong>The reminders and signing codes</strong> ShipShape would have emailed: reminders for 90 to 91 days and signing codes
+          for 1 to 2 days (a daily cleanup deletes them).
         </li>
         <li>
           <strong>Waitlist:</strong> the email address you gave us, and whether you asked to hear about Collect, only to tell you when
-          ShipShape opens or, if you asked, when Collect goes on sale. Deleting your account removes it too.
+          ShipShape opens or, if you asked, when Collect goes on sale. Deleting your account also removes the waitlist entry for your
+          account&apos;s email address. To come off the list any other time, write to us at the address below.
+        </li>
+        <li>
+          <strong>Service records:</strong> each AI read you agreed to and what it cost; your sign-in provider&apos;s account ID; and
+          short keyed fingerprints of network addresses, used to limit repeated attempts and deleted within two days.
         </li>
       </ul>
 
@@ -79,8 +85,8 @@ export default function PrivacyPage() {
         <li>Our hosting and database providers, which run the app and store your data for us.</li>
         <li>Stripe, for payments on the Pro plan.</li>
         <li>
-          An email provider, once ShipShape sends email (reminders and signing codes). During the preview nothing is emailed: those
-          messages appear inside the app instead.
+          An email provider, once ShipShape sends email (reminders and signing codes). During the preview nothing is emailed; in the
+          sample workspace those messages appear inside the app instead.
         </li>
         <li>
           {AI_RECIPIENT}, only when you choose an AI action and tick the box for that action. Today there is one, &ldquo;What are they
@@ -108,8 +114,8 @@ export default function PrivacyPage() {
       <ul>
         <li>
           <strong>Export:</strong> Settings → Export everything gives you one file with every version of every document, their
-          details and fingerprints, your business facts (the tax ID as its last 4 digits), your vendors and the files they sent, and
-          the history.
+          details and fingerprints, your business facts (the tax ID as its last 4 digits; a filled W-9 among the documents holds it in
+          full), your vendors and the files they sent, and the history.
         </li>
         <li>
           <strong>Delete:</strong> Settings → Delete your account removes, straight away, every workspace you own alone with its

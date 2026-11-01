@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/site";
-import { AI_RECIPIENT } from "@/lib/ai";
+import { AI_RECIPIENT, AI_TRAINING_SOURCE } from "@/lib/ai";
 import { PLANS } from "@/lib/plans";
 
 export const metadata: Metadata = { title: "FAQ", description: "What ShipShape does, what it doesn't, and how it keeps your paperwork safe." };
@@ -17,7 +17,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Which documents can it fill today?",
-    a: "The IRS Form W-9 (the official PDF, filled field by field) and the cover page of Common Paper's Mutual NDA, version 1.0, with its standard terms unchanged. You can also upload any PDF or image you already have.",
+    a: "The IRS Form W-9 (the official PDF, filled field by field) and the cover page of Common Paper's Mutual NDA, version 1.0, with its standard terms unchanged. Once real accounts open, you can also upload your own PDF, PNG or JPEG files (up to 4 MB each).",
   },
   {
     q: "Where do the templates come from?",
@@ -37,17 +37,29 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "How is my EIN protected?",
-    a: "It's encrypted with a key that's kept outside the database, shown as its last 4 digits, and revealed in full only after a recent sign-in, which is recorded. Our server logs blank out anything shaped like an SSN or EIN.",
+    a: "In your business facts it's encrypted with a key kept outside the database, shown as its last 4 digits, and shown in full only after a recent sign-in, which is recorded. A W-9 you fill carries the full number, as the IRS form requires, so anyone who can open that W-9, or who has a passport link to it, can read it. Our server logs blank out anything shaped like an SSN or EIN.",
   },
   {
     q: "Does ShipShape use AI?",
-    a: `One feature uses it, and it's switched on only after our security review: "What are they asking for?" reads a message you paste and lists the documents it asks for, then ShipShape checks your documents for them. It runs only when you tick a box for that message and sends ${AI_RECIPIENT} only the text you pasted (numbers shaped like an SSN or EIN removed, never your documents). Anthropic says that by default it doesn't train on what its API receives. The answer is a draft you check, not legal advice.`,
+    a: (
+      <>
+        One feature uses it, and it&apos;s switched on only after our security review: &ldquo;What are they asking for?&rdquo; reads a
+        message you paste and lists the documents it asks for, then ShipShape checks your documents for them. It runs only when you tick
+        a box for that message and sends {AI_RECIPIENT} only the text you pasted (numbers shaped like an SSN or EIN removed, never your
+        documents). Anthropic says that by default it doesn&apos;t train on what its API receives (
+        <a href={AI_TRAINING_SOURCE.href} target="_blank" rel="noopener noreferrer" className="underline">
+          {AI_TRAINING_SOURCE.label}
+        </a>
+        , checked {AI_TRAINING_SOURCE.checked}). The answer is a draft you check, not legal advice.
+      </>
+    ),
   },
   {
     q: "Can I get my data out, or delete it?",
     a: (
       <>
-        Yes, from Settings: one ZIP file with every version of every document and the full history, or delete your account and the
+        Yes. Owners and admins can, from Settings: one ZIP file (up to 200 MB; for a bigger workspace, write to us) with every version
+        of every document and the full history, or delete your account and the
         workspaces you own. Details are in the <Link href="/privacy" className="underline">privacy policy</Link>.
       </>
     ),
@@ -57,13 +69,17 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: (
       <>
         Free covers {PLANS.free.documents} active documents and {PLANS.free.passports} open passport link. Pro is ${PLANS.pro.price} a
-        month with no limits, plus email reminders and asking for signatures by email. See <Link href="/pricing" className="underline">pricing</Link>.
+        month with no limits, plus email reminders and signature requests (by email, once ShipShape can send email). See{" "}
+        <Link href="/pricing" className="underline">
+          pricing
+        </Link>
+        .
       </>
     ),
   },
   {
     q: "When can I use it for real documents?",
-    a: "After our security review and once the production database is in place. Until then you can try everything in a sample workspace with a made-up business, and join the waitlist on the home page to hear when accounts open.",
+    a: "After our security review and once the production database is in place. Until then you can try it in a sample workspace with a made-up business (uploading your own files and editing its facts open with real accounts), and join the waitlist on the home page to hear when accounts open.",
   },
 ];
 

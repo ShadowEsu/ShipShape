@@ -17,6 +17,21 @@ import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
+/** The live-key tests run under final terms; every other test under the real (draft) TERMS_VERSION. */
+const FINAL_TERMS = "2026-12-01";
+const legal = vi.hoisted(() => ({ version: "", real: "" }));
+vi.mock("@/lib/legal", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/legal")>();
+  legal.real = real.TERMS_VERSION;
+  legal.version = real.TERMS_VERSION;
+  return {
+    ...real,
+    get TERMS_VERSION() {
+      return legal.version;
+    },
+  };
+});
+
 /** Stripe billing in test mode (stripe-billing-readiness checks A-H), against a fake Stripe. */
 
 const KEY = `sk_test_${"a".repeat(24)}`;
@@ -168,6 +183,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  legal.version = legal.real;
   fake = new FakeStripe();
   setStripeForTests(fake);
   vi.stubEnv("BILLING_ENABLED", "1");
@@ -205,6 +221,7 @@ describe("keys and mode", () => {
   });
 
   it("takes a live key only with BILLING_LIVE_KEYS_OK and BILLING_ENABLED both 1", () => {
+    legal.version = FINAL_TERMS;
     const live = `sk_live_${"a".repeat(24)}`;
     vi.stubEnv("STRIPE_SECRET_KEY", live);
     expect(billingConfig()).toBeNull();
@@ -223,7 +240,20 @@ describe("keys and mode", () => {
     expect(billingConfig()).toBeNull();
   });
 
+  it("refuses a live key while the terms are a draft, since the draft terms and pricing say no real money moves (W13-5)", async () => {
+    expect(legal.real).toMatch(/-draft$/);
+    const ctx = await realWorkspace();
+    vi.stubEnv("STRIPE_SECRET_KEY", `sk_live_${"a".repeat(24)}`);
+    vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
+    expect(billingConfig()).toBeNull();
+    expect(await billingView(ctx)).toMatchObject({ available: false, live: false });
+    legal.version = FINAL_TERMS;
+    expect(billingConfig()).toMatchObject({ live: true });
+    expect(await billingView(ctx)).toMatchObject({ available: true, live: true });
+  });
+
   it("tells members whether payments take real money: live only for an admitted live key", async () => {
+    legal.version = FINAL_TERMS;
     const ctx = await realWorkspace();
     expect(await billingView(ctx)).toMatchObject({ available: true, live: false });
     vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
@@ -268,6 +298,7 @@ describe("webhook authenticity and idempotency", () => {
   });
 
   it("with a live key admitted, takes live-mode events and refuses test-mode ones", async () => {
+    legal.version = FINAL_TERMS;
     vi.stubEnv("STRIPE_SECRET_KEY", `sk_live_${"a".repeat(24)}`);
     vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
     expect(await send("product.created", { object: "product" }, { livemode: true })).toEqual({ status: 200, message: "ignored" });
