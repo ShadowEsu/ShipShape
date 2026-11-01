@@ -142,8 +142,9 @@ function signField(field: string | undefined): SignFormState["field"] {
 
 export async function askToSign(_prev: SignFormState, data: FormData): Promise<SignFormState> {
   const ctx = await requireWorkspace();
-  const id = documentId(data);
+  let id: string;
   try {
+    id = documentId(data);
     const created = await requestSignature(ctx, {
       documentId: id,
       signerName: data.get("signer_name"),

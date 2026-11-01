@@ -70,4 +70,9 @@ describe("the W-9's EIN step", () => {
     expect(html).toMatch(/<input[^>]*id="f-ein"[^>]*type="password"/);
     expect(html).not.toContain('name="save_ein"');
   });
+
+  it("has a step heading that can take focus, so a step change is read out instead of dropping focus to the page", async () => {
+    const html = await render({ tin_kind: "ein", ein: "" });
+    expect(textOf(/<h2[^>]*tabindex="-1"[^>]*>[\s\S]*?<\/h2>/.exec(html)?.[0] ?? "")).toMatch(/^Step 1 of 4\s*Who.s filling it in$/);
+  });
 });

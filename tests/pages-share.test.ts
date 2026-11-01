@@ -413,7 +413,7 @@ describe("Settings", () => {
     const ctx = await signIn("settings-pro@example.com");
     await bill(ctx, "active");
     const html = await afterCheckout();
-    expect(textOf(html)).toContain("You're on Pro now. The limits are gone and email reminders are on.");
+    expect(textOf(html)).toContain("You're on Pro now. The limits are gone and reminders are on; they land under Deadlines.");
     expect(actionsOf(html).map((a) => a.label)).not.toContain("Check again");
   });
 
@@ -589,5 +589,21 @@ describe("form errors name the field to fix", () => {
     const ctx = await signIn("form-delete-old@example.com");
     await startSession({ userId: ctx.userId, demo: false, authAt: Math.floor(Date.now() / 1000) - 3600, sessionId: ctx.sessionId });
     expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toEqual({ error: "For your security, sign in again to delete your account.", reauth: true });
+  });
+
+  it("deleting the account while billing is off and a subscription we know is running: nothing is deleted, and the fix is writing to us at the address when one is set", async () => {
+    const ctx = await signIn("form-delete-sub@example.com");
+    await db.root((tx) =>
+      tx.query("insert into app.billing (org_id, stripe_customer_id, stripe_subscription_id, status, plan) values ($1, 'cus_FormDeleteSub', 'sub_FormDeleteSub', 'active', 'pro')", [ctx.orgId]),
+    );
+    vi.stubEnv("STRIPE_SECRET_KEY", "");
+    vi.stubEnv("CONTACT_EMAIL", "help@shipshape.example");
+    expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toEqual({
+      error: "Your subscription couldn't be cancelled automatically, so nothing was deleted.",
+      write: { contact: "help@shipshape.example" },
+    });
+    vi.stubEnv("CONTACT_EMAIL", "");
+    expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toMatchObject({ write: { contact: null } });
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [ctx.orgId]))).toHaveLength(1);
   });
 });

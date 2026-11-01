@@ -107,6 +107,18 @@ export function DeleteAccountForm({ deleted, left }: { deleted: string[]; left: 
               </Link>
             </>
           )}
+          {state.write &&
+            (state.write.contact ? (
+              <>
+                {" "}
+                <a href={`mailto:${state.write.contact}?subject=${encodeURIComponent("Cancel my ShipShape subscription")}`} className="underline">
+                  Write to us
+                </a>{" "}
+                and we&apos;ll cancel it; then delete your account.
+              </>
+            ) : (
+              " Cancel it with your card issuer or bank, then delete your account."
+            ))}
         </div>
       )}
       {!state.reauth && (

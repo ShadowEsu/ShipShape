@@ -83,7 +83,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         {billing === "success" &&
           (view.plan === "pro" ? (
             <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
-              You&apos;re on Pro now. The limits are gone and email reminders are on.
+              You&apos;re on Pro now. The limits are gone and reminders are on; they land under Deadlines.
             </p>
           ) : (
             <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">

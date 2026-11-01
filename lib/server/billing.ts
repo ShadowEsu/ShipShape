@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import { TERMS_VERSION } from "@/lib/legal";
 import { PLANS, type PlanId } from "@/lib/plans";
 import { asService, asUser, type Tx } from "./db";
-import { UserError } from "./errors";
+import { SubscriptionStillRunning, UserError } from "./errors";
 import { realDocsEnabled } from "./flags";
 import type { Ctx } from "./profile";
 
@@ -380,9 +380,8 @@ export async function cancelSubscriptionsBeforeDeletion(userId: string): Promise
   const cfg = billingConfig();
   if (!cfg) {
     // Billing is off, so no new checkout can have started; only a subscription we know is running stops the deletion.
-    if (customers.some((c) => c.known_live)) {
-      throw new UserError("Your subscription couldn't be cancelled automatically, so nothing was deleted. Write to us and we'll cancel it; then delete your account.");
-    }
+    // The settings form adds the way to reach us (an address when one is set).
+    if (customers.some((c) => c.known_live)) throw new SubscriptionStillRunning();
     return handled;
   }
   const stripe = stripePort(cfg);

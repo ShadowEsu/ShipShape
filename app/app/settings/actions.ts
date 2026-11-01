@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { deleteAccount } from "@/lib/server/account";
 import { openPortal, startCheckout } from "@/lib/server/billing";
-import { UserError } from "@/lib/server/errors";
+import { SubscriptionStillRunning, UserError } from "@/lib/server/errors";
+import { contactEmail } from "@/lib/server/flags";
 import { NeedsRecentSignIn, renameWorkspace } from "@/lib/server/profile";
 import { endAllSessions, endOneSession, endSession, requireWorkspace } from "@/lib/server/session";
 
@@ -35,6 +36,8 @@ export interface DeleteState {
   field?: "confirm";
   /** The sign-in is too old for this: the fix is signing in again. */
   reauth?: boolean;
+  /** A subscription we couldn't cancel stops the deletion: the fix is writing to us, at this address when one is set. */
+  write?: { contact: string | null };
   /** What was typed in the confirm field, so it keeps it after React resets the form. */
   typed?: string;
 }
@@ -47,6 +50,7 @@ export async function deleteMyAccount(_prev: DeleteState, data: FormData): Promi
     await deleteAccount(ctx);
   } catch (e) {
     if (e instanceof NeedsRecentSignIn) return { error: e.message, reauth: true };
+    if (e instanceof SubscriptionStillRunning) return { error: e.message, write: { contact: contactEmail() } };
     if (e instanceof UserError) return { error: e.message };
     throw e;
   }

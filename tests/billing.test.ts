@@ -394,7 +394,7 @@ describe("account deletion", () => {
     const a = await payingWorkspace();
     vi.stubEnv("STRIPE_SECRET_KEY", "");
     await expect(deleteAccount(a.ctx)).rejects.toThrow(
-      "Your subscription couldn't be cancelled automatically, so nothing was deleted. Write to us and we'll cancel it; then delete your account.",
+      "Your subscription couldn't be cancelled automatically, so nothing was deleted.",
     );
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toHaveLength(1);
     vi.stubEnv("STRIPE_SECRET_KEY", KEY);

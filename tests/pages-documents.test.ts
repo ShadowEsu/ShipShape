@@ -192,7 +192,7 @@ describe("home", () => {
     const html = await homePage();
     const text = textOf(html);
     expect(text).toContain("Old permit");
-    expect(text).toContain("It has lapsed. Renew it with the issuer, then add the new copy so your passport links share the current one.");
+    expect(text).toContain("It has lapsed. Renew it with the issuer, then add the new copy and its new date, so your passport links share the current one.");
     expect(text).not.toContain("Nothing has expired");
     const attention = html.slice(html.indexOf("Needs attention"));
     expect(actionsOf(attention).filter((a) => a.href?.startsWith(`/app/documents/${id}`))).toEqual([

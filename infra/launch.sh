@@ -58,6 +58,9 @@ done
 say() { printf '%s\n' "$*"; }
 # One line on what stopped the run, one on what fixes it.
 fail() { printf 'Stopped: %s\nFix: %s\n' "$1" "$2" >&2; exit 1; }
+# Step 6 gives shipshape_app a login password, and the rotation guard keys on "can already log in": a stop after
+# step 6 can only be rerun with the flag. On a first launch production isn't on that password, so nothing to redeploy.
+RERUN_AFTER_6="Rerun with LAUNCH_ROTATE_APP_PASSWORD=1 (step 6 already set a password; if production is live on it, redeploy production after)."
 step() { say ""; say "== $*"; }
 rel() { case "$1" in "$ROOT"/*) printf '%s' "${1#"$ROOT"/}" ;; *) printf '%s' "$1" ;; esac; }
 # An argument as the plan shows it: placeholders as they are, anything unusual in single quotes.
@@ -274,6 +277,11 @@ preflight() {
     fail "The probe needs a preview deployment's OIDC token, and the Vercel CLI isn't linked here to fetch it." \
       "Export PROBE_PREVIEW_OIDC_TOKEN (a preview deployment's VERCEL_OIDC_TOKEN), or run vercel link in the repo, then rerun."
   fi
+  # Checked here, before step 6 sets a password: a stop after that point needs the rotation flag to rerun.
+  if [ "$APPLY" = 1 ] && [ -z "${PROBE_PREVIEW_OIDC_TOKEN:-}" ] && [ -z "$PREVIEW_TOKEN" ]; then
+    fail "vercel env pull returned no VERCEL_OIDC_TOKEN for previews (the probe in step 7 needs it)." \
+      "Export PROBE_PREVIEW_OIDC_TOKEN (a preview deployment's VERCEL_OIDC_TOKEN), then rerun."
+  fi
   say "  Tools found: aws, node $major, curl, openssl. Account $ACCOUNT_ID, an Identity Center session."
 }
 
@@ -441,7 +449,7 @@ JS
     "DATABASE_CA_CERT=<from the pinned RDS CA bundle>" node scripts/migrate.ts
   if [ "$APPLY" = 1 ]; then
     MIGRATE_DATABASE_URL="$MASTER_URL" DATABASE_CA_CERT="$CA" node scripts/migrate.ts ||
-      fail "The roles check failed (the FAIL line above says which rule)." "Fix the role in the database, then rerun."
+      fail "The roles check failed (the FAIL line above says which rule)." "$RERUN_AFTER_6 Fix the role in the database first."
   fi
 
   step "7. Acceptance: scripts/probe-aws.mjs (about 2 minutes)"
@@ -455,7 +463,7 @@ JS
     TOKEN="$PREVIEW_TOKEN"
     if [ "$APPLY" = 1 ]; then
       [ -n "$TOKEN" ] || fail "vercel env pull returned no VERCEL_OIDC_TOKEN for previews." \
-        "Export PROBE_PREVIEW_OIDC_TOKEN (a preview deployment's VERCEL_OIDC_TOKEN), then rerun."
+        "$RERUN_AFTER_6 Export PROBE_PREVIEW_OIDC_TOKEN (a preview deployment's VERCEL_OIDC_TOKEN) first."
     fi
   fi
   show "AWS_REGION=$R" "PROBE_BUCKET=$BUCKET_OUT" "PROBE_KMS_KEY_ARN=$KEY_ARN" "PROBE_DB_INSTANCE=$DB_INSTANCE" \
@@ -469,7 +477,7 @@ JS
       PROBE_OIDC_PROVIDER_ARN="$OIDC_ARN" PROBE_OIDC_AUD="$AUDIENCE" PROBE_PREVIEW_OIDC_TOKEN="$TOKEN" \
       PROBE_COGNITO_POOL_ID="$POOL_ID" PROBE_COGNITO_CLIENT_ID="$CLIENT_ID" PROBE_APP_URL="$APP_URL" \
       node scripts/probe-aws.mjs ||
-      fail "The probe found failures (the FAIL lines above)." "Correct each one, then rerun: finished steps report Up to date."
+      fail "The probe found failures (the FAIL lines above)." "$RERUN_AFTER_6 Correct each FAIL first; finished steps report Up to date."
   fi
 
   step "8. Vercel, Production only (previews get none of these: Security S3-1; about 2 minutes)"

@@ -294,6 +294,31 @@ describe("an upload link (/c)", () => {
     expect(/<input[^>]*id="file-w9"[^>]*>/.exec(html)?.[0]).not.toContain("aria-invalid");
   });
 
+  it("after too many posts from one network, the vendor's form post comes back to the page with a message, not a JSON answer", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const owner = await db.user("owner-busy@example.com");
+    const [org] = await asUser(owner, (tx) => tx.query<{ id: string }>("select app.create_workspace('Harbor Busy Co') as id"));
+    const real: Ctx = { userId: owner, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Busy Co", role: "owner", today: isoToday() };
+    const { id, token } = await link(real, "Summit Supply");
+    jar.set("ss_collect", token);
+    const ip = "203.0.113.77";
+    for (let i = 0; i < 30; i++) await rateLimited("collect-upload", ip, 30, 600);
+    const res = await upload(
+      new Request(`http://shipshape.test/c/${id}/upload?k=coi`, {
+        method: "POST",
+        headers: { origin: "http://shipshape.test", host: "shipshape.test", "sec-fetch-site": "same-origin", "x-forwarded-for": ip, "content-length": "10" },
+      }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(res.status).toBe(303);
+    const back = new URL(res.headers.get("location") ?? "", "http://shipshape.test");
+    expect(`${back.pathname}${back.search}`).toBe(`/c/${id}?r=busy&k=coi`);
+    const html = await collectPage(id, Object.fromEntries(back.searchParams));
+    expect(textOf(html)).toContain("Too many tries from this network, so nothing was sent. Wait 10 minutes, then send it again.");
+    // Not a file problem: nothing is marked invalid, the message stays at the top.
+    expect(html).not.toContain('aria-invalid="true"');
+  });
+
   it("once turned off, says so to the holder of the link, names the fix, and offers one action", async () => {
     const { id, token } = await link(sample, "Bayside Drywall");
     await revokeVendorLink(sample, id);

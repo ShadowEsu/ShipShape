@@ -124,7 +124,7 @@ export default async function AppHome() {
         {attention.length === 0 ? (
           <p className="card text-sm text-ink-2">
             {docs.length === 0
-              ? "Documents that have expired or expire in the next 30 days will be listed here, each with the one step that renews it."
+              ? "Documents that have expired or expire in the next 30 days will be listed here, each with what renews it."
               : "Nothing has expired or expires in the next 30 days."}
           </p>
         ) : (
@@ -142,7 +142,7 @@ export default async function AppHome() {
                     {/* Rule 6: one line on what it means, one action that fixes it. */}
                     <span className="block text-sm text-ink-2">
                       {d.validity === "expired" ? "It has lapsed." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`} Renew it with the issuer, then{" "}
-                      {canUpload ? "add the new copy so your passport links share the current one." : "update its dates here."}
+                      {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates here."}
                     </span>
                   </span>
                   <Link

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 import { flushSync } from "react-dom";
@@ -137,14 +138,33 @@ export function FillForm({
     else if (state.errors._ack) focusField(formRef.current, "_ack");
   }, [state]);
 
+  // Any other change of step (Continue, Back, the review arriving) moves focus to the new heading, so it's read out
+  // and keyboard focus doesn't fall to the page when the pressed button unmounts. Not on first paint; not when a
+  // summary link or Change is about to focus a field (fieldAhead); the errors effect above wins when both apply.
+  const stepRef = useRef<HTMLHeadingElement>(null);
+  const reviewRef = useRef<HTMLHeadingElement>(null);
+  const shown = useRef({ current, reviewing });
+  const fieldAhead = useRef(false);
+  useEffect(() => {
+    const was = shown.current;
+    shown.current = { current, reviewing };
+    if (was.current === current && was.reviewing === reviewing) return;
+    if (fieldAhead.current) return;
+    if (state.errors && Object.keys(state.errors).length > 0) return;
+    (reviewing ? reviewRef : stepRef).current?.focus();
+  }, [current, reviewing, state]);
+
   /** Shows the step a field is on, then focuses the field. */
   function goTo(key: string) {
+    fieldAhead.current = true;
     flushSync(() => setMoved({ of: state, at: stepOf(template, key) }));
+    fieldAhead.current = false;
     focusField(formRef.current, key);
   }
 
   function change(key: string) {
     // Show the fields before moving focus into them; changed values need approving afresh.
+    fieldAhead.current = true;
     flushSync(() => {
       setLeft(state);
       setAck(false);
@@ -166,7 +186,7 @@ export function FillForm({
       {/* Every step stays in the form (hidden) so the next check and the approval post every value. */}
       <div hidden={reviewing} className="space-y-6">
         {steps.length > 1 && !reviewing && (
-          <h2 className="font-semibold">
+          <h2 ref={stepRef} tabIndex={-1} className="-mx-1 rounded px-1 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
             <span className="block font-mono text-xs font-medium tracking-widest text-ink-3 uppercase">
               Step {current + 1} of {steps.length}
             </span>
@@ -198,7 +218,7 @@ export function FillForm({
       {reviewing ? (
         <>
           <section aria-labelledby="review-title" className="card space-y-3">
-            <h2 id="review-title" className="font-semibold">
+            <h2 id="review-title" ref={reviewRef} tabIndex={-1} className="-mx-1 rounded px-1 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
               Check your {template.short}
             </h2>
             <p className="text-sm text-ink-2">Every value that goes on the form, where it came from, and a way to change it.</p>
@@ -215,9 +235,16 @@ export function FillForm({
                       {source && <span className="block font-mono text-xs text-ink-3">{source}</span>}
                     </dd>
                     <dd className="order-2 justify-self-end sm:order-3">
-                      <button type="button" onClick={() => change(f.key)} className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
-                        Change<span className="sr-only"> {f.label}</span>
-                      </button>
+                      {/* A saved EIN has no field on the step: the way to change it is Business facts. */}
+                      {f.fact === "ein" && initial[f.key] ? (
+                        <Link href="/app/facts" className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
+                          Change in Business facts
+                        </Link>
+                      ) : (
+                        <button type="button" onClick={() => change(f.key)} className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
+                          Change<span className="sr-only"> {f.label}</span>
+                        </button>
+                      )}
                     </dd>
                   </div>
                 );
