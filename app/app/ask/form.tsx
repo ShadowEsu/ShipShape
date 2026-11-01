@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
-import { AI_REQUEST_CONSENT_TEXT, AI_REQUEST_MAX_CHARS } from "@/lib/ai";
+import { AI_REQUEST_CONSENT_TEXT, AI_REQUEST_MAX_CHARS, AI_TRAINING_SOURCE } from "@/lib/ai";
 import type { RequestItem } from "@/lib/server/ai";
 import { askAction, type AskState } from "./actions";
 
@@ -65,11 +65,18 @@ export function AskForm() {
             value="yes"
             aria-required="true"
             aria-invalid={consentError ? true : undefined}
-            aria-describedby={consentError ? "consent-error" : undefined}
+            aria-describedby={consentError ? "consent-error consent-source" : "consent-source"}
             className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
           />
           <span>{AI_REQUEST_CONSENT_TEXT}</span>
         </label>
+        <p id="consent-source" className="text-xs text-ink-3">
+          Source:{" "}
+          <a href={AI_TRAINING_SOURCE.href} target="_blank" rel="noopener noreferrer" className="underline">
+            {AI_TRAINING_SOURCE.label}
+          </a>
+          , checked {AI_TRAINING_SOURCE.checked}.
+        </p>
         {consentError && (
           <p id="consent-error" className="text-sm text-bad">
             {consentError}

@@ -340,6 +340,19 @@ describe("What are they asking for?", () => {
     expect(textOf(html)).toContain("Reading requests with AI is switched off right now, so check the request against your documents yourself");
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Open your documents", href: "/app/documents" }]);
   });
+
+  it("with AI on: the consent box claims only what Anthropic says, and names the source and when it was checked", async () => {
+    vi.stubEnv("SHIPSHAPE_AI", "1");
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
+    await signIn("ask-on@example.com");
+    const html = await renderPage(AskPage, {});
+    const text = textOf(html);
+    expect(text).toContain("and nothing from your documents is sent. Anthropic says that by default it doesn't train on what its API receives.");
+    expect(text).not.toContain("Anthropic doesn't train on it");
+    expect(text).toMatch(/Source:\s*Anthropic's privacy center\s*, checked Oct 31, 2026\s*\./);
+    expect(html).toMatch(/<a href="https:\/\/privacy\.claude\.com\/en\/articles\/7996868-is-my-data-used-for-model-training"[^>]*rel="noopener noreferrer"/);
+    expect(html).toMatch(/<input[^>]*aria-describedby="consent-source"[^>]*name="consent"/);
+  });
 });
 
 describe("Settings", () => {
