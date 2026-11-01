@@ -241,6 +241,21 @@ describe("home", () => {
     await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Permit 21', 'permit', current_date + 21)", [ctx.orgId]));
     expect(textOf(await homePage())).toContain("The 20 soonest are listed; 1 more needs attention.");
   });
+
+  it("each row says how long is left in plain words: 'Expires today.', '1 day left.', 'N days left.'", async () => {
+    const ctx = await signIn("home-days@example.com");
+    await db.root((tx) =>
+      tx.query(
+        "insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Today permit', 'permit', current_date), ($1, 'Tomorrow permit', 'permit', current_date + 1), ($1, 'Week permit', 'permit', current_date + 7)",
+        [ctx.orgId],
+      ),
+    );
+    const text = textOf(await homePage());
+    expect(text).toMatch(/Today permit.*Expires today\./);
+    expect(text).toMatch(/Tomorrow permit.*1 day left\./);
+    expect(text).toMatch(/Week permit.*7 days left\./);
+    expect(text).not.toContain("0 days left");
+  });
 });
 
 describe("business facts", () => {

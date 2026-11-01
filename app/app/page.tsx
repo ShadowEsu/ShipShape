@@ -143,7 +143,9 @@ export default async function AppHome() {
                         <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
                         <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
                       </span>
-                      <span className="block text-sm text-ink-2">{d.validity === "expired" ? "It has lapsed." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`}</span>
+                      <span className="block text-sm text-ink-2">
+                        {d.validity === "expired" ? "It has lapsed." : daysLeft === 0 ? "Expires today." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`}
+                      </span>
                     </span>
                     <Link
                       href={canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
