@@ -304,7 +304,8 @@ export async function completeSigning(
   input: { code: string; typedName: string; consented: boolean; ip: string },
 ): Promise<SignResult> {
   if (!input.consented) return "needs_consent";
-  const typedName = input.typedName.trim();
+  // Composed first (NFC): "e" + a combining acute is the printable "é", and what the message names is one character.
+  const typedName = input.typedName.normalize("NFC").trim();
   if (!typedName || typedName.length > 120) return "needs_name";
   // The certificate is set in a standard PDF font (WinAnsi): a name it can't print is refused with its own reason, not "type your name".
   if (!isPrintable(typedName)) return "name_chars";

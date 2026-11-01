@@ -20,6 +20,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // No cookie: the page outlived its 30-minute token (lib/server/links.ts), nothing about the link itself. Nothing was signed.
   const result = token ? await completeSigning(id, token, { ...body.data, code: body.data.code.trim(), ip }) : "reopen";
   // The characters the certificate can't print, named back to the signer who typed them (their own input, as JSON text; Design).
-  const answer = result === "name_chars" ? { result, chars: unprintableChars(body.data.typedName.trim()) } : { result };
+  const answer = result === "name_chars" ? { result, chars: unprintableChars(body.data.typedName.normalize("NFC").trim()) } : { result };
   return Response.json(answer, { status: result === "invalid" ? 404 : 200, headers: { "Cache-Control": "no-store" } });
 }

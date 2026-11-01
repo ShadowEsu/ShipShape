@@ -11,8 +11,9 @@ import { FACT_LABELS } from "@/lib/profile-fields";
 import { DOC_KINDS, getDocument } from "@/lib/server/documents";
 import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { realDocsEnabled } from "@/lib/server/flags";
-import { requireWorkspace } from "@/lib/server/session";
+import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
+import { dayOf } from "@/lib/today";
 import type { TemplateInfo } from "@/lib/templates/types";
 import { archive, withdrawSignature } from "../actions";
 import { DetailsForm, SignRequestForm, VersionForm } from "../forms";
@@ -91,6 +92,7 @@ export default async function DocumentPage({
   searchParams: Promise<{ error?: string; made?: string; added?: string }>;
 }) {
   const ctx = await requireWorkspace();
+  const zone = await viewerZone();
   const { id } = await params;
   const { error, made, added } = await searchParams;
   const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
@@ -244,7 +246,7 @@ export default async function DocumentPage({
                         <p className="truncate text-xs text-ink-3">
                           {r.signer_email} · version {r.version}
                           {r.status === "signed" && r.signed_at && <> · signed {fmtDateTime(r.signed_at)}</>}
-                          {r.status === "pending" && !lapsed && <> · open until {fmtDay(r.expires_at)}</>}
+                          {r.status === "pending" && !lapsed && <> · open until {dayOf(r.expires_at, zone)}</>}
                         </p>
                         {(r.has_review_file || (r.status === "pending" && !lapsed)) && (
                           <div className="flex flex-wrap gap-x-4">
