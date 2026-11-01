@@ -15,6 +15,10 @@
 -- app.outbox, so deleting outbox rows leaves every chain intact.
 
 alter table app.outbox add column kind text not null default 'reminder' check (kind in ('reminder', 'esign_code'));
+-- Rows written before this migration: every signing-code message has the one subject
+-- lib/server/esign.ts gives it, so those rows are marked now rather than labelled reminders by the
+-- default, which would show them to real owners and admins and keep them 90 days (Security SHOULD-B1).
+update app.outbox set kind = 'esign_code' where subject = 'Your ShipShape signing code';
 
 -- Same function as 0003, except the outbox row is marked as a signing code. Its grants are kept.
 create or replace function app.esign_issue_code(req uuid, secret_hash text, code_hash text, mail_subject text, mail_body text) returns text
