@@ -59,12 +59,14 @@ const DOC_SELECT = `
          (select v.origin from app.document_versions v where v.document_id = d.id order by v.version desc limit 1) as latest_origin
   from app.documents d`;
 
-const LIST_SQL =
-  DOC_SELECT +
-  ` where d.org_id = $2 and d.status = $3
+const LIST_WHERE = ` where d.org_id = $2 and d.status = $3
       and ($4::text is null or d.kind = $4)
-      and ($5::text = '' or d.search @@ websearch_to_tsquery('simple', $5) or d.title ilike '%' || $5 || '%')
-    order by coalesce(d.expires_on, '9999-12-31') asc, d.created_at desc`;
+      and ($5::text = '' or d.search @@ websearch_to_tsquery('simple', $5) or d.title ilike '%' || $5 || '%')`;
+const LIST_ORDER = ` order by coalesce(d.expires_on, '9999-12-31') asc, d.created_at desc`;
+const LIST_SQL = DOC_SELECT + LIST_WHERE + LIST_ORDER;
+const PAGE_SQL = LIST_SQL + " limit $6 offset $7";
+// $1 is unused here, so the page and the count share one parameter list.
+const COUNT_SQL = `select count(*)::int as n, $1::date as today from app.documents d` + LIST_WHERE;
 const GET_SQL = DOC_SELECT + " where d.id = $2 and d.org_id = $3";
 
 /**
@@ -77,10 +79,40 @@ function breaksOneLine(c: string): boolean {
   return n < 0x20 || (n >= 0x7f && n < 0xa0) || (n >= 0x2028 && n <= 0x202e) || (n >= 0x2066 && n <= 0x2069);
 }
 
-export async function listDocuments(ctx: Ctx, opts: { q?: string; kind?: string; archived?: boolean } = {}): Promise<DocRow[]> {
+type ListOpts = { q?: string; kind?: string; archived?: boolean };
+
+function listParams(ctx: Ctx, opts: ListOpts): [string, string, string, string | null, string] {
   const q = Array.from(opts.q ?? "", (c) => (breaksOneLine(c) ? " " : c)).join("").trim().slice(0, 100);
   const kind = opts.kind && opts.kind in DOC_KINDS ? opts.kind : null;
-  return asUser(ctx.userId, (tx) => tx.query<DocRow>(LIST_SQL, [ctx.today, ctx.orgId, opts.archived ? "archived" : "active", kind, q]));
+  return [ctx.today, ctx.orgId, opts.archived ? "archived" : "active", kind, q];
+}
+
+export async function listDocuments(ctx: Ctx, opts: ListOpts = {}): Promise<DocRow[]> {
+  return asUser(ctx.userId, (tx) => tx.query<DocRow>(LIST_SQL, listParams(ctx, opts)));
+}
+
+/** How many documents the documents page lists at once (Pro has no document limit, so the list is paged). */
+export const DOCUMENTS_PAGE_SIZE = 50;
+
+export interface DocPage {
+  rows: DocRow[];
+  /** All the documents the filter matches, across every page. */
+  total: number;
+  /** The page shown, 1-based, clamped to the pages there are (an empty list is page 1 of 1). */
+  page: number;
+  pages: number;
+}
+
+/** One page of the documents list, in the list's order, with the count the filter matches. */
+export async function pageDocuments(ctx: Ctx, opts: ListOpts & { page?: number } = {}): Promise<DocPage> {
+  const params = listParams(ctx, opts);
+  return asUser(ctx.userId, async (tx) => {
+    const [{ n: total }] = await tx.query<{ n: number }>(COUNT_SQL, params);
+    const pages = Math.max(1, Math.ceil(total / DOCUMENTS_PAGE_SIZE));
+    const page = Math.min(pages, Math.max(1, Math.floor(opts.page ?? 1)));
+    const rows = await tx.query<DocRow>(PAGE_SQL, [...params, DOCUMENTS_PAGE_SIZE, (page - 1) * DOCUMENTS_PAGE_SIZE]);
+    return { rows, total, page, pages };
+  });
 }
 
 export interface VersionRow {

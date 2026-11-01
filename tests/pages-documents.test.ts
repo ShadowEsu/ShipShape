@@ -12,7 +12,7 @@ import { fill } from "@/app/app/make/actions";
 import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
-import { fillTemplate, uploadDocument } from "@/lib/server/documents";
+import { DOCUMENTS_PAGE_SIZE, fillTemplate, uploadDocument } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
 import { saveEin } from "@/lib/server/profile";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
@@ -89,7 +89,7 @@ const form = (fields: Record<string, string>) => {
   return data;
 };
 
-const documentsPage = (searchParams: { q?: string; kind?: string; archived?: string }) => renderPage(DocumentsPage, { searchParams: Promise.resolve(searchParams) });
+const documentsPage = (searchParams: { q?: string; kind?: string; archived?: string; page?: string }) => renderPage(DocumentsPage, { searchParams: Promise.resolve(searchParams) });
 
 describe("documents list", () => {
   it("with no documents says what lives here, shows a ghosted example, and offers Fill your first W-9, plus Upload while uploads are open", async () => {
@@ -135,6 +135,35 @@ describe("documents list", () => {
     expect(text).toContain("Documents you archive will be listed here");
     expect(primaryActions(html)).toEqual([{ label: "Go to current documents", href: "/app/documents" }]);
     expect(actionsOf(html).filter((a) => a.href === "/app/documents")).toHaveLength(1);
+  });
+
+  it("on Pro, lists 50 documents at a time in the list's order, says which are shown, and pages with the filter kept; a page past the end shows the last", async () => {
+    const ctx = await signIn("docs-paged@example.com");
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_paged', 'active', 'pro')", [ctx.orgId]));
+    // 51 licenses: the one that runs out soonest sorts first; the others have no date and sort by newest.
+    await uploadDocument(ctx, { title: "Soonest license", kind: "license", expires_on: "2030-01-01" }, PDF);
+    for (let i = 1; i <= DOCUMENTS_PAGE_SIZE; i++) await uploadDocument(ctx, { title: `License ${String(i).padStart(2, "0")}`, kind: "license" }, PDF);
+    await uploadDocument(ctx, { title: "Lone permit", kind: "permit" }, PDF);
+
+    const first = await documentsPage({ kind: "license" });
+    const text = textOf(first);
+    expect(text).toMatch(/Showing 1\s*–\s*50 of 51/);
+    expect(first.match(/<li>/g)).toHaveLength(DOCUMENTS_PAGE_SIZE);
+    expect(text.indexOf("Soonest license")).toBeLessThan(text.indexOf("License 50"));
+    expect(text).not.toContain("License 01");
+    expect(actionsOf(first).filter((a) => a.label === "Next" || a.label === "Previous")).toEqual([{ tag: "a", label: "Next", href: "/app/documents?kind=license&amp;page=2" }]);
+
+    const second = await documentsPage({ kind: "license", page: "2" });
+    expect(textOf(second)).toMatch(/Showing 51\s*–\s*51 of 51/);
+    expect(textOf(second)).toContain("License 01");
+    expect(textOf(second)).not.toContain("Lone permit");
+    expect(actionsOf(second).filter((a) => a.label === "Next" || a.label === "Previous")).toEqual([{ tag: "a", label: "Previous", href: "/app/documents?kind=license" }]);
+
+    // Past the end, or junk: the last page, and page 1, with no error.
+    expect(textOf(await documentsPage({ kind: "license", page: "9" }))).toMatch(/Showing 51\s*–\s*51 of 51/);
+    expect(textOf(await documentsPage({ kind: "license", page: "x" }))).toMatch(/Showing 1\s*–\s*50 of 51/);
+    // One page needs no pager.
+    expect(textOf(await documentsPage({ kind: "permit" }))).not.toContain("Showing");
   });
 });
 

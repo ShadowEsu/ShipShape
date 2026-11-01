@@ -1,22 +1,35 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, ValidityChip } from "@/components/app-ui";
-import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { DOC_KINDS, DOCUMENTS_PAGE_SIZE, pageDocuments } from "@/lib/server/documents";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Documents" };
 
-export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ q?: string; kind?: string; archived?: string }> }) {
+/** The list's address for another page, keeping the search, kind and archived filter as typed. */
+function pageHref(sp: { q?: string; kind?: string; archived?: string }, page: number): string {
+  const params = new URLSearchParams();
+  if (sp.q) params.set("q", sp.q);
+  if (sp.kind) params.set("kind", sp.kind);
+  if (sp.archived === "1") params.set("archived", "1");
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query ? `/app/documents?${query}` : "/app/documents";
+}
+
+export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ q?: string; kind?: string; archived?: string; page?: string }> }) {
   const ctx = await requireWorkspace();
   const sp = await searchParams;
   const archived = sp.archived === "1";
-  const docs = await listDocuments(ctx, { q: sp.q, kind: sp.kind, archived });
+  // A page number that isn't one reads as 1; pageDocuments clamps to the pages there are.
+  const wanted = /^\d{1,6}$/.test(sp.page ?? "") ? Number(sp.page) : 1;
+  const { rows: docs, total, page, pages } = await pageDocuments(ctx, { q: sp.q, kind: sp.kind, archived, page: wanted });
   const filtered = Boolean(sp.q || sp.kind);
   // An empty list with nothing filtered: nothing to search, and each empty state has its own one action.
   const empty = docs.length === 0 && !filtered;
   // The way to archived documents only shows once there are some.
-  const hasArchived = archived || !empty || (await listDocuments(ctx, { archived: true })).length > 0;
+  const hasArchived = archived || !empty || (await pageDocuments(ctx, { archived: true })).total > 0;
   const kindLabel = Object.entries(DOC_KINDS).find(([k]) => k === sp.kind)?.[1] ?? null;
 
   return (
@@ -107,6 +120,26 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             </li>
           ))}
         </ul>
+      )}
+
+      {pages > 1 && (
+        <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p className="text-ink-2">
+            Showing {(page - 1) * DOCUMENTS_PAGE_SIZE + 1}–{(page - 1) * DOCUMENTS_PAGE_SIZE + docs.length} of {total}
+          </p>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link href={pageHref(sp, page - 1)} className="btn-ghost" rel="prev">
+                Previous
+              </Link>
+            )}
+            {page < pages && (
+              <Link href={pageHref(sp, page + 1)} className="btn-ghost" rel="next">
+                Next
+              </Link>
+            )}
+          </div>
+        </nav>
       )}
 
       {/* Archived-empty already offers the way back as its one action. */}
