@@ -75,7 +75,7 @@ const W9: TemplateInfo = {
       section: "Taxpayer identification number (Part I)",
       key: "save_ein",
       label: "Also save it to my business facts, stored encrypted",
-      hint: "Then every W-9 after this one is filled in for you. Only the last 4 digits ever show on screen.",
+      hint: "Then every W-9 after this one is filled in for you. On screen it shows as its last 4 digits; seeing all of it needs a recent sign-in, and each time is recorded.",
       kind: "checkbox",
       when: { key: "tin_kind", equals: "ein" },
     },

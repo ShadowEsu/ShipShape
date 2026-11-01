@@ -3,12 +3,13 @@ import { askAction } from "@/app/app/ask/actions";
 import AskPage from "@/app/app/ask/page";
 import { addVendorAction } from "@/app/app/collect/actions";
 import VendorPage from "@/app/app/collect/[id]/page";
+import { GET as documentFile } from "@/app/app/documents/[id]/file/route";
 import { VendorLinkReady } from "@/app/app/collect/forms";
 import CollectPage from "@/app/app/collect/page";
 import DeadlinesPage from "@/app/app/deadlines/page";
 import PassportDetail from "@/app/app/passport/[id]/page";
 import { makePassport } from "@/app/app/passport/actions";
-import { PassportReady } from "@/app/app/passport/forms";
+import { NewPassportForm, PassportReady } from "@/app/app/passport/forms";
 import PassportPage from "@/app/app/passport/page";
 import PassportPreviewPage from "@/app/app/passport/preview/page";
 import { deleteMyAccount, signOutSession } from "@/app/app/settings/actions";
@@ -20,6 +21,7 @@ import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, newSessionId, RECENT_AUTH_SECONDS, requireWorkspace, startSession, type SignedIn } from "@/lib/server/session";
+import { plusDays, todayIn } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
@@ -102,12 +104,14 @@ describe("Passport", () => {
     expect(primary(html)).toEqual(["Make the link"]);
   });
 
-  it("under the 7/30/90-day choice, says the day the link will stop working for the chosen length (30 days at first)", async () => {
+  it("under the 7/30/90-day choice, says the day the link will stop working for the chosen length (30 days at first), counted from today in UTC, not the browser's clock", async () => {
     const ctx = await signIn("passport-enddate@example.com");
     await addDoc(ctx, "Liability certificate");
     const html = await renderPage(PassportPage, none());
-    const in30 = fmtDay(new Date(Date.now() + 30 * 86_400_000).toISOString());
-    expect(textOf(html)).toContain(`7 days 30 days 90 days Stops working on ${in30}. You can turn it off sooner.`);
+    expect(textOf(html)).toContain(`7 days 30 days 90 days Stops working on ${fmtDay(plusDays(todayIn("UTC"), 30))}. You can turn it off sooner.`);
+    // The form takes the date from the server: with a given day, the end day is fixed whatever the clock says.
+    const form = await renderPage(NewPassportForm, { docs: [{ id: "d1", title: "Liability certificate", kindLabel: "Insurance certificate", note: null, holdsTaxId: false }], days: [7, 30, 90], preselected: [], today: "2026-12-31" });
+    expect(textOf(form)).toContain("Stops working on Jan 30, 2027.");
   });
 
   it("before the link exists, says who can open it: how many documents are ticked, that a ticked W-9 shows the full tax id, and what stays private", async () => {
@@ -146,6 +150,13 @@ describe("Passport", () => {
     const theirs = await addDoc(other, "Someone else's certificate");
     const ctx = await signIn("passport-preview@example.com");
     const coi = await addDoc(ctx, "Liability certificate", 400);
+    // A real document always has a stored copy; the preview's download is that latest copy.
+    await db.root((tx) =>
+      tx.query(
+        "insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin, created_by) values ($1, 1, $2, $3, 'application/pdf', 9, repeat('a', 64), 'upload', $4)",
+        [coi, ctx.orgId, `${ctx.orgId}/${coi}/v1.pdf`, ctx.userId],
+      ),
+    );
     await addDoc(ctx, "Not ticked");
     const html = await renderPage(PassportPreviewPage, { searchParams: Promise.resolve({ docs: `${coi},${theirs}`, label: "Northwind onboarding", days: "7" }) });
     const text = textOf(html);
@@ -155,7 +166,10 @@ describe("Passport", () => {
     expect(text).toContain("Liability certificate");
     expect(text).not.toContain("Not ticked");
     expect(text).not.toContain("Someone else's certificate");
-    expect(html).toMatch(new RegExp(`<a href="/app/documents/${coi}/file" aria-label="Download Liability certificate"`));
+    // The download is the owner's latest copy through the documents file route: it must redirect to the file, not 404.
+    const href = new RegExp(`<a href="(/app/documents/${coi}/file[^"]*)" aria-label="Download Liability certificate"`).exec(html)?.[1]?.replace(/&amp;/g, "&");
+    expect(href).toBe(`/app/documents/${coi}/file?v=1&mode=download`);
+    await expect(documentFile(new Request(`http://localhost${href}`), { params: Promise.resolve({ id: coi }) })).rejects.toThrow(/^redirect /);
     expect(actionsOf(html).find((a) => a.label === "← Back to the link")?.href).toBe(`/app/passport?docs=${coi}%2C${theirs}&amp;label=Northwind+onboarding&amp;days=7`);
     // One page, one h1: the embedded recipient's page keeps its heading, a level down.
     expect(html.match(/<h1\b/g)).toHaveLength(1);

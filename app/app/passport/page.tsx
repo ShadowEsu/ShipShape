@@ -4,6 +4,7 @@ import { EmptyState, PageHeader, fmtDay } from "@/components/app-ui";
 import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
 import { listPassports, PASSPORT_DAYS } from "@/lib/server/passport";
 import { requireWorkspace } from "@/lib/server/session";
+import { todayIn } from "@/lib/today";
 import { NewPassportForm } from "./forms";
 
 export const metadata: Metadata = { title: "Passport" };
@@ -39,6 +40,7 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
           <NewPassportForm
             days={PASSPORT_DAYS}
             preselected={preselected}
+            today={todayIn("UTC")}
             initial={comingBack}
             docs={docs.map((d) => ({
               id: d.id,

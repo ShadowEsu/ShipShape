@@ -76,7 +76,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         ) : (
           <EmptyState
             title={hasArchived ? "No current documents" : "No documents yet"}
-            body="Your W-9, insurance certificate and licenses live here, with the date each one runs out and who you've shared it with."
+            body="Your W-9, insurance certificate and licenses live here, with the date each one runs out, every version, and its history."
             example={[
               "W-9 · Form W-9, signed Oct 2026 · No expiry date",
               "Insurance certificate · General liability 2026 · Expires soon · Mar 1, 2027",

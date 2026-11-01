@@ -19,7 +19,7 @@ import { DetailsForm, SignRequestForm, VersionForm } from "../forms";
 export const metadata: Metadata = { title: "Document" };
 
 const ACTIONS: Record<string, string> = {
-  "document.created": "Added to the vault",
+  "document.created": "Added to documents",
   "document.version_added": "Version added",
   "document.updated": "Details changed",
   "document.archived": "Archived",
