@@ -230,10 +230,11 @@ export async function signingFileUrl(id: string, token: string): Promise<string 
 
 const codeHash = (id: string, code: string) => sha256Hex(keyedHash(code, `esign-code:${id}`));
 
-/** Sends a 6-digit code to the signer (into the outbox while email is off). */
-export async function sendSigningCode(id: string, token: string): Promise<"ok" | "too_many" | "invalid"> {
+/** Sends a 6-digit code to the signer (into the outbox while email is off). A request already signed says so, rather than "stopped working". */
+export async function sendSigningCode(id: string, token: string): Promise<"ok" | "too_many" | "invalid" | "already_signed"> {
   const r = await open(id, token, false);
-  if (!r || r.status !== "pending") return "invalid";
+  if (!r) return "invalid";
+  if (r.status === "signed") return "already_signed";
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const body = [
     `Your code to sign "${r.title}" for ${r.org_name} is ${code}.`,
@@ -253,7 +254,19 @@ export async function sendSigningCode(id: string, token: string): Promise<"ok" |
   return row.result;
 }
 
-export type SignResult = "ok" | "bad_code" | "locked" | "expired_code" | "invalid" | "needs_consent" | "needs_name" | "unsupported" | "too_large" | "file_changed";
+export type SignResult =
+  | "ok"
+  | "bad_code"
+  | "locked"
+  | "expired_code"
+  | "invalid"
+  | "already_signed"
+  | "needs_consent"
+  | "needs_name"
+  | "name_chars"
+  | "unsupported"
+  | "too_large"
+  | "file_changed";
 
 /** The certificate page(s) appended to the reviewed file to make the signed copy. */
 function certificatePdf(rows: [string, string][]): Promise<Uint8Array> {
@@ -292,10 +305,14 @@ export async function completeSigning(
 ): Promise<SignResult> {
   if (!input.consented) return "needs_consent";
   const typedName = input.typedName.trim();
-  if (!typedName || typedName.length > 120 || !isPrintable(typedName)) return "needs_name";
+  if (!typedName || typedName.length > 120) return "needs_name";
+  // The certificate is set in a standard PDF font (WinAnsi): a name it can't print is refused with its own reason, not "type your name".
+  if (!isPrintable(typedName)) return "name_chars";
   if (!/^\d{6}$/.test(input.code)) return "bad_code";
   const r = await open(id, token, false);
-  if (!r || r.status !== "pending" || !r.to_sign_path || !r.to_sign_sha256) return "invalid";
+  if (!r) return "invalid";
+  if (r.status === "signed") return "already_signed";
+  if (!r.to_sign_path || !r.to_sign_sha256) return "invalid";
 
   const toSign = await blobStore().get(r.to_sign_path);
   // The signature covers what the signer downloaded; a stored file that changed since is never signed (R3-4).
@@ -352,7 +369,8 @@ export async function completeSigning(
     } catch (e) {
       if (pgErrorCode(e) !== "22023" || attempt > 1) throw e;
       const again = await open(id, token, false);
-      if (!again || again.status !== "pending") return "invalid";
+      if (!again) return "invalid";
+      if (again.status === "signed") return "already_signed";
       next = again.next_version;
     }
   }

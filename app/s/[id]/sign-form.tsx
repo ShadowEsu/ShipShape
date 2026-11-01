@@ -56,7 +56,8 @@ export function SignForm({
     if (sent) document.getElementById(FIELD_ID.code)?.focus();
   }, [sent]);
 
-  async function post(path: "code" | "sign", body?: object) {
+  /** One of the route's answers; `chars` comes only with `name_chars` (what the certificate can't print). */
+  async function post(path: "code" | "sign", body?: object): Promise<{ result: string; chars: string[] } | null> {
     setBusy(path);
     setError(null);
     setSent(null);
@@ -66,8 +67,8 @@ export function SignForm({
         setError({ field: null, message: "Too many tries from this network. Wait 10 minutes, then try again." });
         return null;
       }
-      const data: { result?: string } = await r.json();
-      return data.result ?? "invalid";
+      const data: { result?: string; chars?: string[] } = await r.json();
+      return { result: data.result ?? "invalid", chars: Array.isArray(data.chars) ? data.chars.filter((c) => typeof c === "string").slice(0, 5) : [] };
     } catch {
       setError({ field: null, message: "Couldn't reach ShipShape. Check your connection and try again." });
       return null;
@@ -77,19 +78,20 @@ export function SignForm({
   }
 
   async function sendCode() {
-    const result = await post("code");
-    if (result === "ok") {
+    const answer = await post("code");
+    if (answer?.result === "ok") {
       setCodeSent(true);
       setCode("");
       setSent(demo ? "We sent a 6-digit code. In this sample workspace it's under Deadlines → Reminders sent. It works for 10 minutes." : `We sent a 6-digit code to ${email}. It works for 10 minutes.`);
-    } else if (result) setError(signProblem(result, sender));
+    } else if (answer) setError(signProblem(answer.result, sender, answer.chars));
   }
 
   async function sign(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const result = await post("sign", { code, typedName: name, consented });
-    if (result === "ok") router.refresh();
-    else if (result) setError(signProblem(result, sender));
+    const answer = await post("sign", { code, typedName: name, consented });
+    if (answer?.result === "ok") router.refresh();
+    // The name stays as typed, so the person can see which character the message names and change only that.
+    else if (answer) setError(signProblem(answer.result, sender, answer.chars));
   }
 
   return (

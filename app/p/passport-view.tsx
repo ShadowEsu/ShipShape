@@ -1,6 +1,6 @@
-import { NamedByWorkspace, ValidityChip, fmtDay } from "@/components/app-ui";
+import { NamedByWorkspace, ValidityChip } from "@/components/app-ui";
 import type { PublicPassport } from "@/lib/server/passport";
-import { validityOn } from "@/lib/today";
+import { dayOf, validityOn } from "@/lib/today";
 
 /**
  * What the person who opens a passport link sees: whose documents, which ones with their status, and a
@@ -10,14 +10,16 @@ import { validityOn } from "@/lib/today";
 export function PassportView({
   passport,
   today,
+  zone,
   contact,
   page,
   fileHref,
   heading: Heading = "h1",
 }: {
   passport: PublicPassport;
-  /** The viewer's date, so "current" means current where they are. */
+  /** The viewer's date and zone, so "current" and "works until" mean where they are. */
   today: string;
+  zone: string;
   contact: string | null;
   /** The page's path, for the report link. */
   page: string;
@@ -30,7 +32,7 @@ export function PassportView({
       <header className="space-y-2">
         <Heading className="font-serif text-4xl font-semibold tracking-tight">{passport.orgName}</Heading>
         <p className="text-ink-2">
-          {passport.label} · this link works until {fmtDay(passport.expiresAt)}
+          {passport.label} · this link works until {dayOf(passport.expiresAt, zone)}
         </p>
         <NamedByWorkspace contact={contact} page={page} />
       </header>

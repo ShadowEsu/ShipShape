@@ -45,10 +45,15 @@ export interface Viewer {
   today: string;
 }
 
-/** The viewer's date from the time-zone cookie (components/time-zone-cookie.tsx). Junk or no cookie: UTC. */
-export async function viewerToday(): Promise<string> {
+/** The viewer's time zone from the cookie (components/time-zone-cookie.tsx). Junk or no cookie: UTC. */
+export async function viewerZone(): Promise<string> {
   const zone = (await cookies()).get(TZ_COOKIE)?.value ?? "UTC";
-  return todayIn(isTimeZone(zone) ? zone : "UTC");
+  return isTimeZone(zone) ? zone : "UTC";
+}
+
+/** The viewer's date, in that zone. */
+export async function viewerToday(): Promise<string> {
+  return todayIn(await viewerZone());
 }
 
 export function sessionSecret(): string {
