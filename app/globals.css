@@ -13,6 +13,8 @@
   --ink-2: #4a4a4a;
   --ink-3: #6b6b6b;
   --line: #e4e4e0;
+  /* Field boundaries: 3.47:1 on paper, 3.23:1 on canvas (WCAG 1.4.11 wants 3:1). --line stays for dividers. */
+  --field: #8a8a86;
   --accent: #111111;
   --accent-ink: #ffffff;
   --accent-soft: #efefec;
@@ -34,6 +36,7 @@
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
   --color-line: var(--line);
+  --color-field: var(--field);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
@@ -78,9 +81,14 @@ body {
   .btn-danger {
     @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-bad px-5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10;
   }
-  /* 16px text on phones: iOS Safari zooms the page into any field with smaller text. */
+  /* 16px text on phones: iOS Safari zooms the page into any field with smaller text.
+     Focus shows as a 2px ring in the accent colour (18.9:1 on paper) offset from the field, in place of the outline. */
   .input {
-    @apply min-h-11 w-full rounded-lg border border-line bg-paper px-3 py-2 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent focus:ring-2 focus:ring-accent/20 sm:min-h-10 sm:text-sm;
+    @apply min-h-11 w-full rounded-lg border border-field bg-paper px-3 py-2 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent focus:ring-2 focus:ring-accent focus:ring-offset-2 sm:min-h-10 sm:text-sm;
+  }
+  /* A field with an error: 2px of error red (border plus a 1px ring, so nothing shifts); focus still shows the accent ring. */
+  .input[aria-invalid="true"] {
+    @apply border-bad ring-1 ring-bad focus:border-bad focus:ring-2 focus:ring-accent;
   }
   .label {
     @apply mb-1 block text-sm font-medium text-ink;
