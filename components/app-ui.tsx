@@ -35,6 +35,16 @@ export function ValidityChip({ validity, expiresOn }: { validity: Validity; expi
 
 export const fmtDay = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
+/** The chip for a row that's there because of a renewal notice: the same amber as "Expires soon", with the date (Design). */
+export function RenewalChip({ renewsOn }: { renewsOn: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-warn">
+      <span aria-hidden="true">◷</span>
+      Renewal notice<span className="font-normal">· {fmtDay(renewsOn)}</span>
+    </span>
+  );
+}
+
 /**
  * What an empty page shows: what will appear here, optionally a ghosted example list of it (hidden
  * from screen readers: the body already says what will appear), the one action that fills it, and

@@ -194,8 +194,8 @@ describe("home", () => {
     expect(text).toContain("Old permit");
     expect(text).toContain("It has lapsed.");
     // What renews a document is said once above the list, not on every row.
-    expect(text.split("Renew each one with the issuer, then add the new copy and its new date, so your passport links share the current one.")).toHaveLength(2);
-    expect(text).not.toContain("Renew it with the issuer");
+    expect(text.split("For a document that's lapsing, renew it with the issuer, then add the new copy and its new date, so your passport links share the current one.")).toHaveLength(2);
+    expect(text).not.toContain("Renew it with the issuer, then");
     expect(text).not.toContain("Nothing has expired");
     // Only the lapsed group is there, so only its label.
     expect(text).toContain("Already lapsed");
@@ -231,7 +231,7 @@ describe("home", () => {
     expect(text).not.toContain("Window edge");
     expect(text).not.toContain("Archived old");
     expect(text).toContain("The 20 most urgent are listed; 2 more need attention.");
-    expect(text.split("Renew each one with the issuer")).toHaveLength(2);
+    expect(text.split("renew it with the issuer")).toHaveLength(2);
     expect(actionsOf(html).filter((a) => a.label === "See all documents")).toEqual([{ tag: "a", label: "See all documents", href: "/app/documents" }]);
     // The setup list reads the same summary: a document exists and one has a date.
     expect(text).not.toContain("Add an expiry date (to do)");
@@ -308,11 +308,17 @@ describe("home", () => {
     const html = await homePage();
     const text = textOf(html);
     const at = (s: string) => text.indexOf(s);
-    expect(text).toMatch(/Vendor NDA.*Renewal notice due in 5 days\./);
-    expect(text).toMatch(/Lease.*Renewal notice due today\./);
-    expect(text).toMatch(/Both soon.*Renewal notice due in 10 days\./);
+    expect(text).toMatch(/Vendor NDA.*Renewal notice · \w{3} \d{1,2}, \d{4}.*Renewal notice due in 5 days\./);
+    // The chip shows the row's reason: no "Current" or "No expiry date" chip beside a renewal notice (Design MUST).
+    expect(text).toMatch(/Lease.*Renewal notice · .*Renewal notice due today\./);
+    expect(text).not.toMatch(/Lease.*Current ·/);
+    expect(text).not.toMatch(/Vendor NDA.*No expiry date/);
+    expect(text).toMatch(/Both soon.*Renewal notice · .*Renewal notice due in 10 days\./);
+    expect(text).not.toMatch(/Both soon.*Expires soon/);
     expect(text.split("Both soon")).toHaveLength(2);
     expect(text).toMatch(/Edge notice.*Renewal notice due in 30 days\./);
+    // Expiry rows keep their validity chip.
+    expect(text).toMatch(/Permit.*Expires soon ·/);
     expect(text).not.toContain("Old notice");
     expect(text).not.toContain("Far notice");
     // Sorted by date with the expiries: Lease (today), Permit (3 days), Vendor NDA (5), Both soon (10), Edge notice (30).

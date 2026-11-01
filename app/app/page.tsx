@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ValidityChip } from "@/components/app-ui";
+import { RenewalChip, ValidityChip } from "@/components/app-ui";
 import { ATTENTION_MAX, DOC_KINDS, homeSummary } from "@/lib/server/documents";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { listPassports } from "@/lib/server/passport";
@@ -141,7 +141,8 @@ export default async function AppHome() {
           <>
             {/* Rule 6, once for the list: what renews a document; each row then says only its own state and action. */}
             <p className="text-sm text-ink-2">
-              Renew each one with the issuer, then {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates."}
+              For a document that&apos;s lapsing, renew it with the issuer, then{" "}
+              {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates."}
             </p>
             {groups.map((g) => (
               <div key={g.label} className="space-y-2">
@@ -164,7 +165,7 @@ export default async function AppHome() {
                           <span className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{d.title}</span>
                             <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
-                            <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                            {renewal ? <RenewalChip renewsOn={d.attention_on} /> : <ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
                           </span>
                           <span className="block text-sm text-ink-2">{state}</span>
                         </span>
