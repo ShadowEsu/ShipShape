@@ -168,8 +168,14 @@ export function FillForm({
   const problems = shownFields.filter((f) => errors[f.key]).map((f) => ({ key: f.key, label: f.label, message: errors[f.key] }));
 
   // Each result with errors moves focus to the summary (its links lead to each field) or, on the review, to the approval box.
+  // A result that is only a message (the plan's limit, a closed gate) moves it to the message: the person pressed a button at
+  // the bottom of the view, and the message sits at its top.
+  const messageRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
-    if (!state.errors || Object.keys(state.errors).length === 0) return;
+    if (!state.errors || Object.keys(state.errors).length === 0) {
+      if (state.error) messageRef.current?.focus();
+      return;
+    }
     if (summaryRef.current) summaryRef.current.focus();
     else if (state.errors._ack) focusField(formRef.current, "_ack");
   }, [state]);
@@ -212,7 +218,7 @@ export function FillForm({
       <input type="hidden" name="template" value={template.id} />
       <input type="hidden" name="at" value={current} />
       {state.error && (
-        <p role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad">
+        <p ref={messageRef} role="alert" tabIndex={-1} className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           {state.error}
         </p>
       )}
