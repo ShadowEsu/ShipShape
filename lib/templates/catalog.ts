@@ -16,7 +16,20 @@ const W9: TemplateInfo = {
     instructions: "https://www.irs.gov/forms-pubs/about-form-w-9",
   },
   finishNote:
-    "Signing a W-9 certifies, under penalties of perjury, that the taxpayer identification number and the statements in Part II are correct. Read the certification on the form before you sign.",
+    "Signing a W-9 certifies, under penalties of perjury, that the taxpayer identification number and the four statements in Part II (shown in the Sign step) are correct.",
+  // Part II of Form W-9 (Rev. March 2024), word for word.
+  sectionText: {
+    "Sign (Part II)": {
+      lead: "Under penalties of perjury, I certify that:",
+      items: [
+        "The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and",
+        "I am not subject to backup withholding because (a) I am exempt from backup withholding, or (b) I have not been notified by the Internal Revenue Service (IRS) that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and",
+        "I am a U.S. citizen or other U.S. person (defined below); and",
+        "The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.",
+      ],
+      note: "Certification instructions. You must cross out item 2 above if you have been notified by the IRS that you are currently subject to backup withholding because you have failed to report all interest and dividends on your tax return. For real estate transactions, item 2 does not apply. For mortgage interest paid, acquisition or abandonment of secured property, cancellation of debt, contributions to an individual retirement arrangement (IRA), and, generally, payments other than interest and dividends, you are not required to sign the certification, but you must provide your correct TIN. See the instructions for Part II, later.",
+    },
+  },
   fields: [
     { section: "Who is filling it in", key: "name", label: "Line 1: Name", hint: "As shown on your income tax return.", kind: "text", required: true, max: 120, autoComplete: "organization", fact: "legal_name" },
     { section: "Who is filling it in", key: "business_name", label: "Line 2: Business name or disregarded entity name", hint: "If different from line 1.", kind: "text", max: 120, autoComplete: "organization", fact: "dba" },
@@ -89,7 +102,13 @@ const W9: TemplateInfo = {
       max: 11,
       when: { key: "tin_kind", equals: "ssn" },
     },
-    { section: "Sign (Part II)", key: "sign", label: "Sign the certification with my typed name and today's date", kind: "checkbox" },
+    {
+      section: "Sign (Part II)",
+      key: "sign",
+      label: "Sign the certification with my typed name and today's date",
+      hint: "If the IRS has told you that you're subject to backup withholding, item 2 has to be crossed out on the form, which ShipShape can't do: fill in that W-9 by hand instead.",
+      kind: "checkbox",
+    },
     { section: "Sign (Part II)", key: "signature", label: "Signature (type your full name)", kind: "text", max: 80, required: true, autoComplete: "name", fact: "signer_name", when: { key: "sign", equals: "on" } },
   ],
   steps: [

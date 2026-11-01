@@ -71,3 +71,22 @@ describe("the W-9's EIN step", () => {
     expect(html).not.toContain('name="save_ein"');
   });
 });
+
+describe("the W-9's Sign step", () => {
+  const w9 = templateById("irs-w9")!;
+
+  it("shows Part II's certification, word for word from the form, above the sign box, and says when the form has to be filled by hand", async () => {
+    const { prelude } = await prerender(createElement(FillForm, { template: w9, initial: {}, chips: {}, ackText: "I agree.", canSaveFacts: true }));
+    const html = await new Response(prelude).text();
+    const sign = /<fieldset[^>]*>(?:(?!<\/fieldset>)[\s\S])*name="sign"[\s\S]*?<\/fieldset>/.exec(html)?.[0] ?? "";
+    const text = textOf(sign);
+    const certification = text.indexOf("Under penalties of perjury, I certify that:");
+    expect(certification).toBeGreaterThan(-1);
+    expect(text.indexOf("Sign the certification with my typed name")).toBeGreaterThan(certification);
+    expect(sign.match(/<li>/g)).toHaveLength(4);
+    expect(text).toContain("The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and");
+    expect(text).toContain("I am a U.S. citizen or other U.S. person (defined below); and");
+    expect(text).toContain("Certification instructions. You must cross out item 2 above if you have been notified by the IRS");
+    expect(text).toContain("item 2 has to be crossed out on the form, which ShipShape can't do: fill in that W-9 by hand instead.");
+  });
+});
