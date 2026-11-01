@@ -223,6 +223,17 @@ describe("keys and mode", () => {
     expect(billingConfig()).toBeNull();
   });
 
+  it("tells members whether payments take real money: live only for an admitted live key", async () => {
+    const ctx = await realWorkspace();
+    expect(await billingView(ctx)).toMatchObject({ available: true, live: false });
+    vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
+    expect(await billingView(ctx)).toMatchObject({ available: false, live: false });
+    vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
+    expect(await billingView(ctx)).toMatchObject({ available: true, live: true });
+    vi.stubEnv("BILLING_ENABLED", undefined);
+    expect(await billingView(ctx)).toMatchObject({ available: false, live: false });
+  });
+
   it("is off in production once real documents are on, so a test card can't buy real Pro", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(billingConfig()).not.toBeNull();

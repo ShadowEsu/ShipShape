@@ -101,9 +101,12 @@ export interface BillingView {
   subscribed: boolean;
   /** Payments are switched on in this environment. */
   available: boolean;
+  /** Payments take real money: a live key, admitted with BILLING_LIVE_KEYS_OK. False while payments are off. */
+  live: boolean;
 }
 
 export async function billingView(ctx: Ctx): Promise<BillingView> {
+  const cfg = billingConfig();
   return asUser(ctx.userId, async (tx) => {
     const [plan] = await tx.query<{ plan: PlanId }>("select app.org_plan($1) as plan", [ctx.orgId]);
     const [row] = await tx.query<{ status: string; current_period_end: string | null; cancel_at_period_end: boolean }>(
@@ -117,7 +120,8 @@ export async function billingView(ctx: Ctx): Promise<BillingView> {
       cancelAtPeriodEnd: row?.cancel_at_period_end ?? false,
       customer: Boolean(row),
       subscribed: row ? LIVE_STATUSES.includes(row.status) : false,
-      available: billingConfig() !== null,
+      available: cfg !== null,
+      live: cfg?.live ?? false,
     };
   });
 }
