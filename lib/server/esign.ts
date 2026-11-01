@@ -23,8 +23,9 @@ export const SIGN_DAYS = [7, 14, 30] as const;
 
 /**
  * Signers prove they read their email with a one-time code. Email sending is off, so codes land in
- * the workspace outbox, which the sender can read: fine for sample workspaces (fictional signers),
- * not for real ones. Real workspaces can request signatures in production only once email is on.
+ * the workspace outbox. Only a sample workspace's owners and admins can read them there (0039: the
+ * sender holds the link, so link and code together would let them sign as the signer); in a real
+ * workspace nobody can, so real workspaces can request signatures in production only once email is on.
  */
 export const esignAvailable = (ctx: { demo: boolean }) => ctx.demo || process.env.NODE_ENV !== "production";
 

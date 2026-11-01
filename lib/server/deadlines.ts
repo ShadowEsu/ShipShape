@@ -214,3 +214,9 @@ export async function listOutbox(ctx: Ctx): Promise<OutboxMessage[]> {
     ),
   );
 }
+
+/** Deletes reminders over 90 days old and signing-code messages over 1 day old, for everyone (the daily cron). Returns how many. */
+export async function purgeOutbox(): Promise<number> {
+  const [row] = await asService((tx) => tx.query<{ n: number }>("select app.purge_outbox() as n"));
+  return row.n;
+}
