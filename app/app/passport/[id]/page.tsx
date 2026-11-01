@@ -3,11 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, PageHeader } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
-import { fmtDateTime } from "@/components/ui";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { getPassport } from "@/lib/server/passport";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
-import { dayOf } from "@/lib/today";
+import { dayOf, timeOf } from "@/lib/today";
 import { turnOff } from "../actions";
 
 export const metadata: Metadata = { title: "Passport link" };
@@ -45,7 +44,7 @@ export default async function PassportDetail({ params, searchParams }: { params:
         </p>
       )}
       {revokedAt ? (
-        <Notice tone="info">Turned off {fmtDateTime(revokedAt)}. Nobody can open it any more.</Notice>
+        <Notice tone="info">Turned off {timeOf(revokedAt, zone)}. Nobody can open it any more.</Notice>
       ) : expired ? (
         <div className="space-y-3">
           <Notice>Expired {dayOf(p.link.expires_at, zone)}, so nobody can open it. If they still need these documents, make a new link.</Notice>
@@ -87,7 +86,7 @@ export default async function PassportDetail({ params, searchParams }: { params:
                   <span className="font-mono" title="A fingerprint of the visitor's network, not their address">
                     visitor {a.visitor.slice(0, 6)}
                   </span>{" "}
-                  · <time dateTime={a.at}>{fmtDateTime(a.at)}</time>
+                  · <time dateTime={a.at}>{timeOf(a.at, zone)}</time>
                 </span>
               </li>
             ))}

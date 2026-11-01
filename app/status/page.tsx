@@ -27,6 +27,7 @@ function Row({ name, state, tone, note }: { name: string; state: string; tone: T
 export default async function StatusPage() {
   const db = await dbUp();
   const checkedAt = new Date();
+  const payments = billingConfig();
   return (
     <>
       <SiteHeader />
@@ -61,7 +62,11 @@ export default async function StatusPage() {
             note="Opens after our security review."
           />
           <Row name="Email" state="Off" tone="off" note="Reminders and signing codes show inside the app instead." />
-          <Row name="Payments" state={billingConfig() ? "Test mode" : "Off"} tone="off" note="No real charges during the preview." />
+          {payments?.live ? (
+            <Row name="Payments" state="Live payments" tone="ok" note="Real cards are charged, through Stripe." />
+          ) : (
+            <Row name="Payments" state={payments ? "Test mode" : "Off"} tone="off" note="No real charges during the preview." />
+          )}
           <Row
             name="AI features"
             state={aiEnabled() ? "On" : "Off"}
