@@ -139,6 +139,16 @@ describe("log scrubber (R4)", () => {
     expect(scrub("12345678-1234-4123-8123-123456789012")).toBe("[redacted-id]");
   });
 
+  it("control characters can't split a number past the scrub or forge the UUID sentinel; tab, newline and return stay (Security LOW-L1)", () => {
+    // A NUL, a bell and a C1 control between the groups: the number still goes, whole.
+    expect(scrub("SSN 900\u000012\u00003456")).toBe("SSN [redacted-id]");
+    expect(scrub("EIN 12\u0007345\u00856789")).toBe("EIN [redacted-id]");
+    // A forged sentinel beside a UUID doesn't come back as a second copy of it.
+    const id = "12345678-1234-4abc-8def-123456789012";
+    expect(scrub(`${id} \u00000\u0000`)).toBe(`${id} 0`);
+    expect(scrub("a\tb\nc\r\nd")).toBe("a\tb\nc\r\nd");
+  });
+
   it("redacts share and signing tokens in paths", () => {
     expect(scrub("GET /p/AbCdEfGhIjKlMnOpQrStUvWxYz012345?x=1")).toBe("GET /p/[redacted-token]?x=1");
   });
