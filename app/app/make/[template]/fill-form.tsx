@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
-import type { Ref } from "react";
+import type { InputHTMLAttributes, Ref } from "react";
 import { flushSync } from "react-dom";
 import { isVisible as visible, stepOf, stepsOf } from "@/lib/templates/catalog";
 import type { FieldDef, TemplateInfo } from "@/lib/templates/types";
@@ -12,6 +12,20 @@ export interface FactChip {
   label: string;
   confirmedAt: string | null;
   stale: boolean;
+}
+
+/**
+ * A controlled radio or checkbox whose `checked` attribute follows its state. After each check React resets the form,
+ * which puts every box back to its attribute, and React writes that attribute only when the box mounts: without this,
+ * a choice made since (SSN instead of EIN, a ticked box) snapped back on screen after a refused step while the page
+ * still showed the fields for it, and the next press posted the old choice.
+ */
+function Choice({ checked, ...props }: InputHTMLAttributes<HTMLInputElement> & { checked: boolean }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.defaultChecked = checked;
+  }, [checked]);
+  return <input ref={ref} checked={checked} {...props} />;
 }
 
 /** A value as the review shows it: option labels, Yes/No, and never more than the last 4 digits of a tax id. */
@@ -304,7 +318,7 @@ export function FillForm({
             <h2 className="font-semibold">Before ShipShape makes the PDF</h2>
             <p className="text-sm text-ink-2">{template.finishNote}</p>
             <label className="flex items-start gap-3 text-sm">
-              <input
+              <Choice
                 type="checkbox"
                 id="ack"
                 name="ack"
@@ -413,7 +427,7 @@ function Field({
         <div className="mt-1 grid gap-2">
           {f.options!.map((o) => (
             <label key={o.value} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${value === o.value ? "border-ink" : "border-line"}`}>
-              <input type="radio" name={f.key} value={o.value} checked={value === o.value} onChange={() => onChange(o.value)} className="mt-0.5 accent-[var(--accent)]" aria-invalid={error ? true : undefined} />
+              <Choice type="radio" name={f.key} value={o.value} checked={value === o.value} onChange={() => onChange(o.value)} className="mt-0.5 accent-[var(--accent)]" aria-invalid={error ? true : undefined} />
               {o.label}
             </label>
           ))}
@@ -426,7 +440,7 @@ function Field({
     return (
       <div>
         <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" id={id} name={f.key} checked={value === "on"} onChange={(e) => onChange(e.target.checked ? "on" : "")} className="mt-0.5 size-4 accent-[var(--accent)]" aria-invalid={error ? true : undefined} aria-describedby={describedBy} />
+          <Choice type="checkbox" id={id} name={f.key} checked={value === "on"} onChange={(e) => onChange(e.target.checked ? "on" : "")} className="mt-0.5 size-4 accent-[var(--accent)]" aria-invalid={error ? true : undefined} aria-describedby={describedBy} />
           {f.label}
         </label>
         <Help id={id} hint={f.hint} error={error} />
