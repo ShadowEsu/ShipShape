@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, ValidityChip, fmtDay } from "@/components/app-ui";
+import { ConfirmForm } from "@/components/confirm-form";
 import { SubmitButton } from "@/components/submit-button";
 import { fmtDateTime } from "@/components/ui";
 import { PLANS } from "@/lib/plans";
@@ -250,13 +251,15 @@ export default async function DocumentPage({
                               </a>
                             )}
                             {r.status === "pending" && !lapsed && (
-                              <form action={withdrawSignature}>
-                                <input type="hidden" name="id" value={doc.id} />
-                                <input type="hidden" name="request" value={r.id} />
-                                <SubmitButton className="inline-flex min-h-6 items-center text-xs text-ink-2 underline" pendingLabel="Withdrawing…">
-                                  Withdraw
-                                </SubmitButton>
-                              </form>
+                              <ConfirmForm
+                                compact
+                                action={withdrawSignature}
+                                fields={{ id: doc.id, request: r.id }}
+                                trigger="Withdraw"
+                                question={`Withdraw this request? ${r.signer_name} won't be able to sign. You can make a new link any time.`}
+                                confirm="Withdraw the request"
+                                pendingLabel="Withdrawing…"
+                              />
                             )}
                           </div>
                         )}

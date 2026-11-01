@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { PDFDocument } from "pdf-lib";
 import DocumentPage from "@/app/app/documents/[id]/page";
 import { addDocument, saveDetails } from "@/app/app/documents/actions";
 import DocumentsPage from "@/app/app/documents/page";
@@ -12,9 +13,10 @@ import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
 import { fillTemplate, uploadDocument } from "@/lib/server/documents";
+import { requestSignature } from "@/lib/server/esign";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
-import { freshDb } from "./support/db";
+import { freshDb, type TestDb } from "./support/db";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
 // The request's cookies, as Next.js would hold them.
@@ -47,9 +49,10 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 const PDF = new TextEncoder().encode("%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF");
 let blobDir: string;
+let db: TestDb;
 
 beforeAll(async () => {
-  await freshDb();
+  db = await freshDb();
   blobDir = await mkdtemp(path.join(os.tmpdir(), "shipshape-blobs-"));
   setBlobStoreForTests(localBlobStore(blobDir));
 });
@@ -88,17 +91,29 @@ const form = (fields: Record<string, string>) => {
 const documentsPage = (searchParams: { q?: string; kind?: string; archived?: string }) => renderPage(DocumentsPage, { searchParams: Promise.resolve(searchParams) });
 
 describe("documents list", () => {
-  it("with no documents teaches what will appear here and offers one action: add a document", async () => {
+  it("with no documents says what lives here, shows a ghosted example, and offers Fill your first W-9, plus Upload while uploads are open", async () => {
     await signIn("docs-empty@example.com");
     const html = await documentsPage({});
     const text = textOf(html);
     expect(text).toContain("No documents yet");
-    expect(text).toContain("will be listed here, each with its expiry date");
-    expect(text).toContain("For example: Insurance certificate");
-    expect(primaryActions(html)).toEqual([{ label: "Add a document", href: "/app/documents/new" }]);
+    expect(text).toContain("Your W-9, insurance certificate and licenses live here, with the date each one runs out and who you've shared it with.");
+    // Three example rows under an Example label, hidden from screen readers.
+    const example = /<div aria-hidden="true"[^>]*>([\s\S]*?)<\/ul><\/div>/.exec(html)?.[1] ?? "";
+    expect(textOf(example)).toMatch(/^Example W-9 · /);
+    expect(example.match(/<li\b/g)).toHaveLength(3);
+    expect(primaryActions(html)).toEqual([{ label: "Fill your first W-9", href: "/app/make/irs-w9" }]);
+    expect(actionsOf(html).filter((a) => a.label === "Upload a document")).toEqual([{ tag: "a", label: "Upload a document", href: "/app/documents/new" }]);
     // Nothing to search or to look back at yet.
     expect(actionsOf(html).map((a) => a.label)).not.toContain("Search");
     expect(text).not.toContain("See archived documents");
+  });
+
+  it("with no documents and uploads not open yet: Fill your first W-9 only, no link to the closed upload page", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    await signIn("docs-empty-closed@example.com");
+    const html = await documentsPage({});
+    expect(primaryActions(html)).toEqual([{ label: "Fill your first W-9", href: "/app/make/irs-w9" }]);
+    expect(actionsOf(html).map((a) => a.label)).not.toContain("Upload a document");
   });
 
   it("with a search that finds nothing says what was searched and offers one action: clear it", async () => {
@@ -253,6 +268,22 @@ describe("a document's page", () => {
     const html = await documentPage(id, { error: "limit" });
     expect(textOf(html)).toContain("The Free plan holds 10 active documents, so this one stays archived. Archive another one, then restore this one.");
     expect(actionsOf(html).filter((a) => a.label === "Choose one to archive")).toEqual([{ tag: "a", label: "Choose one to archive", href: "/app/documents" }]);
+  });
+
+  it("withdrawing a signature request asks first: the question names the signer, with Withdraw the request and Cancel", async () => {
+    const ctx = await signIn("doc-withdraw@example.com");
+    const pdf = await PDFDocument.create();
+    pdf.addPage([612, 792]);
+    const id = await uploadDocument(ctx, { title: "Mutual NDA", kind: "nda" }, await pdf.save());
+    // Asking for signatures is part of Pro.
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_W1', 'active', 'pro')", [ctx.orgId]));
+    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    const html = await documentPage(id, {});
+    // Step 1 shows; step 2 is in the page, hidden until Withdraw is pressed.
+    expect(html).toMatch(/<button type="button" class="[^"]*">Withdraw<\/button>/);
+    const step2 = /<form\b([^>]*)>([\s\S]*?)<\/form>/.exec(html.slice(html.indexOf(">Withdraw</button>")));
+    expect(step2?.[1]).toMatch(/\bhidden=""/);
+    expect(textOf(step2?.[2] ?? "")).toBe("Withdraw this request? Jordan Lee won't be able to sign. You can make a new link any time. Withdraw the request Cancel");
   });
 });
 

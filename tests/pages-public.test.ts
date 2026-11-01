@@ -6,6 +6,7 @@ import CollectPage from "@/app/c/[id]/page";
 import { POST as upload } from "@/app/c/[id]/upload/route";
 import PassportPage from "@/app/p/[id]/page";
 import SigningPage from "@/app/s/[id]/page";
+import { SignButton } from "@/app/s/[id]/sign-form";
 import { signIn } from "@/app/signin/actions";
 import SignInPage from "@/app/signin/page";
 import { addVendor, createVendorLink, receiveFile, revokeVendorLink } from "@/lib/server/collect";
@@ -148,6 +149,17 @@ describe("a signing link (/s)", () => {
     expect(said(await signingPage(id))).toMatch(/Harbor Plumbing \(sample\) asked Jordan Lee to sign this document\. You can sign until \w{3} \d{1,2}, \d{4}\./);
   });
 
+  it("the button that signs names the document", async () => {
+    const html = await renderPage(SignButton, { title: "Mutual NDA", busy: false, signing: false });
+    expect(actionsOf(html)).toEqual([{ tag: "button", label: "Sign the Mutual NDA", href: undefined }]);
+  });
+
+  it("opened from the full link, shows the page's frame and says it's opening while the link is checked", async () => {
+    const { id } = await request();
+    const html = await signingPage(id);
+    expect(html).toMatch(/<div aria-busy="true"[^>]*><p role="status"[^>]*>Opening the document to sign…<\/p>/);
+  });
+
   it("once withdrawn, says so in one line, names the fix, and offers one action", async () => {
     const { id, token } = await request();
     await revokeSignatureRequest(sample, id);
@@ -168,7 +180,7 @@ describe("a signing link (/s)", () => {
     const text = said(html);
     expect(text).toContain("Signed");
     expect(text).toMatch(
-      /There's nothing else you need to do\. Harbor Plumbing \(sample\) has the signed copy, with a certificate page recording how it was signed\. Download yours for your records; this link works until \w{3} \d{1,2}, \d{4}\./,
+      /There's nothing else you need to do\. Harbor Plumbing \(sample\) has the same signed copy, saved to their documents in ShipShape\. The certificate at the end records the name you typed, when you signed and that a code sent to your email confirmed it\. Download yours for your records; this link works until \w{3} \d{1,2}, \d{4}\./,
     );
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Download the signed copy", href: `/s/${id}/file` }]);
   });
