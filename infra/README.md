@@ -22,7 +22,7 @@ The probe's "STS refuses a preview" check needs a preview deployment's OIDC toke
 
 | Step | What | Time |
 | --- | --- | --- |
-| Preflight | `aws`, Node 24, `curl` and `openssl` are there; the signed-in account is `ACCOUNT_ID` and isn't root | under 1 minute |
+| Preflight | `aws`, Node 24, `curl` and `openssl` are there; the session is an Identity Center role (`AWSReservedSSO_…`) in `ACCOUNT_ID`, never root, an IAM user or stored keys | under 1 minute |
 | 0 | Block Public Access for the whole account | under 1 minute |
 | 1 | `shipshape-storage`: the key and the bucket | about 1 minute |
 | 2 | `shipshape-signin`: the user pool and the app client | about 2 minutes |
@@ -30,17 +30,18 @@ The probe's "STS refuses a preview" check needs a preview deployment's OIDC toke
 | 4 | `shipshape-database`: RDS | about 15 minutes |
 | 5 | `shipshape-budgets`: the 2 alarms | about 1 minute |
 | | Termination protection on stacks 1-4 | under 1 minute |
-| 6 | Migrations as the master user, `shipshape_app`'s password, the roles check | about 1 minute |
+| 6 | Migrations as the master user, `shipshape_app`'s password (stored in Vercel or `~/.shipshape-launch` at once), the roles check | about 1 minute |
 | 7 | `scripts/probe-aws.mjs`, every variable filled in from the outputs | about 2 minutes |
-| 8 | The Vercel Production variables; the 2 secrets piped into Vercel | about 2 minutes |
+| 8 | The Vercel Production variables; the checked CA bundle and the client secret piped into Vercel | about 2 minutes |
 | | **Total** | **about 30 minutes** |
 
-If a step stops, the `Stopped:` line says what happened and the `Fix:` line says what to do. Do that and run the same command again: finished stacks say "Up to date" and applied migrations are skipped. Each apply gives `shipshape_app` a new password and writes it to Vercel, so redeploy production after a rerun.
+If a step stops, the `Stopped:` line says what happened and the `Fix:` line says what to do. Do that and run the same command again: finished stacks say "Up to date" and applied migrations are skipped. A rerun gives `shipshape_app` a new password and stores it the moment it is set (before the roles check and the probe), so a later stop never strands it. Once production is on RDS (`shipshape_app` can already log in), the script stops at step 6 unless you add `LAUNCH_ROTATE_APP_PASSWORD=1`: a new password means production can't open database connections until it is redeployed with the new `DATABASE_URL`.
 
 No secret is printed:
 - The master password goes from Secrets Manager into a variable, never to the screen or the log.
-- `COGNITO_CLIENT_SECRET` and `DATABASE_URL` (with `shipshape_app`'s password) are piped into `vercel env add` when the Vercel CLI is installed and the repo is linked. Otherwise the script prints the exact commands. `DATABASE_URL` then waits in `~/.shipshape-launch/DATABASE_URL`, which only you can read; the printed command deletes it.
-- At the end the script searches its log for the master password, the client secret, `shipshape_app`'s password and the preview token, and fails if it finds one.
+- `COGNITO_CLIENT_SECRET` and `DATABASE_URL` (with `shipshape_app`'s password) are piped into `vercel env add` when the Vercel CLI is installed and the repo is linked. Otherwise the script prints the exact commands. `DATABASE_URL` then waits in `~/.shipshape-launch/DATABASE_URL`, which only you can read; the printed command deletes it. If you don't use it, delete the file yourself.
+- The RDS CA bundle goes into Vercel only after its sha256 matched the one pinned in the script (piped in, or from the checked copy at `~/.shipshape-launch/rds-ca.pem`).
+- At the end the script searches its log for the master password (plain and URL-encoded), the client secret, `shipshape_app`'s password and the preview token (given or pulled), and fails if it finds one.
 
 **Afterwards:**
 1. Add the variables step 8 prints in Vercel, Production only. Then redeploy production and open `/api/health` (aws-plan "Order at M6", step 8).

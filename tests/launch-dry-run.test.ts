@@ -80,6 +80,11 @@ describe("infra/launch.sh --dry-run", () => {
     expect(out).toContain("Skipped template validation");
     expect(out).toContain("Plan complete: nothing was changed.");
     expect(log).toBe(out);
+    // The new password is stored before anything that could still stop the run (Security MUST-L2).
+    const stored = out.indexOf("DATABASE_URL (with the new password) is stored at once");
+    const probe = out.indexOf("node scripts/probe-aws.mjs");
+    expect(stored).toBeGreaterThan(0);
+    expect(stored).toBeLessThan(probe);
   });
 
   it.each([
@@ -113,5 +118,45 @@ describe("LAUNCH_APPLY=1 infra/launch.sh", () => {
     expect(status).toBe(1);
     expect(out).toContain("Stopped: These are the root user's credentials, and the launch never runs as root.");
     expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["sts get-caller-identity --query [Account,Arn] --output text"]);
+  });
+
+  // A fake aws on PATH that answers only what the test needs; everything else succeeds silently.
+  function fakeAws(name: string, body: string) {
+    const bin = path.join(root, `stub-${name}`);
+    mkdirSync(bin, { recursive: true });
+    const calls = path.join(bin, "calls");
+    writeFileSync(path.join(bin, "aws"), `#!/bin/sh\necho "$*" >> '${calls}'\ncase "$*" in\n${body}\nesac\n`);
+    chmodSync(path.join(bin, "aws"), 0o755);
+    return { bin, calls };
+  }
+
+  it("refuses credentials that aren't an Identity Center session (an IAM user's keys) before changing anything (Security MUST-L1)", () => {
+    const { bin, calls } = fakeAws("iam-user", `*get-caller-identity*) printf '111122223333\\tarn:aws:iam::111122223333:user/someone\\n' ;;`);
+    const { status, out } = launch(complete, { apply: true, bin });
+    expect(status).toBe(1);
+    expect(out).toContain("Stopped: These credentials aren't an Identity Center session for account 111122223333");
+    expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["sts get-caller-identity --query [Account,Arn] --output text"]);
+  });
+
+  // The guard is a security control: a planted master password, plain or URL-encoded (the form the
+  // connection string carries), must stop the run with exit 1 (Security SHOULD-L3, L5).
+  it.each([
+    ["plain", "PLANTED#sec%PW/12x", "the master password"],
+    ["URL-encoded", "PLANTED%23sec%25PW%2F12x", "the master password (URL-encoded)"],
+  ])("fails the run when the log holds the %s master password", (_form, planted, named) => {
+    const { bin } = fakeAws(
+      `guard-${_form}`,
+      [
+        `*get-caller-identity*) printf '111122223333\\tarn:aws:sts::111122223333:assumed-role/AWSReservedSSO_AdministratorAccess_0123456789abcdef/someone\\n' ;;`,
+        `*get-secret-value*) printf '%s' '{"username":"postgres","password":"PLANTED#sec%PW/12x"}' ;;`,
+        `*MasterSecretArn*) printf '%s\\n' 'arn:aws:secretsmanager:us-east-1:111122223333:secret:rds-x' ;;`,
+        `*UserPoolId*|*ClientId*) printf 'None\\n' ;;`,
+        // A tool that echoes what it was given: the leak the guard exists to catch.
+        `*put-public-access-block*) printf '%s\\n' 'leak: ${planted}' ;;`,
+      ].join("\n"),
+    );
+    const { status, out } = launch(complete, { apply: true, bin: `${bin}:${path.dirname(process.execPath)}` });
+    expect(status).toBe(1);
+    expect(out).toContain(`Stopped: the log contains ${named}.`);
   });
 });
