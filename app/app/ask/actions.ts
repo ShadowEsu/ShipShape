@@ -14,17 +14,20 @@ export interface AskState {
   items?: RequestItem[];
   /** The pasted text, so the form keeps it after an error. */
   text?: string;
+  /** Whether the consent box was ticked, so a refusal about something else doesn't untick it (W10-7). */
+  consent?: boolean;
 }
 
 export async function askAction(_prev: AskState, form: FormData): Promise<AskState> {
   const ctx = await requireWorkspace();
   const text = String(form.get("text") ?? "");
+  const consent = form.get("consent") === "yes";
   try {
-    const items = await readRequest(ctx, { text, consent: form.get("consent") === "yes" }, clientIp(await headers()));
+    const items = await readRequest(ctx, { text, consent }, clientIp(await headers()));
     return { items, text };
   } catch (e) {
-    if (e instanceof RequestInputError) return { error: e.message, field: e.field, text };
-    if (e instanceof UserError || e instanceof GateClosed) return { error: e.message, text };
+    if (e instanceof RequestInputError) return { error: e.message, field: e.field, text, consent };
+    if (e instanceof UserError || e instanceof GateClosed) return { error: e.message, text, consent };
     throw e;
   }
 }

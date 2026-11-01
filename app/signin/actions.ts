@@ -71,8 +71,9 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
     );
     const today = await viewerToday();
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId, today));
-    // The sample's expired permit and expiring certificate show their reminders straight away.
-    await runReminders(undefined, org.id);
+    // The sample's expired permit and expiring certificate show their reminders straight away, counted
+    // from the same day the sample was seeded on, so the outbox and Deadlines agree (W10-2).
+    await runReminders(today, org.id);
   }
   await finishSignIn(userId, { demo: mode === "demo", userAgent: (await headers()).get("user-agent") });
   // The sample workspace has nothing to export or delete: it lands on Home.

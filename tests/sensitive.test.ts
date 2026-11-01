@@ -129,6 +129,16 @@ describe("log scrubber (R4)", () => {
     for (const s of ["4155550100", "415-555-0100", "1234 5678 9012 3456", "9 0 0 1 2 3 4 5 6 7"]) expect(scrub(`n ${s} n`)).toBe("n [redacted-id] n");
   });
 
+  it("keeps a UUID whole even when its digits run 9 or more across the hyphens, and still scrubs what sits beside it (W10-14)", () => {
+    const id = "12345678-1234-4abc-8def-123456789012";
+    expect(scrub(`reminders: ${id} not sent (23505)`)).toBe(`reminders: ${id} not sent (23505)`);
+    // Beside it: an SSN and a card number go; a passport path with that id goes as before.
+    expect(scrub(`${id} ssn 900-12-3456 card 4111 1111 1111 1111 ${id}`)).toBe(`${id} ssn [redacted-id] card [redacted-id] ${id}`);
+    expect(scrub(`open /p/${id}#tok`)).toBe("open /p/[redacted-token]#tok");
+    // A UUID-shaped run with no hex letter at all is treated as a number, so a tax ID in that costume still goes.
+    expect(scrub("12345678-1234-4123-8123-123456789012")).toBe("[redacted-id]");
+  });
+
   it("redacts share and signing tokens in paths", () => {
     expect(scrub("GET /p/AbCdEfGhIjKlMnOpQrStUvWxYz012345?x=1")).toBe("GET /p/[redacted-token]?x=1");
   });

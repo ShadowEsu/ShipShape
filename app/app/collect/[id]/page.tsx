@@ -1,22 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { EmptyState, Notice, PageHeader, fmtDay } from "@/components/app-ui";
+import { EmptyState, Notice, PageHeader } from "@/components/app-ui";
 import { SubmitButton } from "@/components/submit-button";
 import { COLLECT_DAYS, getVendor, type VendorLink } from "@/lib/server/collect";
 import { collectOpen } from "@/lib/server/flags";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
-import { dayOf } from "@/lib/today";
+import { dayOf, fmtDay } from "@/lib/today";
 import { archiveVendor, turnOffVendorLink } from "../actions";
 import { CollectChip } from "../chip";
 import { DeleteVendorFileForm, VendorLinkForm } from "../forms";
 
 export const metadata: Metadata = { title: "Vendor" };
 
-function linkStatus(l: VendorLink) {
+/** True to collect_open/collect_receive (0008/0012): a link works only while unrevoked, unexpired and the vendor is active. */
+function linkStatus(l: VendorLink, archived: boolean) {
   if (l.revoked_at) return "Turned off";
   if (new Date(l.expires_at).getTime() < Date.now()) return "Expired";
-  return "Working";
+  return archived ? "Off while archived" : "Working";
 }
 
 // A non-breaking space keeps "1 KB" on one line at 390 wide (Design).
@@ -40,7 +41,7 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
   const { vendor, files, links } = detail;
   const archived = vendor.status === "archived";
   // The working link that lasts longest: what the vendor has in hand right now.
-  const working = links.filter((l) => linkStatus(l) === "Working").sort((a, b) => b.expires_at.localeCompare(a.expires_at)).at(0);
+  const working = links.filter((l) => linkStatus(l, archived) === "Working").sort((a, b) => b.expires_at.localeCompare(a.expires_at)).at(0);
 
   return (
     <div className="space-y-8">
@@ -66,8 +67,8 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
       )}
       {archived && (
         <Notice tone="info">
-          This vendor is archived: its upload links don&apos;t work, and it isn&apos;t counted on the Collect page. Restore it to ask for files
-          again.
+          This vendor is archived: its upload links are off, and it isn&apos;t counted on the Collect page. Restoring it turns its unexpired
+          links back on.
         </Notice>
       )}
 
@@ -146,7 +147,7 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
             ) : (
               <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper text-sm">
                 {links.map((l) => {
-                  const status = linkStatus(l);
+                  const status = linkStatus(l, archived);
                   return (
                     <li key={l.id} className="flex items-center justify-between gap-3 px-4 py-3">
                       <span>

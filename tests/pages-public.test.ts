@@ -7,7 +7,6 @@ import { POST as upload } from "@/app/c/[id]/upload/route";
 import { LinkUnavailable } from "@/app/link-states";
 import { GET as passportFile } from "@/app/p/[id]/file/route";
 import PassportPage from "@/app/p/[id]/page";
-import { fmtDay } from "@/components/app-ui";
 import { POST as signCode } from "@/app/s/[id]/code/route";
 import { GET as signFile } from "@/app/s/[id]/file/route";
 import SigningPage from "@/app/s/[id]/page";
@@ -26,7 +25,7 @@ import { createPassport, revokePassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
-import { isoToday, timeOf } from "@/lib/today";
+import { fmtDay, isoToday, timeOf, todayIn } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
@@ -591,5 +590,20 @@ describe("signing in (/signin)", () => {
     // The email sign-in lands on the section, scrolled to it; a value off the list lands on Home.
     await expect(signIn({}, form({ mode: "email", email: "back@harbor.example", terms: "on", next: "delete" }))).rejects.toThrow("redirect /app/settings#delete");
     await expect(signIn({}, form({ mode: "email", email: "back@harbor.example", terms: "on", next: "/app/admin" }))).rejects.toThrow(/^redirect \/app$/);
+  });
+
+  it("the sample's first reminders count from the visitor's own day, like its dates, not the UTC day (W10-2)", async () => {
+    // A zone whose date differs from UTC's right now: the two are 25 hours apart, so one always does.
+    const zone = ["Pacific/Kiritimati", "Pacific/Pago_Pago"].find((z) => todayIn(z) !== isoToday()) ?? "UTC";
+    expect(zone).not.toBe("UTC");
+    jar.set("ss_tz", zone);
+    await expect(signIn({}, form({ mode: "demo", terms: "on" }))).rejects.toThrow(/^redirect \/app$/);
+    const [m] = await db.root((tx) =>
+      tx.query<{ subject: string }>(
+        "select o.subject from app.outbox o join app.organizations g on g.id = o.org_id where g.is_demo and o.subject like 'Certificate of liability insurance%' order by o.created_at desc limit 1",
+      ),
+    );
+    // Seeded 21 days out on the visitor's day; counted from the UTC day it would say 20 or 22.
+    expect(m.subject).toBe("Certificate of liability insurance (sample) expires in 21 days");
   });
 });

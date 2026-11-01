@@ -22,14 +22,23 @@ const SEP = String.raw`[\s\-./_]{0,4}`;
 const TAX_ID = new RegExp(String.raw`\bW-?(?:9|8(?:BEN-E|BEN|ECI|EXP|IMY)?)(?![\dA-Za-z])|\d(?:${SEP}\d){8,}`, "gi");
 // Share, signing and upload links' ids or tokens in paths or query strings.
 const LINK_TOKEN = /\/(p|s|c)\/[A-Za-z0-9_-]{20,}/g;
+// A UUID as PostgreSQL prints one. Its digit runs are an id, not a tax number, so it stays whole: the
+// reminder failure line keeps only the document's id, and a half-blanked one can't be traced (W10-14).
+// A "UUID" with no hex letter at all (about 3 in 10 million real ones) is left to the digit scrub,
+// so a tax number dressed up in the shape still goes.
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const KEPT = /\u0000(\d+)\u0000/g;
 
 export function scrub(text: string): string {
+  const kept: string[] = [];
   return text
     .normalize("NFKC")
     .replace(FORMAT_CHARS, "")
     .replace(DASHES, "-")
+    .replace(LINK_TOKEN, "/$1/[redacted-token]")
+    .replace(UUID, (m) => (/[a-f]/i.test(m) ? `\u0000${kept.push(m) - 1}\u0000` : m))
     .replace(TAX_ID, (m) => (/^\d/.test(m) ? "[redacted-id]" : m))
-    .replace(LINK_TOKEN, "/$1/[redacted-token]");
+    .replace(KEPT, (_, i: string) => kept[Number(i)] ?? "");
 }
 
 const METHODS = ["log", "info", "warn", "error", "debug", "trace"] as const;

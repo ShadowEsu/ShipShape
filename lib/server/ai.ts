@@ -223,15 +223,20 @@ export async function readRequest(ctx: Ctx, input: RequestInput, network: string
   );
   // Fails closed: if the meter can't be read or written, this throws and no call is made.
   const [reservation] = await asService((tx) =>
-    tx.query<{ id: string | null }>("select app.ai_reserve($1, 'request_match', $2, $3, $4, $5) as id", [
-      ctx.orgId,
-      AI_MODEL,
-      reserve,
-      AI_CAPS.dayMicros,
-      AI_CAPS.totalMicros,
-    ]),
+    tx.query<{ id: string | null; total: string }>(
+      // The lifetime total beside the answer, so a refusal can say which cap it was (W10-6): the daily
+      // one ends tomorrow, the lifetime one only when someone raises it.
+      "select app.ai_reserve($1, 'request_match', $2, $3, $4, $5) as id, (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0)::text from app.ai_calls) as total",
+      [ctx.orgId, AI_MODEL, reserve, AI_CAPS.dayMicros, AI_CAPS.totalMicros],
+    ),
   );
-  if (!reservation?.id) throw new UserError("ShipShape's AI has reached its spending limit for today. Try again tomorrow.");
+  if (!reservation?.id) {
+    throw new UserError(
+      Number(reservation?.total ?? 0) + reserve > AI_CAPS.totalMicros
+        ? "ShipShape's AI reading is paused right now. Everything else works as usual."
+        : "ShipShape's AI has reached its spending limit for today. Try again tomorrow.",
+    );
+  }
   const reservationId = reservation.id;
   const settle = (status: "done" | "failed", inTok: number | null, outTok: number | null, cost: number) =>
     asService((tx) => tx.query("select app.ai_settle($1, $2, $3, $4, $5)", [reservationId, status, inTok, outTok, cost]));

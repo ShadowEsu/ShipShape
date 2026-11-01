@@ -26,6 +26,9 @@ export function todayIn(timeZone: string, now = new Date()): string {
 /** The UTC date: the cron's day, and the fallback when the viewer's zone is unknown. */
 export const isoToday = () => todayIn("UTC");
 
+/** A date (YYYY-MM-DD, or a timestamp whose first 10 characters are one) in the chips' form ("Nov 7, 2026"), no zone involved. */
+export const fmtDay = (iso: string): string => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
 /**
  * The calendar day of an instant (a `timestamptz`, as PostgreSQL prints it or ISO) where the viewer is,
  * in the chips' form ("Nov 7, 2026"). A link that ends at 01:00 UTC on the 8th ended on the 7th in Los Angeles.

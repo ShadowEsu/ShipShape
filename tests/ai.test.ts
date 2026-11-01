@@ -297,7 +297,8 @@ describe("spend meter", () => {
         AI_CAPS.totalMicros - 100,
       ]),
     );
-    await expect(ask(await workspace())).rejects.toThrow(/spending limit/);
+    // The lifetime cap never resets, so "tomorrow" would be the wrong fix (W10-6).
+    await expect(ask(await workspace())).rejects.toThrow("ShipShape's AI reading is paused right now. Everything else works as usual.");
     expect(sent).toHaveLength(0);
   });
 
@@ -313,7 +314,7 @@ describe("spend meter", () => {
     await db.root((tx) =>
       tx.query("insert into app.ai_calls (feature, model, reserved_micros, cost_micros, status) values ('request_match', $1, $2, $2, 'done')", [AI_MODEL, AI_CAPS.dayMicros - 500]),
     );
-    await expect(ask(await workspace())).rejects.toThrow(/spending limit/);
+    await expect(ask(await workspace())).rejects.toThrow("ShipShape's AI has reached its spending limit for today. Try again tomorrow.");
     expect(sent).toHaveLength(1);
   });
 

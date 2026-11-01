@@ -3,7 +3,7 @@ import { samplePdf } from "@/lib/pdf/sample-pdf";
 import type { ProfileKey } from "@/lib/profile-fields";
 import { templateById } from "@/lib/templates/catalog";
 import type { Facts, TemplateInfo } from "@/lib/templates/types";
-import { isoToday } from "@/lib/today";
+import { isoToday, plusDays } from "@/lib/today";
 import { seedSampleVendors } from "./collect";
 import { encryptField } from "./crypto";
 import type { Tx } from "./db";
@@ -34,12 +34,6 @@ const SAMPLE_FACTS: Record<ProfileKey, string> = {
   signer_title: "Managing member",
 };
 
-const day = (offset: number) => {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + offset);
-  return d.toISOString().slice(0, 10);
-};
-
 async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides: Record<string, string>) {
   const start = prefill(t, facts, ctx.today);
   const values = { ...start, ...overrides };
@@ -59,6 +53,9 @@ async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides
 /** Runs as the new sample workspace's owner, inside their transaction. */
 export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string, today = isoToday()) {
   const ctx: Ctx = { userId, demo: true, authAt: 0, orgId, name: "Harbor Plumbing (sample)", role: "owner", today };
+  // Every sample date is an offset from the visitor's own day, so Deadlines ("in 21 days") and the first
+  // reminders (run on the same day) agree wherever the visitor is (W10-2).
+  const day = (offset: number) => plusDays(today, offset);
   const f = SAMPLE_FACTS;
   await tx.query(
     "update app.profiles set legal_name = $2, dba = $3, entity_type = $4, address_line1 = $5, city = $6, state = $7, postal_code = $8, phone = $9, email = $10, state_of_formation = $11, signer_name = $12, signer_title = $13 where org_id = $1",
