@@ -44,10 +44,7 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
     // pdf-lib decodes a whole PNG (about 9 bytes a pixel, outside V8's heap, which the build's heap
     // limit doesn't cap), and a small, flat PNG can declare 100 megapixels (W11-3), so its declared
     // size is checked first. A JPEG is copied into the PDF as it is, never decoded here.
-    if (mime === "image/png") {
-      const pixels = pngPixels(original);
-      if (pixels === null || pixels > MAX_PNG_PIXELS) throw new NotSignable("unreadable", new Error(pixels === null ? "no PNG header" : `${pixels} pixels is over the limit`));
-    }
+    if (mime === "image/png") checkPng(original);
     try {
       // pdf-lib 1.17 reads a JPEG through `new DataView(bytes.buffer)`, ignoring where the view
       // starts. Bytes that reach the build process over IPC sit at an offset in a larger buffer, so
@@ -70,9 +67,34 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
  */
 export const MAX_PNG_PIXELS = 40_000_000;
 
-/** A PNG's width × height from its IHDR (bytes 16-23), without decoding it; null without one. */
-function pngPixels(bytes: Uint8Array): number | null {
-  if (bytes.length < 24) return null;
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * Refuses a PNG pdf-lib's decoder (UPNG) would size past MAX_PNG_PIXELS, without decoding it
+ * (W11-3). UPNG takes the last IHDR before IEND wherever it sits, and for an animated PNG
+ * allocates every frame at its fcTL size before pdf-lib refuses animation (Security MUST-P1), so
+ * the chunks are walked to IEND: the first is the only IHDR, 13 bytes long; there are no animation
+ * chunks (acTL, fcTL, fdAT); every chunk ends inside the file.
+ */
+function checkPng(bytes: Uint8Array): void {
+  const refuse = (why: string) => new NotSignable("unreadable", new Error(why));
+  if (bytes.length < 8 || PNG_SIGNATURE.some((b, i) => bytes[i] !== b)) throw refuse("no PNG signature");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  return view.getUint32(16) * view.getUint32(20);
+  let pixels = 0;
+  for (let at = 8; ; ) {
+    // Length, type and CRC are 12 bytes around the chunk's data.
+    if (at + 12 > bytes.length) throw refuse("the PNG ends before IEND");
+    const length = view.getUint32(at);
+    const type = String.fromCharCode(bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]);
+    if (at + 12 + length > bytes.length) throw refuse(`the ${type} chunk runs past the end`);
+    if ((at === 8) !== (type === "IHDR")) throw refuse(at === 8 ? "no IHDR first" : "a second IHDR");
+    if (type === "IHDR") {
+      if (length !== 13) throw refuse("an IHDR that isn't 13 bytes");
+      pixels = view.getUint32(at + 8) * view.getUint32(at + 12);
+    }
+    if (type === "acTL" || type === "fcTL" || type === "fdAT") throw refuse("an animated PNG");
+    if (type === "IEND") break;
+    at += 12 + length;
+  }
+  if (pixels > MAX_PNG_PIXELS) throw refuse(`${pixels} pixels is over the limit`);
 }
