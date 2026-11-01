@@ -11,6 +11,29 @@ export interface PickableDoc {
   title: string;
   kindLabel: string;
   note: string | null;
+  /** A W-9: the file shows the full EIN or SSN to whoever opens the link. */
+  holdsTaxId: boolean;
+}
+
+/** What making the link means, said before it exists: who can open it, what a W-9 reveals, what stays private. */
+export function WhoCanOpen({ label, documents, taxId }: { label: string; documents: number; taxId: boolean }) {
+  const who = label.trim() || "the person it's for";
+  const what = documents === 0 ? "the documents you tick" : documents === 1 ? "this document" : `these ${documents} documents`;
+  return (
+    <section aria-labelledby="who-can-open" className="space-y-2 rounded-lg border border-line bg-canvas px-3 py-3 text-sm text-ink-2">
+      <h3 id="who-can-open" className="font-medium text-ink">
+        Who can open it
+      </h3>
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          Anyone who has the link can view and download {what}. Send it only to {who}.
+        </li>
+        {taxId && <li>Your W-9 shows your full EIN or SSN to whoever opens it.</li>}
+        <li>They can&apos;t see your other documents, business facts or history.</li>
+        <li>You see each time it&apos;s opened.</li>
+      </ul>
+    </section>
+  );
 }
 
 /** The end of making a link: what was made, what happens next, and the one thing to do (copy it). */
@@ -45,6 +68,10 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
   // The days picked since the page loaded (null: the default, or what was sent last).
   const [picked, setPicked] = useState<number | null>(null);
   const chosen = picked ?? (typed ? Number(typed.days) : days[1]);
+  // Mirrors of the label and the ticked documents, for the "Who can open it" box.
+  const [label, setLabel] = useState(typed?.label ?? "");
+  const [ticked, setTicked] = useState<string[]>(typed?.docs ?? preselected);
+  const tick = (id: string, on: boolean) => setTicked((old) => (on ? [...new Set([...old, id])] : old.filter((x) => x !== id)));
 
   useEffect(() => {
     if (state.created) setUrl(`${window.location.origin}/p/${state.created.id}#${state.created.token}`);
@@ -81,6 +108,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
           maxLength={120}
           placeholder="e.g. Northwind Builders onboarding"
           defaultValue={typed?.label}
+          onChange={(e) => setLabel(e.target.value)}
           className="input"
           aria-invalid={errors.label ? true : undefined}
           aria-describedby={errors.label ? "label-error" : undefined}
@@ -98,6 +126,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
                   name="doc"
                   value={d.id}
                   defaultChecked={(typed?.docs ?? preselected).includes(d.id)}
+                  onChange={(e) => tick(d.id, e.target.checked)}
                   className="mt-0.5 size-4 accent-[var(--accent)]"
                   aria-invalid={errors.docs ? true : undefined}
                   aria-describedby={errors.docs ? "docs-error" : undefined}
@@ -142,6 +171,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
         )}
         <FieldError id="days-error" error={errors.days} />
       </fieldset>
+      <WhoCanOpen label={label} documents={ticked.filter((id) => docs.some((d) => d.id === id)).length} taxId={docs.some((d) => d.holdsTaxId && ticked.includes(d.id))} />
       {state.error && (
         <div role="alert" tabIndex={-1} className="space-y-2 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
           <p>{state.error}</p>

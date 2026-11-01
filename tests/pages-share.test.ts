@@ -109,6 +109,26 @@ describe("Passport", () => {
     expect(textOf(html)).toContain(`7 days 30 days 90 days Stops working on ${in30}. You can turn it off sooner.`);
   });
 
+  it("before the link exists, says who can open it: how many documents are ticked, that a ticked W-9 shows the full tax id, and what stays private", async () => {
+    const ctx = await signIn("passport-who@example.com");
+    const coi = await addDoc(ctx, "Liability certificate");
+    const [w9] = await db.root((tx) => tx.query<{ id: string }>("insert into app.documents (org_id, title, kind) values ($1, 'Form W-9', 'w9') returning id", [ctx.orgId]));
+    const page = (docs?: string) => renderPage(PassportPage, { searchParams: Promise.resolve(docs ? { docs } : {}) });
+
+    const nothing = textOf(await page());
+    expect(nothing).toMatch(/Who can open it Anyone who has the link can view and download the documents you tick\s*\. Send it only to the person it's for\s*\./);
+    expect(nothing).toContain("They can't see your other documents, business facts or history. You see each time it's opened.");
+    expect(nothing).not.toContain("full EIN or SSN");
+
+    const one = textOf(await page(coi));
+    expect(one).toMatch(/view and download this document\s*\. Send it only to the person it's for\s*\./);
+    expect(one).not.toContain("full EIN or SSN");
+
+    const both = textOf(await page(`${coi},${w9.id}`));
+    expect(both).toMatch(/view and download these 2 documents\s*\./);
+    expect(both).toContain("Your W-9 shows your full EIN or SSN to whoever opens it.");
+  });
+
   it("with a link: lists it instead of the example", async () => {
     const ctx = await signIn("passport-link@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
