@@ -91,7 +91,7 @@ describe("plain form actions", () => {
     for (let i = 1; i <= 10; i++) await uploadDocument(ctx, { title: `Document ${i}`, kind: "other" }, PDF);
     const data = form({ title: "Document 11", kind: "other" });
     data.set("file", new File([PDF], "doc.pdf", { type: "application/pdf" }));
-    expect(await addDocument({}, data)).toMatchObject({ error: "The Free plan holds 10 active documents.", fix: { href: "/app/documents", label: "Archive one to make room" } });
+    expect(await addDocument({}, data)).toMatchObject({ error: "The Free plan holds 10 active documents.", fix: { href: "/app/documents", label: "Choose one to archive" } });
   });
 
   it("turning off a vendor's upload link twice says the second time that it was already off", async () => {

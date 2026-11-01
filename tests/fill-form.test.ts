@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { prerender } from "react-dom/static";
 import { describe, expect, it } from "vitest";
-import { ErrorSummary, FillForm, formatSsn, headingFocusDue, SavedEinNote } from "@/app/app/make/[template]/fill-form";
+import { ErrorSummary, FillForm, formatSsn, headingFocusDue, Message, SavedEinNote } from "@/app/app/make/[template]/fill-form";
 import { templateById } from "@/lib/templates/catalog";
 import { actionsOf, textOf } from "./support/render";
 
@@ -118,5 +118,25 @@ describe("the review row for a saved EIN", () => {
 
   it("says nothing in the sample workspace, where nobody can", async () => {
     expect(await render(false, false)).toBe("");
+  });
+});
+
+describe("the fill form's message box", () => {
+  const render = async (text: string, fix?: { href: string; label: string }) => {
+    const { prelude } = await prerender(createElement(Message, { text, fix }));
+    return new Response(prelude).text();
+  };
+
+  it("is an alert that can take focus, and shows the one fix as a link when there is one", async () => {
+    const html = await render("The Free plan holds 10 active documents.", { href: "/app/documents", label: "Choose one to archive" });
+    expect(html).toMatch(/<div[^>]*role="alert"[^>]*tabindex="-1"/);
+    expect(textOf(html)).toMatch(/^The Free plan holds 10 active documents\.\s*Choose one to archive$/);
+    expect(actionsOf(html)).toEqual([{ tag: "a", label: "Choose one to archive", href: "/app/documents" }]);
+  });
+
+  it("without a fix is the message alone", async () => {
+    const html = await render("Real documents aren't open yet.");
+    expect(textOf(html)).toBe("Real documents aren't open yet.");
+    expect(actionsOf(html)).toEqual([]);
   });
 });

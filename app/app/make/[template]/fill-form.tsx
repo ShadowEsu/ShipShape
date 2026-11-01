@@ -110,6 +110,20 @@ export function ErrorSummary({ problems, onPick, ref }: { problems: Problem[]; o
   );
 }
 
+/** A result that is only a message (the plan's limit, a closed gate), with the one page that makes room when there is one. */
+export function Message({ text, fix, ref }: { text: string; fix?: { href: string; label: string }; ref?: Ref<HTMLDivElement> }) {
+  return (
+    <div ref={ref} role="alert" tabIndex={-1} className="space-y-2 rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+      <p>{text}</p>
+      {fix && (
+        <Link href={fix.href} className="underline">
+          {fix.label}
+        </Link>
+      )}
+    </div>
+  );
+}
+
 /**
  * The review row's action cell for a saved EIN, which has no field on the step: the way to change it is
  * Business facts, for those who can; a member is told who can; the sample workspace gets nothing.
@@ -217,16 +231,7 @@ export function FillForm({
     <form ref={formRef} action={action} className="space-y-6" noValidate>
       <input type="hidden" name="template" value={template.id} />
       <input type="hidden" name="at" value={current} />
-      {state.error && (
-        <div ref={messageRef} role="alert" tabIndex={-1} className="space-y-2 rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-          <p>{state.error}</p>
-          {state.fix && (
-            <Link href={state.fix.href} className="underline">
-              {state.fix.label}
-            </Link>
-          )}
-        </div>
-      )}
+      {state.error && <Message ref={messageRef} text={state.error} fix={state.fix} />}
       {!reviewing && problems.length > 0 && <ErrorSummary ref={summaryRef} problems={problems} onPick={goTo} />}
 
       {/* Every step stays in the form (hidden) so the next check and the approval post every value. */}

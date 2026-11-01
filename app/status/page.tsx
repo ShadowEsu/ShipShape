@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { SiteFooter, SiteHeader } from "@/components/site";
 import { fmtDateTime } from "@/components/ui";
-import { billingConfig } from "@/lib/server/billing";
+import { billingConfig } from "@/lib/server/billing-config";
 import { aiEnabled } from "@/lib/server/ai";
 import { dbUp } from "@/lib/server/db";
 import { realDocsEnabled } from "@/lib/server/flags";

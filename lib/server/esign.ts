@@ -55,7 +55,7 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
       [p.documentId, ctx.orgId],
     );
   const latest = await asUser(ctx.userId, async (tx) => {
-    await assertWithinPlan(tx, ctx.orgId, "esign");
+    await assertWithinPlan(tx, ctx, "esign");
     const [row] = await latestVersion(tx);
     if (!row) throw new UserError(DOCUMENT_GONE);
     return row;
@@ -82,7 +82,7 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
   }
   if (toSign.length > MAX_UPLOAD_BYTES) throw new UserError("This document is too large to send for signature.");
   await asUser(ctx.userId, async (tx) => {
-    await assertWithinPlan(tx, ctx.orgId, "esign");
+    await assertWithinPlan(tx, ctx, "esign");
     // What was built must still be the latest version of an active document: the request names it.
     const [now] = await latestVersion(tx);
     if (now?.version !== latest.version) {

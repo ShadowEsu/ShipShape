@@ -254,7 +254,7 @@ export async function insertDocument(
   origin: "upload" | "filled" | "sample",
   record: VersionRow["fill_record"] = null,
 ): Promise<string> {
-  await assertWithinPlan(tx, ctx.orgId, "documents");
+  await assertWithinPlan(tx, ctx, "documents");
   const id = randomUUID();
   await tx.query(
     "insert into app.documents (id, org_id, title, kind, issuer, counterparty, issued_on, expires_on, renews_on, template_id, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
@@ -416,7 +416,7 @@ export async function updateDocument(ctx: Ctx, id: string, meta: unknown) {
 
 export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
   const rows = await asUser(ctx.userId, async (tx) => {
-    if (!archived) await assertWithinPlan(tx, ctx.orgId, "documents");
+    if (!archived) await assertWithinPlan(tx, ctx, "documents");
     return tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]);
   });
   if (!rows.length) throw new UserError(DOCUMENT_GONE);

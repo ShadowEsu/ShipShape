@@ -2,9 +2,9 @@ import "server-only";
 import Stripe from "stripe";
 import { TERMS_VERSION } from "@/lib/legal";
 import { PLANS, type PlanId } from "@/lib/plans";
+import { billingConfig, type BillingConfig } from "./billing-config";
 import { asService, asUser, type Tx } from "./db";
 import { SubscriptionStillRunning, UserError } from "./errors";
-import { realDocsEnabled } from "./flags";
 import type { Ctx } from "./profile";
 
 /**
@@ -16,31 +16,6 @@ import type { Ctx } from "./profile";
 
 /** Pinned here and on the webhook endpoint in the Stripe dashboard. */
 export const STRIPE_API_VERSION = "2026-10-28.endive";
-
-const TEST_KEY = /^(sk|rk)_test_[A-Za-z0-9]{10,}$/;
-
-export interface BillingConfig {
-  secretKey: string;
-  webhookSecret: string;
-  proPrice: string;
-  appUrl: string;
-}
-
-/**
- * Billing is on only with a Stripe TEST key, a webhook secret, the Pro price and the app URL.
- * Anything else (a live key included) turns it off. In production it's also off once real
- * documents are on: a test card would otherwise buy real Pro.
- */
-export function billingConfig(): BillingConfig | null {
-  const secretKey = process.env.STRIPE_SECRET_KEY ?? "";
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
-  const proPrice = process.env.STRIPE_PRICE_PRO ?? "";
-  const appUrl = process.env.SHIPSHAPE_APP_URL ?? "";
-  if (!TEST_KEY.test(secretKey) || !/^whsec_[A-Za-z0-9]+$/.test(webhookSecret) || !/^price_[A-Za-z0-9]+$/.test(proPrice)) return null;
-  if (!/^https?:\/\/[^/\s]+$/.test(appUrl)) return null;
-  if (process.env.NODE_ENV === "production" && realDocsEnabled()) return null;
-  return { secretKey, webhookSecret, proPrice, appUrl };
-}
 
 /** What billing reads from a subscription (Stripe's full object satisfies this). */
 export interface SubscriptionState {

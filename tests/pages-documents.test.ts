@@ -410,19 +410,24 @@ describe("making a document", () => {
     // Payments off (no Stripe config in tests): the message doesn't offer Pro; the one fix is a link to the documents list.
     expect(await fill({}, form({ ...w9, ack: "on", at: "3" }))).toEqual({
       error: "The Free plan holds 10 active documents.",
-      fix: { href: "/app/documents", label: "Archive one to make room" },
+      fix: { href: "/app/documents", label: "Choose one to archive" },
       review: true,
     });
-    // Payments on: the Pro half comes back.
+    // Payments on, and this person is the owner: the Pro half comes back; the fix link stays.
     vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
     vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");
     vi.stubEnv("SHIPSHAPE_APP_URL", "http://127.0.0.1:3917");
-    expect((await fill({}, form({ ...w9, ack: "on", at: "3" }))).error).toBe("The Free plan holds 10 active documents. Archive one, or move to Pro for no limit.");
-    // A check that can't run (real documents closed) keeps the step the person is on; a gate message has no fix link.
+    expect(await fill({}, form({ ...w9, ack: "on", at: "3" }))).toEqual({
+      error: "The Free plan holds 10 active documents. Or move to Pro for no limit.",
+      fix: { href: "/app/documents", label: "Choose one to archive" },
+      review: true,
+    });
+    // A check that can't run (real documents closed) keeps the step the person is on, for Continue and for the review check;
+    // a gate message has no fix link.
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
     expect(await fill({}, form({ ...w9, step: "next", at: "2" }))).toEqual({ error: expect.any(String), at: 2 });
-    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    expect(await fill({}, form({ ...w9, step: "review", at: "3" }))).toEqual({ error: expect.any(String), at: 3 });
   });
 
   it("checks the values for the review without saving, and stays on the review when only the approval box is missing", async () => {
