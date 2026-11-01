@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ValidityChip } from "@/components/app-ui";
+import { RenewalChip, ValidityChip } from "@/components/app-ui";
 import { ATTENTION_MAX, DOC_KINDS, homeSummary } from "@/lib/server/documents";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { listPassports } from "@/lib/server/passport";
@@ -72,7 +72,7 @@ export default async function AppHome() {
           <div className="h-1.5 overflow-hidden rounded-full bg-canvas" aria-hidden="true">
             <div className="h-full rounded-full bg-accent" style={{ width: `${(done / setup.length) * 100}%` }} />
           </div>
-          <p className="text-sm text-ink-2">Once these are done, this page lists only what needs you: documents about to lapse, and what to do about each.</p>
+          <p className="text-sm text-ink-2">Once these are done, this page lists only what needs you: documents about to lapse or with a renewal notice due, and what to do about each.</p>
           <ol className="space-y-2">
             {setup.map((s) =>
               s === next ? (
@@ -134,38 +134,46 @@ export default async function AppHome() {
         {attention.length === 0 ? (
           <p className="card text-sm text-ink-2">
             {docs.total === 0
-              ? "Documents that have expired or expire in the next 30 days will be listed here, with what renews them."
-              : "Nothing has expired or expires in the next 30 days."}
+              ? "Documents that have expired, expire, or have a renewal notice due in the next 30 days will be listed here."
+              : "Nothing has expired, expires, or has a renewal notice due in the next 30 days."}
           </p>
         ) : (
           <>
             {/* Rule 6, once for the list: what renews a document; each row then says only its own state and action. */}
             <p className="text-sm text-ink-2">
-              Renew each one with the issuer, then {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates."}
+              For a document that&apos;s lapsing, renew it with the issuer, then{" "}
+              {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates."}
             </p>
             {groups.map((g) => (
               <div key={g.label} className="space-y-2">
                 <h3 className="eyebrow">{g.label}</h3>
                 <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
                   {g.rows.map((d) => {
-                    const daysLeft = d.expires_on ? Math.round((Date.parse(d.expires_on) - Date.parse(ctx.today)) / 86_400_000) : 0;
+                    // Days from today to the date that put the document here (its expiry, or a renewal notice).
+                    const days = Math.round((Date.parse(d.attention_on) - Date.parse(ctx.today)) / 86_400_000);
+                    const renewal = d.attention_kind === "renewal";
+                    const state = renewal
+                      ? `Renewal notice due ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}.`
+                      : d.validity === "expired"
+                        ? "It has lapsed."
+                        : days === 0
+                          ? "Expires today."
+                          : `${days} ${days === 1 ? "day" : "days"} left.`;
                     return (
                       <li key={d.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                         <span className="min-w-0 space-y-1">
                           <span className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{d.title}</span>
                             <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
-                            <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                            {renewal ? <RenewalChip renewsOn={d.attention_on} /> : <ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
                           </span>
-                          <span className="block text-sm text-ink-2">
-                            {d.validity === "expired" ? "It has lapsed." : daysLeft === 0 ? "Expires today." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`}
-                          </span>
+                          <span className="block text-sm text-ink-2">{state}</span>
                         </span>
                         <Link
-                          href={canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
+                          href={renewal ? `/app/documents/${d.id}` : canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
                           className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline"
                         >
-                          {canUpload ? "Add the renewed copy" : "Update its dates"}
+                          {renewal ? "Open it" : canUpload ? "Add the renewed copy" : "Update its dates"}
                         </Link>
                       </li>
                     );
