@@ -38,7 +38,7 @@ export async function createPassport(ctx: Ctx, input: unknown): Promise<{ id: st
   const p = NewPassport.parse(input);
   const { token, hash } = newToken();
   const id = await asUser(ctx.userId, async (tx) => {
-    await assertWithinPlan(tx, ctx.orgId, "passports");
+    await assertWithinPlan(tx, ctx, "passports");
     const [link] = await tx.query<{ id: string }>(
       "insert into app.share_links (org_id, label, token_hash, expires_at, created_by) values ($1, $2, $3, now() + make_interval(days => $4), $5) returning id",
       [ctx.orgId, p.label, hash, p.days, ctx.userId],

@@ -8,6 +8,7 @@ import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
 import { canSaveFacts, checkFill, DOCUMENT_GONE, documentsById, downloadUrl, fillTemplate, firstDocument, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
+import { planLimit } from "@/lib/server/plans";
 import { checkUpload, UploadRefused } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
 import { assertLaunchConfig, GateClosed } from "@/lib/server/flags";
@@ -411,6 +412,33 @@ describe("Mutual NDA fill", () => {
     } finally {
       drawn.mockRestore();
     }
+  });
+});
+
+describe("plan-limit messages", () => {
+  const on = () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "http://127.0.0.1:3917");
+  };
+  const owner = { role: "owner", demo: false } as const;
+
+  it("offer 'move to Pro' only to someone who can take that path: payments on, the workspace's owner, not the sample", () => {
+    // Payments off: the fix alone.
+    expect(planLimit(owner, "documents")).toMatchObject({ message: "The Free plan holds 10 active documents.", fix: { href: "/app/documents", label: "Choose one to archive" } });
+    expect(planLimit(owner, "passports").message).toBe("The Free plan has 1 passport link open at a time. Turn one off to make room.");
+    on();
+    expect(planLimit(owner, "documents").message).toBe("The Free plan holds 10 active documents. Or move to Pro for no limit.");
+    expect(planLimit(owner, "passports").message).toBe("The Free plan has 1 passport link open at a time. Turn one off, or move to Pro for more.");
+    // An admin or member can't change the plan (canPay), so they aren't offered it; nor is the sample workspace.
+    expect(planLimit({ role: "admin", demo: false }, "documents").message).toBe("The Free plan holds 10 active documents.");
+    expect(planLimit({ role: "member", demo: false }, "passports").message).toBe("The Free plan has 1 passport link open at a time. Turn one off to make room.");
+    expect(planLimit({ role: "owner", demo: true }, "documents").message).toBe("The Free plan holds 10 active documents.");
+    // Signing is a fact about the plan, not an offer: the same words either way.
+    expect(planLimit(owner, "esign").message).toBe("Asking for signatures is part of Pro.");
+    expect(planLimit(owner, "esign").fix).toBeNull();
+    vi.unstubAllEnvs();
   });
 });
 
