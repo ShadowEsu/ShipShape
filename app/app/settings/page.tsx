@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { PLANS } from "@/lib/plans";
 import { deletionPreview, EXPORT_MAX_BYTES } from "@/lib/server/account";
 import { billingView } from "@/lib/server/billing";
+import { signInMethod } from "@/lib/server/cognito";
 import { contactEmail } from "@/lib/server/flags";
 import { RECENT_AUTH_SECONDS, requireWorkspace } from "@/lib/server/session";
 import { signOut } from "../../signin/actions";
@@ -40,7 +41,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const ctx = await requireWorkspace();
   const { error, billing } = await searchParams;
   const exportError = exportProblem(error, contactEmail());
-  const [view, goes] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId)]);
+  const [view, goes, method] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId), ctx.demo ? "local" : signInMethod(ctx.userId)]);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -146,6 +147,29 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </form>
         )}
       </section>
+
+      {/* The sign-in pool requires an authenticator app for everyone (infra/signin.yaml), so this is a statement, not a switch.
+          A missing identity row only happens for local sign-ins (development); in production it shows nothing (Security INFO-R35b). */}
+      {!ctx.demo && (method === "cognito" || process.env.NODE_ENV !== "production") && (
+        <section className="card space-y-2">
+          <h2 className="font-semibold">Two-step sign-in</h2>
+          {method === "cognito" ? (
+            <>
+              <p className="text-sm">
+                <span className="font-medium text-ok">On</span> · authenticator app
+              </p>
+              <p className="text-sm text-ink-2">
+                Every ShipShape account signs in with a password and a 6-digit code from an authenticator app. There&apos;s no way to
+                turn it off. Before you change phones, move the app&apos;s codes to the new one.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-ink-2">
+              This is a local sign-in without a second step; accounts on ShipShape itself sign in with a password and an authenticator app.
+            </p>
+          )}
+        </section>
+      )}
 
       {/* The sidebar's Sign out is desktop-only; on a phone this is the way out. */}
       <section className="card space-y-4">

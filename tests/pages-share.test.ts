@@ -370,6 +370,18 @@ describe("Settings", () => {
     expect(RECENT_AUTH_SECONDS / 60).toBe(10);
   });
 
+  it("shows two-step sign-in as On with an authenticator app for an account that signs in through Cognito; a local account is told it has no second step", async () => {
+    const ctx = await signIn("settings-mfa@example.com");
+    const local = textOf(await settings());
+    expect(local).toContain("Two-step sign-in This is a local sign-in without a second step; accounts on ShipShape itself sign in with a password and an authenticator app.");
+    expect(local).not.toContain("On · authenticator app");
+
+    await db.root((tx) => tx.query("insert into app.identities (provider, subject, user_id) values ('cognito', gen_random_uuid()::text, $1)", [ctx.userId]));
+    const cognito = textOf(await settings());
+    expect(cognito).toContain("Two-step sign-in On · authenticator app Every ShipShape account signs in with a password and a 6-digit code from an authenticator app. There's no way to turn it off.");
+    expect(cognito).not.toContain("Turn on");
+  });
+
   it("back from checkout once Stripe confirmed: says it's done and what changed, nothing else", async () => {
     const ctx = await signIn("settings-pro@example.com");
     await bill(ctx, "active");
