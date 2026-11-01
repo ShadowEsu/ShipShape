@@ -6,7 +6,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString } from
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { signProblem } from "@/app/s/[id]/messages";
 import { sha256Hex } from "@/lib/server/crypto";
-import { asService, asUser } from "@/lib/server/db";
+import { asAnon, asService, asUser } from "@/lib/server/db";
 import { downloadUrl, getDocument, insertDocument, listDocuments, setArchived, uploadVersion } from "@/lib/server/documents";
 import { completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
 import { UserError } from "@/lib/server/errors";
@@ -240,6 +240,18 @@ describe("signing", () => {
     expect(await previews()).toBe(1);
   });
 
+  it("writes no download row and hands out no file for a withdrawn request (0038, Security H1)", async () => {
+    const doc = await nda(a);
+    const { id, token } = await request(a);
+    const downloads = async () => (await getDocument(a, doc.id))!.audit.filter((e) => e.action === "esign.file_downloaded").length;
+    const before = await downloads();
+    await revokeSignatureRequest(a, id);
+    const [row] = await asAnon((tx) => tx.query<{ ok: boolean }>("select app.esign_file_opened($1, $2) as ok", [id, sha256Hex(token)]));
+    expect(row.ok).toBe(false);
+    expect(await signingFileUrl(id, token)).toBeNull();
+    expect(await downloads()).toBe(before);
+  });
+
   it("never signs a file changed after it was sent, nor sends an upload changed in storage (Security R3-4, R3-3)", async () => {
     const c = await sampleWorkspace();
     const { id, token } = await request(c);
@@ -356,7 +368,9 @@ describe("signing", () => {
     expect(req.signer_visitor).toMatch(/^[0-9a-f]{16}$/);
 
     const actions = after.audit.map((x) => x.action).reverse();
-    expect(actions.slice(-5)).toEqual(["esign.requested", "esign.opened", "esign.code_sent", "document.signed_version_added", "esign.signed"]);
+    // The signer's download of the file to sign is in the document's History (0038), as an outsider's row.
+    expect(actions.slice(-6)).toEqual(["esign.requested", "esign.opened", "esign.file_downloaded", "esign.code_sent", "document.signed_version_added", "esign.signed"]);
+    expect(after.audit.find((x) => x.action === "esign.file_downloaded")).toMatchObject({ actor_is_me: false, about_name: "Jordan Lee" });
     const [chain] = await asUser(a.userId, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [a.orgId]));
     expect(chain.broken).toBeNull();
     // The signed copy's fingerprint is in the hash-chained history itself (Security F2).
@@ -375,6 +389,7 @@ describe("signing", () => {
     const file = verifyFileParams(new URL((await signingFileUrl(id, token))!, "http://x").searchParams);
     expect(file?.objectPath).toBe(`${a.orgId}/${doc.id}/v${signed.version}.pdf`);
     expect(file?.inline).toBe(false);
+    expect((await getDocument(a, doc.id))!.audit[0]).toMatchObject({ action: "esign.signed_copy_downloaded", about_name: "Jordan Lee" });
   });
 
   it("keeps the sender's name as it was when the request was sent: the signing page, the code and the certificate (Security RN-1)", async () => {

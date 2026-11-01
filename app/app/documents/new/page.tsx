@@ -38,8 +38,8 @@ export default async function NewDocumentPage() {
         </Notice>
       )}
       <p className="text-sm text-ink-2">
-        Files are stored privately for your workspace. Links to them last five minutes. Your team&apos;s views and downloads go into each
-        document&apos;s history; passport downloads show on that link&apos;s page. We never use your documents to train AI.
+        Files are stored privately for your workspace. Links to them last five minutes, and every view and download goes into the
+        document&apos;s history. We never use your documents to train AI.
       </p>
     </div>
   );

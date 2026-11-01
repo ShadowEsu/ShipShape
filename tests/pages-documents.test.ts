@@ -14,6 +14,7 @@ import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
 import { DOCUMENTS_PAGE_SIZE, fillTemplate, uploadDocument } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
+import { createPassport, passportFileUrl } from "@/lib/server/passport";
 import { factsForFill, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
@@ -498,8 +499,17 @@ describe("a document's page", () => {
     const ctx = await signIn("doc-added@example.com");
     const id = await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
     expect(textOf(await documentPage(id, { added: "1" }))).toContain(
-      "Added to your documents as version 1. Your team's views and downloads go into its history. Next: add its expiry date under Details, so Home can warn you before it lapses.",
+      "Added to your documents as version 1. Every view and download goes into its history. Next: add its expiry date under Details, so Home can warn you before it lapses.",
     );
+  });
+
+  it("lists a passport visitor's download in History, labelled as such (wave 8 #3)", async () => {
+    const ctx = await signIn("doc-history-link@example.com");
+    const id = await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
+    const { id: linkId, token } = await createPassport(ctx, { label: "Northwind", days: 7, documentIds: [id] });
+    expect(await passportFileUrl(linkId, token, id, "198.51.100.9")).toBeTruthy();
+    const history = /<ol[^>]*>([\s\S]*?)<\/ol>/.exec((await documentPage(id, {})).split("History")[1] ?? "")?.[1] ?? "";
+    expect(textOf(history)).toContain("Downloaded through a passport link: Northwind");
   });
 
   it("at the plan's limit says why the document stays archived and links to the one fix", async () => {

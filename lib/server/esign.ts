@@ -220,13 +220,19 @@ export async function openSigning(id: string, token: string): Promise<SigningVie
   };
 }
 
-/** A 5-minute download of the file to sign, exactly the bytes that will be signed (or, once signed, the signed copy). */
+/**
+ * A 5-minute download of the file to sign, exactly the bytes that will be signed (or, once signed, the signed copy).
+ * Each download is a History row on the document (0038), as the workspace's own downloads are.
+ */
 export async function signingFileUrl(id: string, token: string): Promise<string | null> {
   const r = await open(id, token, false);
   if (!r) return null;
-  if (r.status === "signed") return blobStore().signedUrl(r.storage_path, { filename: downloadName(r.title, r.version, r.mime), inline: false });
-  if (!r.to_sign_path) return null;
-  return blobStore().signedUrl(r.to_sign_path, { filename: downloadName(r.title, r.version, "application/pdf"), inline: false });
+  const path = r.status === "signed" ? r.storage_path : r.to_sign_path;
+  if (!path) return null;
+  // Withdrawn or expired between open() and here: no History row was written, so no file either (Security H1).
+  const [row] = await asAnon((tx) => tx.query<{ ok: boolean }>("select app.esign_file_opened($1, $2) as ok", [id, sha256Hex(token)]));
+  if (!row?.ok) return null;
+  return blobStore().signedUrl(path, { filename: downloadName(r.title, r.version, r.status === "signed" ? r.mime : "application/pdf"), inline: false });
 }
 
 const codeHash = (id: string, code: string) => sha256Hex(keyedHash(code, `esign-code:${id}`));

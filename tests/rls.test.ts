@@ -482,10 +482,12 @@ describe("security review E2-E7", () => {
 
   it("a member can't write or forge history rows directly, in any workspace (Security F2-1)", async () => {
     const forge = (org: string) =>
-      asUser(a, (tx) => tx.query("select app.audit_write($1, $2, 'esign.signed', $1, $3)", [org, a, "c".repeat(64)]));
+      asUser(a, (tx) => tx.query("select app.audit_write($1, $2, 'esign.signed', $1, $3, null)", [org, a, "c".repeat(64)]));
     await expectDenied(forge(orgB));
     await expectDenied(forge(orgA));
-    await expectDenied(asUser(a, (tx) => tx.query("select app.audit_hash($1, 1, now(), $2, 'x.y', null, null, null)", [orgA, a])));
+    await expectDenied(asUser(a, (tx) => tx.query("select app.audit_hash($1, 1, now(), $2, 'x.y', null, null, null, null)", [orgA, a])));
+    // Nor with the `about` argument (0038).
+    await expectDenied(asUser(a, (tx) => tx.query("select app.audit_write($1, null, 'esign.signed', $1, null, $1)", [orgA])));
   });
 });
 

@@ -39,6 +39,25 @@ const ACTIONS: Record<string, string> = {
   "esign.review_downloaded": "File sent for signing downloaded",
 };
 
+/**
+ * An outsider's row says who or which when the row knows it (`about_name`, 0038): the signer's name, the passport
+ * link's label. Without it (the link or request is gone), the plain label.
+ */
+function historyLabel(action: string, about: string | null): string {
+  switch (action) {
+    case "document.link_viewed":
+      return about ? `Viewed through a passport link: ${about}` : "Viewed through a passport link";
+    case "document.link_downloaded":
+      return about ? `Downloaded through a passport link: ${about}` : "Downloaded through a passport link";
+    case "esign.file_downloaded":
+      return `${about ?? "Signer"} downloaded the file to sign`;
+    case "esign.signed_copy_downloaded":
+      return `${about ?? "Signer"} downloaded the signed copy`;
+    default:
+      return ACTIONS[action] ?? action;
+  }
+}
+
 /** What went wrong in a form posted from this page (see backToDocument in ../actions.ts), and the one thing that fixes it. */
 const ERRORS: Record<string, { text: string; fix?: { href: string; label: string } }> = {
   limit: {
@@ -145,7 +164,7 @@ export default async function DocumentPage({
       {added && !made && (
         <div role="status">
           <Notice tone="ok">
-            Added to your documents as version 1. Your team&apos;s views and downloads go into its history.{" "}
+            Added to your documents as version 1. Every view and download goes into its history.{" "}
             {doc.expires_on
               ? `Next: it shows under Needs attention on Home 30 days before it expires on ${fmtDay(doc.expires_on)}.`
               : "Next: add its expiry date under Details, so Home can warn you before it lapses."}
@@ -302,7 +321,7 @@ export default async function DocumentPage({
             <ol className="space-y-2 text-sm">
               {audit.map((a) => (
                 <li key={a.seq} className="flex justify-between gap-3">
-                  <span>{ACTIONS[a.action] ?? a.action}</span>
+                  <span>{historyLabel(a.action, a.about_name)}</span>
                   <time className="shrink-0 text-xs text-ink-3" dateTime={a.at}>
                     {fmtDateTime(a.at)}
                   </time>
