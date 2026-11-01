@@ -186,7 +186,7 @@ export function FillForm({
       {/* Every step stays in the form (hidden) so the next check and the approval post every value. */}
       <div hidden={reviewing} className="space-y-6">
         {steps.length > 1 && !reviewing && (
-          <h2 ref={stepRef} tabIndex={-1} className="font-semibold focus:outline-2 focus:outline-offset-2 focus:outline-accent">
+          <h2 ref={stepRef} tabIndex={-1} className="-mx-1 rounded px-1 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
             <span className="block font-mono text-xs font-medium tracking-widest text-ink-3 uppercase">
               Step {current + 1} of {steps.length}
             </span>
@@ -218,7 +218,7 @@ export function FillForm({
       {reviewing ? (
         <>
           <section aria-labelledby="review-title" className="card space-y-3">
-            <h2 id="review-title" ref={reviewRef} tabIndex={-1} className="font-semibold focus:outline-2 focus:outline-offset-2 focus:outline-accent">
+            <h2 id="review-title" ref={reviewRef} tabIndex={-1} className="-mx-1 rounded px-1 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
               Check your {template.short}
             </h2>
             <p className="text-sm text-ink-2">Every value that goes on the form, where it came from, and a way to change it.</p>

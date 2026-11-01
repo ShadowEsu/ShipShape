@@ -12,7 +12,8 @@ import { SendButton } from "./send-button";
 
 export const metadata: Metadata = { title: "Send documents", robots: { index: false, follow: false } };
 
-type Problem = Exclude<ReceiveOutcome, "sent">;
+/** What a post can come back with, besides a file sent: receiveFile's problems, or the upload route's rate limit. */
+type Problem = Exclude<ReceiveOutcome, "sent"> | "busy";
 
 /** What went wrong and what to do; `org` is the workspace that asked for the documents. */
 const PROBLEMS: Record<Problem, (org: string) => string> = {
@@ -25,6 +26,7 @@ const PROBLEMS: Record<Problem, (org: string) => string> = {
   type: () => "That file isn't a PDF, PNG or JPEG. Save it as one of those, then send it again.",
   link_full: (org) => `This link has taken all the files it can (25), so nothing was sent. Ask ${org} for a new link.`,
   workspace_full: (org) => `${org} has no room left for files, so nothing was sent. Let them know.`,
+  busy: () => "Too many tries from this network, so nothing was sent. Wait up to an hour, then send it again.",
 };
 
 /** Problems with one field of a document's form: the message goes under that field. */
