@@ -26,6 +26,8 @@ export interface TemplateInfo {
   fields: FieldDef[];
   /** What signing or finishing this document means, shown before the acknowledgment. */
   finishNote: string;
+  /** The form in steps (each a few sections), ending on the check-your-answers page. Templates without steps are one page. */
+  steps?: { title: string; sections: string[] }[];
 }
 
 export interface Facts {

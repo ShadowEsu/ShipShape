@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 import { flushSync } from "react-dom";
-import { isVisible as visible } from "@/lib/templates/catalog";
+import { isVisible as visible, stepOf, stepsOf } from "@/lib/templates/catalog";
 import type { FieldDef, TemplateInfo } from "@/lib/templates/types";
 import { fill, type FillState } from "../actions";
 
@@ -16,6 +16,7 @@ export interface FactChip {
 /** A value as the review shows it: option labels, Yes/No, and never more than the last 4 digits of an SSN. */
 function shownValue(f: FieldDef, value: string): string {
   if (f.kind === "radio") return f.options?.find((o) => o.value === value)?.label ?? value;
+  if (f.key === "sign") return value === "on" ? "Yes" : "Not signed. The PDF's signature line stays empty.";
   if (f.kind === "checkbox") return value === "on" ? "Yes" : "No";
   if (f.key === "ssn") return value ? `•••-••-${value.replace(/[\s-]/g, "").slice(-4)}` : "";
   return value;
@@ -103,16 +104,20 @@ export function FillForm({
   const [left, setLeft] = useState<FillState | null>(null);
   // Fields changed since this result came back: their error clears at once (it's being corrected) until the next check.
   const [fixed, setFixed] = useState<{ of: FillState; keys: string[] }>({ of: state, keys: [] });
+  // The step the person moved to on their own (Back, a summary link, Change) since this result; the result's step otherwise.
+  const [moved, setMoved] = useState<{ of: FillState; at: number } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
+  const steps = stepsOf(template);
   const reviewing = state.review === true && left !== state;
+  const current = Math.min(moved?.of === state ? moved.at : (state.at ?? 0), steps.length - 1);
+  const last = current === steps.length - 1;
   const fixedKeys = fixed.of === state ? fixed.keys : [];
   const errors = Object.fromEntries(Object.entries(state.errors ?? {}).filter(([k]) => !fixedKeys.includes(k)));
   const set = (k: string, v: string) => {
     setValues((old) => ({ ...old, [k]: v }));
     setFixed((old) => (old.of === state ? { of: state, keys: old.keys.includes(k) ? old.keys : [...old.keys, k] } : { of: state, keys: [k] }));
   };
-  const sections = [...new Set(template.fields.map((f) => f.section))];
   const shownFields = template.fields.filter((f) => visible(f, values));
   const problems = shownFields.filter((f) => errors[f.key]).map((f) => ({ key: f.key, label: f.label, message: errors[f.key] }));
 
@@ -123,42 +128,62 @@ export function FillForm({
     else if (state.errors._ack) focusField(formRef.current, "_ack");
   }, [state]);
 
+  /** Shows the step a field is on, then focuses the field. */
+  function goTo(key: string) {
+    flushSync(() => setMoved({ of: state, at: stepOf(template, key) }));
+    focusField(formRef.current, key);
+  }
+
   function change(key: string) {
     // Show the fields before moving focus into them; changed values need approving afresh.
     flushSync(() => {
       setLeft(state);
       setAck(false);
     });
-    focusField(formRef.current, key);
+    goTo(key);
   }
 
   return (
     <form ref={formRef} action={action} className="space-y-6" noValidate>
       <input type="hidden" name="template" value={template.id} />
+      <input type="hidden" name="at" value={current} />
       {state.error && (
         <p role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad">
           {state.error}
         </p>
       )}
-      {!reviewing && problems.length > 0 && <ErrorSummary ref={summaryRef} problems={problems} onPick={(key) => focusField(formRef.current, key)} />}
+      {!reviewing && problems.length > 0 && <ErrorSummary ref={summaryRef} problems={problems} onPick={goTo} />}
 
-      {/* While reviewing, the fields stay in the form (hidden) so approving posts the reviewed values. */}
+      {/* Every step stays in the form (hidden) so the next check and the approval post every value. */}
       <div hidden={reviewing} className="space-y-6">
-        {sections.map((section) => {
-          const fields = shownFields.filter((f) => f.section === section);
-          if (!fields.length) return null;
-          return (
-            <fieldset key={section} className="card">
-              {/* A floated legend sits inside the card instead of on its border; fields clear it. */}
-              <legend className="float-left mb-4 w-full font-semibold">{section}</legend>
-              <div className="clear-both space-y-4">
-                {fields.map((f) => (
-                  <Field key={f.key} f={f} value={values[f.key] ?? ""} onChange={(v) => set(f.key, v)} error={errors[f.key]} chip={f.fact ? chips[f.key] : undefined} initial={initial[f.key] ?? ""} />
-                ))}
-              </div>
-            </fieldset>
-          );
-        })}
+        {steps.length > 1 && !reviewing && (
+          <h2 className="font-semibold">
+            <span className="block font-mono text-xs font-medium tracking-widest text-ink-3 uppercase">
+              Step {current + 1} of {steps.length}
+            </span>
+            {steps[current].title}
+          </h2>
+        )}
+        {steps.map((step, i) => (
+          <div key={step.title} hidden={i !== current} className="space-y-6">
+            {step.sections.map((section) => {
+              const fields = shownFields.filter((f) => f.section === section);
+              if (!fields.length) return null;
+              return (
+                <fieldset key={section} className="card">
+                  {/* A floated legend sits inside the card instead of on its border; fields clear it. */}
+                  {/* A step with one section already says its name in the step heading: the legend stays for screen readers only. */}
+                  <legend className={step.sections.length === 1 && steps.length > 1 ? "sr-only" : "float-left mb-4 w-full font-semibold"}>{section}</legend>
+                  <div className="clear-both space-y-4">
+                    {fields.map((f) => (
+                      <Field key={f.key} f={f} value={values[f.key] ?? ""} onChange={(v) => set(f.key, v)} error={errors[f.key]} chip={f.fact ? chips[f.key] : undefined} initial={initial[f.key] ?? ""} />
+                    ))}
+                  </div>
+                </fieldset>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       {reviewing ? (
@@ -172,14 +197,15 @@ export function FillForm({
               {shownFields.map((f) => {
                 const value = values[f.key] ?? "";
                 const source = sourceOf(f, value, initial[f.key] ?? "", chips[f.key]);
+                // Under 640 px: label and Change on one line, then the value, then its source, each full width.
                 return (
-                  <div key={f.key} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-line py-2">
-                    <dt className="text-ink-2">{f.label}</dt>
-                    <dd className="min-w-0 flex-1 text-right">
+                  <div key={f.key} className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-1 border-b border-line py-2 sm:grid-cols-[auto_1fr_auto]">
+                    <dt className="order-1 text-ink-2">{f.label}</dt>
+                    <dd className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1 sm:text-right">
                       <span className="block break-words whitespace-pre-line">{shownValue(f, value) || "Left blank"}</span>
                       {source && <span className="block font-mono text-xs text-ink-3">{source}</span>}
                     </dd>
-                    <dd className="shrink-0">
+                    <dd className="order-2 justify-self-end sm:order-3">
                       <button type="button" onClick={() => change(f.key)} className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
                         Change<span className="sr-only"> {f.label}</span>
                       </button>
@@ -214,18 +240,53 @@ export function FillForm({
             <button className="btn" disabled={pending}>
               {pending ? "Making the PDF…" : `Approve and make the ${template.short}`}
             </button>
+            {pending && (
+              <p role="status" className="text-sm text-ink-2">
+                Making your {template.short} from the official form…
+              </p>
+            )}
             <p className="text-sm text-ink-3">Nothing is saved until you approve.</p>
           </section>
         </>
-      ) : (
+      ) : left ? (
+        <section className="card space-y-3 border-ink">
+          <p className="text-sm text-ink-2">Your other answers are kept. Changed values need approving afresh.</p>
+          <button className="btn" name="step" value="review" disabled={pending}>
+            {pending ? "Checking…" : "Return to the check"}
+          </button>
+        </section>
+      ) : last ? (
         <section className="card space-y-3 border-ink">
           <p className="text-sm text-ink-2">Next, you check every value and where it came from. Nothing is saved until you approve.</p>
-          <button className="btn" name="step" value="review" disabled={pending}>
-            {pending ? "Checking…" : `Review the ${template.short}`}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn" name="step" value="review" disabled={pending}>
+              {pending ? "Checking…" : `Review the ${template.short}`}
+            </button>
+            {steps.length > 1 && <BackButton onClick={() => setMoved({ of: state, at: current - 1 })} />}
+          </div>
+        </section>
+      ) : (
+        <section className="card space-y-3 border-ink">
+          <p className="text-sm text-ink-2">
+            Next: {steps[current + 1].title.toLowerCase()}. Nothing is saved until you approve at the end.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn" name="step" value="next" disabled={pending}>
+              {pending ? "Checking…" : "Continue"}
+            </button>
+            {current > 0 && <BackButton onClick={() => setMoved({ of: state, at: current - 1 })} />}
+          </div>
         </section>
       )}
     </form>
+  );
+}
+
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="btn-ghost" onClick={onClick}>
+      Back
+    </button>
   );
 }
 
