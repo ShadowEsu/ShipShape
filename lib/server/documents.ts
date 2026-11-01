@@ -351,13 +351,16 @@ export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Ar
   const check = checkUpload(bytes);
   if (!check.ok) throw new UploadRefused(check.error);
   return asUser(ctx.userId, async (tx) => {
+    // The request rows first, then the document: the order esign_complete locks them in, so an owner
+    // and a signer finishing at the same moment take turns instead of deadlocking (Security W8a).
+    const withdrawn = await withdrawOpenRequests(tx, ctx, documentId);
     // Locks the document (no key update: it doesn't block readers or the version rows' key-share
     // locks) so two uploads at once get consecutive numbers instead of the same one.
     const [doc] = await tx.query("select 1 from app.documents where id = $1 and org_id = $2 for no key update", [documentId, ctx.orgId]);
     if (!doc) throw new UserError(DOCUMENT_GONE);
     const [row] = await tx.query<{ next: number }>("select coalesce(max(v.version), 0) + 1 as next from app.document_versions v where v.document_id = $1", [documentId]);
     await insertVersion(tx, ctx, documentId, row.next, { bytes, mime: check.mime }, "upload", null);
-    return { version: row.next, withdrawn: await withdrawOpenRequests(tx, ctx, documentId) };
+    return { version: row.next, withdrawn };
   });
 }
 
@@ -435,10 +438,10 @@ export async function updateDocument(ctx: Ctx, id: string, meta: unknown) {
 export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
   const rows = await asUser(ctx.userId, async (tx) => {
     if (!archived) await assertWithinPlan(tx, ctx, "documents");
-    const rows = await tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]);
-    // An archived document isn't shared: its open signing links stop working too (the page hides Withdraw while it's archived).
-    if (rows.length && archived) await withdrawOpenRequests(tx, ctx, id);
-    return rows;
+    // An archived document isn't shared: its open signing links stop working too (the page hides Withdraw while
+    // it's archived). The request rows go first, in esign_complete's lock order (Security W8a).
+    if (archived) await withdrawOpenRequests(tx, ctx, id);
+    return tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]);
   });
   if (!rows.length) throw new UserError(DOCUMENT_GONE);
 }
