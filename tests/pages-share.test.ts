@@ -473,6 +473,7 @@ describe("Settings", () => {
     );
     expect(textOf(off)).toContain("Payments are switched off right now, so the plan can't change.");
     // Payments on: the Manage billing button is below, so the notice may point at it.
+    vi.stubEnv("BILLING_ENABLED", "1");
     vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
     vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");

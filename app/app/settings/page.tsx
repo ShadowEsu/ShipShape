@@ -134,7 +134,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <div className="space-y-3">
               {view.subscribed ? <ManageBillingForm /> : <UpgradeForm price={PLANS.pro.price} />}
               {!view.subscribed && view.customer && <ManageBillingForm />}
-              <p className="text-xs text-ink-3">Test mode: no real money moves. Pay with card 4242 4242 4242 4242, any future date and any CVC.</p>
+              {!view.live && <p className="text-xs text-ink-3">Test mode: no real money moves. Pay with card 4242 4242 4242 4242, any future date and any CVC.</p>}
             </div>
           ))}
       </section>

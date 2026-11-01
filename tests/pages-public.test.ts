@@ -576,7 +576,7 @@ describe("signing in (/signin)", () => {
     expect(textOf(await page("ein"))).toContain("Sign in again to continue in Business facts.");
     // Not on the list: the usual line, and nothing of the value is echoed anywhere.
     const stray = await page("https://evil.example/x");
-    expect(textOf(stray)).toContain("Sign in, or create an account with your email.");
+    expect(textOf(stray)).toContain("Accounts for real documents open after our security review.");
     expect(stray).not.toContain("evil.example");
     expect(stray).not.toContain('name="next"');
     // The email sign-in lands on the section, scrolled to it; a value off the list lands on Home.
