@@ -197,6 +197,9 @@ describe("home", () => {
     expect(text.split("Renew each one with the issuer, then add the new copy and its new date, so your passport links share the current one.")).toHaveLength(2);
     expect(text).not.toContain("Renew it with the issuer");
     expect(text).not.toContain("Nothing has expired");
+    // Only the lapsed group is there, so only its label.
+    expect(text).toContain("Already lapsed");
+    expect(text).not.toContain("Coming up");
     const attention = html.slice(html.indexOf("Needs attention"));
     expect(actionsOf(attention).filter((a) => a.href?.startsWith(`/app/documents/${id}`))).toEqual([
       { tag: "a", label: "Add the renewed copy", href: `/app/documents/${id}#version-file` },
@@ -241,14 +244,19 @@ describe("home", () => {
     await seedDated(ctx, [...Array.from({ length: 21 }, (_, i): [string, number] => [`Old COI ${String(i + 1).padStart(2, "0")}`, -400 - i]), ["Lapsed yesterday", -1], ["Expiring soon", 3]]);
     const text = textOf(await homePage());
     const at = (title: string) => text.indexOf(title);
-    expect(at("Expiring soon")).toBeGreaterThan(-1);
-    expect(at("Lapsed yesterday")).toBeGreaterThan(at("Expiring soon"));
+    // Two labelled groups, in this order: the one that can still be renewed, then the lapsed ones, most recent first.
+    expect(at("Coming up")).toBeGreaterThan(-1);
+    expect(at("Expiring soon")).toBeGreaterThan(at("Coming up"));
+    expect(at("Already lapsed")).toBeGreaterThan(at("Expiring soon"));
+    expect(at("Lapsed yesterday")).toBeGreaterThan(at("Already lapsed"));
     expect(at("Old COI 01")).toBeGreaterThan(at("Lapsed yesterday"));
     expect(at("Old COI 21")).toBe(-1);
-    expect(text).toContain("The 20 most urgent are listed; 3 more need attention.");
+    // Every hidden one has lapsed, and the line says so.
+    expect(text).toContain("The 20 most urgent are listed; 3 more have lapsed.");
+    expect(text).not.toContain("more need attention");
   });
 
-  it("with up to 20 lapsing documents lists them all and says nothing about more; at 21 it says '1 more needs attention'", async () => {
+  it("with up to 20 lapsing documents lists them all and says nothing about more; past 20 the line counts what's hidden and says whether it has all lapsed", async () => {
     const ctx = await signIn("home-twenty@example.com");
     await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeTwenty', 'active', 'pro')", [ctx.orgId]));
     await seedDated(ctx, Array.from({ length: 20 }, (_, i): [string, number] => [`Permit ${String(i + 1).padStart(2, "0")}`, i + 1]), "permit");
@@ -256,9 +264,17 @@ describe("home", () => {
     expect(text).toMatch(/0 of 20 documents current/);
     expect(text).toContain("Permit 01");
     expect(text).toContain("Permit 20");
-    expect(text).not.toContain("need attention");
+    expect(text).not.toContain("more need attention");
+    expect(text).not.toContain("more ha");
+    // One more, still renewable: hidden behind the 20 sooner ones.
     await seedDated(ctx, [["Permit 21", 21]], "permit");
     expect(textOf(await homePage())).toContain("The 20 most urgent are listed; 1 more needs attention.");
+    // A lapsed one joins the hidden: a mix, so the plain count.
+    await seedDated(ctx, [["Lapsed permit", -1]], "permit");
+    expect(textOf(await homePage())).toContain("The 20 most urgent are listed; 2 more need attention.");
+    // Only the lapsed one hidden: the line says so, in the singular.
+    await db.root((tx) => tx.query("delete from app.documents where org_id = $1 and title = 'Permit 21'", [ctx.orgId]));
+    expect(textOf(await homePage())).toContain("The 20 most urgent are listed; 1 more has lapsed.");
   });
 
   it("each row says how long is left in plain words: 'Expires today.', '1 day left.', 'N days left.'", async () => {
