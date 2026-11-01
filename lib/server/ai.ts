@@ -187,15 +187,26 @@ export interface RequestInput {
   consent: boolean;
 }
 
+/** A problem with one field of the request form; `field` says which, so the form shows the message there. */
+export class RequestInputError extends UserError {
+  readonly field: "text" | "consent";
+  constructor(field: "text" | "consent", message: string) {
+    super(message);
+    this.field = field;
+  }
+}
+
 /** "What are they asking for?": lists the documents a pasted request asks for and matches them to the vault. */
 export async function readRequest(ctx: Ctx, input: RequestInput, network: string): Promise<RequestItem[]> {
   if (!aiEnabled()) throw new GateClosed("Reading requests with AI is switched off right now.");
-  if (!input.consent) throw new UserError(`Tick the box to send this text to ${AI_RECIPIENT}.`);
   const text = input.text.trim();
-  if (text.length < 20) throw new UserError("Paste the request: the email or checklist that asks for your documents.");
-  if (text.length > AI_REQUEST_MAX_CHARS) throw new UserError(`That's longer than ${AI_REQUEST_MAX_CHARS} characters. Paste just the part that lists the documents.`);
+  if (text.length < 20) throw new RequestInputError("text", "Paste the request: the email or checklist that asks for your documents.");
+  if (text.length > AI_REQUEST_MAX_CHARS) {
+    throw new RequestInputError("text", `That's longer than ${AI_REQUEST_MAX_CHARS} characters. Paste just the part that lists the documents.`);
+  }
+  if (!input.consent) throw new RequestInputError("consent", `Tick the box to send this text to ${AI_RECIPIENT}.`);
   if ((await rateLimited("ai-user", ctx.userId, 10, 3600)) || (await rateLimited("ai-net", network, 30, 3600))) {
-    throw new UserError("That's a lot of requests in the last hour. Try again later.");
+    throw new UserError("That's as many requests as ShipShape reads in an hour. Nothing was sent; try again in an hour.");
   }
 
   const redacted = scrub(text);

@@ -19,14 +19,20 @@ export default async function NewDocumentPage() {
         </div>
       ) : (
         <Notice>
-          {ctx.demo
-            ? "This is a sample workspace, so it can't take real files. "
-            : "Uploading real documents opens after our security review. "}
-          You can still{" "}
-          <Link href="/app/make" className="underline">
-            make a document from a template
-          </Link>{" "}
-          with the sample business facts.
+          {ctx.demo ? (
+            <>
+              This is a sample workspace, so it can&apos;t take real files. You can still{" "}
+              <Link href="/app/make" className="underline">
+                make a document from a template
+              </Link>{" "}
+              with the sample business facts.
+            </>
+          ) : (
+            <>
+              Uploading real documents opens after our security review. Until then, the sample workspace shows how documents work here:
+              sign out, then choose &ldquo;Try the sample workspace&rdquo;.
+            </>
+          )}
         </Notice>
       )}
       <p className="text-sm text-ink-2">

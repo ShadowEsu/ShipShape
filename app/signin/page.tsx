@@ -6,15 +6,16 @@ import { SignInForm } from "./form";
 
 export const metadata: Metadata = { title: "Sign in", robots: { index: false } };
 
-// Fixed text per reason: nothing from the address is shown.
+// Fixed text per reason: nothing from the address is shown. Each says what happened, then what to do.
 const PROBLEMS: Record<SignInProblem, string> = {
-  expired: "That sign-in took too long or was already used. Start again.",
-  cancelled: "Sign-in was cancelled.",
-  failed: "We couldn't finish signing you in. Start again.",
-  terms: "Our Terms or Privacy Policy changed while you were signing in. Read them, tick the box again and start again.",
-  taken: "This email already belongs to another ShipShape account, so we didn't sign you in.",
-  deleting: "The account that used this email is still being deleted. Once that finishes, within two days, you can sign up with it again.",
-  busy: "Too many attempts. Try again in a little while.",
+  expired: "That sign-in took more than 10 minutes or was already used. Sign in again below.",
+  cancelled: "You cancelled signing in, so nothing changed. Sign in again below when you're ready.",
+  failed: "We couldn't finish signing you in. Sign in again below.",
+  terms: "Our Terms or Privacy Policy changed while you were signing in. Read them, tick the box again, and sign in again below.",
+  taken: "This email already belongs to another ShipShape account, so we didn't sign you in. Sign in with a different email address.",
+  deleting:
+    "The account that used this email is still being deleted. Once that finishes, within 2 days, you can sign up with this email again.",
+  busy: "Too many sign-in attempts from this network. Wait up to an hour, then try again.",
 };
 
 const problem = (error: string | undefined) => Object.entries(PROBLEMS).find(([reason]) => reason === error)?.[1];
@@ -29,7 +30,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
         <Logo />
         {deleted === "1" && (
           <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
-            Your account and its workspaces were deleted.
+            Your account and its workspaces are deleted. There&apos;s nothing else you need to do.
           </p>
         )}
         {signed_out === "everywhere" && (

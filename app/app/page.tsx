@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ValidityChip } from "@/components/app-ui";
 import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { realDocsEnabled } from "@/lib/server/flags";
 import { listPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
 import { DEFAULT_WORKSPACE_NAME, requireWorkspace } from "@/lib/server/session";
@@ -16,6 +17,7 @@ export default async function AppHome() {
   const [docs, profile, links] = await Promise.all([listDocuments(ctx), loadProfile(ctx), listPassports(ctx)]);
   const attention = docs.filter((d) => d.validity === "expired" || d.validity === "expiring");
   const current = docs.filter((d) => d.validity === "ok" || d.validity === "none").length;
+  const canUpload = !ctx.demo && realDocsEnabled();
 
   // First-run checklist, worked out from what's actually in the workspace.
   const setup = [
@@ -60,26 +62,41 @@ export default async function AppHome() {
           <div className="h-1.5 overflow-hidden rounded-full bg-canvas" aria-hidden="true">
             <div className="h-full rounded-full bg-accent" style={{ width: `${(done / setup.length) * 100}%` }} />
           </div>
+          <p className="text-sm text-ink-2">Once these are done, this page lists only what needs you: documents about to lapse, and what to do about each.</p>
           <ol className="space-y-2">
-            {setup.map((s) => (
-              <li key={s.href}>
-                <Link href={s.href} className={`flex items-start gap-3 rounded-xl px-2 py-1.5 hover:bg-canvas ${s === next ? "bg-canvas" : ""}`}>
-                  <span
-                    aria-hidden="true"
-                    className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full text-xs ${s.done ? "bg-ok text-white" : "border border-line"}`}
-                  >
-                    {s.done ? "✓" : ""}
+            {setup.map((s) =>
+              s === next ? (
+                // The next step is the one action on the card: its body says why, its button does it.
+                <li key={s.href} className="flex items-start gap-3 rounded-xl bg-canvas px-2 py-1.5">
+                  <span aria-hidden="true" className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border border-line text-xs" />
+                  <span className="space-y-2">
+                    <span className="block text-sm font-medium">
+                      {s.title}
+                      <span className="sr-only"> (next step)</span>
+                    </span>
+                    <span className="block text-sm text-ink-2">{s.body}</span>
+                    <Link href={s.href} className="btn">
+                      {s.title}
+                    </Link>
                   </span>
-                  <span>
+                </li>
+              ) : (
+                <li key={s.href}>
+                  <Link href={s.href} className="flex items-start gap-3 rounded-xl px-2 py-1.5 hover:bg-canvas">
+                    <span
+                      aria-hidden="true"
+                      className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full text-xs ${s.done ? "bg-ok text-white" : "border border-line"}`}
+                    >
+                      {s.done ? "✓" : ""}
+                    </span>
                     <span className={`block text-sm font-medium ${s.done ? "text-ink-3 line-through" : ""}`}>
                       {s.title}
                       <span className="sr-only">{s.done ? " (done)" : " (to do)"}</span>
                     </span>
-                    {s === next && <span className="block text-sm text-ink-2">{s.body}</span>}
-                  </span>
-                </Link>
-              </li>
-            ))}
+                  </Link>
+                </li>
+              ),
+            )}
           </ol>
         </section>
       )}
@@ -105,20 +122,38 @@ export default async function AppHome() {
           )}
         </div>
         {attention.length === 0 ? (
-          <p className="card text-sm text-ink-2">Nothing has expired or expires in the next 30 days.</p>
+          <p className="card text-sm text-ink-2">
+            {docs.length === 0
+              ? "Documents that have expired or expire in the next 30 days will be listed here, each with the one step that renews it."
+              : "Nothing has expired or expires in the next 30 days."}
+          </p>
         ) : (
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
-            {attention.map((d) => (
-              <li key={d.id}>
-                <Link href={`/app/documents/${d.id}`} className="flex flex-col gap-1 px-4 py-3 hover:bg-canvas sm:flex-row sm:items-center sm:justify-between">
-                  <span>
-                    <span className="font-medium">{d.title}</span>
-                    <span className="ml-2 text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
+            {attention.map((d) => {
+              const daysLeft = d.expires_on ? Math.round((Date.parse(d.expires_on) - Date.parse(ctx.today)) / 86_400_000) : 0;
+              return (
+                <li key={d.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <span className="min-w-0 space-y-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{d.title}</span>
+                      <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
+                      <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                    </span>
+                    {/* Rule 6: one line on what it means, one action that fixes it. */}
+                    <span className="block text-sm text-ink-2">
+                      {d.validity === "expired" ? "It has lapsed." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`} Renew it with the issuer, then{" "}
+                      {canUpload ? "add the new copy so your passport links share the current one." : "update its dates here."}
+                    </span>
                   </span>
-                  <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
-                </Link>
-              </li>
-            ))}
+                  <Link
+                    href={canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
+                    className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline"
+                  >
+                    {canUpload ? "Add the renewed copy" : "Update its dates"}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

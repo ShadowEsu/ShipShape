@@ -20,10 +20,15 @@ export default async function FactsPage() {
       <p className="text-ink-2">
         Confirm these once. ShipShape fills them into your forms, shows where each value came from, and asks “still true?” when a
         fact is more than a year old.
-        {confirmed && <> Last confirmed {new Date(confirmed).toLocaleDateString("en-US", { dateStyle: "medium" })}.</>}
+        {confirmed ? (
+          <> Last confirmed {new Date(confirmed).toLocaleDateString("en-US", { dateStyle: "medium" })}.</>
+        ) : (
+          !readOnly && <> Nothing is confirmed yet: fill in what you know, then choose Save and confirm. Your W-9 and NDA fill from these.</>
+        )}
       </p>
       {ctx.demo && <Notice>These are the sample business&apos;s facts. Sample workspaces can&apos;t be edited, so nobody types real details here.</Notice>}
       {!ctx.demo && readOnly && ctx.role !== "member" && <Notice>Editing real business facts opens after our security review.</Notice>}
+      {!ctx.demo && ctx.role === "member" && <Notice tone="info">Only owners and admins of this workspace can change its business facts.</Notice>}
       <section className="card">
         <FactsForm values={profile.values} readOnly={readOnly} />
       </section>

@@ -47,7 +47,7 @@ const text = (max: number) =>
   z
     .string()
     .trim()
-    .max(max)
+    .max(max, `Shorten this to ${max} characters or fewer.`)
     .refine(isPrintable, "Use letters, numbers and common punctuation (the PDF fonts can't print some characters).");
 
 // Every profile text field is validated the same way.
@@ -56,7 +56,7 @@ for (const f of PROFILE_FIELDS) textShape[f.key as Exclude<ProfileKey, "entity_t
 
 export const ProfileInput = z.object({
   ...textShape,
-  entity_type: z.union([z.literal(""), z.enum(Object.keys(ENTITY_TYPES) as [EntityType, ...EntityType[]])]),
+  entity_type: z.union([z.literal(""), z.enum(Object.keys(ENTITY_TYPES) as [EntityType, ...EntityType[]])], "Choose a business type from the list."),
 });
 
 /** Saves the profile and marks every saved fact as confirmed now, by this person. */
@@ -108,7 +108,7 @@ export const EinInput = z
   .string()
   .trim()
   .transform((s) => s.replace(/[\s-]/g, ""))
-  .refine((s) => /^[0-9]{9}$/.test(s), "An EIN has 9 digits, like 12-3456789.");
+  .refine((s) => /^[0-9]{9}$/.test(s), "Enter the EIN as 9 digits, like 12-3456789.");
 
 export async function saveEin(ctx: Ctx, raw: string) {
   assertRealData(ctx);

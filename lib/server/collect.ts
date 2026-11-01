@@ -40,7 +40,7 @@ const NewVendor = z.object({
   email: z
     .string()
     .trim()
-    .pipe(z.union([z.literal(""), z.email("That email address doesn't look right.").max(254)]))
+    .pipe(z.union([z.literal(""), z.email("That email address doesn't look right. Check it, or leave the field empty.").max(254)]))
     .optional()
     .transform((s) => s || null),
   requested: z
@@ -212,7 +212,7 @@ export async function createVendorLink(ctx: Ctx, input: unknown): Promise<{ id: 
   const { token, hash } = newToken();
   const id = await asUser(ctx.userId, async (tx) => {
     const [active] = await tx.query("select 1 from app.vendors where id = $1 and org_id = $2 and status = 'active'", [p.vendorId, ctx.orgId]);
-    if (!active) throw new UserError("Vendor not found.");
+    if (!active) throw new UserError("This vendor is archived, so it can't get an upload link. Restore it first.");
     return insertLink(tx, ctx, p.vendorId, hash, p.days);
   });
   return { id, token };

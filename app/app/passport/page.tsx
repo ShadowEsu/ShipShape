@@ -46,7 +46,10 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
         <section className="space-y-3">
           <h2 className="font-semibold">Your links</h2>
           {links.length === 0 ? (
-            <EmptyState title="No links yet" body="Links you make show up here with how often they were opened." />
+            <EmptyState
+              title="No links yet"
+              body="Each link you make shows here with who it's for, how often it was opened and the day it stops working, for example: “Northwind Builders onboarding · 2 documents · opened 3 times · until Dec 1, 2026”."
+            />
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
               {links.map((l) => {

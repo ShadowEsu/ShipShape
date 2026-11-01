@@ -3,22 +3,30 @@
 import { revalidatePath } from "next/cache";
 import { redirect, RedirectType } from "next/navigation";
 import { z } from "zod";
-import { setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { DOCUMENT_GONE, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { PlanLimit, UserError } from "@/lib/server/errors";
 import { requestSignature, revokeSignatureRequest } from "@/lib/server/esign";
+import { UploadRefused } from "@/lib/server/files";
 import { GateClosed } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 
 export interface FormState {
   error?: string;
+  /** The field the error is about (its input's name): the form shows the message there and moves focus to it. */
+  field?: string;
   saved?: boolean;
   /** What was typed, sent back with an error so the form shows it again after React resets it. */
   values?: DetailInput;
 }
 
-function message(e: unknown): string {
-  if (e instanceof GateClosed || e instanceof UserError) return e.message;
-  if (e instanceof z.ZodError) return e.issues[0]?.message ?? "Check the form and try again.";
+function problem(e: unknown): Pick<FormState, "error" | "field"> {
+  if (e instanceof UploadRefused) return { error: e.message, field: "file" };
+  if (e instanceof GateClosed || e instanceof UserError) return { error: e.message };
+  if (e instanceof z.ZodError) {
+    const issue = e.issues[0];
+    const field = issue?.path[0];
+    return { error: issue?.message ?? "Check the form and try again.", field: typeof field === "string" ? field : undefined };
+  }
   throw e;
 }
 
@@ -35,7 +43,7 @@ export type DetailInput = ReturnType<typeof meta>;
 
 async function fileBytes(data: FormData): Promise<Uint8Array> {
   const file = data.get("file");
-  if (!(file instanceof File) || file.size === 0) throw new UserError("Choose a file to upload.");
+  if (!(file instanceof File) || file.size === 0) throw new UploadRefused("Choose a file to upload.");
   return new Uint8Array(await file.arrayBuffer());
 }
 
@@ -45,16 +53,17 @@ export async function addDocument(_prev: FormState, data: FormData): Promise<For
   try {
     id = await uploadDocument(ctx, meta(data), await fileBytes(data));
   } catch (e) {
-    return { error: message(e), values: meta(data) };
+    return { ...problem(e), values: meta(data) };
   }
-  redirect(`/app/documents/${id}`);
+  // `added`: the document's page says it's done and what to do next.
+  redirect(`/app/documents/${id}?added=1`);
 }
 
 // Document ids come from a hidden field, not `action.bind(...)`: in Next.js 16.4.3 a bound action
 // used with useActionState hangs the server when the form posts before JavaScript has loaded.
 function documentId(data: FormData): string {
   const id = z.uuid().safeParse(data.get("id"));
-  if (!id.success) throw new UserError("Document not found.");
+  if (!id.success) throw new UserError(DOCUMENT_GONE);
   return id.data;
 }
 
@@ -65,7 +74,7 @@ export async function saveDetails(_prev: FormState, data: FormData): Promise<For
     id = documentId(data);
     await updateDocument(ctx, id, meta(data));
   } catch (e) {
-    return { error: message(e), values: meta(data) };
+    return { ...problem(e), values: meta(data) };
   }
   revalidatePath(`/app/documents/${id}`);
   return { saved: true };
@@ -78,7 +87,7 @@ export async function addVersion(_prev: FormState, data: FormData): Promise<Form
     id = documentId(data);
     await uploadVersion(ctx, id, await fileBytes(data));
   } catch (e) {
-    return { error: message(e) };
+    return problem(e);
   }
   revalidatePath(`/app/documents/${id}`);
   return { saved: true };
@@ -129,7 +138,7 @@ export async function askToSign(_prev: SignFormState, data: FormData): Promise<S
     return { created };
   } catch (e) {
     const typed = (name: string) => String(data.get(name) ?? "");
-    return { error: message(e), values: { signer_name: typed("signer_name"), signer_email: typed("signer_email"), days: typed("days") } };
+    return { error: problem(e).error, values: { signer_name: typed("signer_name"), signer_email: typed("signer_email"), days: typed("days") } };
   }
 }
 

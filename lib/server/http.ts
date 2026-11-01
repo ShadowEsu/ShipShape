@@ -65,4 +65,5 @@ export async function purgeRateHits(): Promise<number> {
   return row.n;
 }
 
-export const tooMany = () => fail("Too many requests. Try again in a little while.", 429);
+// Every limit's window is an hour at most (MAX_WINDOW_SECONDS), so "up to an hour" is always true.
+export const tooMany = () => fail("Too many tries from this network. Wait up to an hour, then try again.", 429);

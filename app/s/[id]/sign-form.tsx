@@ -2,62 +2,112 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { signProblem, type SignField } from "./messages";
 
-const MESSAGES: Record<string, string> = {
-  bad_code: "That code doesn't match. Check the latest email and try again.",
-  locked: "Too many wrong codes. Ask for a new code.",
-  expired_code: "That code has expired. Ask for a new one.",
-  needs_consent: "Tick the box to agree to sign electronically.",
-  needs_name: "Type your name as your signature.",
-  unsupported: "This file can't be signed here (it may be password-protected). Ask the sender for another copy.",
-  too_large: "The signed copy would be over 4 MB, which ShipShape can't store. Ask the sender for a smaller copy.",
-  file_changed: "The file you reviewed has changed since it was sent, so it can't be signed. Ask the sender to send it again.",
-  too_many: "You've asked for the most codes this request allows. Ask the sender for a new signing link.",
-  invalid: "This signing link isn't available any more.",
-};
+const FIELD_ID: Record<SignField, string> = { consent: "sign-consent", name: "typed-name", code: "code" };
 
-export function SignForm({ id, signerName, email, consentText, demo }: { id: string; signerName: string; email: string; consentText: string; demo: boolean }) {
+export function SignForm({
+  id,
+  sender,
+  signerName,
+  email,
+  consentText,
+  demo,
+}: {
+  id: string;
+  sender: string;
+  signerName: string;
+  email: string;
+  consentText: string;
+  demo: boolean;
+}) {
   const router = useRouter();
   const [consented, setConsented] = useState(false);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"code" | "sign" | null>(null);
+  const [sent, setSent] = useState<string | null>(null);
+  const [error, setError] = useState<{ field: SignField | null; message: string } | null>(null);
   // These buttons work only with JavaScript; until the page has hydrated, a click would do nothing.
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
+  // The field a message is about takes focus, so the fix starts where the message is.
+  useEffect(() => {
+    if (error?.field) document.getElementById(FIELD_ID[error.field])?.focus();
+  }, [error]);
 
-  async function post(path: string, body?: object) {
-    setBusy(true);
+  async function post(path: "code" | "sign", body?: object) {
+    setBusy(path);
     setError(null);
+    setSent(null);
     try {
       const r = await fetch(`/s/${id}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
       if (r.status === 429) {
-        setError("Too many tries from this network. Wait a few minutes.");
+        setError({ field: null, message: "Too many tries from this network. Wait 10 minutes, then try again." });
         return null;
       }
       const data: { result?: string } = await r.json();
       return data.result ?? "invalid";
     } catch {
-      setError("Couldn't reach ShipShape. Check your connection and try again.");
+      setError({ field: null, message: "Couldn't reach ShipShape. Check your connection and try again." });
       return null;
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
+  async function sendCode() {
+    const result = await post("code");
+    if (result === "ok") {
+      setCodeSent(true);
+      setCode("");
+      setSent(demo ? "We sent a 6-digit code. In this sample workspace it's under Deadlines → Reminders sent. It works for 10 minutes." : `We sent a 6-digit code to ${email}. It works for 10 minutes.`);
+    } else if (result) setError(signProblem(result, sender));
+  }
+
+  const fieldError = (field: SignField) => (error?.field === field ? error.message : null);
+  const described = (field: SignField) => (error?.field === field ? { "aria-invalid": true, "aria-describedby": `${FIELD_ID[field]}-error` } : {});
+
   return (
     <fieldset disabled={!ready} className="m-0 min-w-0 space-y-5 border-0 p-0">
-      <label className="flex items-start gap-3 text-sm">
-        <input type="checkbox" checked={consented} onChange={(e) => setConsented(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]" />
-        <span>{consentText}</span>
-      </label>
       <div>
-        <label htmlFor="typed-name" className="label">
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            id={FIELD_ID.consent}
+            type="checkbox"
+            checked={consented}
+            onChange={(e) => setConsented(e.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
+            {...described("consent")}
+          />
+          <span>{consentText}</span>
+        </label>
+        {fieldError("consent") && (
+          <p id={`${FIELD_ID.consent}-error`} className="mt-1 text-sm text-bad">
+            {fieldError("consent")}
+          </p>
+        )}
+      </div>
+      <div>
+        <label htmlFor={FIELD_ID.name} className="label">
           Type your full name to sign
         </label>
-        <input id="typed-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} autoComplete="name" placeholder={signerName} className="input font-serif text-xl italic" />
+        <input
+          id={FIELD_ID.name}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={120}
+          autoComplete="name"
+          placeholder={signerName}
+          className="input font-serif text-xl italic"
+          {...described("name")}
+        />
+        {fieldError("name") && (
+          <p id={`${FIELD_ID.name}-error`} className="mt-1 text-sm text-bad">
+            {fieldError("name")}
+          </p>
+        )}
       </div>
 
       {!codeSent ? (
@@ -66,54 +116,57 @@ export function SignForm({ id, signerName, email, consentText, demo }: { id: str
             To confirm it&apos;s you, ShipShape sends a 6-digit code to {email}.
             {demo && " In this sample workspace the code appears under Deadlines → Reminders sent instead of in an inbox."}
           </p>
-          <button
-            type="button"
-            className="btn-ghost"
-            disabled={busy}
-            onClick={async () => {
-              const result = await post("code");
-              if (result === "ok") setCodeSent(true);
-              else if (result) setError(MESSAGES[result] ?? MESSAGES.invalid);
-            }}
-          >
-            {busy ? "Sending…" : "Send me a code"}
+          <button type="button" className="btn-ghost" disabled={busy !== null} onClick={sendCode}>
+            {busy === "code" ? "Sending…" : "Send me a code"}
           </button>
         </div>
       ) : (
         <form
           className="space-y-2"
+          noValidate
           onSubmit={async (e) => {
             e.preventDefault();
             const result = await post("sign", { code, typedName: name, consented });
             if (result === "ok") router.refresh();
-            else if (result) setError(MESSAGES[result] ?? MESSAGES.invalid);
+            else if (result) setError(signProblem(result, sender));
           }}
         >
-          <label htmlFor="code" className="label">
+          {sent && (
+            <p role="status" className="text-sm text-ink-2">
+              {sent}
+            </p>
+          )}
+          <label htmlFor={FIELD_ID.code} className="label">
             6-digit code
           </label>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <input id="code" value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" maxLength={6} className="input font-mono tracking-widest sm:w-40" />
-            <button className="btn" disabled={busy}>
-              {busy ? "Signing…" : "Sign"}
+            <input
+              id={FIELD_ID.code}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              className="input font-mono tracking-widest sm:w-40"
+              {...described("code")}
+            />
+            <button className="btn" disabled={busy !== null}>
+              {busy === "sign" ? "Signing…" : "Sign"}
             </button>
           </div>
-          <button
-            type="button"
-            className="text-sm text-ink-2 underline"
-            disabled={busy}
-            onClick={async () => {
-              const result = await post("code");
-              if (result && result !== "ok") setError(MESSAGES[result] ?? MESSAGES.invalid);
-            }}
-          >
-            Send a new code
+          {fieldError("code") && (
+            <p id={`${FIELD_ID.code}-error`} className="text-sm text-bad">
+              {fieldError("code")}
+            </p>
+          )}
+          <button type="button" className="text-sm text-ink-2 underline" disabled={busy !== null} onClick={sendCode}>
+            {busy === "code" ? "Sending…" : "Send a new code"}
           </button>
         </form>
       )}
-      {error && (
+      {error && !error.field && (
         <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
-          {error}
+          {error.message}
         </p>
       )}
     </fieldset>

@@ -25,7 +25,10 @@ export default async function FillPage({ params }: { params: Promise<{ template:
     return (
       <div className="max-w-2xl space-y-6">
         <PageHeader eyebrow="Make" title={t.title} />
-        <Notice>Making real documents opens after our security review. You can try every template in the sample workspace meanwhile.</Notice>
+        <Notice>
+          Making real documents opens after our security review. To try every template now, sign out, then choose &ldquo;Try the sample
+          workspace&rdquo;.
+        </Notice>
       </div>
     );
   }

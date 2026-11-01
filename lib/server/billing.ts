@@ -161,7 +161,7 @@ export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> 
   const price = await stripe.retrievePrice(cfg.proPrice);
   if (!price.active || price.unit_amount !== PLANS.pro.price * 100 || price.currency !== "usd" || price.recurring?.interval !== "month") {
     console.error("billing: the Stripe Pro price doesn't match lib/plans.ts; checkout refused");
-    throw new UserError("Payments are paused for a moment while we fix a price mismatch. Please try again later.");
+    throw new UserError("Payments are paused while we fix a price mismatch. Nothing was charged; try again later.");
   }
 
   const customer = await asService(async (tx) => {
@@ -170,7 +170,7 @@ export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> 
       [ctx.orgId],
     );
     if (row?.stripe_subscription_id && LIVE_STATUSES.includes(row.status)) {
-      throw new UserError("This workspace already has a subscription. Manage it from Billing.");
+      throw new UserError("This workspace already has a subscription. Change it with Manage billing.");
     }
     if (row) return row.stripe_customer_id;
     const created = await stripe.createCustomer({ metadata: { org_id: ctx.orgId } }, `customer:${ctx.orgId}`);
@@ -203,7 +203,7 @@ export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> 
 export async function openPortal(ctx: Ctx): Promise<string> {
   const cfg = canPay(ctx);
   const [row] = await asService((tx) => tx.query<{ stripe_customer_id: string }>("select stripe_customer_id from app.billing where org_id = $1", [ctx.orgId]));
-  if (!row) throw new UserError("There's no billing account for this workspace yet.");
+  if (!row) throw new UserError("There's no billing account for this workspace yet. It's made when you move to Pro.");
   const portal = await stripePort(cfg).createPortal({
     customer: row.stripe_customer_id,
     return_url: `${cfg.appUrl}/app/settings`,
@@ -381,12 +381,12 @@ export async function cancelSubscriptionsBeforeDeletion(userId: string): Promise
   if (!cfg) {
     // Billing is off, so no new checkout can have started; only a subscription we know is running stops the deletion.
     if (customers.some((c) => c.known_live)) {
-      throw new UserError("Your subscription couldn't be cancelled automatically. Cancel it under Billing first, then delete your account.");
+      throw new UserError("Your subscription couldn't be cancelled automatically, so nothing was deleted. Write to us and we'll cancel it; then delete your account.");
     }
     return handled;
   }
   const stripe = stripePort(cfg);
-  const busy = "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it under Billing first.";
+  const busy = "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it with Manage billing under Plan first.";
   for (const c of customers) {
     const subs = await stripe.listSubscriptions(c.stripe_customer_id).catch(() => {
       throw new UserError(busy);

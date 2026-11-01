@@ -19,7 +19,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!z.uuid().safeParse(id).success) return fail("Not found", 404);
   if (await rateLimited("collect-upload", clientIp(req.headers), 30, 600)) return tooMany();
 
-  const back = (outcome: string) => new Response(null, { status: 303, headers: { Location: `/c/${id}?r=${outcome}`, "Cache-Control": "no-store" } });
+  // `k` names the document whose form posted (it's in the form's own address), so the page can put a problem under its field.
+  const k = new URL(req.url).searchParams.get("k") ?? "";
+  const back = (outcome: string) =>
+    new Response(null, { status: 303, headers: { Location: `/c/${id}?r=${outcome}&k=${encodeURIComponent(k)}`, "Cache-Control": "no-store" } });
   // Browsers always send the length of a form post; without it the body size is unknown, so no.
   const length = Number(req.headers.get("content-length") ?? NaN);
   if (!(length > 0 && length <= MAX_BODY_BYTES)) return back("too_big");

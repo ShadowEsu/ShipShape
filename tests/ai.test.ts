@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AI_REQUEST_CONSENT_VERSION } from "@/lib/ai";
-import { AI_CAPS, AI_MODEL, readRequest, setAiProviderForTests, type AiProvider, type AiRequest } from "@/lib/server/ai";
+import { AI_CAPS, AI_MODEL, readRequest, RequestInputError, setAiProviderForTests, type AiProvider, type AiRequest } from "@/lib/server/ai";
 import { asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
@@ -109,6 +109,17 @@ describe("gates before anything is sent", () => {
     const ctx = await workspace();
     await expect(ask(ctx, "W-9 please")).rejects.toBeInstanceOf(UserError);
     await expect(ask(ctx, "x".repeat(6001))).rejects.toBeInstanceOf(UserError);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("names the field to fix: the text first, then the box, as the form lists them", async () => {
+    const ctx = await workspace();
+    const refused = async (text: string, consent: boolean) => {
+      const e = await ask(ctx, text, consent).catch((x: unknown) => x);
+      return e instanceof RequestInputError ? [e.field, e.message] : e;
+    };
+    expect(await refused("W-9 please", false)).toEqual(["text", "Paste the request: the email or checklist that asks for your documents."]);
+    expect(await refused(REQUEST, false)).toEqual(["consent", "Tick the box to send this text to Anthropic's Claude."]);
     expect(sent).toHaveLength(0);
   });
 });
@@ -351,10 +362,10 @@ describe("spend meter", () => {
 });
 
 describe("limits and logs", () => {
-  it("allows 10 reads per person per hour", async () => {
+  it("allows 10 reads per person per hour; the 11th says nothing was sent and when to try again", async () => {
     const ctx = await workspace();
     for (let i = 0; i < 10; i++) await ask(ctx);
-    await expect(ask(ctx)).rejects.toThrow(/in the last hour/);
+    await expect(ask(ctx)).rejects.toThrow("That's as many requests as ShipShape reads in an hour. Nothing was sent; try again in an hour.");
     expect(sent).toHaveLength(10);
   });
 

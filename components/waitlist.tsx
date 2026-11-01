@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const COPY = {
   accounts: { button: "Join the waitlist", busy: "Joining…", done: "You're on the list. We'll email you once when accounts open." },
@@ -12,6 +12,7 @@ export function WaitlistForm({ interest }: { interest?: "collect" }) {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const copy = COPY[interest ?? "accounts"];
   const inputId = interest ? `waitlist-email-${interest}` : "waitlist-email";
 
@@ -19,11 +20,18 @@ export function WaitlistForm({ interest }: { interest?: "collect" }) {
     e.preventDefault();
     setState("busy");
     setError("");
-    const res = await fetch("/api/waitlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, interest }) });
-    if (res.ok) return setState("done");
-    const data: unknown = await res.json().catch(() => null);
-    setError(data && typeof data === "object" && "error" in data && typeof data.error === "string" ? data.error : "Something went wrong. Try again.");
+    let message: string;
+    try {
+      const res = await fetch("/api/waitlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, interest }) });
+      if (res.ok) return setState("done");
+      const data: unknown = await res.json().catch(() => null);
+      message = data && typeof data === "object" && "error" in data && typeof data.error === "string" ? data.error : "We couldn't add you just now. Try again in a minute.";
+    } catch {
+      message = "Couldn't reach ShipShape. Check your connection and try again.";
+    }
+    setError(message);
     setState("idle");
+    inputRef.current?.focus();
   }
 
   if (state === "done") {
@@ -40,6 +48,7 @@ export function WaitlistForm({ interest }: { interest?: "collect" }) {
         Email
       </label>
       <input
+        ref={inputRef}
         id={inputId}
         type="email"
         required
@@ -48,12 +57,14 @@ export function WaitlistForm({ interest }: { interest?: "collect" }) {
         className="input flex-1 rounded-full px-4"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${inputId}-error` : undefined}
       />
       <button className="btn" disabled={state === "busy"}>
         {state === "busy" ? copy.busy : copy.button}
       </button>
       {error && (
-        <p role="alert" className="text-sm text-bad sm:basis-full">
+        <p id={`${inputId}-error`} role="alert" className="text-sm text-bad sm:basis-full">
           {error}
         </p>
       )}

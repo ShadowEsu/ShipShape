@@ -4,7 +4,7 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { deleteAccount, EXPORT_MAX_BYTES, exportWorkspace, finishDeletions, purgeSampleAccounts, retryStorageCleanup } from "@/lib/server/account";
+import { deleteAccount, deletionPreview, EXPORT_MAX_BYTES, exportWorkspace, finishDeletions, purgeSampleAccounts, retryStorageCleanup } from "@/lib/server/account";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
@@ -233,6 +233,18 @@ describe("account deletion", () => {
     expect(profile.updated_by).toBeNull();
     const [chain] = await asUser(other, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [shared.id]));
     expect(chain.broken).toBeNull();
+  });
+
+  it("names, before anything goes, the workspaces it deletes (you're the only owner) and the ones you leave", async () => {
+    const me = await sampleWorkspace();
+    const other = await db.user("preview-partner@example.com");
+    const join = async (name: string, role: "owner" | "admin") => {
+      const [org] = await asUser(other, (tx) => tx.query<{ id: string }>("select app.create_workspace($1) as id", [name]));
+      await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, $3)", [org.id, me.userId, role]));
+    };
+    await join("Co-owned Co", "owner");
+    await join("Admin Co", "admin");
+    expect(await deletionPreview(me.userId)).toEqual({ deleted: ["Sample"], left: ["Admin Co", "Co-owned Co"] });
   });
 
   it("needs a recent sign-in in a real workspace, and only ever deletes the caller", async () => {

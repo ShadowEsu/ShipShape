@@ -25,7 +25,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Who can see my documents?",
-    a: "Members of your workspace, and anyone you send a passport link to, for the documents on that link and until it expires or you turn it off. Every other workspace is walled off in the database itself.",
+    a: "People in your workspace, and anyone you send a passport link to, for the documents on that link and until it expires or you turn it off. Every other workspace is walled off in the database itself.",
   },
   {
     q: "How are passport links protected?",
@@ -41,7 +41,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Does ShipShape use AI?",
-    a: `One feature uses it, and it's switched on only after our security review: "What are they asking for?" reads a request you paste and lists the documents it asks for, then ShipShape checks your vault for them. It runs only when you tick a box for that request, sends ${AI_RECIPIENT} only the text you pasted (numbers shaped like an SSN or EIN removed, never your documents), and nothing is used to train AI models. The answer is a draft you check, not legal advice.`,
+    a: `One feature uses it, and it's switched on only after our security review: "What are they asking for?" reads a message you paste and lists the documents it asks for, then ShipShape checks your vault for them. It runs only when you tick a box for that message, sends ${AI_RECIPIENT} only the text you pasted (numbers shaped like an SSN or EIN removed, never your documents), and nothing is used to train AI models. The answer is a draft you check, not legal advice.`,
   },
   {
     q: "Can I get my data out, or delete it?",
@@ -57,7 +57,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: (
       <>
         Free covers {PLANS.free.documents} active documents and {PLANS.free.passports} open passport link. Pro is ${PLANS.pro.price} a
-        month with no limits, plus email reminders and signature requests. See <Link href="/pricing" className="underline">pricing</Link>.
+        month with no limits, plus email reminders and asking for signatures by email. See <Link href="/pricing" className="underline">pricing</Link>.
       </>
     ),
   },

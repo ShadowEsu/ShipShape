@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
+import { LinkBusy, LinkUnavailable } from "@/app/link-states";
 import { NamedByWorkspace, ValidityChip, fmtDay } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { contactEmail } from "@/lib/server/flags";
@@ -14,7 +15,8 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const token = (await cookies()).get(PASSPORT_COOKIE)?.value;
   const ip = clientIp(await headers());
-  const passport = token && !(await rateLimited("passport-view", ip, 60, 600)) ? await openPassport(id, token, ip) : null;
+  const busy = token ? await rateLimited("passport-view", ip, 60, 600) : false;
+  const passport = token && !busy ? await openPassport(id, token, ip) : null;
   // The outsider's own date: a document is current through its last day where they are, as in the app.
   const today = await viewerToday();
 
@@ -42,7 +44,7 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
                     {d.issuer && <span>Issued by {d.issuer}</span>}
                   </div>
                 </div>
-                <a href={`/p/${id}/file?d=${d.id}`} className="btn-ghost shrink-0 self-start sm:self-center">
+                <a href={`/p/${id}/file?d=${d.id}`} aria-label={`Download ${d.title}`} className="btn-ghost shrink-0 self-start sm:self-center">
                   Download
                 </a>
               </li>
@@ -53,23 +55,13 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
             document software, not a law firm; it doesn&apos;t check or vouch for what these documents say.
           </p>
         </div>
+      ) : busy ? (
+        <LinkBusy href={`/p/${id}`} />
       ) : token ? (
-        <Unavailable />
+        <LinkUnavailable noun="link" why="closed" />
       ) : (
-        <FragmentOpener openUrl={`/p/${id}/open`} unavailable={<Unavailable />} />
+        <FragmentOpener openUrl={`/p/${id}/open`} unavailable={<LinkUnavailable noun="link" why="incomplete" />} />
       )}
     </main>
-  );
-}
-
-function Unavailable() {
-  return (
-    <div className="space-y-2">
-      <h1 className="font-serif text-3xl font-semibold">This link isn&apos;t available</h1>
-      <p className="text-ink-2">
-        It may have expired or been turned off, or the address was copied without its last part. Ask the person who sent it for a
-        new link.
-      </p>
-    </div>
   );
 }

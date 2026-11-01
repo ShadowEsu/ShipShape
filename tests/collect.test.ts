@@ -230,7 +230,7 @@ describe("a vendor sending files", () => {
     await setVendorArchived(ctx, vendorId, true);
     expect(await openCollect(live.id, live.token)).toBeNull();
     expect(await send(live.id, live.token)).toBe("closed");
-    await expect(createVendorLink(ctx, { vendorId, days: 7 })).rejects.toThrow(/Vendor not found/);
+    await expect(createVendorLink(ctx, { vendorId, days: 7 })).rejects.toThrow("This vendor is archived, so it can't get an upload link. Restore it first.");
     // Archived vendors leave the main list for the archived one, and come back when restored.
     expect((await listVendors(ctx)).map((v) => v.id)).not.toContain(vendorId);
     expect((await listArchivedVendors(ctx)).map((v) => v.id)).toContain(vendorId);
@@ -312,6 +312,16 @@ describe("adding a vendor", () => {
     expect(email(254)).toHaveLength(254);
     await addVendor(ctx, { name: "Long Mail Co", email: email(254), requested: ["w9"] });
     await expect(addVendor(ctx, { name: "Longer Mail Co", email: email(255), requested: ["w9"] })).rejects.toThrow(ZodError);
+  });
+
+  it("says what to fix in an email address that isn't one", async () => {
+    withRealDocs();
+    const ctx = await realWorkspace("vendor-bad-email@example.com");
+    const refused = await addVendor(ctx, { name: "Typo Co", email: "ap at typo.example", requested: ["w9"] }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(ZodError);
+    expect(refused instanceof ZodError && refused.issues.map((i) => [i.path[0], i.message])).toEqual([
+      ["email", "That email address doesn't look right. Check it, or leave the field empty."],
+    ]);
   });
 
   it("takes a pasted email address with a space or line break around it (review #18)", async () => {

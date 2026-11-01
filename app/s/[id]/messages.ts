@@ -1,0 +1,31 @@
+import type { SignResult } from "@/lib/server/esign";
+
+/** The form field a signing answer is about, so its message sits next to that field. */
+export type SignField = "consent" | "name" | "code";
+
+/** Every answer from /s/<id>/code and /s/<id>/sign except "ok". */
+export type SignProblem = Exclude<SignResult, "ok"> | "too_many";
+
+const FIELD: Partial<Record<SignProblem, SignField>> = { needs_consent: "consent", needs_name: "name", bad_code: "code", locked: "code", expired_code: "code" };
+
+/** What went wrong and what to do, naming the workspace that sent the request. */
+const MESSAGES: Record<SignProblem, (sender: string) => string> = {
+  bad_code: () => "That code doesn't match. Type the 6 digits from the newest code we sent.",
+  locked: () => "That code had 5 wrong tries, so it stopped working. Send a new code and use that one.",
+  expired_code: () => "That code is more than 10 minutes old. Send a new code and use that one.",
+  needs_consent: () => "Tick the box to agree to sign electronically.",
+  needs_name: () => "Type your full name to sign.",
+  unsupported: (sender) => `This file can't be signed here; it may be password-protected. Ask ${sender} for another copy.`,
+  too_large: (sender) => `The signed copy would be over 4 MB, which ShipShape can't store. Ask ${sender} for a smaller copy.`,
+  file_changed: (sender) => `This document changed after it was sent, so it can't be signed. Ask ${sender} to send it again.`,
+  too_many: (sender) => `You've had all 5 codes this signing link allows. Ask ${sender} for a new link.`,
+  invalid: (sender) => `This signing link has stopped working. Ask ${sender} for a new one.`,
+};
+
+const isProblem = (r: string): r is SignProblem => Object.hasOwn(MESSAGES, r);
+
+/** The sentence and field for an answer; anything unknown reads as a link that stopped working. */
+export function signProblem(result: string, sender: string): { field: SignField | null; message: string } {
+  const r = isProblem(result) ? result : "invalid";
+  return { field: FIELD[r] ?? null, message: MESSAGES[r](sender) };
+}

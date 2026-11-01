@@ -15,6 +15,6 @@ const pdfOfSize = (size: number) => {
 describe("the upload size limit", () => {
   it("takes a PDF of exactly 4 MB and refuses one byte more", () => {
     expect(checkUpload(pdfOfSize(FOUR_MB))).toEqual({ ok: true, mime: "application/pdf" });
-    expect(checkUpload(pdfOfSize(FOUR_MB + 1))).toEqual({ ok: false, error: "Files can be up to 4 MB." });
+    expect(checkUpload(pdfOfSize(FOUR_MB + 1))).toEqual({ ok: false, error: "That file is over 4 MB. Choose a smaller file, or save it as a smaller PDF." });
   });
 });

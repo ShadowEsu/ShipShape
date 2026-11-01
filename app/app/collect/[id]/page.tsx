@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState, Notice, PageHeader, fmtDay } from "@/components/app-ui";
+import { SubmitButton } from "@/components/submit-button";
 import { COLLECT_DAYS, getVendor, type VendorLink } from "@/lib/server/collect";
 import { collectOpen } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
@@ -21,7 +22,7 @@ const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round
 
 /** What went wrong in a form posted from this page (see backToVendor in ../actions.ts). */
 const ERRORS: Record<string, string> = {
-  off: "This link was already turned off.",
+  off: "This link was already off, so nobody can use it. There's nothing more to do.",
 };
 
 export default async function VendorPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
@@ -34,6 +35,8 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
   if (!detail) notFound();
   const { vendor, files, links } = detail;
   const archived = vendor.status === "archived";
+  // The working link that lasts longest: what the vendor has in hand right now.
+  const working = links.filter((l) => linkStatus(l) === "Working").sort((a, b) => b.expires_at.localeCompare(a.expires_at)).at(0);
 
   return (
     <div className="space-y-8">
@@ -41,7 +44,9 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
         <form action={archiveVendor}>
           <input type="hidden" name="id" value={vendor.id} />
           <input type="hidden" name="archive" value={archived ? "0" : "1"} />
-          <button className="btn-ghost">{archived ? "Restore" : "Archive"}</button>
+          <SubmitButton className="btn-ghost" pendingLabel={archived ? "Restoring…" : "Archiving…"}>
+            {archived ? "Restore" : "Archive"}
+          </SubmitButton>
         </form>
       </PageHeader>
       <p className="text-sm">
@@ -55,7 +60,12 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
           {formError}
         </p>
       )}
-      {archived && <Notice tone="info">This vendor is archived: its upload links don&apos;t work, and it isn&apos;t counted on the Collect page.</Notice>}
+      {archived && (
+        <Notice tone="info">
+          This vendor is archived: its upload links don&apos;t work, and it isn&apos;t counted on the Collect page. Restore it to ask for files
+          again.
+        </Notice>
+      )}
 
       <section className="space-y-3" aria-labelledby="asked-heading">
         <h2 id="asked-heading" className="font-semibold">
@@ -80,7 +90,19 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
             Files received
           </h2>
           {files.length === 0 ? (
-            <EmptyState title="Nothing received yet" body="Files arrive here when the vendor uses an upload link." />
+            archived ? (
+              <EmptyState title="Nothing received" body={`Files ${vendor.name} sends through an upload link land here. Restore this vendor to ask for them.`} />
+            ) : working ? (
+              <EmptyState
+                title={`Waiting for ${vendor.name}`}
+                body={`Your upload link works until ${fmtDay(working.expires_at)}. Their files land here as soon as they send them; there's nothing for you to do until then.`}
+              />
+            ) : (
+              <EmptyState
+                title="Nothing received yet"
+                body={`Make an upload link under Ask for the files and send it to ${vendor.name}. The files they send land here, each with the day it arrived.`}
+              />
+            )
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
               {files.map((f) => (
@@ -116,7 +138,7 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
           <div className="space-y-3">
             <h2 className="font-semibold">Upload links</h2>
             {links.length === 0 ? (
-              <p className="text-sm text-ink-3">No links yet.</p>
+              <p className="text-sm text-ink-3">Links you make show here with the day they stop working.</p>
             ) : (
               <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper text-sm">
                 {links.map((l) => {
@@ -133,7 +155,9 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
                         <form action={turnOffVendorLink} className="shrink-0">
                           <input type="hidden" name="id" value={l.id} />
                           <input type="hidden" name="vendor" value={vendor.id} />
-                          <button className="btn-ghost whitespace-nowrap">Turn off</button>
+                          <SubmitButton className="btn-ghost whitespace-nowrap" pendingLabel="Turning off…">
+                            Turn off
+                          </SubmitButton>
                         </form>
                       )}
                     </li>
