@@ -469,8 +469,9 @@ describe("single reads for pages that don't need the whole list (review #24)", (
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     const ctx = await workspace("first@example.com", "real");
     expect(await firstDocument(ctx)).toBeNull();
-    await uploadDocument(ctx, { title: "Undated", kind: "coi" }, PDF);
+    // The soonest is uploaded first, so the newest document alone would be the wrong answer.
     const soon = await uploadDocument(ctx, { title: "Soonest", kind: "coi", expires_on: "2030-01-01" }, PDF);
+    await uploadDocument(ctx, { title: "Undated", kind: "coi" }, PDF);
     expect(await firstDocument(ctx)).toEqual({ id: soon, title: "Soonest" });
   });
 });
