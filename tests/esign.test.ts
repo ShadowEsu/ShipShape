@@ -188,6 +188,9 @@ describe("signing", () => {
   it("needs consent, a name and the right code; five wrong codes lock the code", async () => {
     const { id, token } = await request(a);
     expect(await sendSigningCode(id, token)).toBe("ok");
+    // The code's outbox row is marked as one, under the one subject 0039's backfill of older rows keys on (Security SHOULD-B1).
+    const [row] = await db.root((tx) => tx.query<{ kind: string; subject: string }>("select kind, subject from app.outbox where org_id = $1 order by created_at desc limit 1", [a.orgId]));
+    expect(row).toEqual({ kind: "esign_code", subject: "Your ShipShape signing code" });
     const code = await lastCode(a.orgId);
     expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: false, ip: IP })).toBe("needs_consent");
     expect(await completeSigning(id, token, { code, typedName: "  ", consented: true, ip: IP })).toBe("needs_name");

@@ -416,6 +416,27 @@ describe("Deadlines", () => {
     await finishSignIn(userId, { demo: true });
     const html = await renderPage(DeadlinesPage, {});
     expect(textOf(html)).toContain("ShipShape reminds owners and admins 90, 30 and 7 days before");
+    // The sample workspace shows its signing codes too (0039).
+    expect(textOf(html)).toContain("During the preview ShipShape doesn't send email; reminders and signing codes land here instead.");
+  });
+
+  it("Reminders sent: an owner reads them, with real documents' signing codes not shown; a member is told only owners and admins see them, and gets no list (0039, Design 3a)", async () => {
+    const owner = await signIn("deadlines-team-owner@example.com");
+    await db.root((tx) =>
+      tx.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, 'deadlines-team-owner@example.com', 'Liability certificate expires in 7 days', 'x')", [owner.orgId]),
+    );
+    const ownerText = textOf(await renderPage(DeadlinesPage, {}));
+    expect(ownerText).toContain("During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown.");
+    expect(ownerText).toContain("Liability certificate expires in 7 days");
+
+    const member = await createLocalUser("deadlines-team-member@example.com", false);
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [owner.orgId, member]));
+    await finishSignIn(member, { demo: false });
+    const memberText = textOf(await renderPage(DeadlinesPage, {}));
+    expect(memberText).toContain("Reminders sent Reminders go to owners and admins, and only they can see what was sent.");
+    expect(memberText).not.toContain("Liability certificate expires in 7 days");
+    expect(memberText).not.toContain("During the preview");
+    expect(memberText).not.toContain("Nothing here");
   });
 });
 
