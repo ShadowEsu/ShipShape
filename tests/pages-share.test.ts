@@ -243,6 +243,16 @@ describe("Passport", () => {
     jar.set("ss_tz", "America/Los_Angeles");
     expect(textOf(await renderPage(PassportPage, none()))).toContain("Ended Oct 30, 2026");
     expect(textOf(await detail())).toMatch(/Expired Oct 30, 2026 ?, so nobody can open it\./);
+    // Opens and "Turned off" are instants, shown as the owner's wall-clock time with the zone's name (Design, wave 8).
+    await db.root((tx) =>
+      tx.query("insert into app.share_access (link_id, org_id, action, visitor, at) values ($1, $2, 'opened', '0123456789abcdef', '2026-10-31 03:30:00+00')", [id, ctx.orgId]),
+    );
+    expect(textOf(await detail())).toContain("Oct 30, 2026, 8:30 PM PDT");
+    // revoked_at is always now() (the lock_revocation trigger), so only the zone and shape can be pinned.
+    await db.root((tx) => tx.query("update app.share_links set revoked_at = now() where id = $1", [id]));
+    expect(textOf(await detail())).toMatch(/Turned off [A-Z][a-z]{2} \d{1,2}, 20\d\d, \d{1,2}:\d\d [AP]M P[SD]T ?\. Nobody can open it any more\./);
+    jar.set("ss_tz", "Asia/Tokyo");
+    expect(textOf(await detail())).toMatch(/Turned off [A-Z][a-z]{2} \d{1,2}, 20\d\d, \d{1,2}:\d\d [AP]M GMT\+9 ?\./);
   });
 
   it("turning off a working link asks first: the question names who loses access, with Turn off the link and Cancel", async () => {
@@ -358,6 +368,17 @@ describe("Deadlines", () => {
     await addDoc(ctx, "Liability certificate", 60);
     const html = await renderPage(DeadlinesPage, {});
     expect(textOf(html)).not.toContain("Nothing expires in the next 90 days");
+  });
+
+  it("dates a sent reminder in the owner's wall-clock time with the zone's name (Design, wave 8)", async () => {
+    const ctx = await signIn("deadlines-sent-zone@example.com");
+    await db.root((tx) =>
+      tx.query("insert into app.outbox (org_id, to_email, subject, body, created_at) values ($1, 'me@example.com', 'Liability certificate expires in 7 days', 'x', '2026-11-01 03:30:00+00')", [ctx.orgId]),
+    );
+    jar.set("ss_tz", "America/Los_Angeles");
+    expect(textOf(await renderPage(DeadlinesPage, {}))).toContain("Liability certificate expires in 7 days Oct 31, 2026, 8:30 PM PDT");
+    jar.delete("ss_tz");
+    expect(textOf(await renderPage(DeadlinesPage, {}))).toContain("Liability certificate expires in 7 days Nov 1, 2026, 3:30 AM UTC");
   });
 
   it("on Pro (the sample workspace): says ShipShape sends the reminders", async () => {

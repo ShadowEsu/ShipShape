@@ -34,6 +34,14 @@ export function dayOf(instant: string, timeZone: string): string {
   return new Date(instant).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
 }
 
+/**
+ * An instant as the viewer's wall-clock time with the zone's short name ("Nov 1, 2026, 7:04 AM PST";
+ * "… UTC" when the zone is unknown), for the owner's History, Versions and access logs.
+ */
+export function timeOf(instant: string, timeZone: string): string {
+  return new Date(instant).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone });
+}
+
 /** Adds days to a YYYY-MM-DD date. */
 export function plusDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`);

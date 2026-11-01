@@ -512,6 +512,25 @@ describe("a document's page", () => {
     expect(textOf(history)).toContain("Downloaded through a passport link: Northwind");
   });
 
+  it("shows History and Versions times where the owner is, with the zone's name; UTC when the browser hasn't said (Design, wave 8)", async () => {
+    const ctx = await signIn("doc-times@example.com");
+    const id = await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
+    // Added at 03:30 UTC on Nov 1: the evening of Oct 31 in Los Angeles, the afternoon of Nov 1 in Tokyo.
+    await db.root(async (tx) => {
+      await tx.query("update app.audit_log set at = '2026-11-01 03:30:00+00' where org_id = $1 and object_id = $2", [ctx.orgId, id]);
+      await tx.query("update app.document_versions set created_at = '2026-11-01 03:30:00+00' where document_id = $1", [id]);
+    });
+    jar.set("ss_tz", { value: "America/Los_Angeles" });
+    const html = await documentPage(id, {});
+    expect(textOf(html)).toContain("Added to documents Oct 31, 2026, 8:30 PM PDT");
+    expect(textOf(html)).toContain("Version 1 · Oct 31, 2026, 8:30 PM PDT · 1 KB");
+    expect(html).toContain("1\u00A0KB"); // a non-breaking space: "1 KB" stays on one line at 390 wide (textOf folds it)
+    jar.set("ss_tz", { value: "Asia/Tokyo" });
+    expect(textOf(await documentPage(id, {}))).toContain("Added to documents Nov 1, 2026, 12:30 PM GMT+9");
+    jar.delete("ss_tz");
+    expect(textOf(await documentPage(id, {}))).toContain("Added to documents Nov 1, 2026, 3:30 AM UTC");
+  });
+
   it("at the plan's limit says why the document stays archived and links to the one fix", async () => {
     const ctx = await signIn("doc-limit@example.com");
     const id = await uploadDocument(ctx, { title: "Old permit", kind: "permit" }, PDF);
