@@ -105,7 +105,7 @@ export default async function DeadlinesPage() {
           <p className="text-sm text-ink-3">
             {ctx.demo
               ? "During the preview ShipShape doesn't send email; reminders and signing codes land here instead."
-              : "During the preview ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown."}
+              : "During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown."}
           </p>
         )}
         {member ? null : outbox.length === 0 ? (

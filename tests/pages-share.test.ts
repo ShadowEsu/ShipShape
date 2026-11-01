@@ -426,7 +426,7 @@ describe("Deadlines", () => {
       tx.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, 'deadlines-team-owner@example.com', 'Liability certificate expires in 7 days', 'x')", [owner.orgId]),
     );
     const ownerText = textOf(await renderPage(DeadlinesPage, {}));
-    expect(ownerText).toContain("During the preview ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown.");
+    expect(ownerText).toContain("During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown.");
     expect(ownerText).toContain("Liability certificate expires in 7 days");
 
     const member = await createLocalUser("deadlines-team-member@example.com", false);
