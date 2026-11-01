@@ -171,7 +171,8 @@ export function FillForm({
               return (
                 <fieldset key={section} className="card">
                   {/* A floated legend sits inside the card instead of on its border; fields clear it. */}
-                  <legend className="float-left mb-4 w-full font-semibold">{section}</legend>
+                  {/* A step with one section already says its name in the step heading: the legend stays for screen readers only. */}
+                  <legend className={step.sections.length === 1 && steps.length > 1 ? "sr-only" : "float-left mb-4 w-full font-semibold"}>{section}</legend>
                   <div className="clear-both space-y-4">
                     {fields.map((f) => (
                       <Field key={f.key} f={f} value={values[f.key] ?? ""} onChange={(v) => set(f.key, v)} error={errors[f.key]} chip={f.fact ? chips[f.key] : undefined} initial={initial[f.key] ?? ""} />
@@ -237,6 +238,11 @@ export function FillForm({
             <button className="btn" disabled={pending}>
               {pending ? "Making the PDF…" : `Approve and make the ${template.short}`}
             </button>
+            {pending && (
+              <p role="status" className="text-sm text-ink-2">
+                Making your {template.short} from the official form…
+              </p>
+            )}
             <p className="text-sm text-ink-3">Nothing is saved until you approve.</p>
           </section>
         </>
