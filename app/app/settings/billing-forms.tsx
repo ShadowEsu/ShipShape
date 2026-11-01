@@ -31,7 +31,11 @@ export function UpgradeForm({ price }: { price: number }) {
           <Link href="/terms" className="underline" target="_blank">
             Terms
           </Link>
-          , including ${price} a month until I cancel, and the refund policy.
+          , including ${price} a month until I cancel, and the{" "}
+          <Link href="/terms#refunds" className="underline" target="_blank">
+            refund policy
+          </Link>
+          .
         </span>
       </label>
       <ActionError state={state} id="upgrade-error" />

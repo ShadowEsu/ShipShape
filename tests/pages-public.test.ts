@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { UpgradeForm } from "@/app/app/settings/billing-forms";
 import CollectPage from "@/app/c/[id]/page";
 import { POST as upload } from "@/app/c/[id]/upload/route";
 import PassportPage from "@/app/p/[id]/page";
@@ -10,6 +11,7 @@ import SigningPage from "@/app/s/[id]/page";
 import { SignButton } from "@/app/s/[id]/sign-form";
 import { signIn } from "@/app/signin/actions";
 import SignInPage from "@/app/signin/page";
+import TermsPage from "@/app/terms/page";
 import { addVendor, createVendorLink, receiveFile, revokeVendorLink } from "@/lib/server/collect";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
@@ -348,5 +350,21 @@ describe("signing in (/signin)", () => {
     expect(textOf(/<p role="alert"[^>]*>[\s\S]*?<\/p>/.exec(html)?.[0] ?? "")).toBe(
       "This email already belongs to another ShipShape account, so we didn't sign you in. Sign in with a different email address.",
     );
+  });
+});
+
+describe("terms (/terms)", () => {
+  it("the upgrade box's refund link lands on the Terms' refund section, which names the address once there is one", async () => {
+    const upgrade = await renderPage(UpgradeForm, { price: 19 });
+    expect(actionsOf(upgrade).find((a) => a.label === "refund policy")?.href).toBe("/terms#refunds");
+
+    const without = await renderPage(TermsPage, {});
+    expect(without).toMatch(/<h2[^>]*\bid="refunds"/);
+    expect(textOf(without)).toContain("refunded in full if you ask within 14 days of it. The address to ask will be listed here");
+
+    vi.stubEnv("CONTACT_EMAIL", "help@shipshape.example");
+    const withContact = await renderPage(TermsPage, {});
+    expect(textOf(withContact)).toMatch(/refunded in full if you ask within 14 days of it\. To ask, write to help@shipshape\.example\s*\./);
+    expect(actionsOf(withContact).find((a) => a.label === "help@shipshape.example")?.href).toBe("mailto:help@shipshape.example");
   });
 });

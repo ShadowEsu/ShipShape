@@ -3,11 +3,13 @@ import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 import { TERMS_VERSION } from "@/lib/legal";
 import { PLANS } from "@/lib/plans";
+import { contactEmail } from "@/lib/server/flags";
 
 export const metadata: Metadata = { title: "Terms (draft)" };
 
 export default function TermsPage() {
   const { free, pro } = PLANS;
+  const contact = contactEmail();
   return (
     <LegalPage title="Terms of service" version={TERMS_VERSION}>
       <p>
@@ -52,7 +54,7 @@ export default function TermsPage() {
         </li>
       </ul>
 
-      <h2>Plans and payments</h2>
+      <h2 id="refunds">Plans and payments</h2>
       <p>During the preview, payments run in Stripe&apos;s test mode: no real money moves.</p>
       <ul>
         <li>
@@ -66,8 +68,18 @@ export default function TermsPage() {
         <li>You can cancel any time from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free.</li>
         <li>If a payment fails, Pro stays on for 7 days from the first failed attempt while the payment is retried, then moves to Free.</li>
         <li>
-          Your first {pro.name} payment can be refunded in full if you ask within 14 days of it. The address to ask will be listed here
-          before real accounts open (during the preview no real money moves).
+          Your first {pro.name} payment can be refunded in full if you ask within 14 days of it.{" "}
+          {contact ? (
+            <>
+              To ask, write to{" "}
+              <a href={`mailto:${contact}`} className="underline">
+                {contact}
+              </a>
+              .
+            </>
+          ) : (
+            "The address to ask will be listed here before real accounts open (during the preview no real money moves)."
+          )}
         </li>
         <li>After that, you can cancel any time, but payments already made aren&apos;t refunded, in whole or in part.</li>
         <li>If you get a full refund, or dispute a charge, Pro ends straight away.</li>
