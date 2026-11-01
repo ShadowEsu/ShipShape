@@ -13,6 +13,7 @@ import { NewPassportForm, PassportReady } from "@/app/app/passport/forms";
 import PassportPage from "@/app/app/passport/page";
 import PassportPreviewPage from "@/app/app/passport/preview/page";
 import { deleteMyAccount, signOutSession } from "@/app/app/settings/actions";
+import { DeleteRefused } from "@/app/app/settings/forms";
 import SettingsPage from "@/app/app/settings/page";
 import { fmtDay } from "@/components/app-ui";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
@@ -613,5 +614,23 @@ describe("form errors name the field to fix", () => {
     vi.stubEnv("CONTACT_EMAIL", "");
     expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toMatchObject({ write: { contact: null } });
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [ctx.orgId]))).toHaveLength(1);
+  });
+});
+
+describe("the deletion refusal box", () => {
+  const still = "Your subscription couldn't be cancelled automatically, so nothing was deleted.";
+
+  it("names the one next step: sign in again, write to us at the address, or wait for payments", async () => {
+    const old = await renderPage(DeleteRefused, { error: "For your security, sign in again to delete your account.", reauth: true });
+    expect(old).toMatch(/<div[^>]*role="alert"[^>]*tabindex="-1"/);
+    expect(actionsOf(old)).toEqual([{ tag: "a", label: "Sign in again", href: "/signin" }]);
+
+    const write = await renderPage(DeleteRefused, { error: still, write: { contact: "help@shipshape.example" } });
+    expect(textOf(write)).toBe(`${still} Write to us and we'll cancel it; then delete your account.`);
+    expect(actionsOf(write)).toEqual([{ tag: "a", label: "Write to us", href: "mailto:help@shipshape.example?subject=Cancel%20my%20ShipShape%20subscription" }]);
+
+    const wait = await renderPage(DeleteRefused, { error: still, write: { contact: null } });
+    expect(textOf(wait)).toBe(`${still} Your subscription isn't cancelled yet, and ShipShape can't cancel it until payments are back on. Try again later: deleting cancels it for you.`);
+    expect(actionsOf(wait)).toEqual([]);
   });
 });

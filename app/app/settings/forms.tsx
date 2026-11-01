@@ -96,36 +96,41 @@ export function DeleteAccountForm({ deleted, left }: { deleted: string[]; left: 
           </p>
         )}
       </div>
-      {formError && (
-        <div role="alert" tabIndex={-1} className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
-          {formError}
-          {state.reauth && (
-            <>
-              {" "}
-              <Link href="/signin" className="underline">
-                Sign in again
-              </Link>
-            </>
-          )}
-          {state.write &&
-            (state.write.contact ? (
-              <>
-                {" "}
-                <a href={`mailto:${state.write.contact}?subject=${encodeURIComponent("Cancel my ShipShape subscription")}`} className="underline">
-                  Write to us
-                </a>{" "}
-                and we&apos;ll cancel it; then delete your account.
-              </>
-            ) : (
-              " Your subscription isn't cancelled yet, and ShipShape can't cancel it until payments are back on. Try again later: deleting cancels it for you."
-            ))}
-        </div>
-      )}
+      {formError && <DeleteRefused error={formError} reauth={state.reauth} write={state.write} />}
       {!state.reauth && (
         <button className="btn-danger" disabled={pending}>
           {pending ? "Deleting…" : "Delete my account"}
         </button>
       )}
     </form>
+  );
+}
+
+/** Why the deletion didn't happen, with the one next step: sign in again, write to us, or wait for payments. */
+export function DeleteRefused({ error, reauth, write }: Pick<DeleteState, "reauth" | "write"> & { error: string }) {
+  return (
+    <div role="alert" tabIndex={-1} className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+      {error}
+      {reauth && (
+        <>
+          {" "}
+          <Link href="/signin" className="underline">
+            Sign in again
+          </Link>
+        </>
+      )}
+      {write &&
+        (write.contact ? (
+          <>
+            {" "}
+            <a href={`mailto:${write.contact}?subject=${encodeURIComponent("Cancel my ShipShape subscription")}`} className="underline">
+              Write to us
+            </a>{" "}
+            and we&apos;ll cancel it; then delete your account.
+          </>
+        ) : (
+          " Your subscription isn't cancelled yet, and ShipShape can't cancel it until payments are back on. Try again later: deleting cancels it for you."
+        ))}
+    </div>
   );
 }
