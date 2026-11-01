@@ -26,6 +26,9 @@ function lastActive(idleSeconds: number): string {
   return `last active ${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
+/** The browser's name starts the row, so "a browser on a Mac" reads "A browser on a Mac"; the Sign out label keeps it mid-sentence. */
+const rowStart = (family: string) => family.charAt(0).toUpperCase() + family.slice(1);
+
 /** What a refused export (`?error=` from export/route.ts) means, and the one link that fixes it when there is one. */
 function exportProblem(error: string | undefined, contact: string | null): { text: string; fix?: { href: string; label: string } } | undefined {
   const tooLarge = `This workspace is over ${EXPORT_MAX_BYTES / 1024 / 1024} MB, too large to export in one file.`;
@@ -188,7 +191,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           {sessions.map((s) => (
             <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
               <p className="text-sm">
-                {s.family} <span className="text-ink-2">· {s.current ? "this browser" : lastActive(s.idleSeconds)}</span>
+                {rowStart(s.family)} <span className="text-ink-2">· {s.current ? "this browser" : lastActive(s.idleSeconds)}</span>
               </p>
               <form action={signOutSession}>
                 <input type="hidden" name="id" value={s.id} />
@@ -216,8 +219,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </div>
         {/* A sample workspace's visitor has no password to come back with, so this would only lose the sample. */}
         {!ctx.demo && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 sm:flex-nowrap">
-            <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="sm:min-w-0 sm:flex-1">
               <h3 className="font-semibold">Sign out on every device</h3>
               <p className="text-sm text-ink-2">
                 Lost a laptop or phone, or see a sign-in you don&apos;t recognize? This ends every session, here and everywhere

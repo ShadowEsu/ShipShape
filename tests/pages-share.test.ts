@@ -517,8 +517,10 @@ describe("Settings", () => {
       const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
       await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
       await finishSignIn(userId, { demo: true });
-      const text = textOf(card(await settings()));
-      expect(text).toMatch(/Where you're signed in.*a browser\s*·\s*this browser\s*Sign out/);
+      const html = await settings();
+      const text = textOf(card(html));
+      expect(text).toMatch(/Where you're signed in.*A browser\s*·\s*this browser\s*Sign out/);
+      expect(html).toContain('aria-label="Sign out a browser (this browser)"');
     });
   });
 });
