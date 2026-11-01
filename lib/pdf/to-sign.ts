@@ -42,7 +42,10 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
     attachLinkTargets(out);
   } else {
     try {
-      const img = mime === "image/png" ? await out.embedPng(original) : await out.embedJpg(original);
+      // pdf-lib 1.17 reads a JPEG through `new DataView(bytes.buffer)`, ignoring where the view
+      // starts. Bytes that reach the build process over IPC sit at an offset in a larger buffer, so
+      // every JPEG was refused as unreadable ("SOI not found"); a copy starts at 0.
+      const img = mime === "image/png" ? await out.embedPng(original) : await out.embedJpg(original.slice());
       const scale = Math.min(540 / img.width, 720 / img.height, 1);
       const page = out.addPage([612, 792]);
       page.drawImage(img, { x: (612 - img.width * scale) / 2, y: (792 - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });

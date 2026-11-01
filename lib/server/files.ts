@@ -28,6 +28,9 @@ export function sniffMime(bytes: Uint8Array): AllowedMime | null {
 // streams aren't visible to this check.
 const ACTIVE_PDF = /\/(Launch|EmbeddedFile|EmbeddedFiles|RichMedia)\b/;
 
+/** A PDF that launches programs or carries embedded files: refused wherever a file comes in, the owner's upload and a vendor's alike (W11-1). */
+export const activePdf = (bytes: Uint8Array): boolean => ACTIVE_PDF.test(Buffer.from(bytes).toString("latin1"));
+
 export type UploadCheck = { ok: true; mime: AllowedMime } | { ok: false; error: string };
 
 /** The file itself was refused (empty, too big, wrong type); forms show the message next to the file field. */
@@ -38,7 +41,7 @@ export function checkUpload(bytes: Uint8Array): UploadCheck {
   if (bytes.length > MAX_UPLOAD_BYTES) return { ok: false, error: UPLOAD_TOO_BIG };
   const mime = sniffMime(bytes);
   if (!mime) return { ok: false, error: "That file isn't a PDF, PNG or JPEG. Save it as a PDF and choose it again." };
-  if (mime === "application/pdf" && ACTIVE_PDF.test(Buffer.from(bytes).toString("latin1"))) {
+  if (mime === "application/pdf" && activePdf(bytes)) {
     return { ok: false, error: "This PDF launches other programs or carries embedded files, which we don't accept. Print it to a new PDF and try again." };
   }
   return { ok: true, mime };

@@ -160,10 +160,10 @@ describe("each upload is built in a process of its own, at most two at once (Sec
 
   it("an upload needing more memory or time than its process may use is refused as unreadable; under the normal limits it builds", async () => {
     const heavy = names(300_000);
-    const outOfMemory = await buildToSignIsolated(heavy, "application/pdf", { heapMb: 32, timeoutMs: 20_000 }).catch((e: unknown) => e);
+    const outOfMemory = await buildToSignIsolated(heavy, "application/pdf", { ...ISOLATION_LIMITS, heapMb: 32 }).catch((e: unknown) => e);
     expect(outOfMemory).toBeInstanceOf(NotSignable);
     expect(outOfMemory).toMatchObject({ reason: "unreadable" });
-    await expect(buildToSignIsolated(heavy, "application/pdf", { heapMb: 256, timeoutMs: 1 })).rejects.toMatchObject({ reason: "unreadable" });
+    await expect(buildToSignIsolated(heavy, "application/pdf", { ...ISOLATION_LIMITS, timeoutMs: 1 })).rejects.toMatchObject({ reason: "unreadable" });
     expect((await buildToSignIsolated(heavy, "application/pdf")).length).toBeGreaterThan(0);
   });
 
@@ -172,6 +172,13 @@ describe("each upload is built in a process of its own, at most two at once (Sec
     const crashed = await buildInChild(new Uint8Array([1]), "application/pdf", ISOLATION_LIMITS, crashing).catch((e: unknown) => e);
     expect(crashed).toBeInstanceOf(BuildCrashed);
     expect(String(crashed)).toContain("SIGSEGV");
+  });
+
+  it("a build process that isn't ready in time is BuildCrashed (try again), not a refused file; the file's time starts when it is ready (W11-13)", async () => {
+    const neverReady = path.join(import.meta.dirname, "fixtures", "never-ready-build-child.mjs");
+    const slow = await buildInChild(new Uint8Array([1]), "application/pdf", { ...ISOLATION_LIMITS, timeoutMs: 1, startMs: 300 }, neverReady).catch((e: unknown) => e);
+    expect(slow).toBeInstanceOf(BuildCrashed);
+    expect(String(slow)).toContain("didn't start within 300 ms");
   });
 
   it("more sends at once than slots wait their turn and all build", async () => {

@@ -8,9 +8,12 @@ import { NotSignable } from "./to-sign";
 export interface IsolationLimits {
   /** V8's old generation, where pdf-lib's objects live (Security: real 3-8 MB PDFs build within 128 MB). */
   heapMb: number;
+  /** The build itself, counted from when the process says it's ready. */
   timeoutMs: number;
+  /** Starting the process and loading its code: past this it's BuildCrashed (a busy server), not the file's fault (W11-13). */
+  startMs: number;
 }
-export const ISOLATION_LIMITS: IsolationLimits = { heapMb: 256, timeoutMs: 20_000 };
+export const ISOLATION_LIMITS: IsolationLimits = { heapMb: 256, timeoutMs: 20_000, startMs: 20_000 };
 /** Builds at once per server instance, and how long a build waits for its turn (Security R9-2). */
 export const MAX_BUILDS = 2;
 export const SLOT_WAIT_MS = 20_000;
@@ -24,7 +27,8 @@ export class BuildBusy extends Error {
 
 /**
  * The build process stopped some other way than at its limits (a crash such as SIGSEGV, killed from
- * outside, or gone without answering): ShipShape's fault, not the file's, so the sender may try again.
+ * outside, or gone without answering), or didn't start in time (a busy server): ShipShape's fault,
+ * not the file's, so the sender may try again.
  * Nothing was built: the PDF only ever arrives whole, in one message.
  */
 export class BuildCrashed extends Error {}
@@ -84,8 +88,8 @@ const Message = z.union([
  * (V8 aborts the process at its heap limit, or the timeout kills it) is refused as unreadable, and
  * the server itself never runs out. Of the environment the child gets only NODE_ENV, so no secret. A child that
  * fails before it has loaded (missing files, a bug) rejects with that error, so a broken deployment
- * isn't mistaken for a bad file; one that stops any other way after loading is BuildCrashed, and
- * waiting too long for a slot is BuildBusy.
+ * isn't mistaken for a bad file; one that isn't ready within `startMs`, or stops any other way after
+ * loading, is BuildCrashed, and waiting too long for a slot is BuildBusy.
  */
 export async function buildToSignIsolated(bytes: Uint8Array, mime: Parameters<typeof buildToSign>[1], limits: IsolationLimits = ISOLATION_LIMITS): Promise<Uint8Array> {
   const release = await slots.take(SLOT_WAIT_MS);
@@ -116,7 +120,8 @@ export function buildInChild(bytes: Uint8Array, mime: Parameters<typeof buildToS
     child.kill("SIGKILL");
     settle();
   };
-  const timer = setTimeout(() => finish(() => reject(new NotSignable("unreadable", new Error(`not built within ${limits.timeoutMs} ms`)))), limits.timeoutMs);
+  // Until the process is ready, the time is the server's, not the file's (W11-13).
+  let timer = setTimeout(() => finish(() => reject(new BuildCrashed(`build process didn't start within ${limits.startMs} ms`))), limits.startMs);
   child.on("message", (raw: unknown) => {
     const message = Message.safeParse(raw);
     if (!message.success) return finish(() => reject(new Error(`build process sent an unexpected message: ${message.error.message}`)));
@@ -124,6 +129,8 @@ export function buildInChild(bytes: Uint8Array, mime: Parameters<typeof buildToS
     if ("ready" in m) {
       if (ready) return;
       ready = true;
+      clearTimeout(timer);
+      timer = setTimeout(() => finish(() => reject(new NotSignable("unreadable", new Error(`not built within ${limits.timeoutMs} ms`)))), limits.timeoutMs);
       child.send({ bytes, mime });
     } else finish(() => ("built" in m ? resolve(m.built) : "refused" in m ? reject(new NotSignable(m.refused)) : reject(new Error(`buildToSign failed in its process: ${m.failed}`))));
   });

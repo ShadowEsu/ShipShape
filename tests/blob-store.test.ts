@@ -41,6 +41,29 @@ function contract(store: () => BlobStore) {
     await store().remove([]);
   });
 
+  it("removes everything under one workspace's prefix and nothing under another's; a prefix with nothing under it removes nothing (W11-7)", async () => {
+    const [doomed, kept] = [randomUUID(), randomUUID()];
+    const under = (org: string) => `${org}/${randomUUID()}/v1.pdf`;
+    const [a, b, c] = [under(doomed), under(doomed), under(kept)];
+    for (const p of [a, b, c]) await store().put(p, bytes(p), "application/pdf");
+    expect(await store().removePrefix(`${doomed}/`)).toBe(2);
+    await expect(store().get(a)).rejects.toThrow();
+    await expect(store().get(b)).rejects.toThrow();
+    expect(text(await store().get(c))).toBe(c);
+    expect(await store().removePrefix(`${doomed}/`)).toBe(0);
+    expect(await store().removePrefix(`${randomUUID()}/`)).toBe(0);
+  });
+
+  it("refuses, before anything is listed, a prefix that isn't exactly a workspace id and a slash", async () => {
+    const id = randomUUID();
+    const kept = `${id}/${randomUUID()}/v1.pdf`;
+    await store().put(kept, bytes("kept"), "application/pdf");
+    for (const bad of ["", "/", id, `${id}/x/`, "../", `${id.slice(0, 8)}/`]) {
+      await expect(store().removePrefix(bad), bad).rejects.toThrow("Invalid workspace prefix");
+    }
+    expect(text(await store().get(kept))).toBe("kept");
+  });
+
   it("refuses a path outside <org>/<document>/v<n>.<ext> on every call", async () => {
     for (const bad of ["../../etc/passwd", `${randomUUID()}/${randomUUID()}/v1.html`, `${randomUUID()}/v1.pdf`]) {
       await expect(store().put(bad, bytes("x"), "application/pdf")).rejects.toThrow("Invalid object path");
@@ -146,6 +169,45 @@ describe("S3 store, offline", () => {
     await s3BlobStore(client, "documents").remove(paths);
     expect(sent.map((keys) => keys.length)).toEqual([1000, 1000, 1]);
     expect(sent.flat()).toEqual(paths);
+  });
+
+  it("never lists the bucket for a prefix that isn't a workspace id and a slash (W11-7)", async () => {
+    const client = offlineClient();
+    let sent = 0;
+    client.middlewareStack.add(
+      () => async () => {
+        sent++;
+        return { output: { $metadata: {} }, response: {} };
+      },
+      { step: "initialize" },
+    );
+    for (const bad of ["", randomUUID(), "a/"]) await expect(s3BlobStore(client, "documents").removePrefix(bad)).rejects.toThrow("Invalid workspace prefix");
+    expect(sent).toBe(0);
+  });
+
+  it("sweeps a prefix listed over several pages, deleting each page, and only keys under it", async () => {
+    const client = offlineClient();
+    const org = randomUUID();
+    const keys = Array.from({ length: 1500 }, () => `${org}/${randomUUID()}/v1.pdf`);
+    const pages = [keys.slice(0, 1000), [...keys.slice(1000), `${randomUUID()}/stray/v1.pdf`]];
+    const listed: { prefix?: string; token?: string }[] = [];
+    const deleted: string[][] = [];
+    client.middlewareStack.add(
+      () => async (args) => {
+        if ("Delete" in args.input) {
+          deleted.push((args.input.Delete?.Objects ?? []).map((o) => o.Key ?? ""));
+          return { output: { $metadata: {} }, response: {} };
+        }
+        const input = "ContinuationToken" in args.input && "Prefix" in args.input ? args.input : {};
+        listed.push({ prefix: input.Prefix, token: input.ContinuationToken });
+        const page = input.ContinuationToken ? pages[1] : pages[0];
+        return { output: { Contents: page.map((Key) => ({ Key })), IsTruncated: !input.ContinuationToken, NextContinuationToken: "next", $metadata: {} }, response: {} };
+      },
+      { step: "initialize" },
+    );
+    expect(await s3BlobStore(client, "documents").removePrefix(`${org}/`)).toBe(1500);
+    expect(listed).toEqual([{ prefix: `${org}/`, token: undefined }, { prefix: `${org}/`, token: "next" }]);
+    expect(deleted.flat()).toEqual(keys);
   });
 });
 

@@ -122,6 +122,7 @@ const TABLES: Record<string, string | null> = {
   identities: null, // server only: which Cognito user is which user, checked below
   deletion_requests: null, // server only: accounts the daily run finishes deleting, checked below
   storage_cleanup: null, // server only: stored files a deletion couldn't remove yet, checked below
+  storage_prefix_cleanup: null, // server only: deleted workspaces whose leftover files the daily run sweeps, checked below
   session_revocations: null, // each person's own row only: when they last signed out everywhere, checked below
   sessions: null, // each person's own rows only: the browsers they're signed in on, checked below
 };
@@ -172,7 +173,7 @@ describe("row level security", () => {
     }
   });
 
-  it("waitlist, rate limits, sign-in identities, deletion requests and the file-cleanup queue are closed to signed-in users", async () => {
+  it("waitlist, rate limits, sign-in identities, deletion requests and the file-cleanup queues are closed to signed-in users", async () => {
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.waitlist")));
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.waitlist (email) values ('x@example.com')")));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.rate_hits")));
@@ -184,10 +185,15 @@ describe("row level security", () => {
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.deletion_requests (user_id) values ($1)", [b])));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.deletion_requests")));
     await expectDenied(asUser(a, (tx) => tx.query("update app.deletion_requests set requested_at = now()")));
+    await expectDenied(asUser(a, (tx) => tx.query("update app.deletion_requests set attempted_at = now()")));
     // A row here gets that stored object deleted by the daily run: nobody but the server writes one.
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.storage_cleanup (path) values ($1)", [`${orgB}/x/v1.pdf`])));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.storage_cleanup")));
     await expectDenied(asUser(a, (tx) => tx.query("delete from app.storage_cleanup")));
+    // A prefix here gets everything stored under that workspace deleted by the daily run (W11-7): the server alone queues one.
+    await expectDenied(asUser(a, (tx) => tx.query("insert into app.storage_prefix_cleanup (prefix) values ($1)", [`${orgB}/`])));
+    await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.storage_prefix_cleanup")));
+    await expectDenied(asUser(a, (tx) => tx.query("delete from app.storage_prefix_cleanup")));
   });
 
   it("sign-out-everywhere times: each person reads only their own, and only moves it themselves (Security E9)", async () => {

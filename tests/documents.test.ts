@@ -19,6 +19,7 @@ import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
 import { blobStore, localBlobStore, ObjectExists, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { templateById } from "@/lib/templates/catalog";
 import { isoToday } from "@/lib/today";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { freshDb, type TestDb } from "./support/db";
 
 /** The baselines (Tm y) of the W-9 requester box's text, from its appearance XObject (186.2 × 38 pt) in a flattened document. */
@@ -183,7 +184,9 @@ describe("uploads (Security R3)", () => {
     expect(checkUpload(enc("<html><script>x</script>")).ok).toBe(false);
     expect(checkUpload(new Uint8Array([0x50, 0x4b, 0x03, 0x04])).ok).toBe(false); // .docx / zip
     expect(checkUpload(new Uint8Array()).ok).toBe(false);
-    expect(checkUpload(new Uint8Array(10 * 1024 * 1024 + 1).fill(0x25)).ok).toBe(false);
+    const over = new Uint8Array(MAX_UPLOAD_BYTES + 1);
+    over.set(enc("%PDF-1.7"));
+    expect(checkUpload(over)).toEqual({ ok: false, error: "That file is over 4 MB. Choose a smaller file, or save it as a smaller PDF." });
     expect(checkUpload(enc("%PDF-1.7 /OpenAction << /S /Launch /F (calc.exe) >>")).ok).toBe(false);
     expect(checkUpload(enc("%PDF-1.7 /Names << /EmbeddedFiles 5 0 R >>")).ok).toBe(false);
   });

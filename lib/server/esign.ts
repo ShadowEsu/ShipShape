@@ -20,6 +20,8 @@ import type { Ctx } from "./profile";
 import { blobStore, putVersionFile } from "./storage";
 
 export const SIGN_DAYS = [7, 14, 30] as const;
+/** Bytes kept free at request time for the certificate pages the signing appends (they're a few tens of KB). */
+export const CERTIFICATE_ALLOWANCE = 256 * 1024;
 
 /**
  * Signers prove they read their email with a one-time code. Email sending is off, so codes land in
@@ -82,7 +84,10 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
         : "ShipShape can't read this file well enough to send it for signature. If it's password-protected, remove the password, or print it to a new PDF and upload that.",
     );
   }
-  if (toSign.length > MAX_UPLOAD_BYTES) throw new UserError("This document is too large to send for signature.");
+  // Signing appends the certificate (two pages of text and fonts, well under this) and the signed copy
+  // is a stored version, capped at MAX_UPLOAD_BYTES; the allowance keeps a request that is created
+  // from ending in too_large for the signer (W11-6).
+  if (toSign.length > MAX_UPLOAD_BYTES - CERTIFICATE_ALLOWANCE) throw new UserError("This document is too large to send for signature.");
   await asUser(ctx.userId, async (tx) => {
     await assertWithinPlan(tx, ctx, "esign");
     // What was built must still be the latest version of an active document: the request names it.
