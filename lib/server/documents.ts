@@ -227,7 +227,7 @@ export async function getDocument(ctx: Ctx, id: string) {
     );
     const audit = await tx.query<AuditRow>(
       // Order by the table's bigint column; the text alias `seq` would sort "10" before "9".
-      "select a.seq::text as seq, a.at::text as at, a.action, a.actor = $3 as actor_is_me from app.audit_log a where a.org_id = $1 and a.object_id = $2 order by a.seq desc limit 50",
+      "select a.seq::text as seq, a.at::text as at, a.action, coalesce(a.actor = $3, false) as actor_is_me from app.audit_log a where a.org_id = $1 and a.object_id = $2 order by a.seq desc limit 50",
       [ctx.orgId, id, ctx.userId],
     );
     return { doc, versions, audit };

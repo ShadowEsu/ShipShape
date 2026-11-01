@@ -356,7 +356,9 @@ describe("signing", () => {
     expect(req.signer_visitor).toMatch(/^[0-9a-f]{16}$/);
 
     const actions = after.audit.map((x) => x.action).reverse();
-    expect(actions.slice(-5)).toEqual(["esign.requested", "esign.opened", "esign.code_sent", "document.signed_version_added", "esign.signed"]);
+    // The signer's download of the file to sign is in the document's History (0038), as an outsider's row.
+    expect(actions.slice(-6)).toEqual(["esign.requested", "esign.opened", "esign.file_downloaded", "esign.code_sent", "document.signed_version_added", "esign.signed"]);
+    expect(after.audit.find((x) => x.action === "esign.file_downloaded")?.actor_is_me).toBe(false);
     const [chain] = await asUser(a.userId, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [a.orgId]));
     expect(chain.broken).toBeNull();
     // The signed copy's fingerprint is in the hash-chained history itself (Security F2).
@@ -375,6 +377,7 @@ describe("signing", () => {
     const file = verifyFileParams(new URL((await signingFileUrl(id, token))!, "http://x").searchParams);
     expect(file?.objectPath).toBe(`${a.orgId}/${doc.id}/v${signed.version}.pdf`);
     expect(file?.inline).toBe(false);
+    expect((await getDocument(a, doc.id))!.audit[0].action).toBe("esign.signed_copy_downloaded");
   });
 
   it("keeps the sender's name as it was when the request was sent: the signing page, the code and the certificate (Security RN-1)", async () => {

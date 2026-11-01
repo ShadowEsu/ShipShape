@@ -30,6 +30,8 @@ const ACTIONS: Record<string, string> = {
   "document.acknowledged": "Reviewed and acknowledged",
   "document.viewed": "Opened",
   "document.downloaded": "Downloaded",
+  "document.link_viewed": "Viewed through a passport link",
+  "document.link_downloaded": "Downloaded through a passport link",
   "document.signed_version_added": "Signed copy added",
   "esign.requested": "Signature requested",
   "esign.opened": "Signer opened the link",
@@ -37,6 +39,8 @@ const ACTIONS: Record<string, string> = {
   "esign.signed": "Signed",
   "esign.revoked": "Signature request withdrawn",
   "esign.review_downloaded": "File sent for signing downloaded",
+  "esign.file_downloaded": "Signer downloaded the file to sign",
+  "esign.signed_copy_downloaded": "Signer downloaded the signed copy",
 };
 
 /** What went wrong in a form posted from this page (see backToDocument in ../actions.ts), and the one thing that fixes it. */
@@ -145,7 +149,7 @@ export default async function DocumentPage({
       {added && !made && (
         <div role="status">
           <Notice tone="ok">
-            Added to your documents as version 1. Your team&apos;s views and downloads go into its history.{" "}
+            Added to your documents as version 1. Every view and download goes into its history.{" "}
             {doc.expires_on
               ? `Next: it shows under Needs attention on Home 30 days before it expires on ${fmtDay(doc.expires_on)}.`
               : "Next: add its expiry date under Details, so Home can warn you before it lapses."}
