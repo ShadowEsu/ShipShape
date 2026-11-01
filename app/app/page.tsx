@@ -127,33 +127,35 @@ export default async function AppHome() {
               : "Nothing has expired or expires in the next 30 days."}
           </p>
         ) : (
-          <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
-            {attention.map((d) => {
-              const daysLeft = d.expires_on ? Math.round((Date.parse(d.expires_on) - Date.parse(ctx.today)) / 86_400_000) : 0;
-              return (
-                <li key={d.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                  <span className="min-w-0 space-y-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{d.title}</span>
-                      <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
-                      <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+          <>
+            {/* Rule 6, once for the list: what renews a document; each row then says only its own state and action. */}
+            <p className="text-sm text-ink-2">
+              Renew each one with the issuer, then {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates here."}
+            </p>
+            <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
+              {attention.map((d) => {
+                const daysLeft = d.expires_on ? Math.round((Date.parse(d.expires_on) - Date.parse(ctx.today)) / 86_400_000) : 0;
+                return (
+                  <li key={d.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <span className="min-w-0 space-y-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{d.title}</span>
+                        <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
+                        <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                      </span>
+                      <span className="block text-sm text-ink-2">{d.validity === "expired" ? "It has lapsed." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`}</span>
                     </span>
-                    {/* Rule 6: one line on what it means, one action that fixes it. */}
-                    <span className="block text-sm text-ink-2">
-                      {d.validity === "expired" ? "It has lapsed." : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left.`} Renew it with the issuer, then{" "}
-                      {canUpload ? "add the new copy and its new date, so your passport links share the current one." : "update its dates here."}
-                    </span>
-                  </span>
-                  <Link
-                    href={canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
-                    className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline"
-                  >
-                    {canUpload ? "Add the renewed copy" : "Update its dates"}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+                    <Link
+                      href={canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
+                      className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline"
+                    >
+                      {canUpload ? "Add the renewed copy" : "Update its dates"}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
         {docs.attentionTotal > ATTENTION_MAX && (
           <p className="text-sm text-ink-2">

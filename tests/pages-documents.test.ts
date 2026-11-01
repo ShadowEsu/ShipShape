@@ -192,7 +192,10 @@ describe("home", () => {
     const html = await homePage();
     const text = textOf(html);
     expect(text).toContain("Old permit");
-    expect(text).toContain("It has lapsed. Renew it with the issuer, then add the new copy and its new date, so your passport links share the current one.");
+    expect(text).toContain("It has lapsed.");
+    // What renews a document is said once above the list, not on every row.
+    expect(text.split("Renew each one with the issuer, then add the new copy and its new date, so your passport links share the current one.")).toHaveLength(2);
+    expect(text).not.toContain("Renew it with the issuer");
     expect(text).not.toContain("Nothing has expired");
     const attention = html.slice(html.indexOf("Needs attention"));
     expect(actionsOf(attention).filter((a) => a.href?.startsWith(`/app/documents/${id}`))).toEqual([
@@ -218,6 +221,7 @@ describe("home", () => {
     expect(text).toContain("License 20");
     expect(text).not.toContain("License 21");
     expect(text).toContain("The 20 soonest are listed; 2 more need attention.");
+    expect(text.split("Renew each one with the issuer")).toHaveLength(2);
     expect(actionsOf(html).filter((a) => a.label === "See all documents")).toEqual([{ tag: "a", label: "See all documents", href: "/app/documents" }]);
     // The setup list reads the same summary: a document exists, with a date, and the first in list order is the soonest.
     expect(text).not.toContain("Add an expiry date (to do)");
