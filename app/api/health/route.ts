@@ -3,6 +3,9 @@ import { launchProblems } from "@/lib/server/launch-check";
 
 export const dynamic = "force-dynamic";
 
+/** The settings don't change while an instance runs, so they're checked once (not a store and Cognito config per call). */
+let configOk: boolean | undefined;
+
 /**
  * Revision, build time and dependency flags only: no environment variable names or values. `config`
  * is whether the deployment has every setting it needs (W12-2), so the launch's last check fails on
@@ -10,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   const db = await dbUp();
-  const config = launchProblems(process.env).length === 0;
+  const config = (configOk ??= launchProblems(process.env).length === 0);
   return Response.json(
     {
       ok: db && config,
