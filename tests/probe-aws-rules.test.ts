@@ -119,6 +119,15 @@ describe("bucket policy principals outside the account (W12-5)", () => {
   it("counts whoever a NotPrincipal leaves in", () => {
     expect(outsidePrincipals([{ Effect: "Allow", NotPrincipal: { AWS: `arn:aws:iam::${account}:root` }, Action: "s3:*" }], account)).toHaveLength(1);
   });
+
+  // Only an AWS principal can be inside: a Federated or Service principal is whoever that provider or
+  // service vouches for, even when its ARN carries this account's id.
+  it.each([
+    ["a Federated principal with this account's OIDC provider ARN", { Federated: `arn:aws:iam::${account}:oidc-provider/oidc.vercel.com/example-team` }],
+    ["a Service principal written as this account's ARN", { Service: `arn:aws:iam::${account}:role/x` }],
+  ])("counts %s as outside", (_what, principal) => {
+    expect(outsidePrincipals([allow(principal)], account)).toEqual([`${Object.keys(principal)[0]} ${Object.values(principal)[0]}`]);
+  });
 });
 
 describe("RDS (W12-5, W12-10)", () => {

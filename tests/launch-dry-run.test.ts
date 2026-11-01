@@ -208,6 +208,8 @@ describe("LAUNCH_APPLY=1 infra/launch.sh", () => {
       pab?: object;
       aws?: string[];
       loginFails?: boolean;
+      // committed (the default); modified after its commit; or never committed (another file is).
+      lockState?: "committed" | "modified" | "untracked";
     } = {},
   ) {
     const repo = path.join(root, `repo-${fixtures++}`);
@@ -229,13 +231,15 @@ describe("LAUNCH_APPLY=1 infra/launch.sh", () => {
       writeFileSync(path.join(repo, ".vercel", "project.json"), JSON.stringify(opts.link ?? goodLink));
     }
     const when = `@${Math.floor(Date.now() / 1000) - (opts.lockAgeDays ?? 30) * 86400} +0000`;
-    for (const args of [["init", "-q"], ["add", "package-lock.json"], ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "lock"]]) {
+    const tracked = opts.lockState === "untracked" ? "package.json" : "package-lock.json";
+    for (const args of [["init", "-q"], ["add", tracked], ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "lock"]]) {
       const result = spawnSync("git", args, {
         cwd: repo,
         env: { NODE_ENV: "test", PATH: "/usr/bin:/bin", HOME: repo, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
       });
       expect(result.status).toBe(0);
     }
+    if (opts.lockState === "modified") writeFileSync(path.join(repo, "package-lock.json"), JSON.stringify({ name: "fixture", lockfileVersion: 3, packages, edited: true }));
 
     writeFileSync(path.join(bin, "outputs.txt"), outputs.map(([k, v]) => `${k}\t${v}`).join("\n") + "\n");
     writeFileSync(path.join(bin, "key-policy.json"), JSON.stringify(opts.keyPolicy ?? templateKeyPolicy));
@@ -378,6 +382,17 @@ exec '${process.execPath}' "$@"`,
     const allowed = launch(complete, { apply: true, bin: young.bin, script: young.script, env: { LAUNCH_ALLOW_YOUNG_LOCKFILE: "1" } });
     expect(allowed.status).toBe(0);
     expect(allowed.log).toContain("  LAUNCH_ALLOW_YOUNG_LOCKFILE=1: package-lock.json was last committed 2 days ago, under the 7 days aws-plan PR-4 asks for. Going ahead as you asked.");
+  });
+
+  it.each<[string, "modified" | "untracked", string]>([
+    ["has an uncommitted change", "modified", "Stopped: package-lock.json has changes that aren't committed (or this isn't a git checkout)."],
+    ["was never committed", "untracked", "Stopped: package-lock.json isn't in any commit here."],
+  ])("refuses a lockfile that %s, however old the repo, before changing anything (W12-9)", (_what, lockState, stopped) => {
+    const f = fixture({ lockState });
+    const { status, out } = launch(complete, { apply: true, bin: f.bin, script: f.script });
+    expect(status).toBe(1);
+    expect(out).toContain(stopped);
+    expect(f.calls().some((c) => c.includes("put-public-access-block") || c.includes("cloudformation deploy") || c.startsWith("vercel env add"))).toBe(false);
   });
 
   it("refuses node_modules that don't match the lockfile before changing anything (W12-9)", () => {
