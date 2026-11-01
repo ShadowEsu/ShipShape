@@ -4,25 +4,27 @@
 //
 //   NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
 //   SUPABASE_SERVICE_ROLE_KEY=... SUPABASE_DB_URL=postgres://postgres:...@.../postgres \
-//   node scripts/probe-supabase.mjs
+//   DATABASE_CA_CERT="$(cat <the Supabase project's CA>.crt)" node scripts/probe-supabase.mjs
 //
 // Checks, for a visitor (anon key) and for a signed-in user (a throwaway account made for the run):
 // - the `app` schema isn't served by the Data API, and the served schemas expose nothing;
 // - the `documents` bucket is private with the app's limits;
 // - a canary file the service key puts in the bucket can't be listed, downloaded, fetched by public
 //   URL or given a signed URL, and nothing can be uploaded;
-// and over SQL, app.storage_lockdown_problems() reports nothing.
+// and over SQL (TLS verified against DATABASE_CA_CERT), app.storage_lockdown_problems() reports nothing.
 // The canary, any upload that wrongly succeeded, and the throwaway user are removed at the end.
-// Exits 1 on any failure.
+// Exits 1 on any failure, 2 when a setting is missing.
 
 import postgres from "postgres";
+import { appSchemaNotServed, supabaseSqlTls } from "./probe-supabase-rules.ts";
 
 const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, "");
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const dbUrl = process.env.SUPABASE_DB_URL ?? "";
-if (!base || !anonKey || !serviceKey || !dbUrl) {
-  console.error("Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_DB_URL.");
+const sqlTls = supabaseSqlTls(process.env.DATABASE_CA_CERT);
+if (!base || !anonKey || !serviceKey || !dbUrl || !sqlTls) {
+  console.error("Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL and DATABASE_CA_CERT.");
   process.exit(2);
 }
 
@@ -61,23 +63,21 @@ check("a throwaway signed-in user for the run", Boolean(userId && userToken), `c
 const roles = [["visitor", visitor]];
 if (userToken) roles.push(["signed-in user", { apikey: anonKey, Authorization: `Bearer ${userToken}` }]);
 
-// A schema the Data API doesn't serve answers 406 PGRST106; with the Data API switched off there is no
-// /rest/v1 at all (404). Anything else (data, or an RLS/permission error) means the schema is served.
-const notServed = (r) => (r.status === 406 && r.json?.code === "PGRST106") || r.status === 404;
+// Whether the Data API is on at all: section 1 accepts a 404 only when this is 404 too (W12-7).
+const root = await call("/rest/v1/", service);
 
 // 1. The app schema is not served, to anyone.
 for (const [who, headers] of [...roles, ["service key", service]]) {
   const table = await call("/rest/v1/vendor_files?select=id&limit=1", headers, { headers: { "Accept-Profile": "app" } });
-  check(`Data API doesn't serve app tables (${who})`, notServed(table), `${table.status} ${table.text}`);
+  check(`Data API doesn't serve app tables (${who})`, appSchemaNotServed(table, root.status), `${table.status} ${table.text}`);
   const rpc = await call("/rest/v1/rpc/collect_open", headers, {
     ...jsonBody({ link: "00000000-0000-4000-8000-000000000000", secret_hash: "0".repeat(64) }),
     headers: { "Content-Type": "application/json", "Content-Profile": "app" },
   });
-  check(`Data API doesn't serve app functions (${who})`, notServed(rpc), `${rpc.status} ${rpc.text}`);
+  check(`Data API doesn't serve app functions (${who})`, appSchemaNotServed(rpc, root.status), `${rpc.status} ${rpc.text}`);
 }
 
 // 2. The schemas it does serve hold nothing of ShipShape's (the app keeps everything in `app`).
-const root = await call("/rest/v1/", service);
 if (root.status === 404) {
   check("Data API is switched off", true, "404");
 } else {
@@ -119,8 +119,8 @@ for (const [who, headers] of roles) {
   if (upload.status < 400) strayUploads.push(path);
 }
 
-// 5. The database's own check (C4-c).
-const sql = postgres(dbUrl, { max: 1, prepare: false });
+// 5. The database's own check (C4-c), as postgres over TLS with the chain and hostname verified (W12-6).
+const sql = postgres(dbUrl, { max: 1, prepare: false, ssl: sqlTls });
 try {
   const problems = await sql`select p from app.storage_lockdown_problems() p`;
   check("app.storage_lockdown_problems() reports nothing", problems.length === 0, problems.map((r) => r.p).join("; "));

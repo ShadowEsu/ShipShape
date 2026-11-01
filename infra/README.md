@@ -14,40 +14,43 @@ These templates create what the AWS hosting plan (`aws-plan.md`) specifies, so M
 **Then, from the repo:**
 1. Sign in: `aws configure sso` once (it names a profile), then `aws sso login --profile <profile>`.
 2. `cp infra/launch.env.example infra/launch.env` and fill in its 8 values (2 come filled in). The example says what each one is.
-3. `npm ci`, if you haven't yet: the migrations and the probe use the repo's packages.
+3. `npm ci --ignore-scripts`, if you haven't yet: the migrations and the probe use the repo's packages. The apply refuses to run unless `package-lock.json` was last committed at least 7 days ago (aws-plan PR-4; `LAUNCH_ALLOW_YOUNG_LOCKFILE=1` overrides that, and the log records it) and `node_modules` holds exactly the lockfile's packages.
 4. Dry run: `infra/launch.sh`. It checks `launch.env`, validates the templates (with `aws` when you're signed in, otherwise `uvx cfn-lint`, otherwise it says it skipped them) and prints the plan. Exit 0 means the plan is complete; exit 2 names the setting to fix.
 5. Apply: `LAUNCH_APPLY=1 infra/launch.sh`.
 
-The probe's "STS refuses a preview" check needs a preview deployment's OIDC token. With the Vercel CLI installed and the repo linked (`vercel link`), the script fetches it with `vercel env pull --environment=preview`. Otherwise, export `PROBE_PREVIEW_OIDC_TOKEN` before step 5.
+The probe's "STS refuses a preview" check needs a preview deployment's OIDC token. With the Vercel CLI installed and the repo linked (`vercel link`), the script fetches it with `vercel env pull --environment=preview`. Otherwise, export `PROBE_PREVIEW_OIDC_TOKEN` before step 5. When the repo is linked, the script writes production secrets into the linked project, so preflight first checks the link: `.vercel/project.json` must name `VERCEL_PROJECT`, and the preview token pulled through it must have `sub` `owner:<VERCEL_TEAM>:project:<VERCEL_PROJECT>:environment:preview`, `iss` `https://oidc.vercel.com/<VERCEL_TEAM>`, and `owner_id`/`project_id` equal to the file's `orgId`/`projectId` (the file holds ids, `launch.env` holds the team slug; the token carries both). `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` in the shell are ignored, so the CLI uses that file.
 
 | Step | What | Time |
 | --- | --- | --- |
-| Preflight | `aws`, Node 24, `curl` and `openssl` are there; the session is an Identity Center role (`AWSReservedSSO_…`) in `ACCOUNT_ID`, never root, an IAM user or stored keys | under 1 minute |
-| 0 | Block Public Access for the whole account | under 1 minute |
-| 1 | `shipshape-storage`: the key and the bucket | about 1 minute |
+| Preflight | `aws`, Node 24, `curl`, `openssl` and `git` are there; the session is an Identity Center role (`AWSReservedSSO_…`) in `ACCOUNT_ID`, never root, an IAM user or stored keys; `package-lock.json` is 7 days old and `node_modules` matches it; a linked Vercel project is `VERCEL_PROJECT` in `VERCEL_TEAM` | under 1 minute |
+| 0 | Block Public Access for the whole account, then read back (`--output json`, the signed-in account): all four on, nothing else | under 1 minute |
+| 1 | `shipshape-storage`: the key and the bucket; the key's policy read back: exactly the template's one statement | about 1 minute |
 | 2 | `shipshape-signin`: the user pool and the app client | about 2 minutes |
 | 3 | `shipshape-app-role`: Vercel's OIDC provider and the role | about 1 minute |
 | 4 | `shipshape-database`: RDS | about 15 minutes |
 | 5 | `shipshape-budgets`: the 2 alarms | about 1 minute |
 | | Termination protection on stacks 1-4 | under 1 minute |
-| 6 | Migrations as the master user, `shipshape_app`'s password (stored in Vercel or `~/.shipshape-launch` at once), the roles check | about 1 minute |
+| 6 | Migrations as the master user; `shipshape_app`'s password, set as a SCRAM verifier computed in the script; `DATABASE_CA_CERT` and then `DATABASE_URL` stored in Vercel or `~/.shipshape-launch` at once; one login as `shipshape_app` to prove the password; the roles check | about 1 minute |
 | 7 | `scripts/probe-aws.mjs`, every variable filled in from the outputs | about 2 minutes |
-| 8 | The Vercel Production variables; the checked CA bundle and the client secret piped into Vercel | about 2 minutes |
+| 8 | The Vercel Production variables, the app's own secrets named (never made or printed), the client secret piped into Vercel | about 2 minutes |
 | | **Total** | **about 30 minutes** |
 
-If a step stops, the `Stopped:` line says what happened and the `Fix:` line says what to do. Do that and run the same command again: finished stacks say "Up to date" and applied migrations are skipped. Step 6 gives `shipshape_app` a login password and stores it the moment it is set (before the roles check and the probe), so a later stop never strands it. Once that password exists (`shipshape_app` can already log in), the script stops at step 6 unless you add `LAUNCH_ROTATE_APP_PASSWORD=1`, because a new password means production can't open database connections until it is redeployed with the new `DATABASE_URL`. So a stop after step 6 (the roles check, the probe) is rerun with `LAUNCH_ROTATE_APP_PASSWORD=1`; on a first launch production isn't on that password yet, so there is nothing to redeploy. The `Fix:` line says so.
+If a step stops, the `Stopped:` line says what happened and the `Fix:` line says what to do. Do that and run the same command again: finished stacks say "Up to date" and applied migrations are skipped. Step 6 gives `shipshape_app` a login password and stores it the moment it is set (before the login check, the roles check and the probe), so a later stop never strands it. Once that password exists (`shipshape_app` can already log in), the script stops at step 6 unless you add `LAUNCH_ROTATE_APP_PASSWORD=1`, because a new password means production can't open database connections until it is redeployed with the new `DATABASE_URL`. So a stop after step 6 (the login check, the roles check, the probe) is rerun with `LAUNCH_ROTATE_APP_PASSWORD=1`; on a first launch production isn't on that password yet, so there is nothing to redeploy. The `Fix:` line says so. Any other failure to read a stack's state (an expired session, throttling) stops the run too: only CloudFormation's "does not exist" counts as no stack.
 
 No secret is printed:
 - The master password goes from Secrets Manager into a variable, never to the screen or the log.
-- `COGNITO_CLIENT_SECRET` and `DATABASE_URL` (with `shipshape_app`'s password) are piped into `vercel env add` when the Vercel CLI is installed and the repo is linked. Otherwise the script prints the exact commands. `DATABASE_URL` then waits in `~/.shipshape-launch/DATABASE_URL`, which only you can read; the printed command deletes it. If you don't use it, delete the file yourself.
+- `shipshape_app`'s password reaches node in its environment, never its arguments. The server gets only its SCRAM-SHA-256 verifier (16 random salt bytes, 4096 iterations), so neither the statement nor an error's context in the Postgres log can hold the password; `log_error_verbosity: terse` drops error context from that log as well.
+- `DATABASE_CA_CERT`, `DATABASE_URL` (with `shipshape_app`'s password) and `COGNITO_CLIENT_SECRET` are piped into `vercel env add … --sensitive` when the Vercel CLI is installed and the repo is linked; the CA goes first, so production never has the RDS address without the bundle that verifies it. Otherwise the script prints the exact commands. `DATABASE_URL` then waits in `~/.shipshape-launch/DATABASE_URL`, which only you can read; the printed command deletes it. If you don't use it, delete the file yourself.
 - The RDS CA bundle goes into Vercel only after its sha256 matched the one pinned in the script (piped in, or from the checked copy at `~/.shipshape-launch/rds-ca.pem`).
 - At the end the script searches its log for the master password (plain and URL-encoded), the client secret, `shipshape_app`'s password and the preview token (given or pulled), and fails if it finds one.
 
 **Afterwards:**
-1. Add the variables step 8 prints in Vercel, Production only. Then redeploy production and open `/api/health` (aws-plan "Order at M6", step 8).
-2. Send Security the log file. They read:
+1. Add the variables step 8 prints in Vercel, Production only, and the app's own secrets it names: `SHIPSHAPE_SESSION_SECRET`, `SHIPSHAPE_HASH_KEY` and `CRON_SECRET` (each at least 32 characters), `SHIPSHAPE_FIELD_KEY` (32 random bytes, base64), and `CONTACT_EMAIL` when real documents are on. Then redeploy production and open `/api/health` (aws-plan "Order at M6", step 8). It passes with 200 and `"ok": true, "db": "up", "config": "ok"`; a 503 with `"config": "missing"` means a production setting is still missing.
+2. Set up CloudTrail (all regions, into a separate private bucket) and GuardDuty RDS Protection yourself: these templates don't create them (see "Not in these templates").
+3. Send Security the log file. They read:
    - the probe's output (step 7): every check `PASS`, exit 0;
-   - the roles check (step 6): `password_encryption=scram-sha-256 rds.force_ssl=1`, `shipshape_app is a member of: anon, authenticated, service_role` and `Roles OK`.
+   - the roles check (step 6): `password_encryption=scram-sha-256 rds.force_ssl=1`, `shipshape_app is a member of: anon, authenticated, service_role` and `Roles OK`;
+   - the read-backs: `PASS account Block Public Access`, `PASS the file key's policy is the one storage.yaml writes`, and the preflight's `PASS node_modules matches package-lock.json` (and the `LAUNCH_ALLOW_YOUNG_LOCKFILE=1` line, if you used it).
 
 To undo it, see "Rollback" below.
 
@@ -132,7 +135,8 @@ Afterwards:
 - **Vercel env, Production only:**
   - `SHIPSHAPE_S3_BUCKET` and `AWS_ROLE_ARN` (the app-role `RoleArn`), plus `AWS_REGION=us-east-1`;
   - `COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` (the signin outputs);
-  - `COGNITO_CLIENT_SECRET`, piped straight in so it never prints: `aws cognito-idp describe-user-pool-client --user-pool-id <id> --client-id <id> --query UserPoolClient.ClientSecret --output text | vercel env add COGNITO_CLIENT_SECRET production`.
+  - `COGNITO_CLIENT_SECRET`, piped straight in so it never prints: `aws cognito-idp describe-user-pool-client --user-pool-id <id> --client-id <id> --query UserPoolClient.ClientSecret --output text | vercel env add COGNITO_CLIENT_SECRET production --sensitive`;
+  - the app's own secrets, which you make yourself: `SHIPSHAPE_SESSION_SECRET`, `SHIPSHAPE_HASH_KEY` and `CRON_SECRET` (each at least 32 characters), `SHIPSHAPE_FIELD_KEY` (32 random bytes, base64), and `CONTACT_EMAIL` when real documents are on. `/api/health` answers 503 with `"config": "missing"` until every production setting is there, and 200 with `"ok": true, "db": "up", "config": "ok"` once it is.
 
   Previews get none of these (Security S3-1).
 - **Database roles and migrations:** follow aws-plan's "Order at M6", step 8.
@@ -197,12 +201,12 @@ Cost per day if it's left up (us-east-1 on-demand, from aws-plan's cost table pl
 
 | Item | Why it isn't here | Source |
 | --- | --- | --- |
-| Account-level Block Public Access | Not a CloudFormation resource. Step 0 above sets it | aws-plan S3 row |
+| Account-level Block Public Access | Not a CloudFormation resource. Step 0 above sets it; `launch.sh` reads it back for the signed-in account (`--output json`, all four on and nothing else, or the run fails) | aws-plan S3 row |
 | CloudTrail, all regions, into a separate private bucket | aws-plan lists it under Audit. It isn't one of these five templates | aws-plan Audit row |
 | GuardDuty RDS Protection | Account-wide, and it costs money after the trial. aws-plan says to check that cost at setup | R-4 (SHOULD) |
 | SES production access | It's a support request. Production email stays off until BOSS and Security say go | aws-plan Email row |
 | IAM Identity Center, root MFA, the Paid plan, Activate | account owner only | aws-plan "What the owner does" |
-| The database's roles and `shipshape_app`'s password | They live in SQL (`plain-postgres.sql`, `npm run migrate`), not in AWS resources | R-1, R-2, BOSS rule 2 |
+| The database's roles and `shipshape_app`'s password | They live in SQL (`plain-postgres.sql`, `npm run migrate`), not in AWS resources. `launch.sh` sets the password as a SCRAM-SHA-256 verifier it computes (`scripts/launch-checks.ts`), then logs in once as `shipshape_app` to prove it | R-1, R-2, BOSS rule 2 |
 
 ## Requirement → template
 
@@ -212,41 +216,44 @@ Cost per day if it's left up (us-east-1 on-demand, from aws-plan's cost table pl
 | Block Public Access, all four, on the bucket | aws-plan S3; probe "Block Public Access" | `storage.yaml` `FilesBucket.PublicAccessBlockConfiguration` |
 | ACLs off (`BucketOwnerEnforced`) | aws-plan S3; probe "ACLs are off" | `FilesBucket.OwnershipControls` |
 | Versioning on | aws-plan S3; probe "versioning is on" | `FilesBucket.VersioningConfiguration.Status: Enabled` |
-| Noncurrent versions expire after 7 days | BOSS rule 1; probe "versioning…expire within 7 days" | `FilesBucket.LifecycleConfiguration.Rules[deleted-data-7-days].NoncurrentVersionExpiration.NoncurrentDays: 7`. The rule has no filter, so it covers the whole bucket |
+| Noncurrent versions expire after 7 days | BOSS rule 1; probe "versioning…go within 7 days" | `FilesBucket.LifecycleConfiguration.Rules[deleted-data-7-days].NoncurrentVersionExpiration.NoncurrentDays: 7`, with no `NewerNoncurrentVersions` (which would keep that many old versions forever). The rule has no filter, so it covers the whole bucket; the probe counts only rules with no filter or an empty prefix (no other prefix, tags, sizes or `And`) |
 | Expired delete markers removed | BOSS rule 1; same probe line | Same rule, `ExpiredObjectDeleteMarker: true` |
-| Incomplete multipart uploads aborted after 1 day | aws-plan S3 | Same rule, `AbortIncompleteMultipartUpload.DaysAfterInitiation: 1` |
+| Incomplete multipart uploads aborted after 1 day | aws-plan S3; same probe line (within 7 days) | Same rule, `AbortIncompleteMultipartUpload.DaysAfterInitiation: 1` |
 | SSE-KMS by default with the customer key | aws-plan S3; probe "default encryption is SSE-KMS with the key", "canary…encrypted with the bucket's KMS key" | `FilesBucket.BucketEncryption…SSEAlgorithm: aws:kms`, `KMSMasterKeyID: !GetAtt FileKey.Arn`. The ARN, because the probe compares it with `PROBE_KMS_KEY_ARN` |
 | S3 Bucket Keys | aws-plan S3 and cost table | `BucketEncryption…BucketKeyEnabled: true` |
 | Object Lock off | BOSS rule 1; probe "Object Lock is off" | `FilesBucket` has no `ObjectLockEnabled` or `ObjectLockConfiguration` |
 | The policy denies non-TLS | aws-plan bucket policy; probe "denies every request that isn't TLS" | `FilesBucketPolicy` `DenyNonTLS`: `Principal: "*"`, `s3:*`, the bucket and `/*`, `Bool aws:SecureTransport "false"` |
 | …and denies nothing else | probe "denies nothing else" (P-b0a) | `FilesBucketPolicy` has one statement |
-| The policy isn't public and grants nothing outside the account | probe "isn't public", "grants nothing…outside" | `FilesBucketPolicy` has no Allow statement |
+| The policy isn't public and grants nothing outside the account | probe "isn't public", "grants nothing…outside" (canonical users, services, federated users, `*` and a `NotPrincipal` count as outside) | `FilesBucketPolicy` has no Allow statement |
 | Anonymous canary, bucket and listing GETs answer 403 | Security 0158 | Block Public Access, `BucketOwnerEnforced`, and no Allow in the policy |
-| One customer key, rotated yearly | aws-plan cost table | `FileKey` (`EnableKeyRotation: true`). Its key policy only delegates to the account's IAM |
-| RDS storage encrypted with the key | aws-plan RDS; probe "RDS: storage encrypted" | `database.yaml` `Database.StorageEncrypted: true`, `KmsKeyId: FileKeyArn` (the plan prices one key) |
+| One customer key, rotated yearly | aws-plan cost table; `launch.sh` key-policy read-back | `FileKey` (`EnableKeyRotation: true`). Its key policy is one statement: the account root, `kms:*`, on `*`. So any principal in the account whose own IAM policy grants it the key can use it: an exposure Security accepted (W12-11), narrowed for the app role by `kms:ViaService`. `launch.sh` reads the policy back after step 1 (`--output json`) and fails on anything else: another statement, `"AWS": "*"`, another account, a service, a condition |
+| RDS storage encrypted with the key | aws-plan RDS; probe "RDS: storage encrypted with the key" (`KmsKeyId` = `PROBE_KMS_KEY_ARN`, so the default `aws/rds` key fails) | `database.yaml` `Database.StorageEncrypted: true`, `KmsKeyId: FileKeyArn` (the plan prices one key) |
 | PostgreSQL 17, `db.t4g.micro`, Single-AZ, 20 GB gp3 | aws-plan RDS | `Database.Engine: postgres`, `EngineVersion` (pattern `17.x`), `DBInstanceClass`, `MultiAZ: false`, `AllocatedStorage: "20"`, `StorageType: gp3` |
 | 7 days of automated backups (PITR) | aws-plan RDS, BOSS rule 1; probe "7 days of backups" | `Database.BackupRetentionPeriod: 7` |
 | Deletion protection | aws-plan RDS; probe | `Database.DeletionProtection: true` |
 | No manual snapshot past 7 days | BOSS rule 1; probe "no manual snapshot older than 7 days" | `Database` `DeletionPolicy: Retain`, so CloudFormation's default `Snapshot` never makes a final snapshot |
+| No manual snapshot shared | probe "no manual snapshot is shared" (each one's `restore` attribute names no account and not `all`) | Nothing in the templates shares one |
 | `rds.force_ssl=1` | R-3; aws-plan RDS | `DatabaseParameters.Parameters.rds.force_ssl: "1"` |
 | SCRAM only, `password_encryption=scram-sha-256` | R-3; aws-plan reachability row | `DatabaseParameters`: `password_encryption: scram-sha-256`, `rds.accepted_password_auth_method: scram` |
 | `PubliclyAccessible=true` (Security ACCEPTED) | aws-plan reachability row | `Database.PubliclyAccessible: true` |
 | Security group on 5432 only | aws-plan reachability row | `DatabaseSecurityGroup`: one ingress rule, tcp 5432 |
 | The master password managed by RDS in Secrets Manager | R-2 | `Database.ManageMasterUserPassword: true`, `MasterUsername: postgres` (output `MasterSecretArn`) |
 | `log_connections`, `log_disconnections` | R-4 | `DatabaseParameters`: both `"1"` |
+| No values in the exported log: terse errors, no full statement logging | W12-10; probe "the parameter group logs no statement in full… and logs errors tersely" | `DatabaseParameters`: `log_error_verbosity: terse` (no CONTEXT, DETAIL or HINT lines); `log_statement` left at its default (`none`), and the probe fails if it is `all` |
 | Failed-auth logs exported to CloudWatch | R-4 | `Database.EnableCloudwatchLogsExports: [postgresql]`. `DatabaseLog` sets its retention |
 | Automatic minor version upgrades | R-4 | `Database.AutoMinorVersionUpgrade: true` |
 | OIDC provider for `https://oidc.vercel.com/<team>` | aws-plan Credentials | `app-role.yaml` `VercelOidcProvider.Url`, `ClientIdList: [Audience]` |
 | Role `shipshape-prod-app` | aws-plan IAM drafts | `AppRole.RoleName` |
 | Trust: exactly the provider, `aud` and the production `sub`, with `StringEquals` only | S3-1; probe PR-3 | `AppRole.AssumeRolePolicyDocument`: one statement, `Federated: <provider ARN>`, `sts:AssumeRoleWithWebIdentity`, `StringEquals` on `oidc.vercel.com/<team>:aud` and `:sub`. It's a `!Sub` JSON string because the condition keys contain the team |
-| A preview token is refused | S3-1; probe "STS refuses a preview" | The `sub` holds `environment:production` only, enforced by the `ProductionSub` pattern. Only real STS can prove it, at M6 |
+| A preview token is refused | S3-1; probe "STS refuses this project's preview token" | The `sub` holds `environment:production` only, enforced by the `ProductionSub` pattern. Only real STS can prove it, at M6. The probe first decodes the token (no signature check) and requires `iss` `https://oidc.vercel.com/<team>`, `aud` `PROBE_OIDC_AUD` and `sub` `PROBE_PRODUCTION_SUB` with `environment:preview`: another project's token would be refused too, proving nothing |
 | S3 Put/Get/DeleteObject on `<bucket>/*` | IAM drafts `Files`; probe PR-2 | `AppRole.Policies[app]`, Sid `Files` |
-| `s3:ListBucket` on the bucket, only under one workspace's `<org id>/` prefix (the daily sweep of a deleted workspace's files, W11-7) | aws-plan TO-1; probe PR-2 | Sid `SweepDeletedWorkspace`, `Condition: StringLike s3:prefix "????????-????-????-????-????????????/"`. The app checks the exact id shape before it lists (`assertWorkspacePrefix`) |
-| `kms:GenerateDataKey` and `kms:Decrypt` on the one key | IAM drafts `FileKey`; probe PR-2 | Sid `FileKey`, `Resource: FileKeyArn` |
+| `s3:ListBucket` on the bucket, only under a workspace's `<org id>/` prefix (the daily sweep of a deleted workspace's files, W11-7; telling a missing file from a refused one, W12-1) | aws-plan TO-1; probe PR-2 (exactly this condition) | Sid `SweepDeletedWorkspace`, `Condition: StringLike s3:prefix "????????-????-????-????-????????????/*"`. Any one workspace's keys, one prefix per call: listing `<org id>/` already returned every key under it. The app checks the exact id shape before it lists (`assertWorkspacePrefix`) |
+| `kms:GenerateDataKey` and `kms:Decrypt` on the one key, only through S3 | IAM drafts `FileKey`; W12-11; probe PR-2 (exactly this condition) | Sid `FileKey`, `Resource: FileKeyArn`, `Condition: StringEquals kms:ViaService "s3.${AWS::Region}.amazonaws.com"` (the app uses the key only through SSE-KMS) |
 | `cognito-idp:AdminDeleteUser` on the one pool | IAM drafts `DeleteAccounts`; probe PR-2 | Sid `DeleteAccounts`, `Resource: UserPoolArn` |
-| Nothing more: no other conditions, no wildcards, no managed policies, no permissions boundary | probe PR-2, P-b0a | `AppRole` has one inline policy and no `ManagedPolicyArns` or `PermissionsBoundary` |
+| Nothing more: no other conditions, no wildcards, no managed policies, no permissions boundary | probe PR-2, P-b0a | `AppRole` has one inline policy and no `ManagedPolicyArns` or `PermissionsBoundary`. Only `SweepDeletedWorkspace` and `FileKey` carry a condition |
 | No long-lived access keys | aws-plan Credentials | No `AWS::IAM::User` or `AccessKey` anywhere |
 | Pool: email sign-in, email required and auto-verified | Security 0541 M6 list; probe Cognito pool | `signin.yaml` `UserPool.UsernameAttributes: [email]`, `Schema` email `Required: true`, `AutoVerifiedAttributes: [email]` |
+| An email change applies only once the new address is verified | same probe line | `UserPool.UserAttributeUpdateSettings.AttributesRequireVerificationBeforeUpdate: [email]` |
 | MFA required, TOTP only | same | `UserPool.MfaConfiguration: "ON"`, `EnabledMfas: [SOFTWARE_TOKEN_MFA]` |
 | Deletion protection | same | `UserPool.DeletionProtection: ACTIVE` |
 | Passwords of 12 or more characters | same | `UserPool.Policies.PasswordPolicy.MinimumLength: 12` |
@@ -282,7 +289,7 @@ Scratch: `~/shipshape-work.noindex/infra-check/` (outside the repo).
 
 When moto's CloudFormation skips something, `deploy.py` applies it with a direct boto3 call. The values are read from the same template, with the stack's parameters and physical ids substituted. Each such step is logged as `GAP` (in `probe-moto.deploy.log`).
 
-Result (`probe-moto.log`): 15 PASS, 11 FAIL, `exit 3` (the probe's exit code for any local stand-in run).
+Result (`probe-moto.log`, a run of the probe before wave 12 added its checks): 15 PASS, 11 FAIL, `exit 3` (the probe's exit code for any local stand-in run).
 - **Every Files configuration check passes:**
   - Block Public Access;
   - the policy isn't public, denies non-TLS, denies nothing else, and grants nothing outside the account;

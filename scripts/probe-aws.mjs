@@ -12,21 +12,30 @@
 //   node scripts/probe-aws.mjs
 //
 // Before the real run, re-lock the AWS SDK packages with the app's (M6 step 7, `--before`; Security
-// PR-4): the operator's credentials can do more than the app role.
+// PR-4): the operator's credentials can do more than the app role. infra/launch.sh refuses to run it
+// unless package-lock.json is 7 days old (or overridden, in the log) and node_modules matches it.
 //
 // Files (S3): the canary can't be fetched anonymously, nor the bucket or its listing; Block Public
-// Access is fully on, the policy isn't public, denies non-TLS (and nothing else), grants nothing outside the account,
-// ACLs are off (BucketOwnerEnforced), versioning is on with old versions and delete markers expiring
-// within 7 days, Object Lock is off, and SSE-KMS uses the key.
-// Database (RDS): encrypted, deletion protection on, 7 days of backups, no manual snapshot older than
-// 7 days; over verified TLS the app's role isn't the master user, a superuser or BYPASSRLS, owns no
-// table in app, every app table has row level security, and no function in app is executable by
-// PUBLIC (F2-1); a made-up login without TLS is refused for the missing encryption.
-// Sign-in (Cognito): the pool and the app client are set up as Security's M6 list says.
+// Access is fully on, the policy isn't public, denies non-TLS (and nothing else), grants nothing outside
+// the account (canonical users count as outside), ACLs are off (BucketOwnerEnforced), versioning is on
+// with old versions, delete markers and unfinished uploads going within 7 days by rules that cover the
+// whole bucket and keep no newest versions, Object Lock is off, and SSE-KMS uses the key.
+// Database (RDS): encrypted with the key itself, deletion protection on, 7 days of backups, no manual
+// snapshot older than 7 days or shared with another account or everyone; the parameter group logs no
+// statement in full (log_statement isn't all) and logs errors tersely; over verified TLS the app's role
+// isn't the master user, a superuser or BYPASSRLS, owns no table in app, every app table has row level
+// security, and no function in app is executable by PUBLIC (F2-1); a made-up login without TLS is
+// refused for the missing encryption.
+// Sign-in (Cognito): the pool and the app client are set up as Security's M6 list says, and an email
+// change applies only once the new address is verified.
 // Credentials (IAM/STS): the app role trusts exactly this account's Vercel provider, its audience and
 // the production sub (StringEquals only); its only policy is inline and allows each action it needs,
-// every one and nothing more, unconditionally, on its one resource, with no permissions boundary; a
-// preview's token is refused.
+// every one and nothing more, on its one resource, with no permissions boundary. Two grants carry a
+// condition, each exactly as infra/app-role.yaml writes it: s3:ListBucket only under a workspace id's
+// prefix (s3:prefix "<36 characters>/*", so any one workspace's keys, one prefix per call), and the
+// key's two actions only through S3 (kms:ViaService). A preview's token, checked first to be this
+// project's preview token (iss, aud, sub), is refused.
+// The file key's policy and the account's Block Public Access are read by infra/launch.sh (aws CLI).
 // The canary and all its versions are removed at the end. Exits 1 on any failure.
 //
 // PROBE_LOCAL_ENDPOINT points every AWS call at a local stand-in (moto) to try the probe itself;
@@ -40,7 +49,13 @@ import {
   DescribeUserPoolDomainCommand,
   GetUserPoolMfaConfigCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
-import { DescribeDBInstancesCommand, DescribeDBSnapshotsCommand, RDSClient } from "@aws-sdk/client-rds";
+import {
+  DescribeDBInstancesCommand,
+  DescribeDBParametersCommand,
+  DescribeDBSnapshotAttributesCommand,
+  DescribeDBSnapshotsCommand,
+  RDSClient,
+} from "@aws-sdk/client-rds";
 import { GetRoleCommand, GetRolePolicyCommand, IAMClient, ListAttachedRolePoliciesCommand, ListRolePoliciesCommand } from "@aws-sdk/client-iam";
 import {
   DeleteObjectsCommand,
@@ -57,6 +72,18 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import postgres from "postgres";
+import {
+  lifecycleFacts,
+  list,
+  outsidePrincipals,
+  parameterProblems,
+  poolCheck,
+  previewTokenProblems,
+  rdsInstanceOk,
+  rolePolicyProblems,
+  same,
+  snapshotSharing,
+} from "./probe-aws-rules.ts";
 
 const env = process.env;
 const NEEDED = [
@@ -117,9 +144,6 @@ async function attempt(name, fn) {
   }
 }
 const days = (n) => n * 24 * 60 * 60 * 1000;
-const list = (x) => (Array.isArray(x) ? x : x === undefined ? [] : [x]);
-/** The same strings, in any order. */
-const same = (a, b) => JSON.stringify([...list(a)].sort()) === JSON.stringify([...b].sort());
 
 // 1. Files. The canary first: every later file check is about a real object.
 const run = Date.now().toString(36);
@@ -169,25 +193,20 @@ await attempt("the bucket policy denies nothing else: its only Deny is the one f
   const other = list(policy.Statement).filter((s) => s.Effect === "Deny" && !tlsOnly(s));
   return [other.length === 0, JSON.stringify(other)];
 });
-await attempt("the bucket policy grants nothing to anyone outside this account", async () => {
+await attempt("the bucket policy grants nothing to anyone outside this account (canonical users count as outside)", async () => {
   const policy = JSON.parse((await s3.send(new GetBucketPolicyCommand({ Bucket: bucket }))).Policy ?? "{}");
-  const outside = list(policy.Statement)
-    .filter((s) => s.Effect !== "Deny")
-    .flatMap((s) => (s.Principal === "*" ? ["*"] : [...list(s.Principal?.AWS), ...list(s.Principal?.Service), ...list(s.Principal?.Federated)]))
-    .filter((p) => !String(p).startsWith(`arn:aws:iam::${account}:`));
+  const outside = outsidePrincipals(list(policy.Statement), account);
   return [outside.length === 0, outside.join(", ")];
 });
 await attempt("ACLs are off (BucketOwnerEnforced)", async () => {
   const rules = (await s3.send(new GetBucketOwnershipControlsCommand({ Bucket: bucket }))).OwnershipControls?.Rules ?? [];
   return [rules.length === 1 && rules[0].ObjectOwnership === "BucketOwnerEnforced", JSON.stringify(rules)];
 });
-await attempt("versioning is on, and old versions and delete markers expire within 7 days (BOSS rule 1)", async () => {
+await attempt("versioning is on, and old versions, delete markers and unfinished uploads go within 7 days, by rules covering the whole bucket (BOSS rule 1)", async () => {
   const versioning = (await s3.send(new GetBucketVersioningCommand({ Bucket: bucket }))).Status;
   const rules = (await s3.send(new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }))).Rules ?? [];
-  const wholeBucket = (r) => r.Status === "Enabled" && !r.Filter?.And && !r.Filter?.Tag && !r.Filter?.Prefix && !r.Prefix;
-  const versions = rules.some((r) => wholeBucket(r) && (r.NoncurrentVersionExpiration?.NoncurrentDays ?? Infinity) <= 7);
-  const markers = rules.some((r) => wholeBucket(r) && r.Expiration?.ExpiredObjectDeleteMarker === true);
-  return [versioning === "Enabled" && versions && markers, `${versioning}; ${JSON.stringify(rules)}`];
+  const facts = lifecycleFacts(rules);
+  return [versioning === "Enabled" && facts.versions && facts.markers && facts.multipart, `${versioning}; ${JSON.stringify(facts)}; ${JSON.stringify(rules)}`];
 });
 await attempt("default encryption is SSE-KMS with the key", async () => {
   const rules = (await s3.send(new GetBucketEncryptionCommand({ Bucket: bucket }))).ServerSideEncryptionConfiguration?.Rules ?? [];
@@ -207,17 +226,41 @@ await attempt("Object Lock is off: no retention can keep a deleted or old versio
 
 // 2. Database.
 let master = "";
-await attempt("RDS: storage encrypted, deletion protection on, 7 days of backups", async () => {
+let parameterGroup = "";
+await attempt("RDS: storage encrypted with the key, deletion protection on, 7 days of backups", async () => {
   const [db] = (await rds.send(new DescribeDBInstancesCommand({ DBInstanceIdentifier: env.PROBE_DB_INSTANCE }))).DBInstances ?? [];
   if (!db) return [false, "instance not found"];
   master = db.MasterUsername ?? "";
+  parameterGroup = db.DBParameterGroups?.[0]?.DBParameterGroupName ?? "";
   console.log(`INFO PubliclyAccessible: ${db.PubliclyAccessible} (Security's open choice)`);
-  return [db.StorageEncrypted === true && db.DeletionProtection === true && db.BackupRetentionPeriod === 7, `encrypted ${db.StorageEncrypted}, deletion protection ${db.DeletionProtection}, backups ${db.BackupRetentionPeriod} days`];
+  return [rdsInstanceOk(db, env.PROBE_KMS_KEY_ARN), `encrypted ${db.StorageEncrypted} with ${db.KmsKeyId}, deletion protection ${db.DeletionProtection}, backups ${db.BackupRetentionPeriod} days`];
 });
 await attempt("RDS: no manual snapshot older than 7 days (BOSS rule 1)", async () => {
   const snapshots = (await rds.send(new DescribeDBSnapshotsCommand({ DBInstanceIdentifier: env.PROBE_DB_INSTANCE, SnapshotType: "manual" }))).DBSnapshots ?? [];
   const old = snapshots.filter((s) => !s.SnapshotCreateTime || Date.now() - new Date(s.SnapshotCreateTime).getTime() > days(7));
   return [old.length === 0, old.map((s) => s.DBSnapshotIdentifier).join(", ")];
+});
+await attempt("RDS: no manual snapshot is shared with another account or made public", async () => {
+  const snapshots = (await rds.send(new DescribeDBSnapshotsCommand({ DBInstanceIdentifier: env.PROBE_DB_INSTANCE, SnapshotType: "manual" }))).DBSnapshots ?? [];
+  const shared = [];
+  for (const s of snapshots) {
+    const attributes = (await rds.send(new DescribeDBSnapshotAttributesCommand({ DBSnapshotIdentifier: s.DBSnapshotIdentifier }))).DBSnapshotAttributesResult?.DBSnapshotAttributes ?? [];
+    const to = snapshotSharing(attributes);
+    if (to.length) shared.push(`${s.DBSnapshotIdentifier} to ${to.join(", ")}`);
+  }
+  return [shared.length === 0, shared.join("; ")];
+});
+await attempt("RDS: the parameter group logs no statement in full (log_statement isn't all) and logs errors tersely (W12-10)", async () => {
+  if (!parameterGroup) return [false, "no parameter group read from the instance"];
+  const params = [];
+  let marker;
+  do {
+    const page = await rds.send(new DescribeDBParametersCommand({ DBParameterGroupName: parameterGroup, Marker: marker }));
+    params.push(...(page.Parameters ?? []));
+    marker = page.Marker;
+  } while (marker);
+  const problems = parameterProblems(params);
+  return [problems.length === 0, problems.join("; ") || parameterGroup];
 });
 const sql = postgres(env.PROBE_DATABASE_URL, { ssl: { rejectUnauthorized: true, ca: env.DATABASE_CA_CERT }, max: 1, connect_timeout: 10, prepare: false });
 let tlsWorked = false;
@@ -272,36 +315,14 @@ await attempt("the same database refuses a made-up login without TLS, for the mi
 
 // 3. Sign-in (Cognito): Security's M6 list for the pool and the app client.
 let poolArn = "";
-await attempt("the Cognito pool: email sign-in, required and verified; MFA on with TOTP only; deletion protection; passwords of 12+; managed login", async () => {
+await attempt("the Cognito pool: email sign-in, required and verified, verified again before a change applies; MFA on with TOTP only; deletion protection; passwords of 12+; managed login", async () => {
   const pool = (await cognito.send(new DescribeUserPoolCommand({ UserPoolId: env.PROBE_COGNITO_POOL_ID }))).UserPool;
   if (!pool) return [false, "pool not found"];
   poolArn = pool.Arn ?? "";
   const mfa = await cognito.send(new GetUserPoolMfaConfigCommand({ UserPoolId: env.PROBE_COGNITO_POOL_ID }));
   const domain = pool.CustomDomain ?? pool.Domain;
   const managedLogin = domain ? (await cognito.send(new DescribeUserPoolDomainCommand({ Domain: domain }))).DomainDescription?.ManagedLoginVersion : undefined;
-  const facts = {
-    usernames: pool.UsernameAttributes,
-    emailRequired: (pool.SchemaAttributes ?? []).find((a) => a.Name === "email")?.Required,
-    autoVerified: pool.AutoVerifiedAttributes,
-    mfa: mfa.MfaConfiguration,
-    totp: mfa.SoftwareTokenMfaConfiguration?.Enabled,
-    sms: mfa.SmsMfaConfiguration !== undefined,
-    emailMfa: mfa.EmailMfaConfiguration !== undefined,
-    deletionProtection: pool.DeletionProtection,
-    minimumPasswordLength: pool.Policies?.PasswordPolicy?.MinimumLength,
-    managedLogin,
-  };
-  const ok =
-    same(facts.usernames, ["email"]) &&
-    facts.emailRequired === true &&
-    list(facts.autoVerified).includes("email") &&
-    facts.mfa === "ON" &&
-    facts.totp === true &&
-    !facts.sms &&
-    !facts.emailMfa &&
-    facts.deletionProtection === "ACTIVE" &&
-    (facts.minimumPasswordLength ?? 0) >= 12 &&
-    facts.managedLogin === 2;
+  const { ok, facts } = poolCheck(pool, mfa, managedLogin);
   return [ok, JSON.stringify(facts)];
 });
 await attempt("the app client: a secret, code flow only, scopes openid email, one callback, email not writable, no password flows, PreventUserExistenceErrors, ID tokens of 1 hour or less", async () => {
@@ -366,10 +387,9 @@ await attempt("the app role trusts exactly this account's Vercel provider, its a
 });
 // Exactly these: one more is a wider grant; one fewer breaks the app where it matters least visibly (a missing
 // s3:DeleteObject or kms:Decrypt strands a deleted account's files, Security N-091a). And nothing that could
-// quietly take one away again: no permissions boundary, and no condition on a grant (P-b0a) except the one that
-// narrows s3:ListBucket to a single workspace's "<org id>/" prefix (the daily sweep, W11-7).
-const SWEEP_CONDITION = JSON.stringify({ StringLike: { "s3:prefix": "????????-????-????-????-????????????/" } });
-await attempt("the app role allows each action it needs, every one, on its one resource only: the bucket's objects, listing one workspace's prefix, the key, the pool (no wildcards, no managed policies, no permissions boundary; PR-2)", async () => {
+// quietly take one away again: no permissions boundary, and no condition on a grant (P-b0a) except the two
+// app-role.yaml writes (rolePolicyProblems in probe-aws-rules.ts).
+await attempt("the app role allows each action it needs, every one, on its one resource only: the bucket's objects, listing under a workspace's prefix, the key through S3 only, the pool (no wildcards, no managed policies, no permissions boundary; PR-2)", async () => {
   if (!poolArn) return [false, "no pool ARN to compare AdminDeleteUser with"];
   if (!roleRead) return [false, "couldn't read the role, so its permissions boundary is unknown"];
   const objects = `arn:aws:s3:::${bucket}/*`;
@@ -389,29 +409,22 @@ await attempt("the app role allows each action it needs, every one, on its one r
   const granted = new Set();
   for (const name of names) {
     const doc = JSON.parse(decodeURIComponent((await iam.send(new GetRolePolicyCommand({ RoleName: env.PROBE_ROLE_NAME, PolicyName: name }))).PolicyDocument ?? "{}"));
-    for (const s of list(doc.Statement)) {
-      if (s.Effect !== "Allow") problems.push(`${name}: ${s.Effect}`);
-      if (s.NotAction || s.NotResource || s.NotPrincipal) problems.push(`${name}: NotAction/NotResource/NotPrincipal`);
-      // Only a statement granting s3:ListBucket alone carries a condition, and only the prefix one;
-      // s3:ListBucket anywhere else, or without it, is a wider grant.
-      const listing = list(s.Action).includes("s3:ListBucket");
-      if (listing && !(same(s.Action, ["s3:ListBucket"]) && JSON.stringify(s.Condition ?? {}) === SWEEP_CONDITION)) problems.push(`${name}: s3:ListBucket other than alone, under the one-workspace prefix condition`);
-      if (!listing && Object.keys(s.Condition ?? {}).length) problems.push(`${name}: condition ${Object.keys(s.Condition).join(", ")}`);
-      const resources = list(s.Resource);
-      if (!resources.length) problems.push(`${name}: no resource`);
-      for (const a of list(s.Action)) {
-        granted.add(a);
-        const only = resourceOf.get(a);
-        if (!only) problems.push(`${name}: action ${a}`);
-        else for (const r of resources) if (r !== only) problems.push(`${name}: ${a} on ${r}`);
-      }
-    }
+    const found = rolePolicyProblems(name, list(doc.Statement), resourceOf, region);
+    problems.push(...found.problems);
+    for (const a of found.granted) granted.add(a);
   }
   for (const a of resourceOf.keys()) if (!granted.has(a)) problems.push(`missing ${a}`);
   return [names.length > 0 && problems.length === 0, problems.join("; ") || names.join(", ")];
 });
-await attempt("STS refuses a preview deployment's token for the app role", async () => {
+await attempt("STS refuses this project's preview token for the app role (the token's iss, aud and sub checked first)", async () => {
   if (!roleArn) return [false, "no role ARN"];
+  // A token from another project or team would be refused too, proving nothing about this project's previews (W12-4).
+  const notPreview = previewTokenProblems(env.PROBE_PREVIEW_OIDC_TOKEN, {
+    issuer: `https://${env.PROBE_OIDC_PROVIDER_ARN.split(":oidc-provider/")[1] ?? ""}`,
+    audience: env.PROBE_OIDC_AUD,
+    productionSub: env.PROBE_PRODUCTION_SUB,
+  });
+  if (notPreview.length) return [false, `PROBE_PREVIEW_OIDC_TOKEN isn't this project's preview token: ${notPreview.join("; ")}`];
   const body = new URLSearchParams({ Action: "AssumeRoleWithWebIdentity", Version: "2011-06-15", RoleArn: roleArn, RoleSessionName: `probe-${run}`, WebIdentityToken: env.PROBE_PREVIEW_OIDC_TOKEN });
   const res = await fetch(local ? `${local}/` : `https://sts.${region}.amazonaws.com/`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
   const text = await res.text();

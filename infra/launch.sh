@@ -11,7 +11,8 @@
 # password and stores it (Vercel, or ~/.shipshape-launch/DATABASE_URL) the moment it is set. Once
 # the role can already log in (production is on RDS) that needs LAUNCH_ROTATE_APP_PASSWORD=1, and
 # production must be redeployed afterwards. Runs only under an Identity Center session (never root,
-# an IAM user or stored keys).
+# an IAM user or stored keys), and only when package-lock.json was committed at least 7 days ago and
+# node_modules matches it (aws-plan PR-4): LAUNCH_ALLOW_YOUNG_LOCKFILE=1 overrides the age, in the log.
 # Every line goes to stdout and infra/launch-<UTC stamp>.log (git-ignored). Secrets travel only in
 # variables and pipes; the run fails if the log contains one.
 # Exit codes: 0 done, 1 a step failed, 2 infra/launch.env is incomplete or invalid.
@@ -50,7 +51,7 @@ if [ "${LAUNCH_APPLY:-}" = 1 ]; then APPLY=1; fi
 for arg in "$@"; do
   case "$arg" in
     --dry-run) APPLY=0 ;;
-    -h | --help) sed -n '2,18p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h | --help) sed -n '2,19p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) printf 'Unknown option %s. Run infra/launch.sh --dry-run to see the plan.\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -146,15 +147,26 @@ load_env() {
 
 # ---- AWS helpers ----------------------------------------------------------------------------------
 
+# Prints the stack's status, or nothing when there is no such stack. Only CloudFormation's "does not
+# exist" answer means that: any other failure (an expired session, throttling) stops the run, because
+# taking it for "no stack" would redeploy an existing database with new-stack parameters (W12-16).
 stack_status() {
-  aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$1" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true
+  local out
+  if out="$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$1" --query 'Stacks[0].StackStatus' --output text 2>"$WORK/describe.err")"; then
+    printf '%s' "$out"
+    return 0
+  fi
+  case "$(cat "$WORK/describe.err")" in
+    *"(ValidationError)"*"does not exist"*) return 0 ;;
+  esac
+  fail "Couldn't read $1's state: $(head -n 1 "$WORK/describe.err")" "Check that you're still signed in (aws sso login --profile $AWS_PROFILE), then rerun."
 }
 # deploy <stack> <template> <extra deploy arguments...>
 deploy() {
   local stack="$1" template="$2" status
   shift 2
   if [ "$APPLY" = 1 ]; then
-    status="$(stack_status "$stack")"
+    status="$(stack_status "$stack")" || exit 1
     case "$status" in
       ROLLBACK_COMPLETE) fail "$stack failed to create on an earlier run, and CloudFormation can't update it." \
         "Delete it (aws cloudformation delete-stack --region $AWS_REGION --stack-name $stack; see Rollback in infra/README.md for what it leaves behind), then rerun." ;;
@@ -190,26 +202,61 @@ sha256_of() {
 }
 vercel_ready() { command -v vercel >/dev/null 2>&1 && [ -f "$ROOT/.vercel/project.json" ]; }
 
-# Stores DATABASE_URL (shipshape_app's new password) the moment it exists: in Vercel Production when
-# the CLI is linked, otherwise in a file only the owner can read (Security MUST-L2: a stop later in
-# the run must not strand the only copy). The checked CA bundle is kept beside it for the manual step.
+# Stores DATABASE_CA_CERT (the checked RDS bundle) and then DATABASE_URL (shipshape_app's new password)
+# the moment the password exists: in Vercel Production when the CLI is linked, otherwise in files only
+# the owner can read (Security MUST-L2: a stop later in the run must not strand the only copy). The CA
+# goes first so production never has the RDS address without the bundle that verifies it (W12-3).
 store_database_url() {
   mkdir -p "$HOME/.shipshape-launch"
   cp "$CA_FILE" "$HOME/.shipshape-launch/rds-ca.pem"
   if vercel_ready; then
-    say "  \$ printf %s postgres://shipshape_app:<from openssl rand>@$DB_HOST:5432/shipshape | vercel env add DATABASE_URL production"
+    say "  \$ printf %s \"<from the checked bundle>\" | vercel env add DATABASE_CA_CERT production --sensitive"
+    vercel env rm DATABASE_CA_CERT production --yes >/dev/null 2>&1 || true
+    if ! printf '%s' "$CA" | vercel env add DATABASE_CA_CERT production --sensitive; then
+      printf '%s' "$APP_DB_URL" >"$HOME/.shipshape-launch/DATABASE_URL"
+      fail "Vercel didn't take DATABASE_CA_CERT, so DATABASE_URL wasn't sent either. The new password is in ~/.shipshape-launch/DATABASE_URL (only you can read it)." \
+        "Run: vercel env add DATABASE_CA_CERT production --sensitive < ~/.shipshape-launch/rds-ca.pem, then vercel env add DATABASE_URL production --sensitive < ~/.shipshape-launch/DATABASE_URL && rm ~/.shipshape-launch/DATABASE_URL; then redeploy production. A later rerun needs LAUNCH_ROTATE_APP_PASSWORD=1."
+    fi
+    say "  \$ printf %s postgres://shipshape_app:<from openssl rand>@$DB_HOST:5432/shipshape | vercel env add DATABASE_URL production --sensitive"
     vercel env rm DATABASE_URL production --yes >/dev/null 2>&1 || true
-    if ! printf '%s' "$APP_DB_URL" | vercel env add DATABASE_URL production; then
+    if ! printf '%s' "$APP_DB_URL" | vercel env add DATABASE_URL production --sensitive; then
       # Vercel refused: the file keeps the only copy of the password (Security SHOULD-L7).
       printf '%s' "$APP_DB_URL" >"$HOME/.shipshape-launch/DATABASE_URL"
       fail "Vercel didn't take DATABASE_URL. The new password is in ~/.shipshape-launch/DATABASE_URL (only you can read it)." \
-        "Run: vercel env add DATABASE_URL production < ~/.shipshape-launch/DATABASE_URL && rm ~/.shipshape-launch/DATABASE_URL; then redeploy production. A later rerun needs LAUNCH_ROTATE_APP_PASSWORD=1."
+        "Run: vercel env add DATABASE_URL production --sensitive < ~/.shipshape-launch/DATABASE_URL && rm ~/.shipshape-launch/DATABASE_URL; then redeploy production. A later rerun needs LAUNCH_ROTATE_APP_PASSWORD=1."
     fi
-    say "  DATABASE_URL is in Vercel Production."
+    say "  DATABASE_CA_CERT and DATABASE_URL are in Vercel Production."
   else
     printf '%s' "$APP_DB_URL" >"$HOME/.shipshape-launch/DATABASE_URL"
-    say "  DATABASE_URL is in ~/.shipshape-launch/DATABASE_URL (only you can read it); step 8 says how to add it to Vercel."
+    say "  DATABASE_URL is in ~/.shipshape-launch/DATABASE_URL (only you can read it), the checked CA beside it in rds-ca.pem; step 8 says how to add both to Vercel."
   fi
+}
+
+# What steps 0 and 1 set, read back (W12-5): the account's Block Public Access and the file key's policy,
+# as aws prints them in JSON, through the strict checks in scripts/launch-checks.ts. A CLI error, a
+# missing field or an extra statement is a FAIL, never a skip. PASS/FAIL lines as the probe prints them.
+check_account_pab() {
+  local answer
+  show aws s3control get-public-access-block --region "$AWS_REGION" --account-id "${CALLER_ACCOUNT:-<from aws sts get-caller-identity>}" --output json
+  if [ "$APPLY" != 1 ]; then return 0; fi
+  if ! answer="$(aws s3control get-public-access-block --region "$AWS_REGION" --account-id "$CALLER_ACCOUNT" --output json 2>&1)"; then
+    say "FAIL account Block Public Access: all four settings on: aws couldn't read it: $(printf '%s' "$answer" | head -n 1)"
+    fail "The account's Block Public Access couldn't be read back." "Check it in the S3 console (Block Public Access settings for this account), then rerun."
+  fi
+  printf '%s' "$answer" | node scripts/launch-checks.ts account-pab ||
+    fail "The account's Block Public Access isn't all four settings on (the FAIL line above)." "Turn all four on in the S3 console (Block Public Access settings for this account), then rerun."
+}
+check_key_policy() {
+  local key="$1" answer
+  show aws kms get-key-policy --region "$AWS_REGION" --key-id "$key" --policy-name default --output json
+  if [ "$APPLY" != 1 ]; then return 0; fi
+  if ! answer="$(aws kms get-key-policy --region "$AWS_REGION" --key-id "$key" --policy-name default --output json 2>&1)"; then
+    say "FAIL the file key's policy is the one storage.yaml writes: aws couldn't read it: $(printf '%s' "$answer" | head -n 1)"
+    fail "The file key's policy couldn't be read." "Check that your session can read alias/shipshape-files (kms:GetKeyPolicy), then rerun."
+  fi
+  printf '%s' "$answer" | node scripts/launch-checks.ts key-policy "$ACCOUNT_ID" ||
+    fail "The file key's policy isn't the one statement infra/storage.yaml writes (the FAIL line above)." \
+      "Put the template's policy back (KMS console, alias/shipshape-files, Key policy), then rerun."
 }
 
 # ---- the plan -------------------------------------------------------------------------------------
@@ -242,7 +289,7 @@ validate_templates() {
 
 preflight() {
   step "Preflight: tools, and who is signed in (under a minute)"
-  local ident account arn tool major
+  local ident account arn tool major lock_time lock_why=""
   command -v aws >/dev/null 2>&1 || fail "The AWS CLI isn't installed (aws isn't on PATH)." \
     "Install AWS CLI v2 (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), then rerun."
   show aws sts get-caller-identity --query '[Account,Arn]' --output text
@@ -264,25 +311,55 @@ preflight() {
       "Sign in with aws sso login --profile $AWS_PROFILE (a profile with sso_start_url, not stored keys), and check ACCOUNT_ID in launch.env, then rerun." ;;
   esac
   : >"$WORK/signed-in"
+  # The account check_account_pab reads back: the one this session is in (Security, W12-5).
+  CALLER_ACCOUNT="$account"
 
-  for tool in node curl openssl awk; do
+  for tool in node curl openssl awk git; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool isn't on PATH." "Install $tool, then rerun."
   done
   major="$(node -p 'process.versions.node.split(".")[0]')"
   [ "$major" -ge 24 ] || fail "Node $major is too old: the migrations need Node 24 (package.json engines)." "Install Node 24, then rerun."
   [ -d "$ROOT/node_modules/@aws-sdk/client-rds" ] && [ -d "$ROOT/node_modules/postgres" ] ||
-    fail "The repo's packages aren't installed (the migrations and the probe need them)." "Run npm ci in the repo, then rerun."
+    fail "The repo's packages aren't installed (the migrations and the probe need them)." "Run npm ci --ignore-scripts in the repo, then rerun."
+
+  # Steps 6-7 run the repo's packages with an administrator session and the master password in their
+  # environment, so aws-plan PR-4 wants every locked version at least 7 days old. The lockfile's last
+  # commit stands for that; uncommitted changes to it would make the date meaningless.
+  lock_time="$(git -C "$ROOT" log -1 --format=%ct -- package-lock.json 2>/dev/null || true)"
+  if ! git -C "$ROOT" diff --quiet HEAD -- package-lock.json 2>/dev/null; then
+    lock_why="package-lock.json has changes that aren't committed (or this isn't a git checkout)"
+  elif [ -z "$lock_time" ]; then
+    lock_why="package-lock.json isn't in any commit here"
+  elif [ $(($(date +%s) - lock_time)) -lt 604800 ]; then
+    lock_why="package-lock.json was last committed $((($(date +%s) - lock_time) / 86400)) days ago, under the 7 days aws-plan PR-4 asks for"
+  fi
+  if [ -n "$lock_why" ]; then
+    [ "${LAUNCH_ALLOW_YOUNG_LOCKFILE:-}" = 1 ] || fail "$lock_why." \
+      "Wait until it is 7 days old, or re-lock with npm install --before <a date 7 days ago> and commit that. To go ahead anyway, rerun with LAUNCH_ALLOW_YOUNG_LOCKFILE=1 (the log records it)."
+    say "  LAUNCH_ALLOW_YOUNG_LOCKFILE=1: $lock_why. Going ahead as you asked."
+  else
+    say "  package-lock.json was last committed at least 7 days ago."
+  fi
+  # A package installed by hand, or left from another branch, would run too: node_modules must be the lockfile's.
+  node scripts/launch-checks.ts node-modules "$ROOT" ||
+    fail "node_modules doesn't match package-lock.json (the FAIL line above)." "Run npm ci --ignore-scripts in the repo, then rerun."
+
   [ "${#APP_DB_PASSWORD}" -ge 32 ] || fail "shipshape_app's new password couldn't be generated." "Check that openssl rand -base64 60 works, then rerun."
   if [ -z "${PROBE_PREVIEW_OIDC_TOKEN:-}" ] && ! vercel_ready; then
     fail "The probe needs a preview deployment's OIDC token, and the Vercel CLI isn't linked here to fetch it." \
       "Export PROBE_PREVIEW_OIDC_TOKEN (a preview deployment's VERCEL_OIDC_TOKEN), or run vercel link in the repo, then rerun."
   fi
-  # Checked here, before step 6 sets a password: a stop after that point needs the rotation flag to rerun.
-  if [ "$APPLY" = 1 ] && [ -z "${PROBE_PREVIEW_OIDC_TOKEN:-}" ] && [ -z "$PREVIEW_TOKEN" ]; then
-    fail "vercel env pull returned no VERCEL_OIDC_TOKEN for previews (the probe in step 7 needs it)." \
-      "Export PROBE_PREVIEW_OIDC_TOKEN (a preview deployment's VERCEL_OIDC_TOKEN), then rerun."
+  # The launch writes production secrets into whatever project this folder is linked to, so the link must
+  # be VERCEL_PROJECT in VERCEL_TEAM (W12-4). Checked before step 6 sets a password: a stop after that
+  # point needs the rotation flag to rerun.
+  if vercel_ready; then
+    [ -n "$PREVIEW_TOKEN" ] || fail "vercel env pull returned no VERCEL_OIDC_TOKEN for previews, so the linked project can't be confirmed." \
+      "Check that vercel link points at $VERCEL_PROJECT in $VERCEL_TEAM and that previews get an OIDC token (the project's Security settings), then rerun."
+    printf '%s' "$PREVIEW_TOKEN" | node scripts/launch-checks.ts vercel-link "$ROOT/.vercel/project.json" "$VERCEL_TEAM" "$VERCEL_PROJECT" ||
+      fail "This folder's Vercel link isn't $VERCEL_PROJECT in $VERCEL_TEAM (the FAIL line above), and the launch would write production secrets there." \
+        "Run vercel link --scope $VERCEL_TEAM --project $VERCEL_PROJECT in the repo, or correct launch.env, then rerun."
   fi
-  say "  Tools found: aws, node $major, curl, openssl. Account $ACCOUNT_ID, an Identity Center session."
+  say "  Tools found: aws, node $major, curl, openssl, git. Account $ACCOUNT_ID, an Identity Center session."
 }
 
 main() {
@@ -314,12 +391,16 @@ main() {
   step "0. Block Public Access for the whole account (under a minute; CloudFormation can't set it)"
   run aws s3control put-public-access-block --region "$R" --account-id "$ACCOUNT_ID" \
     --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  say "  Read back, for the account this session is in:"
+  check_account_pab
 
   step "1. Files: shipshape-storage (about 1 minute)"
   deploy shipshape-storage storage --parameter-overrides "BucketName=$BUCKET"
   read_outputs shipshape-storage
   BUCKET_OUT="$(output BucketName)"
   KEY_ARN="$(output KeyArn)"
+  say "  The key's policy, read back: exactly the one statement storage.yaml writes (the account root, kms:*, on *)."
+  check_key_policy "$KEY_ARN"
 
   step "2. Sign-in: shipshape-signin (about 2 minutes)"
   deploy shipshape-signin signin --parameter-overrides "AppUrl=$APP_URL" "DomainPrefix=$COGNITO_DOMAIN_PREFIX"
@@ -404,12 +485,15 @@ main() {
   fi
   say "  Then shipshape_app gets a login password: 40 random characters from openssl, kept in memory and then only"
   say "  in Vercel Production (R-1). An inline node script runs, as the master: alter role shipshape_app with login"
-  say "  password, the password bound as a query parameter. Once production is on RDS (the role can already log in),"
-  say "  the launch stops here unless LAUNCH_ROTATE_APP_PASSWORD=1: a new password means production can't open"
-  say "  database connections until it is redeployed with the new value."
+  say "  password, given the SCRAM-SHA-256 verifier computed here (scripts/launch-checks.ts), bound as a query"
+  say "  parameter: the password itself never reaches the server or its log. Once production is on RDS (the role"
+  say "  can already log in), the launch stops here unless LAUNCH_ROTATE_APP_PASSWORD=1: a new password means"
+  say "  production can't open database connections until it is redeployed with the new value."
   if [ "$APPLY" = 1 ]; then
+    # The password goes to node in its environment, never its arguments (ps shows arguments; Security W12-10).
     if ! MASTER_URL="$MASTER_URL" DATABASE_CA_CERT="$CA" APP_DB_PASSWORD="$APP_DB_PASSWORD" ROTATE="${LAUNCH_ROTATE_APP_PASSWORD:-}" node --input-type=module <<'JS'; then
 import postgres from "postgres";
+import { scramVerifier } from "./scripts/launch-checks.ts";
 const sql = postgres(process.env.MASTER_URL, {
   max: 1,
   connect_timeout: 10,
@@ -422,9 +506,10 @@ try {
     console.error("FAIL: shipshape_app can already log in, so production may be using its password. Set LAUNCH_ROTATE_APP_PASSWORD=1 to replace it (then redeploy production), or leave the password as it is.");
     process.exitCode = 3;
   } else {
+    // Postgres stores a SCRAM verifier as it is, so neither the statement nor an error's context can hold the password.
     await sql.begin(async (t) => {
-      await t`select set_config('shipshape.app_password', ${process.env.APP_DB_PASSWORD}, true)`;
-      await t`do $$ begin execute format('alter role shipshape_app with login password %L', current_setting('shipshape.app_password')); end $$`;
+      await t`select set_config('shipshape.app_verifier', ${scramVerifier(process.env.APP_DB_PASSWORD ?? "")}, true)`;
+      await t`do $$ begin execute format('alter role shipshape_app with login password %L', current_setting('shipshape.app_verifier')); end $$`;
     });
     console.log(role?.rolcanlogin ? "shipshape_app has its new password (rotated: redeploy production once DATABASE_URL is updated)." : "shipshape_app has its new password.");
   }
@@ -439,12 +524,42 @@ JS
     fi
     APP_DB_URL="postgres://shipshape_app:$APP_DB_PASSWORD@$DB_HOST:5432/shipshape"
     # The only copy of the new password is in this shell: it goes to Vercel (or the owner's file) now,
-    # before the roles check and the probe, so a stop there can't strand it (Security MUST-L2).
+    # before the login check, the roles check and the probe, so a stop there can't strand it (Security MUST-L2).
     store_database_url
+    # Proof the stored password is the one the server took: a SCRAM login as shipshape_app over verified TLS.
+    DB_HOST="$DB_HOST" DATABASE_CA_CERT="$CA" APP_DB_PASSWORD="$APP_DB_PASSWORD" node --input-type=module <<'JS' ||
+import postgres from "postgres";
+const sql = postgres({
+  host: process.env.DB_HOST,
+  port: 5432,
+  database: "shipshape",
+  username: "shipshape_app",
+  password: process.env.APP_DB_PASSWORD,
+  max: 1,
+  connect_timeout: 10,
+  ssl: { rejectUnauthorized: true, ca: process.env.DATABASE_CA_CERT },
+  onnotice: () => {},
+});
+try {
+  const [me] = await sql`select current_user as name`;
+  if (me?.name === "shipshape_app") console.log("shipshape_app logs in with its new password.");
+  else {
+    console.error(`FAIL: the login came back as ${me?.name}, not shipshape_app.`);
+    process.exitCode = 1;
+  }
+} catch (e) {
+  console.error(`FAIL: shipshape_app can't log in with its new password: ${e instanceof Error ? e.message : String(e)}`);
+  process.exitCode = 1;
+} finally {
+  await sql.end({ timeout: 5 });
+}
+JS
+      fail "shipshape_app's new password doesn't log in (the FAIL line above says why)." "$RERUN_AFTER_6 Correct what it names first."
   fi
   say "  Again, for the roles check Security reads (Up to date, Roles OK, and shipshape_app's login set):"
-  say "  DATABASE_URL (with the new password) is stored at once, before the roles check and the probe: in Vercel"
-  say "  Production when the CLI is linked, otherwise in ~/.shipshape-launch/DATABASE_URL."
+  say "  DATABASE_CA_CERT (the checked bundle) and then DATABASE_URL (with the new password) are stored at once,"
+  say "  before the roles check and the probe: in Vercel Production when the CLI is linked, otherwise in"
+  say "  ~/.shipshape-launch. Then shipshape_app logs in once with the new password, to prove the server took it."
   show "MIGRATE_DATABASE_URL=postgres://postgres:<from Secrets Manager>@$DB_HOST:5432/shipshape" \
     "DATABASE_CA_CERT=<from the pinned RDS CA bundle>" node scripts/migrate.ts
   if [ "$APPLY" = 1 ]; then
@@ -489,30 +604,30 @@ JS
   say "    COGNITO_USER_POOL_ID=$POOL_ID"
   say "    COGNITO_CLIENT_ID=$CLIENT_ID"
   say "    SHIPSHAPE_APP_URL=$APP_URL"
-  say "  DATABASE_CA_CERT is the RDS bundle (several lines), checked against the sha256 pinned in this script:"
+  say "  The app's own secrets: this script never makes or prints them. Add each yourself, Production only:"
+  say "    SHIPSHAPE_SESSION_SECRET (at least 32 characters)"
+  say "    SHIPSHAPE_HASH_KEY (at least 32 characters)"
+  say "    SHIPSHAPE_FIELD_KEY (32 random bytes, base64)"
+  say "    CRON_SECRET (at least 32 characters)"
+  say "    CONTACT_EMAIL (when real documents are on)"
+  say "  COGNITO_CLIENT_SECRET goes straight into Vercel and never prints:"
+  say "  \$ aws cognito-idp describe-user-pool-client --region $R --user-pool-id $POOL_ID --client-id $CLIENT_ID --query UserPoolClient.ClientSecret --output text | vercel env add COGNITO_CLIENT_SECRET production --sensitive"
   if vercel_ready; then
-    say "  \$ printf %s \"<the checked bundle>\" | vercel env add DATABASE_CA_CERT production"
-  else
-    say "  \$ vercel env add DATABASE_CA_CERT production < ~/.shipshape-launch/rds-ca.pem"
-  fi
-  say "  The 2 secrets go straight into Vercel and never print:"
-  say "  \$ aws cognito-idp describe-user-pool-client --region $R --user-pool-id $POOL_ID --client-id $CLIENT_ID --query UserPoolClient.ClientSecret --output text | vercel env add COGNITO_CLIENT_SECRET production"
-  say "  DATABASE_URL (with shipshape_app's password) was stored in step 6, right after the password was set."
-  if vercel_ready; then
-    say "  vercel is installed and linked here, so launch.sh runs these (replacing old values)."
+    say "  DATABASE_CA_CERT (the RDS bundle, checked against the sha256 pinned in this script) and DATABASE_URL (with"
+    say "  shipshape_app's password) went into Vercel Production in step 6, right after the password was set."
+    say "  vercel is installed and linked here, so launch.sh runs the line above (replacing an old value)."
     if [ "$APPLY" = 1 ]; then
-      vercel env rm DATABASE_CA_CERT production --yes >/dev/null 2>&1 || true
-      printf '%s' "$CA" | vercel env add DATABASE_CA_CERT production ||
-        fail "Vercel didn't take DATABASE_CA_CERT." "Run: vercel env add DATABASE_CA_CERT production < ~/.shipshape-launch/rds-ca.pem (the checked bundle; the script keeps a copy there when it can't write Vercel itself)."
       vercel env rm COGNITO_CLIENT_SECRET production --yes >/dev/null 2>&1 || true
       aws cognito-idp describe-user-pool-client --region "$R" --user-pool-id "$POOL_ID" --client-id "$CLIENT_ID" \
-        --query UserPoolClient.ClientSecret --output text | vercel env add COGNITO_CLIENT_SECRET production ||
-        fail "Vercel didn't take COGNITO_CLIENT_SECRET." "Run the aws ... | vercel env add COGNITO_CLIENT_SECRET production line above yourself."
+        --query UserPoolClient.ClientSecret --output text | vercel env add COGNITO_CLIENT_SECRET production --sensitive ||
+        fail "Vercel didn't take COGNITO_CLIENT_SECRET." "Run the aws ... | vercel env add COGNITO_CLIENT_SECRET production --sensitive line above yourself."
     fi
   else
-    say "  vercel isn't installed, or this folder isn't linked (vercel link), so you run these yourself; the checked"
-    say "  bundle is at ~/.shipshape-launch/rds-ca.pem and DATABASE_URL waits in ~/.shipshape-launch/DATABASE_URL (only you can read it):"
-    say "  \$ vercel env add DATABASE_URL production < ~/.shipshape-launch/DATABASE_URL && rm ~/.shipshape-launch/DATABASE_URL"
+    say "  vercel isn't installed, or this folder isn't linked (vercel link), so you run these yourself. DATABASE_CA_CERT"
+    say "  first (the RDS bundle, checked against the sha256 pinned in this script), then DATABASE_URL, which waits in"
+    say "  ~/.shipshape-launch/DATABASE_URL (only you can read it):"
+    say "  \$ vercel env add DATABASE_CA_CERT production --sensitive < ~/.shipshape-launch/rds-ca.pem"
+    say "  \$ vercel env add DATABASE_URL production --sensitive < ~/.shipshape-launch/DATABASE_URL && rm ~/.shipshape-launch/DATABASE_URL"
     say "  Delete that file if you don't use it."
   fi
 
@@ -522,7 +637,11 @@ JS
     say "The record: $(rel "$LOG") (git-ignored)."
     say "What happens next:"
     say "  1. Add the step 8 variables in Vercel (Production only), then redeploy production and open $APP_URL/api/health."
+    say "     It passes with 200 and \"ok\": true, \"db\": \"up\", \"config\": \"ok\". A 503 with \"config\": \"missing\" means a"
+    say "     production setting is still missing."
     say "  2. Send Security this log: they read the probe's output (step 7) and the roles check (step 6, Roles OK)."
+    say "  3. Yours to set up, not in these templates (infra/README.md): CloudTrail in all regions, into a separate"
+    say "     private bucket, and GuardDuty RDS Protection (check what it costs after the trial first)."
   else
     say "Plan complete: nothing was changed."
     say "To run it: LAUNCH_APPLY=1 infra/launch.sh (about 30 minutes)."
@@ -580,6 +699,8 @@ if [ -z "$PROBLEMS" ]; then
 fi
 # An Identity Center session only (aws-plan, "What Preston does"): stored keys in the shell would win over the profile.
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN PROBE_LOCAL_ENDPOINT
+# The Vercel CLI prefers these over .vercel/project.json, which is the link preflight checks (W12-4).
+unset VERCEL_ORG_ID VERCEL_PROJECT_ID NOW_ORG_ID NOW_PROJECT_ID
 mkdir -p "$LOG_DIR"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/shipshape-launch.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
@@ -587,10 +708,12 @@ APP_DB_PASSWORD=""
 if [ "$APPLY" = 1 ] && [ -z "$PROBLEMS" ] && command -v openssl >/dev/null 2>&1; then
   APP_DB_PASSWORD="$(openssl rand -base64 60 | tr -dc 'A-Za-z0-9' | cut -c1-40)"
 fi
-# The preview token for the probe, pulled here (not in main's subshell) so the secret check can see it.
+# The linked project's preview token, pulled here (not in main's subshell) so the secret check can see it.
+# Pulled whenever the folder is linked, even with PROBE_PREVIEW_OIDC_TOKEN set: preflight reads its claims
+# to confirm the link (W12-4). From the repo, because the CLI reads the link in its working folder.
 PREVIEW_TOKEN=""
-if [ "$APPLY" = 1 ] && [ -z "$PROBLEMS" ] && [ -z "${PROBE_PREVIEW_OIDC_TOKEN:-}" ] && vercel_ready; then
-  if vercel env pull --environment=preview --yes "$WORK/preview.env" >/dev/null 2>&1; then
+if [ "$APPLY" = 1 ] && [ -z "$PROBLEMS" ] && vercel_ready; then
+  if (cd "$ROOT" && vercel env pull --environment=preview --yes "$WORK/preview.env" >/dev/null 2>&1); then
     PREVIEW_TOKEN="$(awk 'index($0, "VERCEL_OIDC_TOKEN=") == 1 { v = substr($0, 19); gsub(/^"|"$/, "", v); print v }' "$WORK/preview.env")"
   fi
   rm -f "$WORK/preview.env"
