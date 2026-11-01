@@ -214,7 +214,7 @@ describe("home", () => {
       }
     });
 
-  it("on Pro with many lapsing documents: lists the 20 most urgent, counts them all, and points at the list for the rest", async () => {
+  it("on Pro with many lapsing documents: lists the 20 most urgent, counts them all, and points at Deadlines for the rest", async () => {
     const ctx = await signIn("home-many@example.com");
     await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeMany', 'active', 'pro')", [ctx.orgId]));
     // 22 lapsing (days 1..21 from today, and the last day of the window, +30); 3 current (+31, one just outside the window, and two undated);
