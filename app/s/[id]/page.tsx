@@ -42,11 +42,13 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
                 <span aria-hidden="true">✓ </span>Signed{view.signedAt && <> {fmtDateTime(view.signedAt)}</>}
               </p>
               {/* True to completeSigning (lib/server/esign.ts): the signed copy becomes the newest version of the sender's
-                  document, and the appended certificate records the typed name, the time and the emailed one-time code. */}
+                  document, and the appended certificate records the typed name, the time, the emailed one-time code and a
+                  keyed hash of the signer's network address (never the address itself). */}
               <p className="text-sm text-ink-2">
                 There&apos;s nothing else you need to do. {view.orgName} has the same signed copy, saved to their documents in ShipShape. The
-                certificate at the end records the name you typed, when you signed and that a code sent to your email confirmed it. Download
-                yours for your records; this link works until {fmtDay(view.expiresAt)}.
+                certificate at the end records the name you typed, when you signed, that a code sent to your email confirmed it, and a
+                fingerprint of your network connection (not your address). Download yours for your records; this link works until{" "}
+                {fmtDay(view.expiresAt)}.
               </p>
               <a href={`/s/${id}/file`} className="btn self-start">
                 Download the signed copy
