@@ -1,4 +1,4 @@
-import { fmtDateTime } from "@/components/ui";
+import { fmtDay } from "@/components/app-ui";
 import type { LinkEnd } from "@/lib/server/links";
 
 /** The headline and the line under it for a link that can't show its page. */
@@ -6,7 +6,7 @@ function explain(noun: string, why: "closed" | "incomplete", end: LinkEnd | null
   if (why === "incomplete") {
     return [`Open the full ${noun} you were sent`, "This page opens only from the complete link in your message. Open that link again, or ask whoever sent it for a new one."];
   }
-  if (end?.state === "expired") return [`This ${noun} has expired`, `It stopped working on ${fmtDateTime(end.endedAt)}. Ask whoever sent it for a new one.`];
+  if (end?.state === "expired") return [`This ${noun} has expired`, `It stopped working on ${fmtDay(end.endedAt)}. Ask whoever sent it for a new one.`];
   if (end?.state === "revoked") return [`This ${noun} was turned off`, "Whoever sent it turned it off. Ask them for a new one."];
   return [`This ${noun} has stopped working`, "It has expired or been turned off. Ask whoever sent it for a new one."];
 }

@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import CollectPage from "@/app/c/[id]/page";
 import { POST as upload } from "@/app/c/[id]/upload/route";
 import PassportPage from "@/app/p/[id]/page";
-import { fmtDateTime } from "@/components/ui";
+import { fmtDay } from "@/components/app-ui";
 import SigningPage from "@/app/s/[id]/page";
 import { SignButton } from "@/app/s/[id]/sign-form";
 import { signIn } from "@/app/signin/actions";
@@ -139,7 +139,8 @@ describe("a passport link (/p)", () => {
     );
     jar.set("ss_passport", token);
     const html = await passportPage(id);
-    expect(said(html)).toContain(`This link has expired It stopped working on ${fmtDateTime(row.at)}. Ask whoever sent it for a new one.`);
+    expect(said(html)).toContain(`This link has expired It stopped working on ${fmtDay(row.at)}. Ask whoever sent it for a new one.`);
+    expect(said(html)).not.toMatch(/\d:\d\d [AP]M/);
     expect(textOf(html)).not.toContain("Ran out");
     expectAskForNewLink(html);
 
@@ -213,7 +214,7 @@ describe("a signing link (/s)", () => {
     );
     jar.set("ss_sign", token);
     const html = await signingPage(id);
-    expect(said(html)).toContain(`This signing link has expired It stopped working on ${fmtDateTime(row.at)}. Ask whoever sent it for a new one.`);
+    expect(said(html)).toContain(`This signing link has expired It stopped working on ${fmtDay(row.at)}. Ask whoever sent it for a new one.`);
     expectAskForNewLink(html);
     jar.set("ss_sign", otherToken(token));
     expect(textOf(await signingPage(id))).toContain("This signing link has stopped working It has expired or been turned off.");
@@ -238,7 +239,7 @@ describe("a signing link (/s)", () => {
     const [row] = await db.root((tx) =>
       tx.query<{ at: string }>("update app.signature_requests set created_at = now() - interval '2 days', expires_at = now() - interval '1 hour' where id = $1 returning expires_at::text as at", [id]),
     );
-    expect(said(await signingPage(id))).toContain(`This signing link has expired It stopped working on ${fmtDateTime(row.at)}.`);
+    expect(said(await signingPage(id))).toContain(`This signing link has expired It stopped working on ${fmtDay(row.at)}.`);
   });
 });
 
@@ -303,7 +304,7 @@ describe("an upload link (/c)", () => {
     );
     jar.set("ss_collect", token);
     const html = await collectPage(id);
-    expect(said(html)).toContain(`This upload link has expired It stopped working on ${fmtDateTime(row.at)}. Ask whoever sent it for a new one.`);
+    expect(said(html)).toContain(`This upload link has expired It stopped working on ${fmtDay(row.at)}. Ask whoever sent it for a new one.`);
     expectAskForNewLink(html);
     jar.set("ss_collect", otherToken(token));
     expect(textOf(await collectPage(id))).toContain("This upload link has stopped working It has expired or been turned off.");
