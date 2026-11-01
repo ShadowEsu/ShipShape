@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Logo, NotLegalAdvice } from "@/components/ui";
 import { cognitoConfig, type SignInProblem } from "@/lib/server/cognito";
 import { localSignInAllowed } from "@/lib/server/session";
+import { RETURN_TO, returnTo } from "@/lib/return-to";
 import { SignInForm } from "./form";
 
 export const metadata: Metadata = { title: "Sign in", robots: { index: false } };
@@ -20,22 +21,28 @@ const PROBLEMS: Record<SignInProblem, string> = {
 
 const problem = (error: string | undefined) => Object.entries(PROBLEMS).find(([reason]) => reason === error)?.[1];
 
-export default async function SignInPage({ searchParams }: { searchParams: Promise<{ deleted?: string; error?: string; signed_out?: string }> }) {
-  const { deleted, error, signed_out } = await searchParams;
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string; error?: string; signed_out?: string; next?: string }>;
+}) {
+  const { deleted, error, signed_out, next } = await searchParams;
   const accounts = cognitoConfig(process.env) !== null;
   const message = problem(error);
+  // A re-sign-in for export, delete or Show full EIN goes back to that section afterwards (an allow-listed choice, never a URL).
+  const back = returnTo(next);
   return (
     <main id="main" className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-12">
       <div className="w-full max-w-sm space-y-6">
         <Logo />
         {deleted === "1" && (
           <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
-            Your account and its workspaces are deleted. There&apos;s nothing else you need to do.
+            Your account is deleted, and so is every workspace that had no other owner. There&apos;s nothing else you need to do.
           </p>
         )}
         {signed_out === "everywhere" && (
           <p role="status" className="rounded-lg bg-ok-soft px-3 py-2 text-sm text-ok">
-            You&apos;re signed out on every device. If you think someone else signed in, change your password now.
+            You&apos;re signed out on every device.
           </p>
         )}
         {message && (
@@ -47,12 +54,14 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
           <div>
             <h1 className="font-serif text-3xl font-semibold tracking-tight">Open ShipShape</h1>
             <p className="mt-2 text-sm text-ink-2">
-              {accounts
-                ? "Sign in, or create an account with your email. You can also explore a sample business with made-up documents."
-                : "Accounts for real documents open after our security review. Until then, explore a sample business with made-up documents."}
+              {back
+                ? `Sign in again to continue in ${RETURN_TO[back].where}.`
+                : accounts
+                  ? "Sign in, or create an account with your email. You can also explore a sample business with made-up documents."
+                  : "Accounts for real documents open after our security review. Until then, explore a sample business with made-up documents."}
             </p>
           </div>
-          <SignInForm allowEmail={localSignInAllowed()} accounts={accounts} />
+          <SignInForm allowEmail={localSignInAllowed()} accounts={accounts} next={back} />
         </div>
         <NotLegalAdvice />
       </div>

@@ -12,7 +12,7 @@ import { makePassport } from "@/app/app/passport/actions";
 import { NewPassportForm, PassportReady } from "@/app/app/passport/forms";
 import PassportPage from "@/app/app/passport/page";
 import PassportPreviewPage from "@/app/app/passport/preview/page";
-import { deleteMyAccount, signOutSession } from "@/app/app/settings/actions";
+import { deleteMyAccount, renameMyWorkspace, signOutSession, upgrade } from "@/app/app/settings/actions";
 import { DeleteRefused } from "@/app/app/settings/forms";
 import SettingsPage from "@/app/app/settings/page";
 import { fmtDay } from "@/components/app-ui";
@@ -463,13 +463,24 @@ describe("Settings", () => {
     expect(actionsOf(html).map((a) => a.label)).not.toContain("Check again");
   });
 
-  it("a failed payment: what it means, how long Pro lasts, and the one fix", async () => {
+  it("a failed payment: what it means, how long Pro lasts, and the one fix: the card while payments are on, writing to us while they're off (W9-4)", async () => {
     const ctx = await signIn("settings-pastdue@example.com");
     await bill(ctx, "past_due");
-    const html = await settings();
-    expect(textOf(html)).toContain(
-      "Your last payment didn't go through. Pro stays on for 7 days after a payment fails; update your card with Manage billing below.",
+    vi.stubEnv("CONTACT_EMAIL", "help@shipshape.example");
+    const off = await settings();
+    expect(textOf(off)).toContain(
+      "Your last payment didn't go through. Pro stays on for 7 days after a failed payment. Card updates are paused on our side right now; if Pro ends before they're back, write to help@shipshape.example.",
     );
+    expect(textOf(off)).toContain("Payments are switched off right now, so the plan can't change.");
+    // Payments on: the Manage billing button is below, so the notice may point at it.
+    vi.stubEnv("BILLING_ENABLED", "1");
+    vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "http://127.0.0.1:3917");
+    const on = await settings();
+    expect(textOf(on)).toContain("Pro stays on for 7 days after a failed payment. Update your card with Manage billing below.");
+    expect(actionsOf(on).map((a) => a.label)).toContain("Manage billing");
   });
 
   it("export needing a fresh sign-in: one line, and Sign in again in place of the download", async () => {
@@ -478,7 +489,7 @@ describe("Settings", () => {
     expect(textOf(html)).toContain("For your security, sign in again before you export.");
     const labels = actionsOf(html).map((a) => a.label);
     expect(labels).toContain("Sign in again");
-    expect(actionsOf(html).find((a) => a.label === "Sign in again")?.href).toBe("/signin");
+    expect(actionsOf(html).find((a) => a.label === "Sign in again")?.href).toBe("/signin?next=export");
     expect(labels).not.toContain("Download the export");
   });
 
@@ -508,7 +519,32 @@ describe("Settings", () => {
     const html = await settings();
     expect(actionsOf(html).map((a) => a.label)).toContain("Download the export");
     expect(textOf(html)).toContain(`Deleted with everything in it ${ctx.name}`);
-    expect(textOf(html)).toContain("Payments aren't switched on yet, so the plan can't change for now.");
+    expect(textOf(html)).toContain("Payments are switched off right now, so the plan can't change.");
+  });
+
+  it("while real documents are closed, the workspace name is read-only with a notice, and Save name is refused with a message, not a crash (W9-1)", async () => {
+    const ctx = await signIn("settings-gate@example.com");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    const html = await settings();
+    expect(actionsOf(html).map((a) => a.label)).not.toContain("Save name");
+    expect(textOf(html)).toContain(`Name ${ctx.name}`);
+    expect(textOf(html)).toContain("Naming the workspace opens after our security review.");
+    expect(await renameMyWorkspace({}, form({ name: "Harbor Plumbing" }))).toEqual({
+      error: "Real documents aren't open yet. They open after our security review.",
+      name: "Harbor Plumbing",
+    });
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    expect(actionsOf(await settings()).map((a) => a.label)).toContain("Save name");
+  });
+
+  it("the export card lists what the ZIP holds, and Sign out everywhere no longer promises a password change (W9-11, W9-13)", async () => {
+    await signIn("settings-export-list@example.com");
+    const text = textOf(await settings());
+    expect(text).toContain(
+      "One ZIP file with: every version of every document, with its details and fingerprint your business facts (the tax ID only as its last 4 digits) your vendors and the files they sent your passport links, with who opened them and what was downloaded your signature requests the browsers you've signed in on and the agreements you've accepted the workspace history",
+    );
+    expect(text).toContain("This ends every session, here and everywhere else.");
+    expect(text).not.toContain("change your password");
   });
 
   describe("Where you're signed in (Design row 34)", () => {
@@ -643,7 +679,15 @@ describe("form errors name the field to fix", () => {
   it("deleting the account after an old sign-in: says why, and the fix is signing in again", async () => {
     const ctx = await signIn("form-delete-old@example.com");
     await startSession({ userId: ctx.userId, demo: false, authAt: Math.floor(Date.now() / 1000) - 3600, sessionId: ctx.sessionId });
-    expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toEqual({ error: "For your security, sign in again to delete your account.", reauth: true });
+    // Every refusal keeps what was typed, so the retry the message asks for isn't refused for an empty field (W9-5).
+    expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toEqual({ error: "For your security, sign in again to delete your account.", reauth: true, typed: "DELETE" });
+  });
+
+  it("Move to Pro: an unticked box is the only refusal that marks the box; a ticked box stays ticked through any other refusal (W9-6)", async () => {
+    await signIn("form-upgrade@example.com");
+    expect(await upgrade({}, form({}))).toEqual({ error: "Check the box to agree to the Terms, including billing and refunds.", field: "agree" });
+    // Payments are off in this test file: the refusal is about payments, not the box, and the tick comes back.
+    expect(await upgrade({}, form({ agree: "on" }))).toEqual({ error: "Payments aren't switched on yet.", agreed: true });
   });
 
   it("deleting the account while billing is off and a subscription we know is running: nothing is deleted, and the fix is writing to us at the address when one is set", async () => {
@@ -656,6 +700,7 @@ describe("form errors name the field to fix", () => {
     expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toEqual({
       error: "Your subscription couldn't be cancelled automatically, so nothing was deleted.",
       write: { contact: "help@shipshape.example" },
+      typed: "DELETE",
     });
     vi.stubEnv("CONTACT_EMAIL", "");
     expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toMatchObject({ write: { contact: null } });
@@ -669,7 +714,7 @@ describe("the deletion refusal box", () => {
   it("names the one next step: sign in again, write to us at the address, or wait for payments", async () => {
     const old = await renderPage(DeleteRefused, { error: "For your security, sign in again to delete your account.", reauth: true });
     expect(old).toMatch(/<div[^>]*role="alert"[^>]*tabindex="-1"/);
-    expect(actionsOf(old)).toEqual([{ tag: "a", label: "Sign in again", href: "/signin" }]);
+    expect(actionsOf(old)).toEqual([{ tag: "a", label: "Sign in again", href: "/signin?next=delete" }]);
 
     const write = await renderPage(DeleteRefused, { error: still, write: { contact: "help@shipshape.example" } });
     expect(textOf(write)).toBe(`${still} Write to us and we'll cancel it; then delete your account.`);

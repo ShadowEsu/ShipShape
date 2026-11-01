@@ -156,8 +156,9 @@ const use = async (value: string) => {
   jar.set("ss_session", { value });
   return requireWorkspace();
 };
-/** Signs `userId` in as a browser would; returns that browser's cookie and its session id. */
+/** Signs `userId` in as a separate browser would (no cookie yet); returns that browser's cookie and its session id. */
 const signInOn = async (userId: string, userAgent?: string) => {
+  jar.delete("ss_session");
   await finishSignIn(userId, { demo: false, userAgent });
   const cookie = jar.get("ss_session")?.value ?? "";
   return { cookie, id: decodeSession(cookie)?.sessionId ?? "" };
@@ -281,6 +282,23 @@ describe("where you're signed in (Design row 34)", () => {
     // Nothing of the User-Agent beyond the two names is kept anywhere in the row.
     const [stored] = await db.root((tx) => tx.query<{ text: string }>("select s::text as text from app.sessions s where id = $1", [mac.id]));
     expect(stored.text).not.toMatch(/Mozilla|AppleWebKit|605\.1\.15|10_15_7/);
+  });
+
+  it("signing in again in the same browser ends the row its old cookie named, so Settings lists one browser, not a phantom (W9-3)", async () => {
+    const me = await createLocalUser("again@example.com", false);
+    const first = await signInOn(me, MAC_SAFARI);
+    // The browser still holds the first cookie (a re-sign-in for export, delete or Show full EIN).
+    await finishSignIn(me, { demo: false, userAgent: MAC_SAFARI });
+    const second = decodeSession(jar.get("ss_session")?.value ?? "")?.sessionId ?? "";
+    expect(second).not.toBe(first.id);
+    expect((await row(first.id)).revoked_at).not.toBeNull();
+    expect((await row(second)).revoked_at).toBeNull();
+    expect((await liveSessions(await use(jar.get("ss_session")?.value ?? ""))).map((s) => s.id)).toEqual([second]);
+    // Someone else signing in from this browser ends the previous person's row too: the browser is theirs now.
+    const other = await createLocalUser("someone-else@example.com", false);
+    await finishSignIn(other, { demo: false, userAgent: MAC_SAFARI });
+    expect((await row(second)).revoked_at).not.toBeNull();
+    expect((await row(decodeSession(jar.get("ss_session")?.value ?? "")?.sessionId ?? "")).user_id).toBe(other);
   });
 
   it("a browser signed out from Settings is refused on its next request, copies included; the person's other browsers keep working", async () => {

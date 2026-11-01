@@ -3,6 +3,7 @@ import { createHash, createHmac, createPublicKey, randomBytes, verify, type KeyO
 import { AdminDeleteUserCommand, CognitoIdentityProviderClient, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import { z } from "zod";
 import { TERMS_VERSION } from "@/lib/legal";
+import type { ReturnTo } from "@/lib/return-to";
 import { productionAwsClient } from "./aws";
 import { safeEqual } from "./crypto";
 import { asService } from "./db";
@@ -78,7 +79,8 @@ export class SignInFailed extends Error {
 
 // The sign-in cookie --------------------------------------------------------------------------------
 
-const Txn = z.object({ s: z.string(), v: z.string(), n: z.string(), t: z.string(), c: z.number().int() });
+// `r`: where to land after the sign-in (an allow-listed choice, lib/return-to.ts); absent means Home.
+const Txn = z.object({ s: z.string(), v: z.string(), n: z.string(), t: z.string(), c: z.number().int(), r: z.enum(["export", "delete", "ein"]).optional() });
 type SignInTxn = z.infer<typeof Txn>;
 
 const random = () => randomBytes(32).toString("base64url");
@@ -86,8 +88,8 @@ const random = () => randomBytes(32).toString("base64url");
 const macOf = (payload: string) => createHmac("sha256", sessionSecret()).update(`signin:${payload}`).digest("base64url");
 
 /** Where to send the browser, and the cookie that must come back with it. */
-export function startSignIn(cfg: CognitoConfig, now = Date.now()): { cookie: string; url: string } {
-  const txn: SignInTxn = { s: random(), v: random(), n: random(), t: TERMS_VERSION, c: Math.floor(now / 1000) };
+export function startSignIn(cfg: CognitoConfig, { now = Date.now(), returnTo = null }: { now?: number; returnTo?: ReturnTo | null } = {}): { cookie: string; url: string } {
+  const txn: SignInTxn = { s: random(), v: random(), n: random(), t: TERMS_VERSION, c: Math.floor(now / 1000), ...(returnTo ? { r: returnTo } : {}) };
   const payload = Buffer.from(JSON.stringify(txn)).toString("base64url");
   const url = new URL("/oauth2/authorize", cfg.domain);
   url.search = new URLSearchParams({
@@ -137,7 +139,12 @@ interface Deps {
 }
 
 /** Checks everything the callback brought back; returns the ShipShape user and when they authenticated. */
-export async function completeSignIn(cfg: CognitoConfig, params: CallbackParams, cookie: string | undefined, { now = Date.now(), fetchFn = fetch }: Deps = {}): Promise<{ userId: string; authAt: number }> {
+export async function completeSignIn(
+  cfg: CognitoConfig,
+  params: CallbackParams,
+  cookie: string | undefined,
+  { now = Date.now(), fetchFn = fetch }: Deps = {},
+): Promise<{ userId: string; authAt: number; returnTo: ReturnTo | null }> {
   const txn = openSignIn(cookie, now);
   if (!txn) throw new SignInFailed("expired", "no valid sign-in cookie");
   if (!params.state || !safeEqual(params.state, txn.s)) throw new SignInFailed("failed", "state doesn't match");
@@ -150,7 +157,7 @@ export async function completeSignIn(cfg: CognitoConfig, params: CallbackParams,
   if (txn.t !== TERMS_VERSION) throw new SignInFailed("terms");
   const idToken = await exchangeCode(cfg, params.code, txn.v, fetchFn);
   const id = await verifyIdToken(cfg, idToken, { nonce: txn.n, authenticatedSince: txn.c - SKEW_SECONDS, now, fetchFn });
-  return { userId: await userForIdentity(id), authAt: id.authTime };
+  return { userId: await userForIdentity(id), authAt: id.authTime, returnTo: txn.r ?? null };
 }
 
 const TokenResponse = z.object({ id_token: z.string().min(1).max(16_384) });

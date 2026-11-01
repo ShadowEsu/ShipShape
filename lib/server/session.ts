@@ -214,14 +214,19 @@ export async function endOneSession(ctx: Pick<SignedIn, "userId" | "sessionId">,
 }
 
 /**
- * Sign out in this browser: its row is marked signed out, so a copy of the cookie stops working too,
- * and the cookie goes. A cookie whose row is already gone (the account was deleted) just goes.
+ * Marks the row named by this browser's cookie signed out, as that cookie's own user, so a copy of the
+ * cookie stops working too. A cookie whose row is already gone (the account was deleted) does nothing.
  */
-export async function signOutHere(): Promise<void> {
+async function endCookieSession(): Promise<void> {
   const session = await getSession();
   if (session) {
     await asUser(session.userId, (tx) => tx.query("select app.end_session(s.id) from app.sessions s where s.id = $1", [session.sessionId]));
   }
+}
+
+/** Sign out in this browser: its row is marked signed out and the cookie goes. */
+export async function signOutHere(): Promise<void> {
+  await endCookieSession();
   await endSession();
 }
 
@@ -247,11 +252,13 @@ export async function createLocalUser(email: string | null, demo: boolean): Prom
 export const DEFAULT_WORKSPACE_NAME = "My business";
 
 /**
- * The last step of every sign-in: records the Terms and Privacy agreement, makes sure there's a
- * workspace, makes the session's row (named by the browser's User-Agent, which isn't kept) and
- * starts the session with its id.
+ * The last step of every sign-in: ends the session this browser's old cookie named (a re-sign-in
+ * must not leave a phantom "this browser" row live for 12 hours, W9-3), records the Terms and Privacy
+ * agreement, makes sure there's a workspace, makes the session's row (named by the browser's
+ * User-Agent, which isn't kept) and starts the session with its id.
  */
 export async function finishSignIn(userId: string, { demo, authAt, userAgent }: { demo: boolean; authAt?: number; userAgent?: string | null }) {
+  await endCookieSession();
   const sessionId = newSessionId();
   await asUser(userId, async (tx) => {
     await tx.query("insert into app.consents (user_id, item, policy_version) values ($1, 'terms_privacy', $2)", [userId, TERMS_VERSION]);

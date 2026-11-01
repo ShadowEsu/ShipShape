@@ -6,7 +6,7 @@ import { z } from "zod";
 import { deleteAccount } from "@/lib/server/account";
 import { openPortal, startCheckout } from "@/lib/server/billing";
 import { SubscriptionStillRunning, UserError } from "@/lib/server/errors";
-import { contactEmail } from "@/lib/server/flags";
+import { contactEmail, GateClosed } from "@/lib/server/flags";
 import { NeedsRecentSignIn, renameWorkspace } from "@/lib/server/profile";
 import { endAllSessions, endOneSession, endSession, requireWorkspace } from "@/lib/server/session";
 
@@ -22,7 +22,7 @@ export async function renameMyWorkspace(_prev: RenameState, data: FormData): Pro
   try {
     await renameWorkspace(ctx, data.get("name"));
   } catch (e) {
-    if (e instanceof UserError) return { error: e.message, name: String(data.get("name") ?? "") };
+    if (e instanceof GateClosed || e instanceof UserError) return { error: e.message, name: String(data.get("name") ?? "") };
     throw e;
   }
   // The name shows in the header of every app page.
@@ -49,9 +49,10 @@ export async function deleteMyAccount(_prev: DeleteState, data: FormData): Promi
   try {
     await deleteAccount(ctx);
   } catch (e) {
-    if (e instanceof NeedsRecentSignIn) return { error: e.message, reauth: true };
-    if (e instanceof SubscriptionStillRunning) return { error: e.message, write: { contact: contactEmail() } };
-    if (e instanceof UserError) return { error: e.message };
+    // Every refusal keeps the typed word: each message asks for another press of Delete, and React resets the form (W9-5).
+    if (e instanceof NeedsRecentSignIn) return { error: e.message, reauth: true, typed };
+    if (e instanceof SubscriptionStillRunning) return { error: e.message, write: { contact: contactEmail() }, typed };
+    if (e instanceof UserError) return { error: e.message, typed };
     throw e;
   }
   await endSession();
@@ -80,15 +81,20 @@ export async function signOutSession(data: FormData) {
 
 export interface BillingState {
   error?: string;
+  /** The error is about the agreement box (the only refusal possible when it wasn't ticked: startCheckout checks it first). */
+  field?: "agree";
+  /** Whether the box was ticked, so it stays ticked after React resets the form (W9-6). */
+  agreed?: boolean;
 }
 
 export async function upgrade(_prev: BillingState, data: FormData): Promise<BillingState> {
   const ctx = await requireWorkspace();
+  const agreed = data.get("agree") === "on";
   let url: string;
   try {
-    url = await startCheckout(ctx, data.get("agree") === "on");
+    url = await startCheckout(ctx, agreed);
   } catch (e) {
-    if (e instanceof UserError) return { error: e.message };
+    if (e instanceof UserError) return agreed ? { error: e.message, agreed } : { error: e.message, field: "agree" };
     throw e;
   }
   redirect(url);

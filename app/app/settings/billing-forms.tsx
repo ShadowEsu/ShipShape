@@ -22,8 +22,9 @@ export function UpgradeForm({ price }: { price: number }) {
           type="checkbox"
           name="agree"
           aria-required="true"
-          aria-invalid={state.error ? true : undefined}
-          aria-describedby={state.error ? "upgrade-error" : undefined}
+          defaultChecked={state.agreed}
+          aria-invalid={state.field === "agree" ? true : undefined}
+          aria-describedby={state.field === "agree" ? "upgrade-error" : undefined}
           className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
         />
         <span>

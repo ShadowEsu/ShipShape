@@ -23,8 +23,8 @@ export default function PrivacyPage() {
           version of these policies you agreed to and when.
         </li>
         <li>
-          <strong>The browsers you&apos;re signed in on:</strong> browser and system name, when you signed in and were last active,
-          so you can sign each one out. No IP addresses.
+          <strong>The browsers you&apos;re signed in on:</strong> browser and system name, when you signed in, were last active and
+          signed out, so you can sign each one out; each is deleted 30 days after it ends. No IP addresses.
         </li>
         <li>
           <strong>Business facts:</strong> the details you save to fill forms (legal name, address, entity type, signer). A tax ID
@@ -65,9 +65,10 @@ export default function PrivacyPage() {
 
       <h2>Cookies</h2>
       <p>
-        One sign-in cookie that lasts up to 12 hours, a cookie that keeps a passport, signing or upload link open for 30 minutes
-        on that link&apos;s own pages, and one that holds your browser&apos;s time zone for a year so dates are judged on your own
-        calendar day. No advertising or analytics cookies, and no tracking scripts.
+        One sign-in cookie that lasts up to 12 hours; while you&apos;re signing in, a second one that lasts 10 minutes and is only sent
+        to the sign-in return page; a cookie that keeps a passport, signing or upload link open for 30 minutes on that link&apos;s own
+        pages; and one that holds your browser&apos;s time zone for a year so dates are judged on your own calendar day. No advertising
+        or analytics cookies, and no tracking scripts.
       </p>
 
       <h2>Who else handles your data</h2>

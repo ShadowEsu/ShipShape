@@ -63,7 +63,7 @@ export default async function StatusPage() {
           />
           <Row name="Email" state="Off" tone="off" note="Reminders and signing codes show inside the app instead." />
           {payments?.live ? (
-            <Row name="Payments" state="Live payments" tone="ok" note="Real cards are charged, through Stripe." />
+            <Row name="Payments" state="Live payments" tone="ok" note="Real cards are charged through Stripe." />
           ) : (
             <Row name="Payments" state={payments ? "Test mode" : "Off"} tone="off" note="No real charges during the preview." />
           )}

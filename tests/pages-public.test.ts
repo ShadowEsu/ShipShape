@@ -561,4 +561,26 @@ describe("signing in (/signin)", () => {
       "This email already belongs to another ShipShape account, so we didn't sign you in. Sign in with a different email address.",
     );
   });
+
+  it("after deleting an account, says one true thing whether or not a workspace went with it (W9-10)", async () => {
+    const html = await renderPage(SignInPage, { searchParams: Promise.resolve({ deleted: "1" }) });
+    expect(textOf(/<p role="status"[^>]*>[\s\S]*?<\/p>/.exec(html)?.[0] ?? "")).toBe(
+      "Your account is deleted, and so is every workspace that had no other owner. There's nothing else you need to do.",
+    );
+  });
+
+  it("a re-sign-in for export, delete or Show full EIN says where it continues and lands there; anything else lands on Home (W9-12)", async () => {
+    const page = async (next?: string) => renderPage(SignInPage, { searchParams: Promise.resolve(next === undefined ? {} : { next }) });
+    expect(textOf(await page("export"))).toContain("Sign in again to continue in Settings.");
+    expect(await page("export")).toContain('type="hidden" name="next" value="export"');
+    expect(textOf(await page("ein"))).toContain("Sign in again to continue in Business facts.");
+    // Not on the list: the usual line, and nothing of the value is echoed anywhere.
+    const stray = await page("https://evil.example/x");
+    expect(textOf(stray)).toContain("Accounts for real documents open after our security review.");
+    expect(stray).not.toContain("evil.example");
+    expect(stray).not.toContain('name="next"');
+    // The email sign-in lands on the section, scrolled to it; a value off the list lands on Home.
+    await expect(signIn({}, form({ mode: "email", email: "back@harbor.example", terms: "on", next: "delete" }))).rejects.toThrow("redirect /app/settings#delete");
+    await expect(signIn({}, form({ mode: "email", email: "back@harbor.example", terms: "on", next: "/app/admin" }))).rejects.toThrow(/^redirect \/app$/);
+  });
 });

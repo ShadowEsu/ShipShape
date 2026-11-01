@@ -131,7 +131,7 @@ export function EinPanel({ masked, readOnly }: { masked: string | null; readOnly
           {shown.reauth && (
             <>
               {" "}
-              <Link href="/signin" className="underline">
+              <Link href="/signin?next=ein" className="underline">
                 Sign in again
               </Link>
             </>
