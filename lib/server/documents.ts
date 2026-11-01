@@ -62,7 +62,8 @@ const DOC_SELECT = `
 const LIST_WHERE = ` where d.org_id = $2 and d.status = $3
       and ($4::text is null or d.kind = $4)
       and ($5::text = '' or d.search @@ websearch_to_tsquery('simple', $5) or d.title ilike '%' || $5 || '%')`;
-const LIST_ORDER = ` order by coalesce(d.expires_on, '9999-12-31') asc, d.created_at desc`;
+// d.id last: created_at ties within one transaction (the sample workspace), and limit/offset needs a total order.
+const LIST_ORDER = ` order by coalesce(d.expires_on, '9999-12-31') asc, d.created_at desc, d.id`;
 const LIST_SQL = DOC_SELECT + LIST_WHERE + LIST_ORDER;
 const PAGE_SQL = LIST_SQL + " limit $6 offset $7";
 // $1 is unused here, so the page and the count share one parameter list.
