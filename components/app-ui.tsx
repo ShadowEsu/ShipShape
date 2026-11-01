@@ -34,6 +34,8 @@ export function ValidityChip({ validity, expiresOn }: { validity: Validity; expi
 }
 
 export const fmtDay = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+/** The same date without the year, for a sentence about a date within 30 days (the year is unambiguous there and would orphan at 390). */
+export const fmtMonthDay = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 /** The chip for a row that's there because of a renewal notice: the same amber as "Expires soon", with the date (Design). */
 export function RenewalChip({ renewsOn }: { renewsOn: string }) {

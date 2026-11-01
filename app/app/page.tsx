@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { RenewalChip, ValidityChip } from "@/components/app-ui";
+import { fmtMonthDay, RenewalChip, ValidityChip } from "@/components/app-ui";
 import { ATTENTION_MAX, DOC_KINDS, homeSummary } from "@/lib/server/documents";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { listPassports } from "@/lib/server/passport";
@@ -152,8 +152,9 @@ export default async function AppHome() {
                     // Days from today to the date that put the document here (its expiry, or a renewal notice).
                     const days = Math.round((Date.parse(d.attention_on) - Date.parse(ctx.today)) / 86_400_000);
                     const renewal = d.attention_kind === "renewal";
+                    // A renewal row keeps one chip (its reason); an expiry within 30 days is named on the state line instead.
                     const state = renewal
-                      ? `Renewal notice due ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}.`
+                      ? `Renewal notice due ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}.${d.validity === "expiring" && d.expires_on ? ` Expires ${fmtMonthDay(d.expires_on)}.` : ""}`
                       : d.validity === "expired"
                         ? "It has lapsed."
                         : days === 0
@@ -186,8 +187,8 @@ export default async function AppHome() {
         {docs.attentionTotal > ATTENTION_MAX && (
           <p className="text-sm text-ink-2">
             {`The ${ATTENTION_MAX} most urgent are listed; ${moreLine}.`}{" "}
-            <Link href="/app/documents" className="underline">
-              See all documents
+            <Link href="/app/deadlines" className="underline">
+              See every date
             </Link>
             .
           </p>
