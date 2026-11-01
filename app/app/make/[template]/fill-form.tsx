@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import type { Ref } from "react";
 import { flushSync } from "react-dom";
 import { isVisible as visible } from "@/lib/templates/catalog";
 import type { FieldDef, TemplateInfo } from "@/lib/templates/types";
@@ -32,9 +33,56 @@ function sourceOf(f: FieldDef, value: string, initial: string, chip: FactChip | 
   return value ? "You typed it" : "";
 }
 
+/** The element a field's summary link points at: its input, the radio group, or the EIN's error line (it has no input). */
+function fieldAnchor(key: string) {
+  return key === "_ack" ? "ack" : `f-${key}`;
+}
+
 /** Focuses a field's input, or its error line when it has none (the EIN shows as text). `_ack` is the approval box. */
 function focusField(form: HTMLFormElement | null, key: string) {
   form?.querySelector<HTMLElement>(`[name="${key === "_ack" ? "ack" : key}"]:not([type=hidden]), #f-${key}-error`)?.focus();
+}
+
+/** An SSN as the form shows it after you leave the field: 123-45-6789 when it has 9 digits, otherwise as typed. */
+export function formatSsn(value: string): string {
+  const d = value.replace(/[\s-]/g, "");
+  return /^[0-9]{9}$/.test(d) ? `${d.slice(0, 3)}-${d.slice(3, 5)}-${d.slice(5)}` : value;
+}
+
+/** One wrong answer: the field it's about, the label a person knows it by, and what to do. */
+export interface Problem {
+  key: string;
+  label: string;
+  message: string;
+}
+
+/**
+ * The list at the top of a form after a check: how many answers need fixing, and one link per answer
+ * (its label and what to do) leading to the field. Takes focus when it appears (tabIndex -1, ref).
+ */
+export function ErrorSummary({ problems, onPick, ref }: { problems: Problem[]; onPick?: (key: string) => void; ref?: Ref<HTMLDivElement> }) {
+  return (
+    <div ref={ref} tabIndex={-1} role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad">
+      <h2 className="font-semibold">{problems.length === 1 ? "1 answer needs fixing" : `${problems.length} answers need fixing`}</h2>
+      <ul className="mt-1 list-disc space-y-1 pl-5">
+        {problems.map((p) => (
+          <li key={p.key}>
+            <a
+              href={`#${fieldAnchor(p.key)}`}
+              className="underline"
+              onClick={(e) => {
+                if (!onPick) return;
+                e.preventDefault();
+                onPick(p.key);
+              }}
+            >
+              {p.label} – {p.message}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function FillForm({
@@ -53,19 +101,27 @@ export function FillForm({
   const [state, action, pending] = useActionState<FillState, FormData>(fill, {});
   // The review a "Change" link left: back to editing until the next review comes back.
   const [left, setLeft] = useState<FillState | null>(null);
+  // Fields changed since this result came back: their error clears at once (it's being corrected) until the next check.
+  const [fixed, setFixed] = useState<{ of: FillState; keys: string[] }>({ of: state, keys: [] });
   const formRef = useRef<HTMLFormElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
   const reviewing = state.review === true && left !== state;
-  const errors = state.errors ?? {};
-  const set = (k: string, v: string) => setValues((old) => ({ ...old, [k]: v }));
+  const fixedKeys = fixed.of === state ? fixed.keys : [];
+  const errors = Object.fromEntries(Object.entries(state.errors ?? {}).filter(([k]) => !fixedKeys.includes(k)));
+  const set = (k: string, v: string) => {
+    setValues((old) => ({ ...old, [k]: v }));
+    setFixed((old) => (old.of === state ? { of: state, keys: old.keys.includes(k) ? old.keys : [...old.keys, k] } : { of: state, keys: [k] }));
+  };
   const sections = [...new Set(template.fields.map((f) => f.section))];
   const shownFields = template.fields.filter((f) => visible(f, values));
-  const fieldErrors = shownFields.filter((f) => errors[f.key]);
+  const problems = shownFields.filter((f) => errors[f.key]).map((f) => ({ key: f.key, label: f.label, message: errors[f.key] }));
 
-  // Each result with errors moves focus to the first one, in the form's order.
+  // Each result with errors moves focus to the summary (its links lead to each field) or, on the review, to the approval box.
   useEffect(() => {
-    const first = [...template.fields.map((f) => f.key), "_ack"].find((k) => state.errors?.[k]);
-    if (first) focusField(formRef.current, first);
-  }, [state, template]);
+    if (!state.errors || Object.keys(state.errors).length === 0) return;
+    if (summaryRef.current) summaryRef.current.focus();
+    else if (state.errors._ack) focusField(formRef.current, "_ack");
+  }, [state]);
 
   function change(key: string) {
     // Show the fields before moving focus into them; changed values need approving afresh.
@@ -84,11 +140,7 @@ export function FillForm({
           {state.error}
         </p>
       )}
-      {!reviewing && fieldErrors.length > 0 && (
-        <p role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad">
-          Fix {fieldErrors.length === 1 ? "1 field" : `${fieldErrors.length} fields`} below: {fieldErrors.map((f) => f.label).join("; ")}.
-        </p>
-      )}
+      {!reviewing && problems.length > 0 && <ErrorSummary ref={summaryRef} problems={problems} onPick={(key) => focusField(formRef.current, key)} />}
 
       {/* While reviewing, the fields stay in the form (hidden) so approving posts the reviewed values. */}
       <div hidden={reviewing} className="space-y-6">
@@ -144,6 +196,7 @@ export function FillForm({
             <label className="flex items-start gap-3 text-sm">
               <input
                 type="checkbox"
+                id="ack"
                 name="ack"
                 checked={ack}
                 onChange={(e) => setAck(e.target.checked)}
@@ -210,7 +263,7 @@ function Field({
 
   if (f.kind === "radio") {
     return (
-      <fieldset aria-describedby={describedBy}>
+      <fieldset id={id} aria-describedby={describedBy}>
         <legend className="label">{label}</legend>
         <div className="mt-1 grid gap-2">
           {f.options!.map((o) => (
@@ -228,7 +281,7 @@ function Field({
     return (
       <div>
         <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" id={id} name={f.key} checked={value === "on"} onChange={(e) => onChange(e.target.checked ? "on" : "")} className="mt-0.5 size-4 accent-[var(--accent)]" aria-describedby={describedBy} />
+          <input type="checkbox" id={id} name={f.key} checked={value === "on"} onChange={(e) => onChange(e.target.checked ? "on" : "")} className="mt-0.5 size-4 accent-[var(--accent)]" aria-invalid={error ? true : undefined} aria-describedby={describedBy} />
           {f.label}
         </label>
         <Help id={id} hint={f.hint} error={error} />
@@ -237,7 +290,7 @@ function Field({
   }
   if (f.kind === "secret" && f.fact === "ein") {
     return (
-      <div>
+      <div id={id}>
         <p className="label">{label}</p>
         <p className="font-mono text-sm">{value || "No EIN saved in Business facts"}</p>
         <Help id={id} hint={f.hint} error={error} />
@@ -260,6 +313,7 @@ function Field({
           autoComplete={f.kind === "secret" ? "off" : undefined}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={f.key === "ssn" ? (e) => formatSsn(e.target.value) !== e.target.value && onChange(formatSsn(e.target.value)) : undefined}
           maxLength={f.max}
           min={f.kind === "date" ? "1900-01-01" : undefined}
           max={f.kind === "date" ? "2200-12-31" : undefined}
