@@ -491,6 +491,8 @@ describe("Settings", () => {
       // This browser first, then the most recently used; one Sign out for each, naming its own session.
       expect(actionsOf(html).map((a) => a.label)).toEqual(["Sign out", "Sign out", "Sign out", "Sign out"]);
       expect([...html.matchAll(/name="id" value="([^"]+)"/g)].map((m) => m[1])).toEqual([ctx.sessionId, recent, tablet, phone]);
+      expect(html).toContain('aria-label="Sign out Safari on a Mac (this browser)"');
+      expect(html).toContain('aria-label="Sign out Chrome on an iPhone"');
     });
 
     it("Sign out on a row ends that browser and leaves this one; on this browser's own row it signs out here", async () => {

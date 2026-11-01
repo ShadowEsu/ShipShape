@@ -192,7 +192,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               </p>
               <form action={signOutSession}>
                 <input type="hidden" name="id" value={s.id} />
-                <SubmitButton className="btn-ghost" pendingLabel="Signing out…">
+                <SubmitButton className="btn-ghost" pendingLabel="Signing out…" label={`Sign out ${s.family}${s.current ? " (this browser)" : ""}`}>
                   Sign out
                 </SubmitButton>
               </form>
