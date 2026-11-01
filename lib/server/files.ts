@@ -1,8 +1,8 @@
 import "server-only";
+import { MAX_UPLOAD_BYTES, UPLOAD_TOO_BIG } from "@/lib/upload-limit";
 import { UserError } from "./errors";
 
 /** Uploads: PDF, PNG and JPEG only, decided by the file's first bytes, never its name (Security R3). */
-export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export type AllowedMime = "application/pdf" | "image/png" | "image/jpeg";
 
@@ -35,7 +35,7 @@ export class UploadRefused extends UserError {}
 
 export function checkUpload(bytes: Uint8Array): UploadCheck {
   if (bytes.length === 0) return { ok: false, error: "That file is empty. Choose the file again, or pick another." };
-  if (bytes.length > MAX_UPLOAD_BYTES) return { ok: false, error: "That file is over 4 MB. Choose a smaller file, or save it as a smaller PDF." };
+  if (bytes.length > MAX_UPLOAD_BYTES) return { ok: false, error: UPLOAD_TOO_BIG };
   const mime = sniffMime(bytes);
   if (!mime) return { ok: false, error: "That file isn't a PDF, PNG or JPEG. Save it as a PDF and choose it again." };
   if (mime === "application/pdf" && ACTIVE_PDF.test(Buffer.from(bytes).toString("latin1"))) {

@@ -14,7 +14,7 @@ import { addVendor, createVendorLink, receiveFile } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
 import { listDocuments } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
-import { MAX_UPLOAD_BYTES } from "@/lib/server/files";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";

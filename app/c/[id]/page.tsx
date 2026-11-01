@@ -6,12 +6,12 @@ import { NamedByWorkspace, Notice, fmtDay } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { FocusOnLoad } from "@/components/focus-on-load";
 import { COLLECT_COOKIE, openCollect, type PublicCollect, type ReceiveOutcome } from "@/lib/server/collect";
-import { MAX_UPLOAD_BYTES } from "@/lib/server/files";
 import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
 import { viewerZone } from "@/lib/server/session";
 import { dayOf } from "@/lib/today";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { SendButton } from "./send-button";
 
 export const metadata: Metadata = { title: "Send documents", robots: { index: false, follow: false } };

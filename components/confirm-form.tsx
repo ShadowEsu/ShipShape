@@ -15,6 +15,8 @@ export function ConfirmForm({
   trigger,
   question,
   confirm,
+  cancel = "Cancel",
+  destructive = false,
   pendingLabel,
   compact = false,
 }: {
@@ -23,6 +25,9 @@ export function ConfirmForm({
   trigger: string;
   question: string;
   confirm: string;
+  cancel?: string;
+  /** The confirm button in the destructive style: the step takes something away that can't be restored. */
+  destructive?: boolean;
   pendingLabel: string;
   /** Small text buttons, for a row in a list. */
   compact?: boolean;
@@ -58,11 +63,11 @@ export function ConfirmForm({
           {question}
         </p>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <SubmitButton className={compact ? `${small} font-medium` : "btn"} pendingLabel={pendingLabel}>
+          <SubmitButton className={compact ? `${small} font-medium` : destructive ? "btn-danger" : "btn"} pendingLabel={pendingLabel}>
             {confirm}
           </SubmitButton>
           <button type="button" className={compact ? small : "btn-ghost"} onClick={toggle(false)}>
-            Cancel
+            {cancel}
           </button>
         </div>
       </form>

@@ -1,7 +1,8 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PDFPage } from "pdf-lib";
+import { inflateSync } from "node:zlib";
+import { PDFDocument, PDFName, PDFPage, PDFRawStream, PDFStream } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
@@ -10,7 +11,7 @@ import { canSaveFacts, checkFill, DOCUMENT_GONE, documentsById, downloadUrl, fil
 import { UserError } from "@/lib/server/errors";
 import { planLimit } from "@/lib/server/plans";
 import { checkUpload, UploadRefused } from "@/lib/server/files";
-import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
+import { fillW9Form, formValues, loadW9, prefill, render } from "@/lib/server/fill";
 import { assertLaunchConfig, GateClosed } from "@/lib/server/flags";
 import { createPassport, openPassport } from "@/lib/server/passport";
 import { factsForFill, NeedsRecentSignIn, renameWorkspace, revealEin, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
@@ -19,6 +20,21 @@ import { blobStore, localBlobStore, ObjectExists, setBlobStoreForTests, verifyFi
 import { templateById } from "@/lib/templates/catalog";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+
+/** The baselines (Tm y) of the W-9 requester box's text, from its appearance XObject (186.2 × 38 pt) in a flattened document. */
+function requesterBaselines(doc: PDFDocument): number[] {
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFStream)) continue;
+    const bbox = obj.dict.get(PDFName.of("BBox"))?.toString() ?? "";
+    if (!/186\.2 37\.99/.test(bbox)) continue;
+    const raw = obj instanceof PDFRawStream ? obj.contents : obj.getContents();
+    const flate = obj.dict.get(PDFName.of("Filter"))?.toString().includes("FlateDecode");
+    const text = (flate ? inflateSync(raw) : Buffer.from(raw)).toString("latin1");
+    const ys = [...text.matchAll(/1 0 0 1 [\d.-]+ ([\d.-]+) Tm/g)].map((m) => Number(m[1]));
+    if (ys.length) return ys;
+  }
+  return [];
+}
 
 let db: TestDb;
 let blobDir: string;
@@ -96,7 +112,7 @@ describe("real documents gate (Security G3)", () => {
   it("works for a real workspace when the gate is open", async () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     const id = await uploadDocument(real, { title: "Insurance certificate", kind: "coi", expires_on: "2027-01-31" }, PDF);
-    expect(await uploadVersion(real, id, PDF)).toBe(2);
+    expect(await uploadVersion(real, id, PDF)).toEqual({ version: 2, withdrawn: [] });
     const got = await getDocument(real, id);
     expect(got?.versions.map((v) => v.version)).toEqual([2, 1]);
     expect(got?.audit.map((a) => a.action)).toEqual(["document.version_added", "document.version_added", "document.created"]);
@@ -122,7 +138,7 @@ describe("real documents gate (Security G3)", () => {
     const orphan = path.join(blobDir, real.orgId, id, "v2.pdf");
     await writeFile(orphan, "stale bytes from a lost transaction");
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(await uploadVersion(real, id, PDF)).toBe(2);
+    expect((await uploadVersion(real, id, PDF)).version).toBe(2);
     expect(warned).toHaveBeenCalledTimes(1);
     warned.mockRestore();
     expect(Buffer.from(await blobStore().get(`${real.orgId}/${id}/v2.pdf`))).toEqual(Buffer.from(PDF));
@@ -138,7 +154,7 @@ describe("real documents gate (Security G3)", () => {
     // Opens the pool's three connections first, so the uploads below really run side by side.
     await Promise.all([1, 2, 3].map(() => asService((tx) => tx.query("select pg_sleep(0.1)"))));
     const versions: number[] = [];
-    for (let round = 0; round < 3; round++) versions.push(...(await Promise.all([1, 2, 3].map(() => uploadVersion(real, id, PDF)))));
+    for (let round = 0; round < 3; round++) versions.push(...(await Promise.all([1, 2, 3].map(async () => (await uploadVersion(real, id, PDF)).version))));
     expect(versions.sort((x, y) => x - y)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect((await getDocument(real, id))?.versions.map((v) => v.version)).toEqual([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
     vi.unstubAllEnvs();
@@ -228,6 +244,30 @@ describe("W-9 fill", () => {
     expect(field("Address_ReadOrder[0].f1_08[0]")).toBe("Springfield, CA 90000");
     expect(`${field("f1_14[0]")}-${field("f1_15[0]")}`).toBe(SAMPLE_EIN);
     expect(field("f1_11[0]") ?? "").toBe("");
+  });
+
+  it("refuses a requester that falls out of the form's box (3 lines at 9 pt); what it accepts lands inside the box on the flattened page (wave 8 #1)", async () => {
+    const t = templateById("irs-w9")!;
+    const facts = await factsForFill(sample);
+    const base = { ...prefill(t, facts, sample.today), sign: "", signature: "" };
+    const tooMany = "Northwind Traders\nAttn: Accounts Payable\n4500 SE Hawthorne Blvd\nPortland, OR 97215";
+    // Three typed lines, the first long enough to wrap: four on the form.
+    const wraps = "Northwind Traders Accounts Payable Department\n4500 Southeast Hawthorne Blvd\nPortland, OR 97215";
+    const fits = "Northwind Traders, Accounts Payable\n4500 SE Hawthorne Blvd, Suite 210\nPortland, OR 97215";
+    for (const requester of [tooMany, wraps]) {
+      const refused = await fillTemplate(sample, t.id, { ...base, requester }, true);
+      expect(refused).toEqual({ ok: false, errors: { requester: "This won't fit in the form's box, which holds 3 lines of about 40 characters. Shorten it so nothing is cut off the PDF." } });
+    }
+    expect(await checkFill(sample, t.id, { ...base, requester: fits })).toEqual({});
+    // The flattened page draws the box's text as an XObject clipped at y = 1: every baseline must sit above that.
+    const { bytes } = await render(t, { ...base, requester: fits }, facts, sample.today);
+    const baselines = requesterBaselines(await PDFDocument.load(bytes));
+    expect(baselines).toHaveLength(3);
+    for (const y of baselines) expect(y).toBeGreaterThan(1);
+    const doc = await loadW9();
+    fillW9Form(doc, { ...base, requester: tooMany }, facts);
+    doc.getForm().flatten();
+    expect(requesterBaselines(doc).some((y) => y < 1)).toBe(true); // the fourth line would be below the box: why it's refused
   });
 
   it("needs the acknowledgment, records where each value came from, and never stores tax ids", async () => {

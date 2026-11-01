@@ -21,7 +21,7 @@ import {
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { listDocuments } from "@/lib/server/documents";
-import { MAX_UPLOAD_BYTES } from "@/lib/server/files";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { collectOpen, GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";

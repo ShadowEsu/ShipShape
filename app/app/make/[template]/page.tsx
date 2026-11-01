@@ -8,8 +8,9 @@ import { prefill } from "@/lib/server/fill";
 import { canSaveFacts } from "@/lib/server/documents";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { loadProfile } from "@/lib/server/profile";
-import { requireWorkspace } from "@/lib/server/session";
+import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
+import { dayOf } from "@/lib/today";
 import { FillForm, type FactChip } from "./fill-form";
 
 export const metadata: Metadata = { title: "Fill a document" };
@@ -19,6 +20,7 @@ const FACT_KEY: Record<string, string> = { address: "address_line1", city_state_
 
 export default async function FillPage({ params }: { params: Promise<{ template: string }> }) {
   const ctx = await requireWorkspace();
+  const zone = await viewerZone();
   const { template: id } = await params;
   const t = templateById(id);
   if (!t) notFound();
@@ -45,7 +47,7 @@ export default async function FillPage({ params }: { params: Promise<{ template:
     const ageDays = at ? (Date.now() - new Date(at).getTime()) / 86_400_000 : Infinity;
     chips[f.key] = {
       label: FACT_LABELS[key] ?? key,
-      confirmedAt: at ? new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null,
+      confirmedAt: at ? dayOf(at, zone) : null,
       stale: ageDays > STALE_AFTER_DAYS,
     };
   }

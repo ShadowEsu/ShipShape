@@ -3,13 +3,15 @@ import { Notice, PageHeader } from "@/components/app-ui";
 import { maskEin } from "@/lib/profile-fields";
 import { realDocsEnabled } from "@/lib/server/flags";
 import { loadProfile } from "@/lib/server/profile";
-import { requireWorkspace } from "@/lib/server/session";
+import { requireWorkspace, viewerZone } from "@/lib/server/session";
+import { dayOf } from "@/lib/today";
 import { EinPanel, FactsForm } from "./forms";
 
 export const metadata: Metadata = { title: "Business facts" };
 
 export default async function FactsPage() {
   const ctx = await requireWorkspace();
+  const zone = await viewerZone();
   const profile = await loadProfile(ctx);
   const readOnly = ctx.demo || !realDocsEnabled() || ctx.role === "member";
   const confirmed = Object.values(profile.confirmed).sort().at(-1);
@@ -21,7 +23,7 @@ export default async function FactsPage() {
         Confirm these once. ShipShape fills them into your forms, shows where each value came from, and asks “still true?” when a
         fact is more than a year old.
         {confirmed ? (
-          <> Last confirmed {new Date(confirmed).toLocaleDateString("en-US", { dateStyle: "medium" })}.</>
+          <> Last confirmed {dayOf(confirmed, zone)}.</>
         ) : (
           !readOnly && <> Nothing is confirmed yet: fill in what you know, then choose Save and confirm. Your W-9 and NDA fill from these.</>
         )}

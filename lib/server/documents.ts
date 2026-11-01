@@ -327,8 +327,26 @@ export async function uploadDocument(ctx: Ctx, meta: unknown, bytes: Uint8Array)
   return asUser(ctx.userId, (tx) => insertDocument(tx, ctx, m, { bytes, mime: check.mime }, "upload"));
 }
 
-/** A new version of an existing document (a renewed certificate, a corrected form). */
-export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Array): Promise<number> {
+/** An open signing request withdrawn by a new version or by archiving: who it was for, and the version it was made on. */
+export interface Withdrawn {
+  signerName: string;
+  version: number;
+}
+
+/** Withdraws the document's open (pending, not lapsed) signing requests inside `tx`; the signer's link then reads as turned off. Newest first, as the page lists them. */
+async function withdrawOpenRequests(tx: Tx, ctx: Ctx, documentId: string): Promise<Withdrawn[]> {
+  const rows = await tx.query<{ signer_name: string; version: number; created_at: string }>(
+    "update app.signature_requests set status = 'revoked' where document_id = $1 and org_id = $2 and status = 'pending' and expires_at > now() returning signer_name, version, created_at::text as created_at",
+    [documentId, ctx.orgId],
+  );
+  return rows.sort((a, b) => b.created_at.localeCompare(a.created_at)).map((r) => ({ signerName: r.signer_name, version: r.version }));
+}
+
+/**
+ * A new version of an existing document (a renewed certificate, a corrected form). A signature belongs
+ * to the version the signer saw, so the document's open signing requests are withdrawn (Design, wave 8 #7).
+ */
+export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Array): Promise<{ version: number; withdrawn: Withdrawn[] }> {
   assertRealData(ctx);
   const check = checkUpload(bytes);
   if (!check.ok) throw new UploadRefused(check.error);
@@ -339,7 +357,7 @@ export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Ar
     if (!doc) throw new UserError(DOCUMENT_GONE);
     const [row] = await tx.query<{ next: number }>("select coalesce(max(v.version), 0) + 1 as next from app.document_versions v where v.document_id = $1", [documentId]);
     await insertVersion(tx, ctx, documentId, row.next, { bytes, mime: check.mime }, "upload", null);
-    return row.next;
+    return { version: row.next, withdrawn: await withdrawOpenRequests(tx, ctx, documentId) };
   });
 }
 
@@ -356,7 +374,7 @@ async function checked(ctx: Ctx, templateId: string, values: Values) {
   const t = templateById(templateId);
   if (!t) throw new UserError("ShipShape doesn't fill that form. Pick one from Make a document.");
   const facts = await factsForFill(ctx);
-  const errors = validate(t, values, facts);
+  const errors = await validate(t, values, facts);
   // The box is hidden for people who can't change Business facts; a post that carries it anyway is refused here, not at the database.
   if (values.save_ein === "on" && !facts.ein && !canSaveFacts(ctx)) {
     errors.save_ein = ctx.demo
@@ -417,7 +435,10 @@ export async function updateDocument(ctx: Ctx, id: string, meta: unknown) {
 export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
   const rows = await asUser(ctx.userId, async (tx) => {
     if (!archived) await assertWithinPlan(tx, ctx, "documents");
-    return tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]);
+    const rows = await tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]);
+    // An archived document isn't shared: its open signing links stop working too (the page hides Withdraw while it's archived).
+    if (rows.length && archived) await withdrawOpenRequests(tx, ctx, id);
+    return rows;
   });
   if (!rows.length) throw new UserError(DOCUMENT_GONE);
 }

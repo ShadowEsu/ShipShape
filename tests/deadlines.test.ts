@@ -141,6 +141,15 @@ describe("reminders", () => {
     expect(sent.map((m) => m.subject)).toEqual(["Permit at 90 expires in 90 days"]);
   });
 
+  it("a date first seen one day out says 'in 1 day' in the subject and the body (wave 8 #6)", async () => {
+    const pro = await proWorkspace("tomorrow@example.com");
+    await pro.expiresIn("Dumpster permit", 1);
+    expect(await runReminders(today, pro.orgId)).toEqual({ sent: 1, failed: 0 });
+    const [m] = await db.root((tx) => tx.query<{ subject: string; body: string }>("select subject, body from app.outbox where org_id = $1", [pro.orgId]));
+    expect(m.subject).toBe("Dumpster permit expires in 1 day");
+    expect(m.body).toContain("Dumpster permit expires in 1 day (");
+  });
+
   it("a date exactly 7 days out gets the 7-day reminder; 8 days out still gets the 30-day one", async () => {
     const pro = await proWorkspace("seven@example.com");
     await pro.expiresIn("Permit at 7", 7);

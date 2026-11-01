@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import DocumentPage from "@/app/app/documents/[id]/page";
-import { addDocument, saveDetails } from "@/app/app/documents/actions";
+import { addDocument, addVersion, saveDetails } from "@/app/app/documents/actions";
 import DocumentsPage from "@/app/app/documents/page";
 import FactsPage from "@/app/app/facts/page";
 import FillPage from "@/app/app/make/[template]/page";
@@ -14,7 +14,7 @@ import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
 import { DOCUMENTS_PAGE_SIZE, fillTemplate, uploadDocument } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
-import { saveEin, type Ctx } from "@/lib/server/profile";
+import { factsForFill, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { freshDb, type TestDb } from "./support/db";
@@ -366,6 +366,18 @@ describe("business facts", () => {
     expect(textOf(html)).toContain("Nothing is confirmed yet: fill in what you know, then choose Save and confirm.");
     expect(primaryActions(html)).toEqual([{ label: "Save and confirm", href: undefined }]);
   });
+
+  it("dates the last confirmation on the owner's day, not the UTC day: the Facts page and the fill form's source chip (wave 8 #5)", async () => {
+    const ctx = await signIn("facts-zone@example.com");
+    await saveProfile(ctx, { ...(await factsForFill(ctx)).values, legal_name: "West Coast Co", entity_type: "c_corp" });
+    // Confirmed at 01:00 UTC on Nov 1: still Oct 31 in Los Angeles.
+    await db.root((tx) => tx.query("update app.profile_facts set confirmed_at = '2026-11-01 01:00:00+00' where org_id = $1", [ctx.orgId]));
+    jar.set("ss_tz", { value: "America/Los_Angeles" });
+    expect(textOf(await renderPage(FactsPage, {}))).toMatch(/Last confirmed Oct 31, 2026 ?\./);
+    expect(textOf(await renderPage(FillPage, { params: Promise.resolve({ template: "irs-w9" }) }))).toContain("From Business facts · confirmed Oct 31, 2026");
+    jar.set("ss_tz", { value: "Asia/Tokyo" });
+    expect(textOf(await renderPage(FactsPage, {}))).toMatch(/Last confirmed Nov 1, 2026 ?\./);
+  });
 });
 
 describe("making a document", () => {
@@ -486,7 +498,7 @@ describe("a document's page", () => {
     const ctx = await signIn("doc-added@example.com");
     const id = await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
     expect(textOf(await documentPage(id, { added: "1" }))).toContain(
-      "Added to your documents as version 1. Every view and download goes into its history. Next: add its expiry date under Details, so Home can warn you before it lapses.",
+      "Added to your documents as version 1. Your team's views and downloads go into its history. Next: add its expiry date under Details, so Home can warn you before it lapses.",
     );
   });
 
@@ -512,6 +524,50 @@ describe("a document's page", () => {
     const step2 = /<form\b([^>]*)>([\s\S]*?)<\/form>/.exec(html.slice(html.indexOf(">Withdraw</button>")));
     expect(step2?.[1]).toMatch(/\bhidden=""/);
     expect(textOf(step2?.[2] ?? "")).toBe("Withdraw this request? Jordan Lee won't be able to sign. You can make a new link any time. Withdraw the request Cancel");
+  });
+
+  it("while a signing request is open: the Add version field warns, archiving asks first (Archive and withdraw / Keep it), and a new version says what it withdrew (wave 8 #2, #7)", async () => {
+    const ctx = await signIn("doc-open-request@example.com");
+    const pdf = await PDFDocument.create();
+    pdf.addPage([612, 792]);
+    const bytes = await pdf.save();
+    const id = await uploadDocument(ctx, { title: "Mutual NDA", kind: "nda" }, bytes);
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_W2', 'active', 'pro')", [ctx.orgId]));
+    // Without an open request: no warning, and Archive document is a plain link with no question.
+    const plain = await documentPage(id, {});
+    expect(plain).not.toContain("version-file-warning");
+    expect(plain).toMatch(/<button class="inline-flex[^"]*"[^>]*>Archive document<\/button>/);
+    expect(plain).not.toContain("Archive and withdraw");
+
+    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    const html = await documentPage(id, {});
+    expect(textOf(/<p id="version-file-warning"[^>]*>([\s\S]*?)<\/p>/.exec(html)?.[1] ?? "")).toBe("Adding a version withdraws the open signing request for Jordan Lee.");
+    expect(html).toMatch(/<input[^>]*id="version-file"[^>]*aria-describedby="version-file-warning"/);
+    expect(html).toMatch(/<button type="button" class="btn-ghost">Archive document<\/button>/);
+    const step2 = /<form\b([^>]*)>([\s\S]*?)<\/form>/.exec(html.slice(html.indexOf(">Archive document</button>")));
+    expect(step2?.[1]).toMatch(/\bhidden=""/);
+    expect(textOf(step2?.[2] ?? "")).toBe(
+      "Archiving withdraws the open signing request for Jordan Lee. Restoring the document won't bring it back; you'd send it again. Archive and withdraw Keep it",
+    );
+    expect(step2?.[2]).toMatch(/<button[^>]*class="btn-danger"[^>]*>Archive and withdraw<\/button>/);
+
+    // A second signer: the sentences count the others, newest request first as the list shows them.
+    await requestSignature(ctx, { documentId: id, signerName: "Sam Ortiz", signerEmail: "sam@northwind.example", days: 7 });
+    const two = await documentPage(id, {});
+    expect(textOf(two)).toContain("Adding a version withdraws the open signing requests for Sam Ortiz and 1 other.");
+    expect(textOf(two)).toContain("Archiving withdraws the open signing requests for Sam Ortiz and 1 other. Restoring the document won't bring them back; you'd send them again.");
+
+    // The new version withdraws both and says so; the page then shows no warning and the plain link again.
+    const data = form({ id });
+    data.set("file", new File([PDF], "v2.pdf", { type: "application/pdf" }));
+    expect(await addVersion({}, data)).toEqual({
+      saved: true,
+      savedText: "Version 2 added. The open signing requests for Sam Ortiz and 1 other were for version 1, so they were withdrawn. Send them for signature again to sign this version.",
+    });
+    const after = await documentPage(id, {});
+    expect(after).not.toContain("version-file-warning");
+    expect(after).not.toContain("Archive and withdraw");
+    expect(textOf(after)).toContain("Withdrawn");
   });
 });
 
