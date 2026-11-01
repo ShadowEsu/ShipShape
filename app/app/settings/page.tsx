@@ -6,7 +6,7 @@ import { PLANS } from "@/lib/plans";
 import { deletionPreview, EXPORT_MAX_BYTES } from "@/lib/server/account";
 import { billingView } from "@/lib/server/billing";
 import { contactEmail } from "@/lib/server/flags";
-import { requireWorkspace } from "@/lib/server/session";
+import { RECENT_AUTH_SECONDS, requireWorkspace } from "@/lib/server/session";
 import { signOut } from "../../signin/actions";
 import { signOutEverywhere } from "./actions";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
@@ -121,6 +121,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           One ZIP file with every version of every document, their details and fingerprints, your business facts (the tax ID only as its
           last 4 digits) and the workspace history.
         </p>
+        {!ctx.demo && (
+          <p className="text-sm text-ink-3">
+            Showing your full EIN, exporting and deleting need a sign-in from the last {RECENT_AUTH_SECONDS / 60} minutes. If it has been
+            longer, ShipShape asks you to sign in again first.
+          </p>
+        )}
         {exportError && (
           <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
             {exportError.text}

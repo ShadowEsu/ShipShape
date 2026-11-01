@@ -18,7 +18,7 @@ import { asService, asUser } from "@/lib/server/db";
 import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
-import { createLocalUser, finishSignIn, requireWorkspace, startSession } from "@/lib/server/session";
+import { createLocalUser, finishSignIn, RECENT_AUTH_SECONDS, requireWorkspace, startSession } from "@/lib/server/session";
 import { freshDb, type TestDb } from "./support/db";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
@@ -325,6 +325,13 @@ describe("Settings", () => {
     const html = await afterCheckout();
     expect(textOf(html)).toContain("Thanks. Pro switches on as soon as Stripe confirms the payment, usually within seconds. Check again");
     expect(actionsOf(html).find((a) => a.label === "Check again")?.href).toBe("/app/settings?billing=success");
+  });
+
+  it("says up front which actions need a recent sign-in and how recent, before anything fails", async () => {
+    await signIn("settings-rule@example.com");
+    const html = await settings();
+    expect(textOf(html)).toContain(`Showing your full EIN, exporting and deleting need a sign-in from the last ${RECENT_AUTH_SECONDS / 60} minutes.`);
+    expect(RECENT_AUTH_SECONDS / 60).toBe(10);
   });
 
   it("back from checkout once Stripe confirmed: says it's done and what changed, nothing else", async () => {
