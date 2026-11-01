@@ -782,7 +782,7 @@ describe("business facts", () => {
     const memberId = await db.user("facts-member@example.com");
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, memberId]));
     const member: Ctx = { ...ctx, userId: memberId, role: "member" };
-    const owners = new GateClosed("Only owners and admins of this workspace can change its business facts.");
+    const owners = new GateClosed("Only owners and admins can change this workspace's business facts. Nothing was saved.");
     const facts = (await factsForFill(ctx)).values;
     await expect(saveProfile(member, { ...facts, legal_name: "Member Co" })).rejects.toThrow(owners);
     await expect(saveProfile(member, { ...facts, legal_name: "Member Co" })).rejects.toBeInstanceOf(GateClosed);

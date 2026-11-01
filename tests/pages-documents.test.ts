@@ -384,7 +384,7 @@ describe("business facts", () => {
     await finishSignIn(memberId, { demo: false });
     const member = await requireWorkspace();
     expect({ orgId: member.orgId, role: member.role }).toEqual({ orgId: owner.orgId, role: "member" });
-    const said = "Only owners and admins of this workspace can change its business facts.";
+    const said = "Only owners and admins can change this workspace's business facts. Nothing was saved.";
     const saved = await saveFacts({}, form({ legal_name: "Member Co", entity_type: "llc" }));
     expect(saved.error).toBe(said);
     expect(saved.values?.legal_name).toBe("Member Co");

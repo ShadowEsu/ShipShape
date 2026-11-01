@@ -597,8 +597,11 @@ describe("each link's own limit, with a network backstop (W15-13)", () => {
 
 describe("pricing (/pricing)", () => {
   it("W15-3: says Free's file total, from the plans table, in the comparison and on the Free card", async () => {
-    const text = textOf(await renderPage(PricingPage, {}));
+    const html = await renderPage(PricingPage, {});
+    const text = textOf(html);
     expect(text).toContain("Files 100 MB in all No total limit");
+    // "in all" never splits at a narrow width (Design, wave 15).
+    expect(html).toContain("100 MB in\u00a0all");
     expect(text).toContain("For getting your papers in order: 10 active documents, 100 MB of files and 1 passport link open at a time.");
   });
 });

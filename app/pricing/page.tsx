@@ -11,7 +11,8 @@ export const metadata: Metadata = { title: "Pricing", description: `ShipShape is
 const ROWS: [feature: string, free: string, pro: string][] = [
   ["Active documents", `${free.documents}`, "No limit"],
   ["Passport links open at once", `${free.passports}`, "No limit"],
-  ["Files", `${megabytes(free.files)} in all`, "No total limit"],
+  // "in all" kept together (Design, wave 15): at 390 the cell wraps "100 MB / in all", never a lone "all".
+  ["Files", `${megabytes(free.files)} in\u00a0all`, "No total limit"],
   ["Versions, history, search", "✓", "✓"],
   ["W-9 and NDA from your business facts", "✓", "✓"],
   ["Deadlines and calendar file", "✓", "✓"],

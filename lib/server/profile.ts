@@ -63,7 +63,7 @@ export const ProfileInput = z.object({
  * Members can't change business facts (RLS lets the update match nothing, then confirm_facts raises); the
  * page hides the forms from them, and a crafted post gets this message instead of the error page (W15-11).
  */
-const FACTS_OWNERS_ONLY = "Only owners and admins of this workspace can change its business facts.";
+const FACTS_OWNERS_ONLY = "Only owners and admins can change this workspace's business facts. Nothing was saved.";
 
 /** Saves the profile and marks every saved fact as confirmed now, by this person. */
 export async function saveProfile(ctx: Ctx, input: Record<ProfileKey, string>) {
