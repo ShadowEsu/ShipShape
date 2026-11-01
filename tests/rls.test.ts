@@ -630,6 +630,11 @@ describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
       ]);
       await run("revoke middle from shipshape_app");
       expect(await roleProblems(root)).toEqual([]);
+      // aws-plan R-2: the app's login can't create roles or databases, or replicate; a role made before keeps what it had (W12-17).
+      await run("alter role shipshape_app createrole createdb replication");
+      expect(await roleProblems(root)).toEqual(["shipshape_app can create roles", "shipshape_app can create databases", "shipshape_app can replicate"]);
+      await run("alter role shipshape_app nocreaterole nocreatedb noreplication");
+      expect(await roleProblems(root)).toEqual([]);
       // A request role missing, another held with ADMIN.
       await run("revoke service_role from shipshape_app granted by shipshape_owner", "grant authenticated to shipshape_app with admin option");
       expect(await roleProblems(root)).toEqual(["shipshape_app isn't a member of service_role", "shipshape_app has ADMIN on authenticated"]);

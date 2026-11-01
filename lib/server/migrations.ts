@@ -90,15 +90,16 @@ export async function appMemberships(conn: MigrationStep): Promise<{ role: strin
 
 /**
  * What Security R-2 requires of the roles once migrations ran, one line per problem (none: fine).
- * The app's login is no superuser, can't bypass row level security and owns nothing at all (a
- * security definer function it owned would run with its rights, MG-3); it is a member of exactly
- * the three request roles, none with ADMIN (S-PG1: no table forces row level security, so
- * membership in the owner, or any other role, would let it read everything); every other
+ * The app's login is no superuser, can't bypass row level security, create roles or databases, or
+ * replicate (aws-plan R-2: NOCREATEROLE NOCREATEDB; a role made earlier keeps whatever it had, MG-2),
+ * and owns nothing at all (a security definer function it owned would run with its rights, MG-3); it
+ * is a member of exactly the three request roles, none with ADMIN (S-PG1: no table forces row level
+ * security, so membership in the owner, or any other role, would let it read everything); every other
  * ShipShape role can't log in (MG-2: `create role if not exists` leaves an existing role as it was).
  */
 export async function roleProblems(conn: MigrationStep): Promise<string[]> {
   const [app] = await conn.query(
-    `select r.rolsuper, r.rolbypassrls,
+    `select r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb, r.rolreplication,
             (select count(*)::int from pg_catalog.pg_class where relowner = r.oid) as relations,
             (select count(*)::int from pg_catalog.pg_proc where proowner = r.oid) as functions,
             (select count(*)::int from pg_catalog.pg_namespace where nspowner = r.oid) as schemas,
@@ -114,6 +115,9 @@ export async function roleProblems(conn: MigrationStep): Promise<string[]> {
   const problems = [
     app.rolsuper === true && "shipshape_app is a superuser",
     app.rolbypassrls === true && "shipshape_app can bypass row level security",
+    app.rolcreaterole === true && "shipshape_app can create roles",
+    app.rolcreatedb === true && "shipshape_app can create databases",
+    app.rolreplication === true && "shipshape_app can replicate",
     ...["relations", "functions", "schemas", "types"].map((kind) => Number(app[kind]) > 0 && `shipshape_app owns ${Number(app[kind])} ${kind}`),
     ...roles.filter((r) => !APP_ROLES.includes(r)).map((r) => `shipshape_app is a member of ${r}`),
     ...APP_ROLES.filter((r) => !roles.includes(r)).map((r) => `shipshape_app isn't a member of ${r}`),
