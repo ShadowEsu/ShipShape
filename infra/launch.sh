@@ -196,8 +196,12 @@ store_database_url() {
   if vercel_ready; then
     say "  \$ printf %s postgres://shipshape_app:<from openssl rand>@$DB_HOST:5432/shipshape | vercel env add DATABASE_URL production"
     vercel env rm DATABASE_URL production --yes >/dev/null 2>&1 || true
-    printf '%s' "$APP_DB_URL" | vercel env add DATABASE_URL production ||
-      fail "Vercel didn't take DATABASE_URL, so the new password has no home." "Rerun LAUNCH_APPLY=1 LAUNCH_ROTATE_APP_PASSWORD=1 infra/launch.sh: it sets another password and tries again."
+    if ! printf '%s' "$APP_DB_URL" | vercel env add DATABASE_URL production; then
+      # Vercel refused: the file keeps the only copy of the password (Security SHOULD-L7).
+      printf '%s' "$APP_DB_URL" >"$HOME/.shipshape-launch/DATABASE_URL"
+      fail "Vercel didn't take DATABASE_URL. The new password is in ~/.shipshape-launch/DATABASE_URL (only you can read it)." \
+        "Run: vercel env add DATABASE_URL production < ~/.shipshape-launch/DATABASE_URL && rm ~/.shipshape-launch/DATABASE_URL; then redeploy production. A later rerun needs LAUNCH_ROTATE_APP_PASSWORD=1."
+    fi
     say "  DATABASE_URL is in Vercel Production."
   else
     printf '%s' "$APP_DB_URL" >"$HOME/.shipshape-launch/DATABASE_URL"
