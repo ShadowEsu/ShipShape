@@ -95,13 +95,14 @@ export function FillForm({
   template,
   initial,
   chips,
-  ackText,
+  ack: ackCopy,
   canSaveFacts,
 }: {
   template: TemplateInfo;
   initial: Record<string, string>;
   chips: Record<string, FactChip>;
-  ackText: string;
+  /** The approval box: the lead is its label (bold); the detail sits under it as its description. */
+  ack: { lead: string; detail: string };
   /** Whether this person may save a typed EIN to Business facts (owners and admins of a real workspace, once real documents are open). */
   canSaveFacts: boolean;
 }) {
@@ -228,24 +229,7 @@ export function FillForm({
           <section className="card space-y-3 border-ink">
             <h2 className="font-semibold">Before ShipShape makes the PDF</h2>
             <p className="text-sm text-ink-2">{template.finishNote}</p>
-            <label className="flex items-start gap-3 text-sm">
-              <input
-                type="checkbox"
-                id="ack"
-                name="ack"
-                checked={ack}
-                onChange={(e) => setAck(e.target.checked)}
-                className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
-                aria-invalid={errors._ack ? true : undefined}
-                aria-describedby={errors._ack ? "ack-error" : undefined}
-              />
-              <span>{ackText}</span>
-            </label>
-            {errors._ack && (
-              <p id="ack-error" className="text-sm text-bad">
-                {errors._ack}
-              </p>
-            )}
+            <ApprovalBox copy={ackCopy} checked={ack} onChange={setAck} error={errors._ack} />
             <button className="btn" disabled={pending}>
               {pending ? "Making the PDF…" : `Approve and make the ${template.short}`}
             </button>
@@ -288,6 +272,35 @@ export function FillForm({
         </section>
       )}
     </form>
+  );
+}
+
+/** The approval box: one bold sentence as the label; the not-a-law-firm text under it as its description (Design row 47). */
+export function ApprovalBox({ copy, checked, onChange, error }: { copy: { lead: string; detail: string }; checked: boolean; onChange: (checked: boolean) => void; error?: string }) {
+  return (
+    <>
+      <label className="flex items-start gap-3 text-sm">
+        <input
+          type="checkbox"
+          id="ack"
+          name="ack"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "ack-detail ack-error" : "ack-detail"}
+        />
+        <span className="font-semibold">{copy.lead}</span>
+      </label>
+      <p id="ack-detail" className="pl-7 text-sm text-ink-2">
+        {copy.detail}
+      </p>
+      {error && (
+        <p id="ack-error" className="text-sm text-bad">
+          {error}
+        </p>
+      )}
+    </>
   );
 }
 

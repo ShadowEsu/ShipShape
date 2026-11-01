@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, PageHeader } from "@/components/app-ui";
-import { ACK_TEXT } from "@/lib/legal";
+import { ACK_DETAIL, ACK_LEAD } from "@/lib/legal";
 import { FACT_LABELS, STALE_AFTER_DAYS } from "@/lib/profile-fields";
 import { prefill } from "@/lib/server/fill";
 import { canSaveFacts } from "@/lib/server/documents";
@@ -70,7 +70,7 @@ export default async function FillPage({ params }: { params: Promise<{ template:
         Fields marked “From Business facts” were filled from facts you confirmed. Change anything that isn&apos;t right for this
         document; your saved facts stay as they are.
       </p>
-      <FillForm template={t} initial={initial} chips={chips} ackText={ACK_TEXT} canSaveFacts={canSaveFacts(ctx)} />
+      <FillForm template={t} initial={initial} chips={chips} ack={{ lead: ACK_LEAD, detail: ACK_DETAIL }} canSaveFacts={canSaveFacts(ctx)} />
     </div>
   );
 }

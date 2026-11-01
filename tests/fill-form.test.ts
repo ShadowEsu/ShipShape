@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { prerender } from "react-dom/static";
 import { describe, expect, it } from "vitest";
-import { ErrorSummary, FillForm, formatSsn } from "@/app/app/make/[template]/fill-form";
+import { ApprovalBox, ErrorSummary, FillForm, formatSsn } from "@/app/app/make/[template]/fill-form";
+import { ACK_DETAIL, ACK_LEAD, ACK_TEXT } from "@/lib/legal";
 import { templateById } from "@/lib/templates/catalog";
 import { actionsOf, textOf } from "./support/render";
 
@@ -46,7 +47,7 @@ describe("formatSsn", () => {
 describe("the W-9's EIN step", () => {
   const w9 = templateById("irs-w9")!;
   const render = async (initial: Record<string, string>, canSaveFacts = true) => {
-    const { prelude } = await prerender(createElement(FillForm, { template: w9, initial, chips: {}, ackText: "I agree.", canSaveFacts }));
+    const { prelude } = await prerender(createElement(FillForm, { template: w9, initial, chips: {}, ack: { lead: "I agree.", detail: "Because." }, canSaveFacts }));
     return new Response(prelude).text();
   };
 
@@ -69,5 +70,29 @@ describe("the W-9's EIN step", () => {
     const html = await render({ tin_kind: "ein", ein: "" }, false);
     expect(html).toMatch(/<input[^>]*id="f-ein"[^>]*type="password"/);
     expect(html).not.toContain('name="save_ein"');
+  });
+});
+
+describe("the approval box", () => {
+  const render = async (error?: string) => {
+    const { prelude } = await prerender(createElement(ApprovalBox, { copy: { lead: ACK_LEAD, detail: ACK_DETAIL }, checked: false, onChange: () => {}, error }));
+    return new Response(prelude).text();
+  };
+
+  it("its label is the one bold sentence; the not-a-law-firm text sits under it as its description; together they are the recorded text", async () => {
+    const html = await render();
+    const label = /<label[^>]*>[\s\S]*?<\/label>/.exec(html)?.[0] ?? "";
+    expect(textOf(label)).toBe(ACK_LEAD);
+    expect(label).toMatch(/<span class="font-semibold">/);
+    expect(label).toMatch(/<input[^>]*id="ack"[^>]*aria-describedby="ack-detail"/);
+    expect(textOf(/<p id="ack-detail"[^>]*>[\s\S]*?<\/p>/.exec(html)?.[0] ?? "")).toBe(ACK_DETAIL);
+    expect(html).not.toContain('id="ack-error"');
+    expect(ACK_TEXT).toBe(`${ACK_LEAD} ${ACK_DETAIL}`);
+  });
+
+  it("unticked when posted: the error is read after the description, and the box is marked invalid", async () => {
+    const html = await render("Check the box to confirm you've reviewed the document.");
+    expect(html).toMatch(/<input[^>]*id="ack"[^>]*aria-invalid="true"[^>]*aria-describedby="ack-detail ack-error"/);
+    expect(textOf(/<p id="ack-error"[^>]*>[\s\S]*?<\/p>/.exec(html)?.[0] ?? "")).toBe("Check the box to confirm you've reviewed the document.");
   });
 });
