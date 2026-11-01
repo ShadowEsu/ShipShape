@@ -63,7 +63,7 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
       ) : token ? (
         <LinkUnavailable noun="link" why="closed" end={end} />
       ) : (
-        <FragmentOpener openUrl={`/p/${id}/open`} unavailable={<LinkUnavailable noun="link" why="incomplete" />} />
+        <FragmentOpener openUrl={`/p/${id}/open`} opening="Opening the shared documents…" unavailable={<LinkUnavailable noun="link" why="incomplete" />} />
       )}
     </main>
   );

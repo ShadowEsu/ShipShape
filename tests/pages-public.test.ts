@@ -108,6 +108,13 @@ function expectAskForNewLink(html: string) {
 }
 
 describe("a passport link (/p)", () => {
+  it("opened from the full link, shows the page's frame and says what is opening while the link is checked", async () => {
+    const docs = await listDocuments(sample);
+    const { id } = await createPassport(sample, { label: "Opening", days: 30, documentIds: [docs[0].id] });
+    const html = await passportPage(id);
+    expect(html).toMatch(/<div aria-busy="true"[^>]*><p role="status"[^>]*>Opening the shared documents…<\/p>/);
+  });
+
   it("shows each shared document with its status in words and its own download", async () => {
     const docs = await listDocuments(sample);
     const { id, token } = await createPassport(sample, { label: "For Northwind", days: 30, documentIds: docs.slice(0, 2).map((d) => d.id) });
