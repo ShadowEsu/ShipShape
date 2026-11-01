@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, ValidityChip } from "@/components/app-ui";
 import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { realDocsEnabled } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Documents" };
@@ -20,7 +21,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Vault" title={archived ? "Archived documents" : "Documents"}>
+      <PageHeader eyebrow="Documents" title={archived ? "Archived documents" : "Documents"}>
         {docs.length > 0 && (
           <>
             <Link href="/app/make" className="btn-ghost">
@@ -75,10 +76,21 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         ) : (
           <EmptyState
             title={hasArchived ? "No current documents" : "No documents yet"}
-            body="Your W-9, insurance certificates, licenses and agreements will be listed here, each with its expiry date, so you can see what's current at a glance."
-            example="For example: Insurance certificate · General liability 2026 · Expires soon · Mar 1, 2027"
-            action={ctx.demo ? { href: "/app/make", label: "Make a document" } : { href: "/app/documents/new", label: "Add a document" }}
-          />
+            body="Your W-9, insurance certificate and licenses live here, with the date each one runs out and who you've shared it with."
+            example={[
+              "W-9 · Form W-9, signed Oct 2026 · No expiry date",
+              "Insurance certificate · General liability 2026 · Expires soon · Mar 1, 2027",
+              "License · Contractor license · Current · Aug 31, 2027",
+            ]}
+            action={{ href: "/app/make/irs-w9", label: "Fill your first W-9" }}
+          >
+            {/* Same gate as /app/documents/new: uploads are closed in the sample workspace and before the security review. */}
+            {!ctx.demo && realDocsEnabled() && (
+              <Link href="/app/documents/new" className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
+                Upload a document
+              </Link>
+            )}
+          </EmptyState>
         )
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">

@@ -12,6 +12,7 @@ import { PassportReady } from "@/app/app/passport/forms";
 import PassportPage from "@/app/app/passport/page";
 import { deleteMyAccount } from "@/app/app/settings/actions";
 import SettingsPage from "@/app/app/settings/page";
+import { fmtDay } from "@/components/app-ui";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
 import { createPassport } from "@/lib/server/passport";
@@ -100,6 +101,14 @@ describe("Passport", () => {
     expect(primary(html)).toEqual(["Make the link"]);
   });
 
+  it("under the 7/30/90-day choice, says the day the link will stop working for the chosen length (30 days at first)", async () => {
+    const ctx = await signIn("passport-enddate@example.com");
+    await addDoc(ctx, "Liability certificate");
+    const html = await renderPage(PassportPage, none());
+    const in30 = fmtDay(new Date(Date.now() + 30 * 86_400_000).toISOString());
+    expect(textOf(html)).toContain(`7 days 30 days 90 days Stops working on ${in30}. You can turn it off sooner.`);
+  });
+
   it("with a link: lists it instead of the example", async () => {
     const ctx = await signIn("passport-link@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
@@ -107,6 +116,20 @@ describe("Passport", () => {
     const html = await renderPage(PassportPage, none());
     expect(textOf(html)).toContain("Northwind onboarding ✓ Working 1 document · opened 0 times");
     expect(textOf(html)).not.toContain("No links yet");
+  });
+
+  it("a link past its planned end reads as ended, in neutral colours, not as an expired fault", async () => {
+    const ctx = await signIn("passport-ended@example.com");
+    const doc = await addDoc(ctx, "Liability certificate");
+    const { id } = await createPassport(ctx, { label: "Old link", days: 7, documentIds: [doc] });
+    const [row] = await db.root((tx) =>
+      tx.query<{ day: string }>("update app.share_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 day' where id = $1 returning expires_at::text as day", [id]),
+    );
+    const html = await renderPage(PassportPage, none());
+    expect(textOf(html)).toContain(`Old link ○ Ended ${fmtDay(row.day)} 1 document`);
+    expect(textOf(html)).not.toContain("Expired");
+    expect(html).toContain('bg-canvas text-ink-3"><span aria-hidden="true">○</span>Ended');
+    expect(html).not.toContain("bg-bad-soft");
   });
 
   it("an expired link offers one fix: a new link with the same documents already chosen", async () => {
@@ -131,6 +154,19 @@ describe("Passport", () => {
     expect(primary(html)).toEqual([]);
   });
 
+  it("turning off a working link asks first: the question names who loses access, with Turn off the link and Cancel", async () => {
+    const ctx = await signIn("passport-confirm@example.com");
+    const doc = await addDoc(ctx, "Liability certificate");
+    const { id } = await createPassport(ctx, { label: "Northwind Builders", days: 7, documentIds: [doc] });
+    const html = await renderPage(PassportDetail, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
+    // Step 1 shows; step 2 is in the page, hidden until Turn off this link is pressed.
+    expect(html).toMatch(/<button type="button" class="btn-ghost">Turn off this link<\/button>/);
+    const step2 = /<form\b([^>]*)>([\s\S]*?)<\/form>/.exec(html.slice(html.indexOf("Turn off this link</button>")));
+    expect(step2?.[1]).toMatch(/\bhidden=""/);
+    expect(textOf(step2?.[2] ?? "")).toBe("Turn off this link? Northwind Builders won't be able to open it again. You can make a new link any time. Turn off the link Cancel");
+    expect(actionsOf(step2?.[2] ?? "").map((a) => a.label)).toEqual(["Turn off the link", "Cancel"]);
+  });
+
   it("a made link ends calmly: who it's for, what it shares, what happens next, and only Copy link", async () => {
     const html = await renderPage(PassportReady, { label: "Northwind onboarding", documents: 2, days: 30, url: "https://example.test/p/x#y" });
     expect(textOf(html)).toContain("Your link for Northwind onboarding is ready It shares 2 documents for 30 days.");
@@ -140,11 +176,15 @@ describe("Passport", () => {
 });
 
 describe("Collect", () => {
-  it("with no vendors: shows what a vendor will look like", async () => {
+  it("with no vendors: a ghosted example vendor, and a button to the form's first field", async () => {
     await signIn("collect-empty@example.com");
     const html = await renderPage(CollectPage, {});
-    expect(textOf(html)).toContain("No vendors yet");
-    expect(textOf(html)).toContain("Each vendor you add shows here with what you asked them for and where it stands");
+    expect(textOf(html)).toContain("No vendors yet Each vendor you add shows here with what you asked them for and where it stands.");
+    const example = /<div aria-hidden="true"[^>]*>([\s\S]*?)<\/ul><\/div>/.exec(html)?.[1] ?? "";
+    expect(textOf(example)).toBe("Example Ace Electric · W-9 ✓ · Insurance missing");
+    expect(actionsOf(html).filter((a) => a.label === "Add your first vendor")).toEqual([{ tag: "button", label: "Add your first vendor", href: undefined }]);
+    // The field it focuses is on the page; the form's own button stays the one primary action.
+    expect(html).toContain('id="vendor-name"');
     expect(primary(html)).toEqual(["Add vendor"]);
   });
 
@@ -200,6 +240,14 @@ describe("Deadlines", () => {
     expect(textOf(html)).toContain("Add them to your calendar and it reminds you 30 and 7 days before.");
     expect(textOf(html)).not.toContain("ShipShape reminds owners and admins");
     expect(textOf(html)).toContain("Nothing here: on the Free plan ShipShape doesn't send reminders.");
+  });
+
+  it("with a document but no dates: the action goes to that document's expiry field, by name", async () => {
+    const ctx = await signIn("deadlines-nodates@example.com");
+    const doc = await addDoc(ctx, "Liability certificate");
+    const html = await renderPage(DeadlinesPage, {});
+    expect(primary(html)).toEqual(["Add an expiry date to Liability certificate"]);
+    expect(actionsOf(html).find((a) => a.label === "Add an expiry date to Liability certificate")?.href).toBe(`/app/documents/${doc}#expires_on`);
   });
 
   it("with nothing in the next 90 days: says so calmly, with the reminder that's really coming", async () => {
@@ -354,7 +402,7 @@ describe("form errors name the field to fix", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test-not-a-real-key");
     await signIn("form-ask@example.com");
     const text = "Before your first job we need a W-9 and a certificate of insurance.";
-    expect(await askAction({}, form({ text }))).toEqual({ error: "Tick the box to send this text to Anthropic's Claude.", field: "consent", text });
+    expect(await askAction({}, form({ text }))).toEqual({ error: "Check the box to send this text to Anthropic's Claude.", field: "consent", text });
   });
 
   it("deleting the account: a wrong confirmation goes to its field and keeps what was typed", async () => {

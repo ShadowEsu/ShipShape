@@ -89,7 +89,7 @@ describe("gates before anything is sent", () => {
 
   it("an unticked box sends nothing and records no agreement", async () => {
     const ctx = await workspace();
-    await expect(ask(ctx, REQUEST, false)).rejects.toThrow(/Tick the box/);
+    await expect(ask(ctx, REQUEST, false)).rejects.toThrow(/Check the box/);
     expect(sent).toHaveLength(0);
     const consents = await db.root((tx) => tx.query("select 1 from app.consents where user_id = $1 and item = 'ai_request'", [ctx.userId]));
     expect(consents).toHaveLength(0);
@@ -119,7 +119,7 @@ describe("gates before anything is sent", () => {
       return e instanceof RequestInputError ? [e.field, e.message] : e;
     };
     expect(await refused("W-9 please", false)).toEqual(["text", "Paste the request: the email or checklist that asks for your documents."]);
-    expect(await refused(REQUEST, false)).toEqual(["consent", "Tick the box to send this text to Anthropic's Claude."]);
+    expect(await refused(REQUEST, false)).toEqual(["consent", "Check the box to send this text to Anthropic's Claude."]);
     expect(sent).toHaveLength(0);
   });
 });

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
+import { fmtDay } from "@/components/app-ui";
 import { CopyLink } from "@/components/copy-link";
 import { makePassport, type PassportFormState } from "./actions";
 
@@ -41,6 +42,9 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
   const errors = state.fieldErrors ?? {};
   const [url, setUrl] = useState<string | null>(null);
   const form = useRef<HTMLFormElement>(null);
+  // The days picked since the page loaded (null: the default, or what was sent last).
+  const [picked, setPicked] = useState<number | null>(null);
+  const chosen = picked ?? (typed ? Number(typed.days) : days[1]);
 
   useEffect(() => {
     if (state.created) setUrl(`${window.location.origin}/p/${state.created.id}#${state.created.token}`);
@@ -111,7 +115,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
         </ul>
         <FieldError id="docs-error" error={errors.docs} />
       </fieldset>
-      <fieldset aria-describedby={errors.days ? "days-error" : undefined}>
+      <fieldset aria-describedby={[days.includes(chosen) ? "days-end" : null, errors.days ? "days-error" : null].filter(Boolean).join(" ") || undefined}>
         <legend className="label">The link stops working after</legend>
         <div className="mt-1 flex flex-wrap gap-2">
           {days.map((d, i) => (
@@ -121,6 +125,7 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
                 name="days"
                 value={d}
                 defaultChecked={typed ? typed.days === String(d) : i === 1}
+                onChange={() => setPicked(d)}
                 className="accent-[var(--accent)]"
                 aria-invalid={errors.days ? true : undefined}
                 aria-describedby={errors.days ? "days-error" : undefined}
@@ -129,6 +134,12 @@ export function NewPassportForm({ docs, days, preselected }: { docs: PickableDoc
             </label>
           ))}
         </div>
+        {/* The server counts the days from the moment the link is made, and dates show in UTC (fmtDay). */}
+        {days.includes(chosen) && (
+          <p id="days-end" className="mt-2 text-sm text-ink-2">
+            {`Stops working on ${fmtDay(new Date(Date.now() + chosen * 86_400_000).toISOString())}. You can turn it off sooner.`}
+          </p>
+        )}
         <FieldError id="days-error" error={errors.days} />
       </fieldset>
       {state.error && (

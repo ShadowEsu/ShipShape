@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, PageHeader, fmtDay } from "@/components/app-ui";
-import { SubmitButton } from "@/components/submit-button";
+import { ConfirmForm } from "@/components/confirm-form";
 import { fmtDateTime } from "@/components/ui";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { getPassport } from "@/lib/server/passport";
@@ -93,13 +93,16 @@ export default async function PassportDetail({ params, searchParams }: { params:
         )}
       </section>
 
+      {/* Turning off can't be undone, so it asks once first. */}
       {!off && !expired && (
-        <form action={turnOff}>
-          <input type="hidden" name="id" value={p.link.id} />
-          <SubmitButton className="btn-ghost" pendingLabel="Turning off…">
-            Turn off this link
-          </SubmitButton>
-        </form>
+        <ConfirmForm
+          action={turnOff}
+          fields={{ id: p.link.id }}
+          trigger="Turn off this link"
+          question={`Turn off this link? ${p.link.label} won't be able to open it again. You can make a new link any time.`}
+          confirm="Turn off the link"
+          pendingLabel="Turning off…"
+        />
       )}
     </div>
   );

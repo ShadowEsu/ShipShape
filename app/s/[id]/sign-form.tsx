@@ -6,8 +6,18 @@ import { signProblem, type SignField } from "./messages";
 
 const FIELD_ID: Record<SignField, string> = { consent: "sign-consent", name: "typed-name", code: "code" };
 
+/** The button that signs names what is signed ("Sign the Mutual NDA"); while signing it says so and can't be pressed. */
+export function SignButton({ title, busy, signing }: { title: string; busy: boolean; signing: boolean }) {
+  return (
+    <button className="btn" disabled={busy}>
+      {signing ? "Signing…" : `Sign the ${title}`}
+    </button>
+  );
+}
+
 export function SignForm({
   id,
+  title,
   sender,
   signerName,
   email,
@@ -15,6 +25,7 @@ export function SignForm({
   demo,
 }: {
   id: string;
+  title: string;
   sender: string;
   signerName: string;
   email: string;
@@ -150,9 +161,7 @@ export function SignForm({
               className="input font-mono tracking-widest sm:w-40"
               {...described("code")}
             />
-            <button className="btn" disabled={busy !== null}>
-              {busy === "sign" ? "Signing…" : "Sign"}
-            </button>
+            <SignButton title={title} busy={busy !== null} signing={busy === "sign"} />
           </div>
           {fieldError("code") && (
             <p id={`${FIELD_ID.code}-error`} className="text-sm text-bad">

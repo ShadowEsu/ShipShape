@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, ValidityChip, fmtDay } from "@/components/app-ui";
+import { ConfirmForm } from "@/components/confirm-form";
 import { SubmitButton } from "@/components/submit-button";
 import { fmtDateTime } from "@/components/ui";
 import { PLANS } from "@/lib/plans";
@@ -251,13 +252,15 @@ export default async function DocumentPage({
                               </a>
                             )}
                             {r.status === "pending" && !lapsed && (
-                              <form action={withdrawSignature}>
-                                <input type="hidden" name="id" value={doc.id} />
-                                <input type="hidden" name="request" value={r.id} />
-                                <SubmitButton className="inline-flex min-h-6 items-center text-xs text-ink-2 underline" pendingLabel="Withdrawing…">
-                                  Withdraw
-                                </SubmitButton>
-                              </form>
+                              <ConfirmForm
+                                compact
+                                action={withdrawSignature}
+                                fields={{ id: doc.id, request: r.id }}
+                                trigger="Withdraw"
+                                question={`Withdraw this request? ${r.signer_name} won't be able to sign. You can make a new link any time.`}
+                                confirm="Withdraw the request"
+                                pendingLabel="Withdrawing…"
+                              />
                             )}
                           </div>
                         )}
@@ -283,7 +286,7 @@ export default async function DocumentPage({
                 </a>{" "}
                 ({template.source.version})
               </p>
-              <p className="text-ink-2">Licence: {template.source.license}</p>
+              <p className="text-ink-2">License: {template.source.license}</p>
             </section>
           )}
 
@@ -299,7 +302,7 @@ export default async function DocumentPage({
                 </li>
               ))}
             </ol>
-            <p className="text-xs text-ink-3">Each entry is chained to the one before it, so edits behind our back show up.</p>
+            <p className="text-xs text-ink-3">Each entry is linked to the one before it, so a changed or deleted entry shows up.</p>
           </section>
 
           <form action={archive}>

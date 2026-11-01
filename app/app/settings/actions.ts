@@ -53,7 +53,7 @@ export async function deleteMyAccount(_prev: DeleteState, data: FormData): Promi
   redirect("/signin?deleted=1");
 }
 
-/** Lost a device or saw a sign-in you don't recognise: ends every session, this one included (Security E9). */
+/** Lost a device or saw a sign-in you don't recognize: ends every session, this one included (Security E9). */
 export async function signOutEverywhere() {
   const ctx = await requireWorkspace();
   await endAllSessions(ctx.userId);

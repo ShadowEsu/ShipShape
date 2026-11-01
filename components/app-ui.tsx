@@ -36,19 +36,48 @@ export function ValidityChip({ validity, expiresOn }: { validity: Validity; expi
 export const fmtDay = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 /**
- * What an empty page shows: what will appear here, optionally one example line of it (text only),
- * and the one action that fills it.
+ * What an empty page shows: what will appear here, optionally a ghosted example list of it (hidden
+ * from screen readers: the body already says what will appear), the one action that fills it, and
+ * any secondary link (children).
  */
-export function EmptyState({ title, body, example, action }: { title: string; body: string; example?: string; action?: { href: string; label: string } }) {
+export function EmptyState({
+  title,
+  body,
+  example,
+  action,
+  children,
+}: {
+  title: string;
+  body: string;
+  example?: string[];
+  action?: { href: string; label: string };
+  children?: React.ReactNode;
+}) {
   return (
     <div className="card flex flex-col items-start gap-3 py-10 text-left">
       <p className="font-serif text-2xl font-semibold">{title}</p>
       <p className="max-w-prose text-sm text-ink-2">{body}</p>
-      {example && <p className="max-w-prose font-mono text-xs text-ink-3">{example}</p>}
-      {action && (
-        <Link href={action.href} className="btn">
-          {action.label}
-        </Link>
+      {example && (
+        <div aria-hidden="true" className="w-full max-w-prose select-none">
+          <p className="mb-1 font-mono text-xs tracking-wide text-ink-3 uppercase">Example</p>
+          <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line text-sm text-ink-3">
+            {example.map((row) => (
+              <li key={row} className="px-4 py-2">
+                {row}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(action || children) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {action && (
+            <Link href={action.href} className="btn">
+              {action.label}
+            </Link>
+          )}
+          {children}
+        </div>
       )}
     </div>
   );

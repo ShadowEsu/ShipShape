@@ -10,14 +10,14 @@ const WHO: { who: string; asks: string }[] = [
 ];
 
 const STEPS: { title: string; body: string }[] = [
-  { title: "Keep", body: "Every document in one vault, with each version, its dates and a history of who opened or shared it." },
+  { title: "Keep", body: "Every document in one place, with each version, its dates and a history of who opened or shared it." },
   { title: "Fill", body: "Confirm your business facts once. ShipShape fills the official IRS W-9 and the Common Paper Mutual NDA from them, and shows where every field came from." },
   { title: "Share", body: "One link holds exactly the documents you pick. It expires when you say, shows who opened it, and turns off in a click." },
   { title: "Stay current", body: "Expiry and renewal dates become deadlines and a calendar file with alerts; on Pro, also reminders 90, 30 and 7 days ahead." },
 ];
 
 const CAPABILITIES: { title: string; body: string; status: Status }[] = [
-  { title: "Vault, versions and history", body: "Upload, search, archive; every change and download recorded.", status: "Works today" },
+  { title: "Documents, versions and history", body: "Upload, search, archive; every change and download recorded.", status: "Works today" },
   { title: "W-9 and NDA from your facts", body: "Official IRS form and Common Paper's standard NDA, filled and saved.", status: "Works today" },
   { title: "Passport links", body: "Expiry up to 90 days, access log, turn off any time.", status: "Works today" },
   { title: "Deadlines and calendar file", body: "Lapsed, due soon and later, with an .ics download.", status: "Works today" },
@@ -75,7 +75,7 @@ export default function Home() {
             </h1>
             <p className="max-w-xl text-lg text-ink-2">
               Keep your W-9, insurance certificate, licenses and agreements together. Fill new forms from facts you confirmed once, share
-              an always-current packet with one link, and hear about renewals before they lapse.
+              the packet with one link, and see what&apos;s due before it lapses.
             </p>
             {/* The two buttons need ~356px in Geist, but its fallback font fits them in 350: at 390 wide they
                 wrapped only when Geist loaded, shifting the page (CLS 0.1). Stack them below 400px from the start. */}

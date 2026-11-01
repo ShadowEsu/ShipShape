@@ -8,9 +8,10 @@ import { NewPassportForm } from "./forms";
 
 export const metadata: Metadata = { title: "Passport" };
 
+// A link reaching its planned end is expected, not a fault: neutral like Turned off (red stays for lapsed documents).
 function status(l: { revoked_at: string | null; expires_at: string }) {
   if (l.revoked_at) return { label: "Turned off", cls: "bg-canvas text-ink-3", icon: "○" };
-  if (new Date(l.expires_at).getTime() < Date.now()) return { label: "Expired", cls: "bg-bad-soft text-bad", icon: "!" };
+  if (new Date(l.expires_at).getTime() < Date.now()) return { label: `Ended ${fmtDay(l.expires_at)}`, cls: "bg-canvas text-ink-3", icon: "○" };
   return { label: "Working", cls: "bg-ok-soft text-ok", icon: "✓" };
 }
 

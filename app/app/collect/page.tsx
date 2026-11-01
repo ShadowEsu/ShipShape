@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, Notice, PageHeader } from "@/components/app-ui";
+import { FocusButton } from "@/components/focus-button";
 import { listArchivedVendors, listVendors, type CollectState } from "@/lib/server/collect";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { collectOpen } from "@/lib/server/flags";
@@ -74,8 +75,14 @@ export default async function CollectPage() {
           {vendors.length === 0 ? (
             <EmptyState
               title="No vendors yet"
-              body="Each vendor you add shows here with what you asked them for and where it stands, for example: “Rivera Electric · W-9: missing · Certificate of insurance: current”. Add the first company you need paperwork from under Add a vendor."
-            />
+              body="Each vendor you add shows here with what you asked them for and where it stands."
+              example={["Ace Electric · W-9 ✓ · Insurance missing"]}
+            >
+              {/* The form is beside this list (below it on a phone), with the page's one primary button: this one takes you to its first field. */}
+              <FocusButton target="vendor-name" className="btn-ghost">
+                Add your first vendor
+              </FocusButton>
+            </EmptyState>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
               {vendors.map((v) => (

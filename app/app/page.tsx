@@ -7,7 +7,7 @@ import { loadProfile } from "@/lib/server/profile";
 import { DEFAULT_WORKSPACE_NAME, requireWorkspace } from "@/lib/server/session";
 
 const TASKS = [
-  { href: "/app/make/irs-w9", title: "Send a W-9", body: "Filled from your business facts in a minute." },
+  { href: "/app/make/irs-w9", title: "Fill a W-9", body: "Filled from your business facts." },
   { href: "/app/make/common-paper-mnda", title: "Start an NDA", body: "Common Paper's mutual NDA, cover page filled for you." },
   { href: "/app/documents/new", title: "Add a certificate or license", body: "Keep it with its dates so nothing lapses." },
 ];
@@ -29,7 +29,7 @@ export default async function AppHome() {
     },
     { done: Object.keys(profile.confirmed).length > 0, href: "/app/facts", title: "Confirm your business facts", body: "Name, address, EIN: typed once, used everywhere." },
     { done: docs.length > 0, href: "/app/documents/new", title: "Add a document you already have", body: "A certificate, license or signed agreement." },
-    { done: docs.some((d) => d.template_id === "irs-w9"), href: "/app/make/irs-w9", title: "Make a W-9", body: "The official IRS form, filled from your facts." },
+    { done: docs.some((d) => d.template_id === "irs-w9"), href: "/app/make/irs-w9", title: "Fill a W-9", body: "The official IRS form, filled from your facts." },
     {
       done: docs.some((d) => d.expires_on || d.renews_on),
       // Straight to the Expires field: the first document (none has dates yet), or a new one.

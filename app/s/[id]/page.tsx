@@ -39,9 +39,12 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
               <p className="font-semibold">
                 <span aria-hidden="true">✓ </span>Signed{view.signedAt && <> {fmtDateTime(view.signedAt)}</>}
               </p>
+              {/* True to completeSigning (lib/server/esign.ts): the signed copy becomes the newest version of the sender's
+                  document, and the appended certificate records the typed name, the time and the emailed one-time code. */}
               <p className="text-sm text-ink-2">
-                There&apos;s nothing else you need to do. {view.orgName} has the signed copy, with a certificate page recording how it was
-                signed. Download yours for your records; this link works until {fmtDay(view.expiresAt)}.
+                There&apos;s nothing else you need to do. {view.orgName} has the same signed copy, saved to their documents in ShipShape. The
+                certificate at the end records the name you typed, when you signed and that a code sent to your email confirmed it. Download
+                yours for your records; this link works until {fmtDay(view.expiresAt)}.
               </p>
               <a href={`/s/${id}/file`} className="btn self-start">
                 Download the signed copy
@@ -58,7 +61,15 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
               </section>
               <section className="card space-y-3">
                 <h2 className="font-semibold">2. Sign</h2>
-                <SignForm id={id} sender={view.orgName} signerName={view.signerName} email={view.signerEmail} consentText={ESIGN_CONSENT_TEXT} demo={view.demo} />
+                <SignForm
+                  id={id}
+                  title={view.title}
+                  sender={view.orgName}
+                  signerName={view.signerName}
+                  email={view.signerEmail}
+                  consentText={ESIGN_CONSENT_TEXT}
+                  demo={view.demo}
+                />
               </section>
             </>
           )}
@@ -71,7 +82,11 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
       ) : token ? (
         <LinkUnavailable noun="signing link" why="closed" />
       ) : (
-        <FragmentOpener openUrl={`/s/${id}/open`} unavailable={<LinkUnavailable noun="signing link" why="incomplete" />} />
+        <FragmentOpener
+          openUrl={`/s/${id}/open`}
+          opening="Opening the document to sign…"
+          unavailable={<LinkUnavailable noun="signing link" why="incomplete" />}
+        />
       )}
     </main>
   );

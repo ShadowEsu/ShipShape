@@ -182,7 +182,7 @@ export function NewDocumentForm() {
       <DetailFields v={state.values} state={state} />
       <Status state={state} savedText="" />
       <button className="btn" disabled={pending}>
-        {pending ? "Uploading…" : "Add to vault"}
+        {pending ? "Uploading…" : "Add to documents"}
       </button>
     </form>
   );

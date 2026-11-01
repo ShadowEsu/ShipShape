@@ -230,7 +230,7 @@ describe("checkout", () => {
     const ctx = await realWorkspace();
     await expect(startCheckout({ ...ctx, demo: true }, true)).rejects.toThrow(/Sample workspaces/);
     await expect(startCheckout({ ...ctx, role: "admin" }, true)).rejects.toThrow(/owner/);
-    await expect(startCheckout(ctx, false)).rejects.toThrow(/Tick the box/);
+    await expect(startCheckout(ctx, false)).rejects.toThrow(/Check the box/);
     fake.price = { ...fake.price, unit_amount: 1200 };
     await expect(startCheckout(ctx, true)).rejects.toThrow(UserError);
     expect(fake.customersCreated).toBe(0);
@@ -528,7 +528,7 @@ describe("plan limits, enforced by the server", () => {
     const ctx = await realWorkspace();
     const pdf = await PDFDocument.create();
     pdf.addPage();
-    const doc = await uploadDocument(ctx, { title: "Licence", kind: "other" }, await pdf.save());
+    const doc = await uploadDocument(ctx, { title: "License", kind: "other" }, await pdf.save());
     const link = () => createPassport(ctx, { label: "For a client", days: 7, documentIds: [doc] });
     const expired = await link();
     await db.root((tx) => tx.query("update app.share_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 day' where id = $1", [expired.id]));

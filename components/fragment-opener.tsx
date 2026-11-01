@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
  * whose page reads the token from an HttpOnly cookie. Both steps replace the history entry, so the
  * token leaves the address bar and the back button.
  */
-export function FragmentOpener({ openUrl, unavailable }: { openUrl: string; unavailable: React.ReactNode }) {
+export function FragmentOpener({ openUrl, unavailable, opening = "Opening the link…" }: { openUrl: string; unavailable: React.ReactNode; opening?: string }) {
   const [state, setState] = useState<"opening" | "missing" | "busy">("opening");
 
   useEffect(() => {
@@ -29,8 +29,26 @@ export function FragmentOpener({ openUrl, unavailable }: { openUrl: string; unav
       .catch(() => setState("busy"));
   }, [openUrl]);
 
-  if (state === "opening") return <p className="text-ink-2">Opening…</p>;
-  if (state === "busy") return <p className="text-ink-2">Too many tries from this network. Wait a few minutes and open the link again.</p>;
+  if (state === "opening") {
+    // The page's frame while the token is exchanged, so the page doesn't jump when it loads.
+    return (
+      <div aria-busy="true" className="space-y-6">
+        <p role="status" className="text-ink-2">
+          {opening}
+        </p>
+        <div aria-hidden="true" className="space-y-6 motion-safe:animate-pulse">
+          <div className="h-9 w-64 max-w-full rounded-lg bg-line" />
+          <div className="space-y-3">
+            <div className="card h-14" />
+            <div className="card h-14" />
+            <div className="card h-14" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // The open routes allow 30 tries per network in 10 minutes (lib/server/links.ts).
+  if (state === "busy") return <p role="alert" className="text-ink-2">Too many tries from this network. Wait 10 minutes, then open the link again.</p>;
   return unavailable;
 }
 

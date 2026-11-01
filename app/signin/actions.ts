@@ -22,7 +22,7 @@ export interface SignInState {
 const Form = z.object({
   mode: z.enum(["demo", "email", "account"]),
   email: z.string().trim().toLowerCase().max(200, "Use an email address of up to 200 characters.").optional(),
-  terms: z.literal("on", { error: "Tick the box to agree to the Terms and Privacy Policy." }),
+  terms: z.literal("on", { error: "Check the box to agree to the Terms and Privacy Policy." }),
 });
 
 export async function signIn(_prev: SignInState, data: FormData): Promise<SignInState> {

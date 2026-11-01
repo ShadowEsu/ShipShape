@@ -13,7 +13,7 @@ const MESSAGES: Record<SignProblem, (sender: string) => string> = {
   bad_code: () => "That code doesn't match. Type the 6 digits from the newest code we sent.",
   locked: () => "That code had 5 wrong tries, so it stopped working. Send a new code and use that one.",
   expired_code: () => "That code is more than 10 minutes old. Send a new code and use that one.",
-  needs_consent: () => "Tick the box to agree to sign electronically.",
+  needs_consent: () => "Check the box to agree to sign electronically.",
   needs_name: () => "Type your full name to sign.",
   unsupported: (sender) => `This file can't be signed here; it may be password-protected. Ask ${sender} for another copy.`,
   too_large: (sender) => `The signed copy would be over 4 MB, which ShipShape can't store. Ask ${sender} for a smaller copy.`,
