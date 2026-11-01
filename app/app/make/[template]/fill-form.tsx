@@ -50,6 +50,24 @@ function focusField(form: HTMLFormElement | null, key: string) {
   form?.querySelector<HTMLElement>(`[name="${key === "_ack" ? "ack" : key}"]:not([type=hidden]), #f-${key}-error`)?.focus();
 }
 
+/** What the form shows: the step, whether it's the review, and the result it came from. */
+interface Shown {
+  current: number;
+  reviewing: boolean;
+  state: FillState;
+}
+
+/**
+ * Whether a change of what's shown should move focus to the new heading: the step or review changed, and the
+ * change isn't a fresh result with errors (the summary takes focus then). A step change on an old result
+ * (Back after a failed check) still moves, or focus would fall to the page when the Back button unmounts.
+ */
+export function headingFocusDue(was: Shown, now: Shown): boolean {
+  if (was.current === now.current && was.reviewing === now.reviewing) return false;
+  const freshErrors = now.state !== was.state && Boolean(now.state.errors && Object.keys(now.state.errors).length > 0);
+  return !freshErrors;
+}
+
 /** An SSN as the form shows it after you leave the field: 123-45-6789 when it has 9 digits, otherwise as typed. */
 export function formatSsn(value: string): string {
   const d = value.replace(/[\s-]/g, "");
@@ -98,6 +116,7 @@ export function FillForm({
   chips,
   ackText,
   canSaveFacts,
+  member = false,
 }: {
   template: TemplateInfo;
   initial: Record<string, string>;
@@ -105,6 +124,8 @@ export function FillForm({
   ackText: string;
   /** Whether this person may save a typed EIN to Business facts (owners and admins of a real workspace, once real documents are open). */
   canSaveFacts: boolean;
+  /** A member of someone else's workspace: can't change its facts, and the review says who can. */
+  member?: boolean;
 }) {
   const [values, setValues] = useState(initial);
   const [ack, setAck] = useState(false);
@@ -140,17 +161,16 @@ export function FillForm({
 
   // Any other change of step (Continue, Back, the review arriving) moves focus to the new heading, so it's read out
   // and keyboard focus doesn't fall to the page when the pressed button unmounts. Not on first paint; not when a
-  // summary link or Change is about to focus a field (fieldAhead); the errors effect above wins when both apply.
+  // summary link or Change is about to focus a field (fieldAhead); the errors effect above wins on a fresh result.
   const stepRef = useRef<HTMLHeadingElement>(null);
   const reviewRef = useRef<HTMLHeadingElement>(null);
-  const shown = useRef({ current, reviewing });
+  const shown = useRef<Shown>({ current, reviewing, state });
   const fieldAhead = useRef(false);
   useEffect(() => {
     const was = shown.current;
-    shown.current = { current, reviewing };
-    if (was.current === current && was.reviewing === reviewing) return;
-    if (fieldAhead.current) return;
-    if (state.errors && Object.keys(state.errors).length > 0) return;
+    const now = { current, reviewing, state };
+    shown.current = now;
+    if (fieldAhead.current || !headingFocusDue(was, now)) return;
     (reviewing ? reviewRef : stepRef).current?.focus();
   }, [current, reviewing, state]);
 
@@ -235,11 +255,15 @@ export function FillForm({
                       {source && <span className="block font-mono text-xs text-ink-3">{source}</span>}
                     </dd>
                     <dd className="order-2 justify-self-end sm:order-3">
-                      {/* A saved EIN has no field on the step: the way to change it is Business facts. */}
+                      {/* A saved EIN has no field on the step: the way to change it is Business facts, for those who can. */}
                       {f.fact === "ein" && initial[f.key] ? (
-                        <Link href="/app/facts" className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
-                          Change in Business facts
-                        </Link>
+                        canSaveFacts ? (
+                          <Link href="/app/facts" className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
+                            Change in Business facts
+                          </Link>
+                        ) : (
+                          member && <span className="inline-flex min-h-6 items-center text-sm text-ink-2">Only an owner or admin can change this.</span>
+                        )
                       ) : (
                         <button type="button" onClick={() => change(f.key)} className="inline-flex min-h-6 items-center text-sm text-ink-2 underline">
                           Change<span className="sr-only"> {f.label}</span>

@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { prerender } from "react-dom/static";
 import { describe, expect, it } from "vitest";
-import { ErrorSummary, FillForm, formatSsn } from "@/app/app/make/[template]/fill-form";
+import { ErrorSummary, FillForm, formatSsn, headingFocusDue } from "@/app/app/make/[template]/fill-form";
 import { templateById } from "@/lib/templates/catalog";
 import { actionsOf, textOf } from "./support/render";
 
@@ -29,6 +29,25 @@ describe("the fill form's error summary", () => {
     const html = await render([{ key: "_ack", label: "Approval", message: "Check the box to confirm you've reviewed the document." }]);
     expect(textOf(html)).toContain("1 answer needs fixing");
     expect(actionsOf(html)[0]?.href).toBe("#ack");
+  });
+});
+
+describe("headingFocusDue: when a change of step moves focus to the heading", () => {
+  const ok = { at: 1 };
+  const failed = { at: 1, errors: { tax_class: "Choose one." } };
+
+  it("moves on Continue, Back and the review arriving; not when nothing changed", () => {
+    expect(headingFocusDue({ current: 0, reviewing: false, state: ok }, { current: 1, reviewing: false, state: ok })).toBe(true);
+    expect(headingFocusDue({ current: 1, reviewing: false, state: ok }, { current: 0, reviewing: false, state: ok })).toBe(true);
+    expect(headingFocusDue({ current: 3, reviewing: false, state: ok }, { current: 3, reviewing: true, state: ok })).toBe(true);
+    expect(headingFocusDue({ current: 1, reviewing: false, state: ok }, { current: 1, reviewing: false, state: ok })).toBe(false);
+  });
+
+  it("leaves a fresh result with errors to the summary, but still moves on Back after that failed check", () => {
+    // A check that fails on another step: the summary takes focus, not the heading.
+    expect(headingFocusDue({ current: 0, reviewing: false, state: ok }, { current: 1, reviewing: false, state: failed })).toBe(false);
+    // The same failed result, still on screen, and the person presses Back: the heading moves (the Back button unmounts).
+    expect(headingFocusDue({ current: 1, reviewing: false, state: failed }, { current: 0, reviewing: false, state: failed })).toBe(true);
   });
 });
 

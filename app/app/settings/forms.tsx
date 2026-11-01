@@ -117,7 +117,7 @@ export function DeleteAccountForm({ deleted, left }: { deleted: string[]; left: 
                 and we&apos;ll cancel it; then delete your account.
               </>
             ) : (
-              " Cancel it with your card issuer or bank, then delete your account."
+              " Payments are switched off right now, so it can't be cancelled yet. Try again once they're back on: deleting cancels it for you."
             ))}
         </div>
       )}

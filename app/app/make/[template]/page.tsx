@@ -70,7 +70,7 @@ export default async function FillPage({ params }: { params: Promise<{ template:
         Fields marked “From Business facts” were filled from facts you confirmed. Change anything that isn&apos;t right for this
         document; your saved facts stay as they are.
       </p>
-      <FillForm template={t} initial={initial} chips={chips} ackText={ACK_TEXT} canSaveFacts={canSaveFacts(ctx)} />
+      <FillForm template={t} initial={initial} chips={chips} ackText={ACK_TEXT} canSaveFacts={canSaveFacts(ctx)} member={ctx.role === "member"} />
     </div>
   );
 }
