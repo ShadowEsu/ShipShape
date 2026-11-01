@@ -176,7 +176,7 @@ describe("home", () => {
     const text = textOf(html);
     expect(text).toContain("0 of 6 done");
     expect(text).toContain("this page lists only what needs you");
-    expect(text).toContain("Documents that have expired or expire in the next 30 days will be listed here");
+    expect(text).toContain("Documents that have expired, expire, or have a renewal notice due in the next 30 days will be listed here");
     expect(primaryActions(html)).toEqual([{ label: "Name your workspace", href: "/app/settings#workspace" }]);
   });
 
@@ -305,6 +305,9 @@ describe("home", () => {
     await ins("Permit", 3, null);
     // Both dates in the window: the sooner one decides the row (the renewal here), and the document appears once.
     await ins("Both soon", 25, 10);
+    // The expiry sooner than an in-window renewal: the expiry decides; the same day: the expiry.
+    await ins("Expiry first", 5, 20);
+    await ins("Same day", 0, 0);
     const html = await homePage();
     const text = textOf(html);
     const at = (s: string) => text.indexOf(s);
@@ -317,6 +320,10 @@ describe("home", () => {
     expect(text).not.toMatch(/Both soon.*Expires soon/);
     expect(text.split("Both soon")).toHaveLength(2);
     expect(text).toMatch(/Edge notice.*Renewal notice due in 30 days\./);
+    expect(text).toMatch(/Expiry first\s+Agreement\s+◷?\s*Expires soon\s*·[^.]*5 days left\./);
+    expect(text).toMatch(/Same day.*Expires today\./);
+    // "Current" leaves out anything listed above: 9 documents, 2 need nothing now (Far notice, Old notice).
+    expect(text).toMatch(/2 of 9 documents current/);
     // Expiry rows keep their validity chip.
     expect(text).toMatch(/Permit.*Expires soon ·/);
     expect(text).not.toContain("Old notice");
@@ -326,6 +333,7 @@ describe("home", () => {
     expect(at("Permit")).toBeLessThan(at("Vendor NDA"));
     expect(at("Vendor NDA")).toBeLessThan(at("Both soon"));
     expect(at("Both soon")).toBeLessThan(at("Edge notice"));
+    expect(at("Same day")).toBeLessThan(at("Lease"));
     expect(text).toContain("Coming up");
     expect(text).not.toContain("Already lapsed");
     const attention = html.slice(html.indexOf("Needs attention"));

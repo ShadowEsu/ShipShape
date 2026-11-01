@@ -102,7 +102,7 @@ export interface AttentionRow extends DocRow {
 }
 
 export interface HomeSummary {
-  /** Active documents, and how many of those are current (no date, or more than 30 days left). */
+  /** Active documents, and how many of those need nothing now (no expiry or more than 30 days left, and no renewal notice due in 30 days). */
   total: number;
   current: number;
   hasW9: boolean;
@@ -121,7 +121,7 @@ export interface HomeSummary {
 
 const SUMMARY_SQL = `
   select count(*)::int as total,
-         count(*) filter (where d.expires_on is null or d.expires_on > $1::date + 30)::int as current,
+         count(*) filter (where (d.expires_on is null or d.expires_on > $1::date + 30) and (d.renews_on is null or d.renews_on not between $1::date and $1::date + 30))::int as current,
          coalesce(bool_or(d.template_id = 'irs-w9'), false) as has_w9,
          coalesce(bool_or(d.expires_on is not null or d.renews_on is not null), false) as has_dates
   from app.documents d where d.org_id = $2 and d.status = 'active'`;

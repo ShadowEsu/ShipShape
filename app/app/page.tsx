@@ -72,7 +72,7 @@ export default async function AppHome() {
           <div className="h-1.5 overflow-hidden rounded-full bg-canvas" aria-hidden="true">
             <div className="h-full rounded-full bg-accent" style={{ width: `${(done / setup.length) * 100}%` }} />
           </div>
-          <p className="text-sm text-ink-2">Once these are done, this page lists only what needs you: documents about to lapse, and what to do about each.</p>
+          <p className="text-sm text-ink-2">Once these are done, this page lists only what needs you: documents about to lapse or with a renewal notice due, and what to do about each.</p>
           <ol className="space-y-2">
             {setup.map((s) =>
               s === next ? (
@@ -134,8 +134,8 @@ export default async function AppHome() {
         {attention.length === 0 ? (
           <p className="card text-sm text-ink-2">
             {docs.total === 0
-              ? "Documents that have expired or expire in the next 30 days will be listed here, with what renews them."
-              : "Nothing has expired or expires in the next 30 days."}
+              ? "Documents that have expired, expire, or have a renewal notice due in the next 30 days will be listed here."
+              : "Nothing has expired, expires, or has a renewal notice due in the next 30 days."}
           </p>
         ) : (
           <>
