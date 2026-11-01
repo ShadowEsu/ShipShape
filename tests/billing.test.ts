@@ -38,7 +38,36 @@ class FakeStripe implements StripePort {
   }
   async createCheckout(params: Stripe.Checkout.SessionCreateParams) {
     this.checkouts.push(params);
+    if (typeof params.customer === "string") this.openCheckout(params.customer);
     return { url: "https://checkout.stripe.com/c/pay/cs_test_1" };
+  }
+  /** Checkout Sessions by id; createCheckout opens one for its customer. */
+  sessions = new Map<string, { id: string; customer: string; status: "open" | "complete" | "expired" }>();
+  expired: string[] = [];
+  /** A session the buyer pays between the deletion's list and its expire: Stripe then refuses the expire. */
+  paidBeforeExpire: string | null = null;
+  /** The order of the deletion's Stripe calls. */
+  calls: string[] = [];
+  openCheckout(customer: string) {
+    const id = `cs_test_${++seq}`;
+    this.sessions.set(id, { id, customer, status: "open" });
+    return id;
+  }
+  async listOpenCheckouts(customer: string) {
+    this.calls.push("listOpenCheckouts");
+    return [...this.sessions.values()].filter((s) => s.customer === customer && s.status === "open").map((s) => ({ id: s.id, status: s.status }));
+  }
+  async expireCheckout(id: string) {
+    this.calls.push("expireCheckout");
+    const s = this.sessions.get(id);
+    if (s && this.paidBeforeExpire === id) s.status = "complete";
+    if (!s || s.status !== "open") {
+      // As Stripe answers for a session that already completed or expired.
+      throw new Stripe.errors.StripeInvalidRequestError({ type: "invalid_request_error", message: 'Only Checkout Sessions with a status in ["open"] can be expired.' });
+    }
+    s.status = "expired";
+    this.expired.push(id);
+    return s;
   }
   portals: Stripe.BillingPortal.SessionCreateParams[] = [];
   async createPortal(params: Stripe.BillingPortal.SessionCreateParams) {
@@ -73,6 +102,7 @@ class FakeStripe implements StripePort {
     return owner;
   }
   async listSubscriptions(customer: string) {
+    this.calls.push("listSubscriptions");
     return [...this.subs.values()].filter((s) => s.customer === customer).map((s) => ({ id: s.id, status: s.status }));
   }
   refunded: string[] = [];
@@ -121,6 +151,7 @@ async function payingWorkspace() {
   const ctx = await realWorkspace();
   await startCheckout(ctx, true);
   const customer = await customerOf(ctx);
+  for (const s of fake.sessions.values()) if (s.customer === customer) s.status = "complete";
   const sub = subscription(`sub_P${++seq}`, customer);
   expect((await send("checkout.session.completed", { object: "checkout.session", customer, subscription: sub.id })).status).toBe(200);
   return { ctx, customer, sub };
@@ -139,6 +170,8 @@ afterAll(async () => {
 beforeEach(() => {
   fake = new FakeStripe();
   setStripeForTests(fake);
+  vi.stubEnv("BILLING_ENABLED", "1");
+  vi.stubEnv("BILLING_LIVE_KEYS_OK", undefined);
   vi.stubEnv("STRIPE_SECRET_KEY", KEY);
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", WHSEC);
   vi.stubEnv("STRIPE_PRICE_PRO", PRO);
@@ -151,13 +184,42 @@ afterEach(() => {
 });
 
 describe("keys and mode", () => {
-  it("runs only with a Stripe test key; a live key switches billing off", () => {
+  it("is off unless BILLING_ENABLED is 1, even with every Stripe variable set (W9-14)", () => {
+    vi.stubEnv("STRIPE_PORTAL_CONFIG", "bpc_Test1");
+    vi.stubEnv("BILLING_ENABLED", undefined);
+    expect(billingConfig()).toBeNull();
+    vi.stubEnv("BILLING_ENABLED", "true");
+    expect(billingConfig()).toBeNull();
+    vi.stubEnv("BILLING_ENABLED", "1");
+    expect(billingConfig()).toEqual({ secretKey: KEY, webhookSecret: WHSEC, proPrice: PRO, appUrl: "http://127.0.0.1:3917", live: false });
+  });
+
+  it("runs only with a Stripe test key; without BILLING_LIVE_KEYS_OK a live key switches billing off", () => {
     expect(billingConfig()).not.toBeNull();
     vi.stubEnv("STRIPE_SECRET_KEY", `sk_live_${"a".repeat(24)}`);
     expect(billingConfig()).toBeNull();
     vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
     expect(billingConfig()).toBeNull();
     vi.stubEnv("STRIPE_SECRET_KEY", ` ${KEY}`);
+    expect(billingConfig()).toBeNull();
+  });
+
+  it("takes a live key only with BILLING_LIVE_KEYS_OK and BILLING_ENABLED both 1", () => {
+    const live = `sk_live_${"a".repeat(24)}`;
+    vi.stubEnv("STRIPE_SECRET_KEY", live);
+    expect(billingConfig()).toBeNull();
+    vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
+    expect(billingConfig()).toMatchObject({ secretKey: live, live: true });
+    vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
+    expect(billingConfig()).toMatchObject({ live: true });
+    vi.stubEnv("STRIPE_SECRET_KEY", KEY);
+    expect(billingConfig()).toMatchObject({ secretKey: KEY, live: false });
+    vi.stubEnv("STRIPE_SECRET_KEY", live);
+    vi.stubEnv("BILLING_ENABLED", undefined);
+    expect(billingConfig()).toBeNull();
+    vi.stubEnv("BILLING_ENABLED", "1");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     expect(billingConfig()).toBeNull();
   });
 
@@ -174,6 +236,9 @@ describe("webhook authenticity and idempotency", () => {
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
     expect((await send("invoice.paid", { object: "invoice", customer: "cus_X" })).status).toBe(503);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", WHSEC);
+    vi.stubEnv("BILLING_ENABLED", undefined);
+    expect(await send("invoice.paid", { object: "invoice", customer: "cus_X" })).toEqual({ status: 503, message: "billing off" });
+    vi.stubEnv("BILLING_ENABLED", "1");
     expect((await send("invoice.paid", { object: "invoice", customer: "cus_X" }, { secret: "whsec_wrong" })).status).toBe(400);
     expect((await send("invoice.paid", { object: "invoice", customer: "cus_X" }, { timestamp: Math.floor(Date.now() / 1000) - 600 })).status).toBe(400);
     expect(await handleStripeWebhook("{}", null)).toEqual({ status: 400, message: "bad signature" });
@@ -189,6 +254,14 @@ describe("webhook authenticity and idempotency", () => {
     });
     expect(await plan(ctx)).toBe("pro");
     expect(await db.root((tx) => tx.query("select 1 from app.stripe_events where id = 'evt_Live1'"))).toEqual([]);
+  });
+
+  it("with a live key admitted, takes live-mode events and refuses test-mode ones", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", `sk_live_${"a".repeat(24)}`);
+    vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
+    expect(await send("product.created", { object: "product" }, { livemode: true })).toEqual({ status: 200, message: "ignored" });
+    expect(await send("invoice.paid", { object: "invoice", customer: "cus_X" }, { id: "evt_Test1" })).toEqual({ status: 400, message: "test events refused" });
+    expect(await db.root((tx) => tx.query("select 1 from app.stripe_events where id = 'evt_Test1'"))).toEqual([]);
   });
 
   it("processes an event once: a redelivery is acknowledged without re-reading Stripe", async () => {
@@ -424,13 +497,87 @@ describe("account deletion", () => {
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = any($1::uuid[])", [[a.ctx.orgId, b.orgId]]))).toEqual([]);
   });
 
-  it("stops if Stripe can't list the subscriptions", async () => {
+  it("stops if Stripe can't list the open checkouts or the subscriptions", async () => {
     const a = await payingWorkspace();
+    const listOpen = fake.listOpenCheckouts.bind(fake);
+    fake.listOpenCheckouts = () => Promise.reject(new Error("network"));
+    await expect(deleteAccount(a.ctx)).rejects.toThrow(
+      "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it with Manage billing under Plan first.",
+    );
+    expect(fake.calls).not.toContain("listSubscriptions");
+    fake.listOpenCheckouts = listOpen;
     fake.listSubscriptions = () => Promise.reject(new Error("network"));
     await expect(deleteAccount(a.ctx)).rejects.toThrow(
       "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it with Manage billing under Plan first.",
     );
     expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.ctx.orgId]))).toHaveLength(1);
+  });
+
+  it("expires every open checkout before it lists the subscriptions, so a Stripe tab left open can't be paid after the deletion (W9-2)", async () => {
+    const a = await realWorkspace();
+    await startCheckout(a, true); // "Move to Pro": the Stripe tab is open
+    const customer = await customerOf(a);
+    for (let i = 0; i < 150; i++) fake.openCheckout(customer);
+    await deleteAccount(a);
+    expect(fake.expired).toHaveLength(151);
+    expect([...fake.sessions.values()].filter((s) => s.customer === customer && s.status === "open")).toEqual([]);
+    expect(fake.calls[0]).toBe("listOpenCheckouts");
+    expect(fake.calls.indexOf("listSubscriptions")).toBeGreaterThan(fake.calls.lastIndexOf("expireCheckout"));
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [a.orgId]))).toEqual([]);
+  });
+
+  it("a checkout paid as the deletion expires it doesn't stop the deletion, and its subscription is cancelled; one still open does stop it (W9-2)", async () => {
+    const exists = async (orgId: string) => (await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [orgId]))).length === 1;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const expire = fake.expireCheckout.bind(fake);
+
+    // Paid between the list and the expire: Stripe refuses the expire as "not open", and the payment made a subscription.
+    const a = await realWorkspace();
+    await startCheckout(a, true);
+    const customer = await customerOf(a);
+    const paid = fake.openCheckout(customer);
+    fake.paidBeforeExpire = paid;
+    fake.expireCheckout = async (id) => {
+      if (id === paid) subscription("sub_PaidMeanwhile1", customer);
+      return expire(id);
+    };
+    await deleteAccount(a);
+    expect(await exists(a.orgId)).toBe(false);
+    expect(fake.sessions.get(paid)?.status).toBe("complete");
+    expect(fake.cancelled).toEqual(["sub_PaidMeanwhile1"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("already ended"));
+
+    // Stripe can't be reached for the expire and the session is still open: keep the account. A retry finishes.
+    const b = await realWorkspace();
+    await startCheckout(b, true);
+    fake.calls = [];
+    fake.expireCheckout = () => Promise.reject(new Error("network"));
+    await expect(deleteAccount(b)).rejects.toThrow(/couldn't be cancelled just now/);
+    expect(fake.calls).not.toContain("listSubscriptions");
+    expect(await exists(b.orgId)).toBe(true);
+    fake.expireCheckout = expire;
+    await deleteAccount(b);
+    expect(await exists(b.orgId)).toBe(false);
+    warn.mockRestore();
+  });
+
+  it("a checkout completed for a deleted workspace's customer is acknowledged, logged and attached to nothing (W9-2)", async () => {
+    const a = await realWorkspace();
+    await startCheckout(a, true);
+    const customer = await customerOf(a);
+    await deleteAccount(a);
+    // Stripe sends the completion anyway (paid moments before the expire landed).
+    const sub = subscription("sub_Late1", customer);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const event = { object: "checkout.session", customer, subscription: sub.id, invoice: "in_Late1" };
+    expect(await send("checkout.session.completed", event, { id: "evt_Late1" })).toEqual({ status: 200, message: "ok" });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("evt_Late1"));
+    warn.mockRestore();
+    expect(await db.root((tx) => tx.query("select 1 from app.billing where stripe_customer_id = $1 or stripe_subscription_id = $2", [customer, sub.id]))).toEqual([]);
+    expect(await db.root((tx) => tx.query("select 1 from app.stripe_events where id = 'evt_Late1' and finished_at is not null"))).toHaveLength(1);
+    expect(fake.cancelled).toEqual([]);
+    expect(fake.refunded).toEqual([]);
+    expect(fake.retrieves).toBe(0);
   });
 
   it("when Stripe refuses a cancel, goes ahead only if the subscription has ended meanwhile", async () => {

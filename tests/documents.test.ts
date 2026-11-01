@@ -457,6 +457,7 @@ describe("Mutual NDA fill", () => {
 
 describe("plan-limit messages", () => {
   const on = () => {
+    vi.stubEnv("BILLING_ENABLED", "1");
     vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
     vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");

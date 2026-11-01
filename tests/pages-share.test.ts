@@ -589,6 +589,7 @@ describe("form errors name the field to fix", () => {
     expect(refused.error).toBe("The Free plan has 1 passport link open at a time. Turn one off to make room.");
     expect(refused.fix).toEqual({ href: `/app/passport/${made.created?.id}`, label: "Turn off your open link" });
     // Payments on: the Pro half comes back.
+    vi.stubEnv("BILLING_ENABLED", "1");
     vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
     vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");

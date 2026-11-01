@@ -8,7 +8,7 @@ import { SubscriptionStillRunning, UserError } from "./errors";
 import type { Ctx } from "./profile";
 
 /**
- * Stripe billing, TEST MODE ONLY (fleet rule: no live keys until an attorney names the seller).
+ * Stripe billing, TEST MODE unless BILLING_LIVE_KEYS_OK admits a live key (fleet rule: no live keys until an attorney names the seller).
  *
  * Access comes only from verified webhooks, after re-reading the subscription from Stripe, so event
  * order, duplicates and stale events can't grant or keep Pro. The checkout redirect grants nothing.
@@ -36,6 +36,9 @@ export interface StripePort {
   cancelSubscription(id: string): Promise<unknown>;
   /** Every subscription the customer has in Stripe, ended ones included. */
   listSubscriptions(customer: string): Promise<{ id: string; status: string }[]>;
+  /** Every open Checkout Session of the customer (one can still be paid until it expires). */
+  listOpenCheckouts(customer: string): Promise<{ id: string; status: string }[]>;
+  expireCheckout(id: string): Promise<unknown>;
   /** Who a charge belongs to, and the subscription it paid for (null for a one-off charge). */
   chargeOwner(id: string): Promise<{ customer: string | null; subscription: string | null }>;
   /** Refunds whatever was paid on an invoice (a duplicate subscription's first payment). */
@@ -60,6 +63,9 @@ function stripePort(cfg: BillingConfig): StripePort {
     retrieveSubscription: (id) => s.subscriptions.retrieve(id),
     cancelSubscription: (id) => s.subscriptions.cancel(id),
     listSubscriptions: async (customer) => (await s.subscriptions.list({ customer, status: "all", limit: 100 }).autoPagingToArray({ limit: 1000 })).map((x) => ({ id: x.id, status: x.status })),
+    listOpenCheckouts: async (customer) =>
+      (await s.checkout.sessions.list({ customer, status: "open", limit: 100 }).autoPagingToArray({ limit: 1000 })).map((x) => ({ id: x.id, status: x.status ?? "unknown" })),
+    expireCheckout: (id) => s.checkout.sessions.expire(id),
     chargeOwner: async (id) => {
       // A charge names its payment intent; the invoice payment for that intent names the invoice, whose parent is the subscription.
       const charge = await s.charges.retrieve(id);
@@ -243,7 +249,12 @@ async function applyEvent(tx: Tx, cfg: BillingConfig, stripe: StripePort, event:
     "select org_id, stripe_subscription_id, status from app.billing where stripe_customer_id = $1 for update",
     [customer],
   );
-  if (!row) return; // not one of ours (another product in the same sandbox)
+  if (!row) {
+    // Not one of ours (another product in the same sandbox), or a workspace deleted since: a checkout paid after its
+    // account was deleted (Security W9-2) is refused here, never attached to anything.
+    console.warn(`billing: ${event.type} ${event.id} names a customer with no workspace here; finished as not ours`);
+    return;
+  }
   const current = row.stripe_subscription_id;
   const currentLive = current !== null && LIVE_STATUSES.includes(row.status);
 
@@ -299,8 +310,9 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
   } catch {
     return { status: 400, message: "bad signature" };
   }
-  // The fleet never takes live payments: a live-mode event is refused before it touches anything (Security B5).
-  if (event.livemode) return { status: 400, message: "live events refused" };
+  // An event in the other mode than the key is refused before it touches anything: live-mode events only once
+  // BILLING_LIVE_KEYS_OK admitted a live key (Security B5), test-mode events never with a live key.
+  if (event.livemode !== cfg.live) return { status: 400, message: event.livemode ? "live events refused" : "test events refused" };
   if (!HANDLED.has(event.type)) return { status: 200, message: "ignored" };
 
   const claimed = await asService((tx) =>
@@ -332,9 +344,12 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
 
 /**
  * Cancels the subscriptions of the workspaces an account deletion will remove (those where the
- * person is the only owner). It asks Stripe for every subscription of each workspace's customer, so
- * one whose webhook never reached us (a checkout paid moments ago) stops too (Security B3). Runs
- * before the deletion; if Stripe can't be reached, the deletion stops.
+ * person is the only owner). For each workspace's customer it first expires every open Checkout
+ * Session, so a checkout started before the deletion can't be paid after it (Security W9-2), then
+ * asks Stripe for every subscription of the customer, so one whose webhook never reached us (a
+ * checkout paid moments ago) stops too (Security B3). Runs before the deletion; if Stripe can't be
+ * reached, the deletion stops. A session that completed or expired on its own meanwhile doesn't
+ * stop it, so a retry runs safely.
  *
  * Returns the workspaces whose billing it handled. The deletion refuses any billed workspace outside
  * that list: another owner leaving at the same moment can make this person the sole owner after
@@ -362,6 +377,19 @@ export async function cancelSubscriptionsBeforeDeletion(userId: string): Promise
   const stripe = stripePort(cfg);
   const busy = "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it with Manage billing under Plan first.";
   for (const c of customers) {
+    const open = await stripe.listOpenCheckouts(c.stripe_customer_id).catch(() => {
+      throw new UserError(busy);
+    });
+    for (const s of open) {
+      try {
+        await stripe.expireCheckout(s.id);
+      } catch (e) {
+        // Stripe refuses to expire a session that completed or expired since the list was read. Anything still open stops the deletion.
+        const still = await stripe.listOpenCheckouts(c.stripe_customer_id).catch(() => null);
+        if (!still || still.some((x) => x.id === s.id)) throw new UserError(busy);
+        console.warn(`billing: a checkout had already ended when the account deletion tried to expire it (${e instanceof Error ? e.name : "error"})`);
+      }
+    }
     const subs = await stripe.listSubscriptions(c.stripe_customer_id).catch(() => {
       throw new UserError(busy);
     });
