@@ -1,10 +1,12 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { checkFill, fillTemplate } from "@/lib/server/documents";
 import { PlanLimit, UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import { formValues } from "@/lib/server/fill";
+import { clientIp } from "@/lib/server/http";
 import { requireWorkspace } from "@/lib/server/session";
 import { stepOf, templateById } from "@/lib/templates/catalog";
 import type { TemplateInfo } from "@/lib/templates/types";
@@ -48,7 +50,7 @@ export async function fill(_prev: FillState, data: FormData): Promise<FillState>
       const errors = await checkFill(ctx, t.id, values);
       return Object.keys(errors).length ? { errors, at: firstStep(t, errors) } : { review: true };
     }
-    const res = await fillTemplate(ctx, t.id, values, data.get("ack") === "on");
+    const res = await fillTemplate(ctx, t.id, values, data.get("ack") === "on", clientIp(await headers()));
     // Only the approval box left unticked: stay on the review, where the box is.
     if (!res.ok) {
       const ackOnly = Object.keys(res.errors).every((k) => k === "_ack");

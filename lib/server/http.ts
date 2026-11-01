@@ -59,6 +59,15 @@ export async function rateLimited(bucket: string, rawKey: string, max: number, w
   return !row.ok;
 }
 
+/**
+ * A public link's limit (W15-13): `max` per network for each link, so one busy link doesn't close another
+ * for the same office, and 5× that per network across every link (`<bucket>-net`) as a backstop. The
+ * backstop is asked first: once a network is over it, made-up link ids add no more per-link rows.
+ */
+export async function linkRateLimited(bucket: string, ip: string, linkId: string, max: number, windowSeconds: number): Promise<boolean> {
+  return (await rateLimited(`${bucket}-net`, ip, 5 * max, windowSeconds)) || (await rateLimited(bucket, `${ip}|${linkId}`, max, windowSeconds));
+}
+
 /** Clears rate-limit windows that started over an hour ago, even with no traffic (the daily cron). Returns how many. */
 export async function purgeRateHits(): Promise<number> {
   const [row] = await asService((tx) => tx.query<{ n: number }>("select app.purge_rate_hits() as n"));

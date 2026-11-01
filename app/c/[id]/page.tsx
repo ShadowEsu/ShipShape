@@ -7,7 +7,7 @@ import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { FocusOnLoad } from "@/components/focus-on-load";
 import { COLLECT_COOKIE, openCollect, type PublicCollect, type ReceiveOutcome } from "@/lib/server/collect";
 import { contactEmail } from "@/lib/server/flags";
-import { clientIp, rateLimited } from "@/lib/server/http";
+import { clientIp, linkRateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
 import { viewerZone } from "@/lib/server/session";
 import { dayOf, fmtDay } from "@/lib/today";
@@ -58,7 +58,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
   const token = (await cookies()).get(COLLECT_COOKIE)?.value;
   const zone = await viewerZone();
   const ip = clientIp(await headers());
-  const busy = token ? await rateLimited("collect-view", ip, 60, 600) : false;
+  const busy = token ? await linkRateLimited("collect-view", ip, id, 60, 600) : false;
   const collect = token && !busy ? await openCollect(id, token) : null;
   const end = token && !busy && !collect ? await linkEnd("c", id, token) : null;
   const result = collect && outcome(r, k, collect);

@@ -21,13 +21,16 @@ import {
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { listDocuments } from "@/lib/server/documents";
+import { UserError } from "@/lib/server/errors";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { collectOpen, GateClosed } from "@/lib/server/flags";
+import { LINKS_BUSY, VENDORS_BUSY } from "@/lib/server/limits";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { fillBucket } from "./support/rate";
 
 /** Collect: vendors send documents through upload links (secret in the fragment, hashed, expiring, revocable). */
 
@@ -300,6 +303,30 @@ describe("adding a vendor", () => {
     const ctx = await realWorkspace("vendor-blank@example.com");
     await expect(addVendor(ctx, { name: "   ", requested: ["w9"] })).rejects.toThrow(ZodError);
     expect(await listVendors(ctx)).toEqual([]);
+  });
+
+  it("W15-2 vendors: past 30 new vendors in an hour a person is refused with nothing added; someone else isn't", async () => {
+    const busy = await sampleWorkspace();
+    const before = (await listVendors(busy)).length;
+    await fillBucket(db, "vendors", busy.userId, 30, 3600);
+    await expect(addVendor(busy, { name: "One too many", email: "", requested: ["w9"] })).rejects.toThrow(new UserError(VENDORS_BUSY));
+    expect(VENDORS_BUSY).toBe("That's the hourly limit for adding vendors. Nothing was added; try again in an hour.");
+    expect(await listVendors(busy)).toHaveLength(before);
+    const next = await sampleWorkspace();
+    expect(await addVendor(next, { name: "Still fine", email: "", requested: ["w9"] })).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("W15-2 links: past 30 new links in an hour (passport and upload links together) a person gets no upload link; someone else does", async () => {
+    const busy = await sampleWorkspace();
+    const [vendor] = await listVendors(busy);
+    const links = async (ctx: Ctx) => db.root((tx) => tx.query("select 1 from app.vendor_links where org_id = $1", [ctx.orgId]));
+    const before = (await links(busy)).length;
+    await fillBucket(db, "links", busy.userId, 30, 3600);
+    await expect(createVendorLink(busy, { vendorId: vendor.id, days: 30 })).rejects.toThrow(new UserError(LINKS_BUSY));
+    expect(await links(busy)).toHaveLength(before);
+    const next = await sampleWorkspace();
+    const [theirs] = await listVendors(next);
+    expect((await createVendorLink(next, { vendorId: theirs.id, days: 30 })).token).toBeTruthy();
   });
 
   it("takes a name of up to 120 characters; 121 is a form error", async () => {

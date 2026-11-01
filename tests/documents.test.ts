@@ -7,8 +7,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { canSaveFacts, checkFill, DOCUMENT_GONE, documentsById, downloadUrl, fillTemplate, firstDocument, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
-import { UserError } from "@/lib/server/errors";
+import { canSaveFacts, checkFill, DOCUMENT_GONE, documentsById, downloadUrl, fillTemplate, firstDocument, getDocument, listDocuments, sampleIsFull, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { PlanLimit, UserError } from "@/lib/server/errors";
+import { FILES_FULL, FILL_BUSY, SAMPLE_DOCUMENTS, SAMPLE_FULL, UPLOAD_BUSY } from "@/lib/server/limits";
 import { planLimit } from "@/lib/server/plans";
 import { checkUpload, UploadRefused } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill, render } from "@/lib/server/fill";
@@ -22,6 +23,7 @@ import { templateById } from "@/lib/templates/catalog";
 import { isoToday } from "@/lib/today";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { freshDb, type TestDb } from "./support/db";
+import { fillBucket } from "./support/rate";
 
 /** The baselines (Tm y) of the W-9 requester box's text, from its appearance XObject (186.2 × 38 pt) in a flattened document. */
 function requesterBaselines(doc: PDFDocument): number[] {
@@ -106,7 +108,7 @@ describe("real documents gate (Security G3)", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
     await expect(uploadDocument(real, { title: "COI", kind: "coi" }, PDF)).rejects.toThrow(GateClosed);
-    await expect(fillTemplate(real, "common-paper-mnda", {}, true)).rejects.toThrow(GateClosed);
+    await expect(fillTemplate(real, "common-paper-mnda", {}, true, "192.0.2.10")).rejects.toThrow(GateClosed);
     await expect(saveEin(real, "12-3456789")).rejects.toThrow(GateClosed);
     vi.unstubAllEnvs();
   });
@@ -316,7 +318,7 @@ describe("W-9 fill", () => {
     const wraps = "Northwind Traders Accounts Payable Department\n4500 Southeast Hawthorne Blvd\nPortland, OR 97215";
     const fits = "Northwind Traders, Accounts Payable\n4500 SE Hawthorne Blvd, Suite 210\nPortland, OR 97215";
     for (const requester of [tooMany, wraps]) {
-      const refused = await fillTemplate(sample, t.id, { ...base, requester }, true);
+      const refused = await fillTemplate(sample, t.id, { ...base, requester }, true, "192.0.2.10");
       expect(refused).toEqual({ ok: false, errors: { requester: "This won't fit in the form's box, which holds 3 lines of about 40 characters. Shorten it so nothing is cut off the PDF." } });
     }
     expect(await checkFill(sample, t.id, { ...base, requester: fits })).toEqual({});
@@ -352,10 +354,10 @@ describe("W-9 fill", () => {
     const t = templateById("irs-w9")!;
     const facts = await factsForFill(real);
     const values = { ...prefill(t, facts, real.today), name: "Typed SSN Co", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
-    const refused = await fillTemplate(real, t.id, values, false);
+    const refused = await fillTemplate(real, t.id, values, false, "192.0.2.10");
     expect(refused).toEqual({ ok: false, errors: { _ack: expect.any(String) } });
 
-    const made = await fillTemplate(real, t.id, values, true);
+    const made = await fillTemplate(real, t.id, values, true, "192.0.2.10");
     expect(made.ok).toBe(true);
     const id = made.ok ? made.id : "";
     const got = await getDocument(real, id);
@@ -389,16 +391,16 @@ describe("W-9 fill", () => {
     const before = (await listDocuments(ctx)).length;
     const sampleSsn = "This sample uses its made-up EIN, so choose EIN. Your own SSN can go in once real accounts open.";
     expect(await checkFill(ctx, t.id, { ...base, tin_kind: "ssn", ssn: "900-12-3456" })).toEqual({ ssn: sampleSsn });
-    expect(await fillTemplate(ctx, t.id, { ...base, tin_kind: "ssn", ssn: "900-12-3456" }, true)).toEqual({ ok: false, errors: { ssn: sampleSsn } });
+    expect(await fillTemplate(ctx, t.id, { ...base, tin_kind: "ssn", ssn: "900-12-3456" }, true, "192.0.2.10")).toEqual({ ok: false, errors: { ssn: sampleSsn } });
     expect(await listDocuments(ctx)).toHaveLength(before);
 
-    const w9 = await fillTemplate(ctx, t.id, { ...base, tin_kind: "ein" }, true);
+    const w9 = await fillTemplate(ctx, t.id, { ...base, tin_kind: "ein" }, true, "192.0.2.10");
     const w9Bytes = await blobStore().get(`${ctx.orgId}/${w9.ok ? w9.id : ""}/v1.pdf`);
     expect(await stamped(w9Bytes)).toEqual(Array(6).fill(true));
     const nda = templateById("common-paper-mnda");
     if (!nda) throw new Error("the NDA template is missing");
     const ndaValues = { mnda_term: "until_terminated", conf_term: "perpetual", governing_law: "California", jurisdiction: "San Francisco, CA", p2_company: "Northwind", p2_name: "Jordan Lee", p2_notice: "legal@northwind.example" };
-    const ndaMade = await fillTemplate(ctx, nda.id, { ...prefill(nda, await factsForFill(ctx), ctx.today), ...ndaValues }, true);
+    const ndaMade = await fillTemplate(ctx, nda.id, { ...prefill(nda, await factsForFill(ctx), ctx.today), ...ndaValues }, true, "192.0.2.10");
     expect(ndaMade.ok ? [] : ndaMade.errors).toEqual([]);
     const pages = await stamped(await blobStore().get(`${ctx.orgId}/${ndaMade.ok ? ndaMade.id : ""}/v1.pdf`));
     expect(pages.length).toBeGreaterThan(1);
@@ -409,7 +411,7 @@ describe("W-9 fill", () => {
 
     // A real workspace's W-9 isn't.
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
-    const own = await fillTemplate(real, t.id, { name: "Unstamped Co", tax_class: "c_corp", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ein", ein: "98-7654321", sign: "", signature: "" }, true);
+    const own = await fillTemplate(real, t.id, { name: "Unstamped Co", tax_class: "c_corp", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ein", ein: "98-7654321", sign: "", signature: "" }, true, "192.0.2.10");
     expect((await stamped(await blobStore().get(`${real.orgId}/${own.ok ? own.id : ""}/v1.pdf`))).some(Boolean)).toBe(false);
     vi.unstubAllEnvs();
   });
@@ -418,7 +420,7 @@ describe("W-9 fill", () => {
     const t = templateById("irs-w9");
     if (!t) throw new Error("the W-9 template is missing");
     const values = { ...prefill(t, await factsForFill(sample), sample.today), tin_kind: "ein", sign: "on", signature: "Alex Rivera" };
-    const made = await fillTemplate(sample, t.id, values, true);
+    const made = await fillTemplate(sample, t.id, values, true, "192.0.2.10");
     const id = made.ok ? made.id : "";
     const w9 = await PDFDocument.load(await blobStore().get(`${sample.orgId}/${id}/v1.pdf`));
     const found: string[] = [];
@@ -439,14 +441,14 @@ describe("W-9 fill", () => {
     const facts = await factsForFill(sample);
     const evening = { ...sample, today: "2031-02-03" };
     const values = { ...prefill(t, facts, evening.today), tin_kind: "ein", sign: "on", signature: "Alex Rivera" };
-    const made = await fillTemplate(evening, t.id, values, true);
+    const made = await fillTemplate(evening, t.id, values, true, "192.0.2.10");
     expect((await getDocument(sample, made.ok ? made.id : ""))?.doc.issued_on).toBe("2031-02-03");
     expect(prefill(templateById("common-paper-mnda")!, facts, "2031-02-03").effective_date).toBe("2031-02-03");
   });
 
   it("reports missing and invalid fields instead of making a document", async () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
-    const res = await fillTemplate(real, "irs-w9", { name: "", tax_class: "nope", tin_kind: "ssn", ssn: "12" }, true);
+    const res = await fillTemplate(real, "irs-w9", { name: "", tax_class: "nope", tin_kind: "ssn", ssn: "12" }, true, "192.0.2.10");
     expect(res.ok).toBe(false);
     expect(res.ok ? {} : res.errors).toMatchObject({ name: "Fill this in.", tax_class: "Choose one of the options.", ssn: "Enter the SSN as 9 digits, like 123-45-6789." });
     vi.unstubAllEnvs();
@@ -455,7 +457,7 @@ describe("W-9 fill", () => {
   it("says what to do about each kind of missing or over-long field", async () => {
     const t = templateById("common-paper-mnda")!;
     const values = { ...prefill(t, await factsForFill(sample), sample.today), effective_date: "", mnda_term: "years", mnda_years: "", conf_term: "", p2_company: "x".repeat(121) };
-    const res = await fillTemplate(sample, t.id, values, true);
+    const res = await fillTemplate(sample, t.id, values, true, "192.0.2.10");
     expect(res.ok ? {} : res.errors).toMatchObject({
       effective_date: "Pick a date.",
       mnda_years: "Enter a whole number from 1 to 99.",
@@ -490,14 +492,14 @@ describe("W-9 fill", () => {
     fillW9Form(doc, { ...base, ein: "98 7654321" }, facts);
     const field = (n: string) => doc.getForm().getTextField(`topmostSubform[0].Page1[0].${n}`).getText();
     expect([field("f1_14[0]"), field("f1_15[0]")]).toEqual(["98", "7654321"]);
-    const made = await fillTemplate(ctx, t.id, { ...base, ein: "98 7654321" }, true);
+    const made = await fillTemplate(ctx, t.id, { ...base, ein: "98 7654321" }, true, "192.0.2.10");
     expect(made.ok).toBe(true);
     const got = await getDocument(ctx, made.ok ? made.id : "");
     expect(got?.versions[0].fill_record?.fields).toMatchObject({ ein: "typed_not_saved" });
     expect((await factsForFill(ctx)).ein).toBeNull();
 
     // Typed with "also save it": Business facts get it (encrypted; last 4 in clear), and the record says saved.
-    const saved = await fillTemplate(ctx, t.id, { ...base, ein: "98-7654321", save_ein: "on" }, true);
+    const saved = await fillTemplate(ctx, t.id, { ...base, ein: "98-7654321", save_ein: "on" }, true, "192.0.2.10");
     expect(saved.ok).toBe(true);
     expect((await getDocument(ctx, saved.ok ? saved.id : ""))?.versions[0].fill_record?.fields).toMatchObject({ ein: "typed_saved" });
     expect(await factsForFill(ctx)).toMatchObject({ ein: "98-7654321", einLast4: "4321" });
@@ -516,12 +518,12 @@ describe("W-9 fill", () => {
     const values = { name: "Member Co", tax_class: "c_corp", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ein", ein: "98-7654321", save_ein: "on" };
 
     const before = (await listDocuments(ctx)).length;
-    const refused = await fillTemplate(member, t.id, values, true);
+    const refused = await fillTemplate(member, t.id, values, true, "192.0.2.10");
     expect(refused).toEqual({ ok: false, errors: { save_ein: "Only owners and admins can save business facts. Untick this, or ask one of them to add the EIN." } });
     expect(await listDocuments(ctx)).toHaveLength(before);
     expect((await factsForFill(ctx)).ein).toBeNull();
     // Without the box the member makes the W-9 with the typed number, like anyone else.
-    expect((await fillTemplate(member, t.id, { ...values, save_ein: "" }, true)).ok).toBe(true);
+    expect((await fillTemplate(member, t.id, { ...values, save_ein: "" }, true, "192.0.2.10")).ok).toBe(true);
     expect((await factsForFill(ctx)).ein).toBeNull();
 
     // The sample workspace already holds an EIN, so the box never applies there; canSaveFacts still says no.
@@ -557,9 +559,9 @@ describe("Mutual NDA fill", () => {
       purpose: "Evaluating a partnership.\nNothing else.", // a text box may hold line breaks
     };
     // A one-line field may not (Security F4-1).
-    const refused = await fillTemplate(sample, t.id, { ...values, p2_company: "Acme\nSample Co" }, true);
+    const refused = await fillTemplate(sample, t.id, { ...values, p2_company: "Acme\nSample Co" }, true, "192.0.2.10");
     expect(refused.ok ? {} : refused.errors).toEqual({ p2_company: "Use letters, numbers and common punctuation." });
-    const made = await fillTemplate(sample, t.id, values, true);
+    const made = await fillTemplate(sample, t.id, values, true, "192.0.2.10");
     expect(made.ok).toBe(true);
     const doc = (await getDocument(sample, made.ok ? made.id : ""))!.doc;
     expect(doc).toMatchObject({ kind: "nda", counterparty: "Acme Sample Co", issued_on: "2026-11-01", expires_on: "2028-11-01" });
@@ -569,11 +571,11 @@ describe("Mutual NDA fill", () => {
     const t = templateById("common-paper-mnda")!;
     const values = { ...prefill(t, await factsForFill(sample), sample.today), ...typed };
     for (const bad of ["2026-02-30", "2026-13-01", "0000-01-01", "1899-12-31", "9999-12-31", "2026-1-1"]) {
-      const res = await fillTemplate(sample, t.id, { ...values, effective_date: bad }, true);
+      const res = await fillTemplate(sample, t.id, { ...values, effective_date: bad }, true, "192.0.2.10");
       expect(res.ok ? {} : res.errors, bad).toEqual({ effective_date: "Enter a date between 1900 and 2200." });
     }
     for (const ok of ["1900-01-01", "2200-12-31", "2024-02-29"]) {
-      const res = await fillTemplate(sample, t.id, { ...values, effective_date: ok }, true);
+      const res = await fillTemplate(sample, t.id, { ...values, effective_date: ok }, true, "192.0.2.10");
       expect(res.ok, ok).toBe(true);
     }
   });
@@ -587,7 +589,7 @@ describe("Mutual NDA fill", () => {
     expect(values.purpose).toBe("Firstline of it.\nSecondline of it.\nThirdline of it.");
     const drawn = vi.spyOn(PDFPage.prototype, "drawText");
     try {
-      const made = await fillTemplate(sample, t.id, values, true);
+      const made = await fillTemplate(sample, t.id, values, true, "192.0.2.10");
       expect(made.ok ? {} : made.errors).toEqual({});
       const at = (word: string) => drawn.mock.calls.find(([text]) => text === word)?.[1];
       const [first, second, third] = ["Firstline", "Secondline", "Thirdline"].map(at);
@@ -599,6 +601,111 @@ describe("Mutual NDA fill", () => {
     } finally {
       drawn.mockRestore();
     }
+  });
+});
+
+describe("hourly limits and a sample's size (W15-2)", () => {
+  const found = templateById("irs-w9");
+  if (!found) throw new Error("the W-9 template is missing");
+  const w9 = found;
+  const w9Values = async (ctx: Ctx) => ({ ...prefill(w9, await factsForFill(ctx), ctx.today), sign: "on", signature: "Alex Rivera", tin_kind: "ein" });
+
+  it("W15-2 fill: past 30 approvals in an hour a person is refused before anything is made; checks and other people go on", async () => {
+    const busy = await workspace("fill-busy@example.com", "sample");
+    await fillBucket(db, "fill", busy.userId, 30, 3600);
+    const values = await w9Values(busy);
+    const before = (await listDocuments(busy)).length;
+    await expect(fillTemplate(busy, w9.id, values, true, "192.0.2.40")).rejects.toThrow(new UserError(FILL_BUSY));
+    expect(FILL_BUSY).toBe("That's the hourly limit for new documents. Nothing was made; try again in an hour.");
+    expect(await listDocuments(busy)).toHaveLength(before);
+    // The review step and a refused approval are never counted or stopped: only a document that would be made.
+    expect(await checkFill(busy, w9.id, values)).toEqual({});
+    expect(await fillTemplate(busy, w9.id, values, false, "192.0.2.40")).toEqual({ ok: false, errors: { _ack: expect.any(String) } });
+    // Someone else on the same network isn't affected.
+    const next = await workspace("fill-next@example.com", "sample");
+    expect((await fillTemplate(next, w9.id, await w9Values(next), true, "192.0.2.40")).ok).toBe(true);
+  });
+
+  it("W15-2 fill-net: past 60 approvals in an hour from one network, a new person there is refused too; another network isn't", async () => {
+    await fillBucket(db, "fill-net", "192.0.2.41", 60, 3600);
+    const ctx = await workspace("fill-net@example.com", "sample");
+    const values = await w9Values(ctx);
+    await expect(fillTemplate(ctx, w9.id, values, true, "192.0.2.41")).rejects.toThrow(new UserError(FILL_BUSY));
+    expect((await fillTemplate(ctx, w9.id, values, true, "192.0.2.42")).ok).toBe(true);
+  });
+
+  it("W15-2 sample cap: a sample holds 30 documents in all, archived ones count, restoring one still works, and the Make page knows", async () => {
+    const ctx = await workspace("sample-full@example.com", "sample");
+    // Seeding made its five without tripping the cap.
+    expect(await listDocuments(ctx)).toHaveLength(5);
+    expect(await sampleIsFull(ctx)).toBe(false);
+    // 24 more, half of them archived: 29 in all, only 17 active.
+    await db.root((tx) =>
+      tx.query(
+        "insert into app.documents (org_id, title, kind, status, created_by) select $1, 'Filler ' || g, 'other', case when g % 2 = 0 then 'archived' else 'active' end, $2 from generate_series(1, 24) g",
+        [ctx.orgId, ctx.userId],
+      ),
+    );
+    const values = await w9Values(ctx);
+    expect((await fillTemplate(ctx, w9.id, values, true, "192.0.2.43")).ok).toBe(true);
+    expect(await sampleIsFull(ctx)).toBe(true);
+    const active = (await listDocuments(ctx)).length;
+    expect(active).toBeLessThan(SAMPLE_DOCUMENTS);
+    await expect(fillTemplate(ctx, w9.id, values, true, "192.0.2.43")).rejects.toThrow(new PlanLimit(SAMPLE_FULL));
+    expect(SAMPLE_FULL).toBe("This sample is full: it holds up to 30 documents, archived ones included. To try more, start a new sample from the sign-in page.");
+    expect(await listDocuments(ctx)).toHaveLength(active);
+    // Bringing an archived one back adds nothing stored, so it isn't refused.
+    const [archived] = await db.root((tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1 and status = 'archived' limit 1", [ctx.orgId]));
+    await setArchived(ctx, archived.id, false);
+    expect(await listDocuments(ctx)).toHaveLength(active + 1);
+    // A real workspace is never a "full sample".
+    expect(await sampleIsFull(real)).toBe(false);
+  });
+});
+
+describe("Free's file total and the upload limit (W15-3)", () => {
+  const QUOTA = 100 * 1024 * 1024;
+  const MAX_ROW = 10 * 1024 * 1024; // the largest size_bytes a version row takes
+
+  it("W15-3 quota: Free holds 100 MB of files in all, archived documents included; up to the line passes, past it is refused; Pro has no total", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await workspace("free-files@example.com", "real");
+    const id = await uploadDocument(ctx, { title: "Lease", kind: "agreement" }, PDF);
+    // Earlier versions bring the total to one PDF short of the line: nine at the row maximum, and the rest.
+    await db.root((tx) =>
+      tx.query(
+        "insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin) select $1, g, $2, $5 || g || '.pdf', 'application/pdf', case when g < 11 then $3::int else $4::int end, repeat('a', 64), 'upload' from generate_series(2, 11) g",
+        [id, ctx.orgId, MAX_ROW, QUOTA - 9 * MAX_ROW - 2 * PDF.length, `${ctx.orgId}/${id}/v`],
+      ),
+    );
+    // Exactly at the line: stored.
+    expect((await uploadVersion(ctx, id, PDF)).version).toBe(12);
+    // One more PDF goes past it: refused, nothing stored.
+    await expect(uploadVersion(ctx, id, PDF)).rejects.toThrow(new PlanLimit(FILES_FULL));
+    expect(FILES_FULL).toBe("The Free plan holds 100 MB of files, and this would go past it. Archived files still count.");
+    expect((await getDocument(ctx, id))?.versions).toHaveLength(12);
+    // Archiving makes no room: its versions still count.
+    await setArchived(ctx, id, true);
+    await expect(uploadDocument(ctx, { title: "COI", kind: "coi" }, PDF)).rejects.toThrow(new PlanLimit(FILES_FULL));
+    // Pro: no total.
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_W15files', 'active', 'pro')", [ctx.orgId]));
+    await uploadDocument(ctx, { title: "COI", kind: "coi" }, PDF);
+    vi.unstubAllEnvs();
+  });
+
+  it("W15-3 upload limit: past 60 uploads in an hour, a new document and a new version are refused; someone else goes on", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await workspace("upload-busy@example.com", "real");
+    const id = await uploadDocument(ctx, { title: "Lease", kind: "agreement" }, PDF);
+    await fillBucket(db, "upload", ctx.userId, 60, 3600);
+    await expect(uploadDocument(ctx, { title: "COI", kind: "coi" }, PDF)).rejects.toThrow(new UserError(UPLOAD_BUSY));
+    await expect(uploadVersion(ctx, id, PDF)).rejects.toThrow(new UserError(UPLOAD_BUSY));
+    expect(UPLOAD_BUSY).toBe("That's the hourly limit for uploads. Nothing was added; try again in an hour.");
+    expect(await listDocuments(ctx)).toHaveLength(1);
+    expect((await getDocument(ctx, id))?.versions).toHaveLength(1);
+    const next = await workspace("upload-next@example.com", "real");
+    await uploadDocument(next, { title: "COI", kind: "coi" }, PDF);
+    vi.unstubAllEnvs();
   });
 });
 
@@ -626,7 +733,12 @@ describe("plan-limit messages", () => {
     // Signing is a fact about the plan, not an offer: the same words either way.
     expect(planLimit(owner, "esign").message).toBe("Asking for signatures is part of Pro.");
     expect(planLimit(owner, "esign").fix).toBeNull();
+    // Free can't delete, so its file total offers Pro or nothing (Design, W15-3).
+    expect(planLimit(owner, "files").message).toBe(`${FILES_FULL} Pro has no total file limit.`);
+    expect(planLimit({ role: "admin", demo: false }, "files").message).toBe(FILES_FULL);
+    expect(planLimit(owner, "files").fix).toBeNull();
     vi.unstubAllEnvs();
+    expect(planLimit(owner, "files").message).toBe(FILES_FULL);
   });
 });
 
@@ -661,6 +773,23 @@ describe("business facts", () => {
     await expect(saveEin(real, "12-345")).rejects.toThrow("Enter the EIN as 9 digits, like 12-3456789.");
     expect(await refusal(saveProfile(real, { ...facts, legal_name: "x".repeat(121) }))).toEqual({ field: "legal_name", message: "Shorten this to 120 characters or fewer." });
     expect(await refusal(saveProfile(real, { ...facts, entity_type: "spaceship" }))).toEqual({ field: "entity_type", message: "Choose a business type from the list." });
+    vi.unstubAllEnvs();
+  });
+
+  it("W15-11: a member's post to save facts or the EIN gets a message, not a database error, and changes nothing", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await workspace("facts-owner@example.com", "real");
+    const memberId = await db.user("facts-member@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, memberId]));
+    const member: Ctx = { ...ctx, userId: memberId, role: "member" };
+    const owners = new GateClosed("Only owners and admins of this workspace can change its business facts.");
+    const facts = (await factsForFill(ctx)).values;
+    await expect(saveProfile(member, { ...facts, legal_name: "Member Co" })).rejects.toThrow(owners);
+    await expect(saveProfile(member, { ...facts, legal_name: "Member Co" })).rejects.toBeInstanceOf(GateClosed);
+    await expect(saveEin(member, "12-3456789")).rejects.toThrow(owners);
+    await expect(saveEin(member, "12-3456789")).rejects.toBeInstanceOf(GateClosed);
+    expect((await factsForFill(ctx)).values.legal_name).toBe(facts.legal_name);
+    expect((await factsForFill(ctx)).ein).toBeNull();
     vi.unstubAllEnvs();
   });
 });

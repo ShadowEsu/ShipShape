@@ -18,12 +18,14 @@ import SettingsPage from "@/app/app/settings/page";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
 import { setArchived } from "@/lib/server/documents";
+import { LINKS_BUSY, VENDORS_BUSY } from "@/lib/server/limits";
 import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, newSessionId, RECENT_AUTH_SECONDS, requireWorkspace, startSession, type SignedIn } from "@/lib/server/session";
 import { fmtDay, plusDays, todayIn } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { fillBucket } from "./support/rate";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
 /** What the sharing pages (Passport, Collect, Deadlines, Settings) show in each state, and the one thing each asks of you. */
@@ -731,6 +733,18 @@ describe("form errors name the field to fix", () => {
     expect(await addVendorAction({}, form({ name: "Rivera Electric", email: "ap at rivera", kind: "w9" }))).toEqual({
       fieldErrors: { email: "That email address doesn't look right. Check it, or leave the field empty." },
       values: { name: "Rivera Electric", email: "ap at rivera", kinds: ["w9"] },
+    });
+  });
+
+  it("W15-2: past the hourly limits, a new link or vendor is refused above the button, and what was typed comes back", async () => {
+    const ctx = await signIn("form-busy@example.com");
+    const doc = await addDoc(ctx, "Liability certificate");
+    await fillBucket(db, "links", ctx.userId, 30, 3600);
+    expect(await makePassport({}, form({ label: "Northwind", days: "30", doc }))).toEqual({ error: LINKS_BUSY, values: { label: "Northwind", days: "30", docs: [doc] } });
+    await fillBucket(db, "vendors", ctx.userId, 30, 3600);
+    expect(await addVendorAction({}, form({ name: "Rivera Electric", email: "ap@rivera.example", kind: "w9" }))).toEqual({
+      error: VENDORS_BUSY,
+      values: { name: "Rivera Electric", email: "ap@rivera.example", kinds: ["w9"] },
     });
   });
 

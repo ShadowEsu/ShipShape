@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { COLLECT_COOKIE, receiveFile } from "@/lib/server/collect";
-import { clientIp, fail, rateLimited, sameOrigin } from "@/lib/server/http";
+import { clientIp, fail, linkRateLimited, sameOrigin } from "@/lib/server/http";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const back = (outcome: string) =>
     new Response(null, { status: 303, headers: { Location: `/c/${id}?r=${outcome}&k=${encodeURIComponent(k)}`, "Cache-Control": "no-store" } });
   // A plain form post: the rate limit is an outcome on the page too, never a JSON answer in the vendor's browser.
-  if (await rateLimited("collect-upload", clientIp(req.headers), 30, 600)) return back("busy");
+  if (await linkRateLimited("collect-upload", clientIp(req.headers), id, 30, 600)) return back("busy");
   // Browsers always send the length of a form post; without it the body size is unknown, so no.
   const length = Number(req.headers.get("content-length") ?? NaN);
   if (!(length > 0 && length <= MAX_BODY_BYTES)) return back("too_big");

@@ -127,9 +127,9 @@ describe("export", () => {
 
     // One request waiting with a code sent (so it has a code hash), and one signed.
     const [nda] = await db.root((tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1 and kind = 'nda' limit 1", [ctx.orgId]));
-    const pending = await requestSignature(ctx, { documentId: nda.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    const pending = await requestSignature(ctx, { documentId: nda.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
     expect(await sendSigningCode(pending.id, pending.token)).toBe("ok");
-    const signed = await requestSignature(ctx, { documentId: nda.id, signerName: "Sam Rivera", signerEmail: "sam@northwind.example", days: 7 });
+    const signed = await requestSignature(ctx, { documentId: nda.id, signerName: "Sam Rivera", signerEmail: "sam@northwind.example", days: 7 }, "192.0.2.10");
     expect(await sendSigningCode(signed.id, signed.token)).toBe("ok");
     const [mail] = await db.root((tx) => tx.query<{ body: string }>("select body from app.outbox where org_id = $1 order by created_at desc limit 1", [ctx.orgId]));
     const code = /\b(\d{6})\b/.exec(mail.body)?.[1] ?? "";
@@ -322,7 +322,7 @@ describe("account deletion", () => {
     const me = await sampleWorkspace();
     const docs = await asUser(me.userId, (tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1", [me.orgId]));
     const passport = await createPassport(me, { label: "Northwind", days: 7, documentIds: [docs[0].id] });
-    await requestSignature(me, { documentId: docs[0].id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    await requestSignature(me, { documentId: docs[0].id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
     expect(await openPassport(passport.id, passport.token, "198.51.100.9")).not.toBeNull();
     const paths = await db.root((tx) => tx.query<{ storage_path: string }>("select storage_path from app.document_versions where org_id = $1", [me.orgId]));
     expect(paths.length).toBeGreaterThan(0);

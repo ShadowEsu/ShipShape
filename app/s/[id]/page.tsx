@@ -6,7 +6,7 @@ import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { ESIGN_CONSENT_TEXT } from "@/lib/consent";
 import { openSigning, SIGN_COOKIE } from "@/lib/server/esign";
 import { contactEmail } from "@/lib/server/flags";
-import { clientIp, rateLimited } from "@/lib/server/http";
+import { clientIp, linkRateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
 import { viewerZone } from "@/lib/server/session";
 import { dayOf, timeOf } from "@/lib/today";
@@ -20,7 +20,7 @@ export default async function SigningPage({ params, searchParams }: { params: Pr
   const zone = await viewerZone();
   const token = (await cookies()).get(SIGN_COOKIE)?.value;
   // Same view limit as passport and upload pages (Security F8).
-  const busy = token ? await rateLimited("sign-view", clientIp(await headers()), 60, 600) : false;
+  const busy = token ? await linkRateLimited("sign-view", clientIp(await headers()), id, 60, 600) : false;
   const view = token && !busy ? await openSigning(id, token) : null;
   const end = token && !busy && !view ? await linkEnd("s", id, token) : null;
 

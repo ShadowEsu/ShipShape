@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect, RedirectType } from "next/navigation";
 import { z } from "zod";
 import { DOCUMENT_GONE, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
@@ -8,6 +9,7 @@ import { PlanLimit, UserError } from "@/lib/server/errors";
 import { requestSignature, revokeSignatureRequest } from "@/lib/server/esign";
 import { UploadRefused } from "@/lib/server/files";
 import { GateClosed } from "@/lib/server/flags";
+import { clientIp } from "@/lib/server/http";
 import { requireWorkspace } from "@/lib/server/session";
 import { versionAdded } from "./messages";
 
@@ -153,12 +155,11 @@ export async function askToSign(_prev: SignFormState, data: FormData): Promise<S
   let id: string;
   try {
     id = documentId(data);
-    const created = await requestSignature(ctx, {
-      documentId: id,
-      signerName: data.get("signer_name"),
-      signerEmail: data.get("signer_email"),
-      days: data.get("days"),
-    });
+    const created = await requestSignature(
+      ctx,
+      { documentId: id, signerName: data.get("signer_name"), signerEmail: data.get("signer_email"), days: data.get("days") },
+      clientIp(await headers()),
+    );
     revalidatePath(`/app/documents/${id}`);
     return { created };
   } catch (e) {
