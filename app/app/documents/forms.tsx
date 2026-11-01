@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { addDocument, addVersion, askToSign, saveDetails, type FormState, type SignFormState } from "./actions";
@@ -30,9 +31,14 @@ export interface DetailValues {
 function Status({ state, savedText }: { state: FormState; savedText: string }) {
   if (state.error && !state.field)
     return (
-      <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
-        {state.error}
-      </p>
+      <div role="alert" className="space-y-2 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+        <p>{state.error}</p>
+        {state.fix && (
+          <Link href={state.fix.href} className="underline">
+            {state.fix.label}
+          </Link>
+        )}
+      </div>
     );
   if (state.saved)
     return (

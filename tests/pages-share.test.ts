@@ -554,14 +554,22 @@ describe("form errors name the field to fix", () => {
     });
   });
 
-  it("a second passport link on Free: the limit, and the one fix (turn the open link off)", async () => {
+  it("a second passport link on Free: the limit, and the one fix (turn the open link off); 'move to Pro' only while payments are on", async () => {
     const ctx = await signIn("form-passport-limit@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
     const made = await makePassport({}, form({ label: "First", days: "30", doc }));
     expect(made.created).toMatchObject({ label: "First", documents: 1, days: 30 });
+    // Payments off (no Stripe config in tests): nobody can move to Pro, so the message doesn't offer it.
     const refused = await makePassport({}, form({ label: "Second", days: "30", doc }));
-    expect(refused.error).toBe("The Free plan has 1 passport link open at a time. Turn one off, or move to Pro for more.");
+    expect(refused.error).toBe("The Free plan has 1 passport link open at a time. Turn one off to make room.");
     expect(refused.fix).toEqual({ href: `/app/passport/${made.created?.id}`, label: "Turn off your open link" });
+    // Payments on: the Pro half comes back.
+    vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "http://127.0.0.1:3917");
+    const paid = await makePassport({}, form({ label: "Second", days: "30", doc }));
+    expect(paid.error).toBe("The Free plan has 1 passport link open at a time. Turn one off, or move to Pro for more.");
   });
 
   it("a new vendor: a mistyped email goes to the email field", async () => {

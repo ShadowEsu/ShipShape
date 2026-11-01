@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { checkFill, fillTemplate } from "@/lib/server/documents";
-import { UserError } from "@/lib/server/errors";
+import { PlanLimit, UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import { formValues } from "@/lib/server/fill";
 import { requireWorkspace } from "@/lib/server/session";
@@ -12,6 +12,8 @@ import type { TemplateInfo } from "@/lib/templates/types";
 export interface FillState {
   errors?: Record<string, string>;
   error?: string;
+  /** With a plan-limit message: the one page where room can be made. */
+  fix?: { href: string; label: string };
   /** Every value passed its checks: the form shows them, with their sources, for the person to approve. */
   review?: boolean;
   /** The step (0-based) to show: the next one after a step passed its checks, or the first one with an error. */
@@ -56,7 +58,10 @@ export async function fill(_prev: FillState, data: FormData): Promise<FillState>
   } catch (e) {
     // A message, not a field problem (the plan's limit, a closed gate): the view stays where the person was,
     // the review for an approval, the step for a check, with the message above it.
-    if (e instanceof GateClosed || e instanceof UserError) return step === "next" || step === "review" ? { error: e.message, at } : { error: e.message, review: true };
+    if (e instanceof GateClosed || e instanceof UserError) {
+      const fix = e instanceof PlanLimit && e.fix ? { fix: e.fix } : {};
+      return step === "next" || step === "review" ? { error: e.message, ...fix, at } : { error: e.message, ...fix, review: true };
+    }
     throw e;
   }
   redirect(`/app/documents/${id}?made=1`);

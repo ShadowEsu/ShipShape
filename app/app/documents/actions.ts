@@ -12,6 +12,8 @@ import { requireWorkspace } from "@/lib/server/session";
 
 export interface FormState {
   error?: string;
+  /** With a plan-limit message: the one page where room can be made. */
+  fix?: { href: string; label: string };
   /** The field the error is about (its input's name): the form shows the message there and moves focus to it. */
   field?: string;
   saved?: boolean;
@@ -19,8 +21,9 @@ export interface FormState {
   values?: DetailInput;
 }
 
-function problem(e: unknown): Pick<FormState, "error" | "field"> {
+function problem(e: unknown): Pick<FormState, "error" | "field" | "fix"> {
   if (e instanceof UploadRefused) return { error: e.message, field: "file" };
+  if (e instanceof PlanLimit) return e.fix ? { error: e.message, fix: e.fix } : { error: e.message };
   if (e instanceof GateClosed || e instanceof UserError) return { error: e.message };
   if (e instanceof z.ZodError) {
     const issue = e.issues[0];

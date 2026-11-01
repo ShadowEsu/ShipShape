@@ -341,8 +341,19 @@ describe("making a document", () => {
     );
     const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
     expect(await fill({}, form({ ...w9, step: "review" }))).toEqual({ review: true });
-    expect(await fill({}, form({ ...w9, ack: "on", at: "3" }))).toEqual({ error: expect.stringMatching(/^The Free plan holds 10 active documents\./), review: true });
-    // A check that can't run (real documents closed) keeps the step the person is on.
+    // Payments off (no Stripe config in tests): the message doesn't offer Pro; the one fix is a link to the documents list.
+    expect(await fill({}, form({ ...w9, ack: "on", at: "3" }))).toEqual({
+      error: "The Free plan holds 10 active documents.",
+      fix: { href: "/app/documents", label: "Archive one to make room" },
+      review: true,
+    });
+    // Payments on: the Pro half comes back.
+    vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "http://127.0.0.1:3917");
+    expect((await fill({}, form({ ...w9, ack: "on", at: "3" }))).error).toBe("The Free plan holds 10 active documents. Archive one, or move to Pro for no limit.");
+    // A check that can't run (real documents closed) keeps the step the person is on; a gate message has no fix link.
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
     expect(await fill({}, form({ ...w9, step: "next", at: "2" }))).toEqual({ error: expect.any(String), at: 2 });
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
