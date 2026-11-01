@@ -341,11 +341,16 @@ export const DAILY_RUN_BUDGET_MS = 50_000;
 /**
  * The daily run (Security CG-3): finishes every recorded deletion older than PENDING_AFTER, until
  * none are left or `until` (ms since epoch) passes; the rest wait for the next run. Each one that
- * fails stays recorded for the next run; only error names are logged.
+ * fails stays recorded, stamped with when it was tried, and the run takes the least recently tried
+ * first (never tried, then oldest attempt, then oldest request), so requests that keep failing
+ * rotate instead of holding up the ones behind them (W11-9). Only error names are logged.
  */
 export async function finishDeletions(until = Date.now() + DAILY_RUN_BUDGET_MS): Promise<{ finished: number; failed: number }> {
   const due = await asService((tx) =>
-    tx.query<{ user_id: string }>("select user_id from app.deletion_requests where requested_at < now() - $1::interval order by requested_at limit 100", [PENDING_AFTER]),
+    tx.query<{ user_id: string }>(
+      "select user_id from app.deletion_requests where requested_at < now() - $1::interval order by attempted_at nulls first, attempted_at, requested_at limit 100",
+      [PENDING_AFTER],
+    ),
   );
   let finished = 0;
   let tried = 0;
@@ -353,42 +358,62 @@ export async function finishDeletions(until = Date.now() + DAILY_RUN_BUDGET_MS):
     if (Date.now() >= until) break;
     tried++;
     try {
-      await finishDeletion(user_id, await cancelSubscriptionsBeforeDeletion(user_id));
+      await finishDeletion(user_id, await cancelSubscriptionsBeforeDeletion(user_id, until));
       finished++;
     } catch (e) {
       console.error(`account deletion: a recorded deletion didn't finish (${e instanceof Error ? e.name : "unknown"})`);
+      await asService((tx) => tx.query("update app.deletion_requests set attempted_at = now() where user_id = $1", [user_id]));
     }
   }
   return { finished, failed: tried - finished };
 }
 
-/** Sample visitors' sessions last 12 hours; their accounts go after this, with everything in them. */
-const SAMPLE_KEPT_FOR = "2 days";
+/**
+ * Sample visitors' sessions last 12 hours; their accounts go after this, with everything in them.
+ * One day, and the daily run takes what's older: a sample is gone one to two days after it was
+ * made, inside /privacy's "within two days" (W11-8).
+ */
+const SAMPLE_KEPT_FOR = "1 day";
 const SAMPLE_BATCH = 50;
 
 /**
  * The daily run: deletes sample-workspace visitors' accounts older than SAMPLE_KEPT_FOR, oldest
- * first, up to SAMPLE_BATCH a run or until `until` passes, with the same steps as a recorded
- * deletion. Sample workspaces are never billed, so the database refusing over billing counts as a
- * failure and isn't retried; one already gone counts as purged. Only counts and error names are logged.
+ * first, batch after batch until none are left or `until` passes (W11-2: one batch a day fell behind
+ * what sample sign-ins allow), with the same steps as a recorded deletion. Every batch takes only
+ * anonymous accounts that belong to no workspace but samples (is_demo), so a real workspace is
+ * never deleted here. Sample workspaces are never billed, so the database refusing over billing
+ * counts as a failure and isn't retried in this run; one already gone counts as purged. Only counts
+ * and error names are logged.
  */
 export async function purgeSampleAccounts(until = Date.now() + DAILY_RUN_BUDGET_MS): Promise<{ purged: number; failed: number }> {
-  const due = await asService((tx) =>
-    tx.query<{ id: string }>("select id from auth.users where is_anonymous and created_at < now() - $1::interval order by created_at limit $2", [SAMPLE_KEPT_FOR, SAMPLE_BATCH]),
-  );
   let purged = 0;
   let tried = 0;
-  for (const { id } of due) {
-    if (Date.now() >= until) break;
-    tried++;
-    try {
-      // A sample visitor has no Cognito identity, so this finds none and calls nothing.
-      await deleteSignIn(id);
-      await removeAfterDeletion(await deleteRows(id, []));
-      purged++;
-    } catch (e) {
-      console.error(`sample purge: a sample account wasn't deleted (${e instanceof Error ? e.name : "unknown"})`);
+  const failed: string[] = [];
+  while (Date.now() < until) {
+    const due = await asService((tx) =>
+      tx.query<{ id: string }>(
+        `select u.id from auth.users u
+         where u.is_anonymous and u.created_at < now() - $1::interval and u.id <> all($2::uuid[])
+           and not exists (select 1 from app.members m join app.organizations o on o.id = m.org_id where m.user_id = u.id and not o.is_demo)
+         order by u.created_at limit $3`,
+        [SAMPLE_KEPT_FOR, failed, SAMPLE_BATCH],
+      ),
+    );
+    if (due.length === 0) break;
+    for (const { id } of due) {
+      if (Date.now() >= until) break;
+      tried++;
+      try {
+        // A sample visitor has no Cognito identity, so this finds none and calls nothing.
+        await deleteSignIn(id);
+        await removeAfterDeletion(await deleteRows(id, []));
+        purged++;
+      } catch (e) {
+        failed.push(id);
+        console.error(`sample purge: a sample account wasn't deleted (${e instanceof Error ? e.name : "unknown"})`);
+      }
     }
+    if (due.length < SAMPLE_BATCH) break;
   }
   return { purged, failed: tried - purged };
 }
@@ -441,16 +466,16 @@ const CLEANUP_BATCH = 1000;
 
 /**
  * The daily run: removes stored files an account deletion couldn't remove (Security N-091a), in
- * batches of 1,000 until none are left or `until` passes. Returns how many. A batch storage
- * refuses (one key under a policy or lock) goes to the back of the queue so the paths behind it
- * still get their turn (review #16); the run then still throws, so it reports the failure (error
- * name only).
+ * batches of 1,000 until none are left or `until` passes; past `until` it doesn't start a batch at
+ * all (W11-16). Returns how many. A batch storage refuses (one key under a policy or lock) goes to
+ * the back of the queue so the paths behind it still get their turn (review #16); the run then
+ * still throws, so it reports the failure (error name only).
  */
 export async function retryStorageCleanup(until = Date.now() + DAILY_RUN_BUDGET_MS): Promise<number> {
   const started = new Date();
   let removed = 0;
   let refused: unknown = null;
-  for (;;) {
+  while (Date.now() < until) {
     const queued = await asService((tx) =>
       tx.query<{ path: string }>("select path from app.storage_cleanup where queued_at < $2 order by queued_at, path limit $1", [CLEANUP_BATCH, started]),
     );
@@ -464,7 +489,47 @@ export async function retryStorageCleanup(until = Date.now() + DAILY_RUN_BUDGET_
       console.error(`stored-file cleanup: a batch of ${paths.length} wasn't removed (${e instanceof Error ? e.name : "unknown"}); it goes to the back of the queue`);
       refused = e;
     }
-    if (paths.length < CLEANUP_BATCH || Date.now() >= until) break;
+    if (paths.length < CLEANUP_BATCH) break;
+  }
+  if (refused) throw refused;
+  return removed;
+}
+
+const SWEEP_BATCH = 100;
+
+/**
+ * The daily run (W11-7): removes whatever is still stored under each deleted workspace's
+ * `<org id>/` prefix, queued by delete_my_account (0040) — objects whose row was never written.
+ * Each prefix is checked again before anything is listed (removePrefix), and a prefix whose
+ * workspace still exists is never swept. A prefix storage refuses goes to the back of the queue
+ * and the run throws at the end, like retryStorageCleanup. Returns how many objects were removed.
+ */
+export async function sweepDeletedWorkspaces(until = Date.now() + DAILY_RUN_BUDGET_MS): Promise<number> {
+  const started = new Date();
+  let removed = 0;
+  let refused: unknown = null;
+  while (Date.now() < until) {
+    const queued = await asService((tx) =>
+      tx.query<{ prefix: string }>(
+        `select p.prefix from app.storage_prefix_cleanup p
+         where p.queued_at < $2 and not exists (select 1 from app.organizations o where o.id::text || '/' = p.prefix)
+         order by p.queued_at, p.prefix limit $1`,
+        [SWEEP_BATCH, started],
+      ),
+    );
+    if (!queued.length) break;
+    for (const { prefix } of queued) {
+      if (Date.now() >= until) break;
+      try {
+        removed += await blobStore().removePrefix(prefix);
+        await asService((tx) => tx.query("delete from app.storage_prefix_cleanup where prefix = $1", [prefix]));
+      } catch (e) {
+        await asService((tx) => tx.query("update app.storage_prefix_cleanup set queued_at = now() where prefix = $1", [prefix]));
+        console.error(`workspace sweep: a deleted workspace's files weren't removed (${e instanceof Error ? e.name : "unknown"}); it goes to the back of the queue`);
+        refused = e;
+      }
+    }
+    if (queued.length < SWEEP_BATCH) break;
   }
   if (refused) throw refused;
   return removed;

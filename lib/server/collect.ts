@@ -8,7 +8,7 @@ import { newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser, type Tx } from "./db";
 import { CalendarDate, DOC_KINDS, type DocKind } from "./documents";
 import { UserError } from "./errors";
-import { EXTENSION, sniffMime, type AllowedMime } from "./files";
+import { activePdf, EXTENSION, sniffMime, type AllowedMime } from "./files";
 import { collectOpen, GateClosed } from "./flags";
 import type { Ctx } from "./profile";
 import { blobStore } from "./storage";
@@ -293,7 +293,7 @@ export async function openCollect(id: string, token: string): Promise<PublicColl
 }
 
 /** Why an upload didn't go through; the page turns each into a sentence. */
-export type ReceiveOutcome = "sent" | "closed" | "gate" | "kind" | "date" | "empty" | "too_big" | "type" | "link_full" | "workspace_full";
+export type ReceiveOutcome = "sent" | "closed" | "gate" | "kind" | "date" | "empty" | "too_big" | "type" | "active" | "link_full" | "workspace_full";
 
 const ExpiresOn = z.union([z.literal(""), CalendarDate]).transform((s) => s || null);
 
@@ -337,6 +337,8 @@ export async function receiveFile(
       if (input.file.bytes.length > MAX_UPLOAD_BYTES) return "too_big";
       const mime = sniffMime(input.file.bytes);
       if (!mime) return "type";
+      // The same refusal an owner's upload gets (files.ts checkUpload): a vendor's link is the one path an outsider sends files in by (W11-1).
+      if (mime === "application/pdf" && activePdf(input.file.bytes)) return "active";
       file = { name: cleanFilename(input.file.name, mime), bytes: input.file.bytes, mime };
     }
     return storeVendorFile(tx, id, hash, rows[0].org_id, kind, expires.data, file, rows[0].is_demo);

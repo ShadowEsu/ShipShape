@@ -241,9 +241,10 @@ Cost per day if it's left up (us-east-1 on-demand, from aws-plan's cost table pl
 | Trust: exactly the provider, `aud` and the production `sub`, with `StringEquals` only | S3-1; probe PR-3 | `AppRole.AssumeRolePolicyDocument`: one statement, `Federated: <provider ARN>`, `sts:AssumeRoleWithWebIdentity`, `StringEquals` on `oidc.vercel.com/<team>:aud` and `:sub`. It's a `!Sub` JSON string because the condition keys contain the team |
 | A preview token is refused | S3-1; probe "STS refuses a preview" | The `sub` holds `environment:production` only, enforced by the `ProductionSub` pattern. Only real STS can prove it, at M6 |
 | S3 Put/Get/DeleteObject on `<bucket>/*` | IAM drafts `Files`; probe PR-2 | `AppRole.Policies[app]`, Sid `Files` |
+| `s3:ListBucket` on the bucket, only under one workspace's `<org id>/` prefix (the daily sweep of a deleted workspace's files, W11-7) | aws-plan TO-1; probe PR-2 | Sid `SweepDeletedWorkspace`, `Condition: StringLike s3:prefix "????????-????-????-????-????????????/"`. The app checks the exact id shape before it lists (`assertWorkspacePrefix`) |
 | `kms:GenerateDataKey` and `kms:Decrypt` on the one key | IAM drafts `FileKey`; probe PR-2 | Sid `FileKey`, `Resource: FileKeyArn` |
 | `cognito-idp:AdminDeleteUser` on the one pool | IAM drafts `DeleteAccounts`; probe PR-2 | Sid `DeleteAccounts`, `Resource: UserPoolArn` |
-| Nothing more: no conditions, no wildcards, no `ListBucket`, no managed policies, no permissions boundary | probe PR-2, P-b0a; aws-plan TO-1 | `AppRole` has one inline policy and no `ManagedPolicyArns` or `PermissionsBoundary` |
+| Nothing more: no other conditions, no wildcards, no managed policies, no permissions boundary | probe PR-2, P-b0a | `AppRole` has one inline policy and no `ManagedPolicyArns` or `PermissionsBoundary` |
 | No long-lived access keys | aws-plan Credentials | No `AWS::IAM::User` or `AccessKey` anywhere |
 | Pool: email sign-in, email required and auto-verified | Security 0541 M6 list; probe Cognito pool | `signin.yaml` `UserPool.UsernameAttributes: [email]`, `Schema` email `Required: true`, `AutoVerifiedAttributes: [email]` |
 | MFA required, TOTP only | same | `UserPool.MfaConfiguration: "ON"`, `EnabledMfas: [SOFTWARE_TOKEN_MFA]` |

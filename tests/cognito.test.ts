@@ -436,6 +436,41 @@ describe("deleting the account", () => {
     vi.mocked(console.error).mockRestore();
   });
 
+  it("requests that keep failing rotate: one that failed yesterday is tried before 101 older ones that failed an hour ago, and each failure is stamped (W11-9)", async () => {
+    for (const [key, value] of Object.entries(ENV)) vi.stubEnv(key, value);
+    const stuck = new Set<string>();
+    const stuckIds: string[] = [];
+    for (let i = 0; i < 101; i++) {
+      const sub = randomUUID();
+      stuck.add(sub);
+      stuckIds.push((await signInWith({ sub }).result).userId);
+    }
+    const once = await cognitoOwner();
+    setSignInAdminForTests({
+      deleteUser: async (sub) => {
+        if (stuck.has(sub)) throw new Error("Cognito refused");
+      },
+    });
+    await db.root((tx) =>
+      tx.query("insert into app.deletion_requests (user_id, requested_at, attempted_at) select unnest($1::uuid[]), now() - interval '3 days', now() - interval '1 hour'", [stuckIds]),
+    );
+    await db.root((tx) =>
+      tx.query("insert into app.deletion_requests (user_id, requested_at, attempted_at) values ($1, now() - interval '2 days', now() - interval '1 day')", [once.userId]),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await finishDeletions()).toEqual({ finished: 1, failed: 99 });
+    expect(await exists(once.userId)).toBe(false);
+    const [stamps] = await db.root((tx) =>
+      tx.query<{ now: number; hour: number }>(
+        "select count(*) filter (where attempted_at > now() - interval '1 minute')::int as now, count(*) filter (where attempted_at < now() - interval '59 minutes')::int as hour from app.deletion_requests where user_id = any($1::uuid[])",
+        [stuckIds],
+      ),
+    );
+    expect(stamps).toEqual({ now: 99, hour: 2 });
+    vi.mocked(console.error).mockRestore();
+    await db.root((tx) => tx.query("delete from app.deletion_requests where user_id = any($1::uuid[])", [stuckIds]));
+  });
+
   describe("through the AWS SDK", () => {
     /** A real Cognito client whose requests are answered here, never sent. */
     function offline(answer: () => never | undefined) {

@@ -4,7 +4,7 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { deleteAccount, deletionPreview, EXPORT_MAX_BYTES, exportWorkspace, finishDeletions, purgeSampleAccounts, retryStorageCleanup } from "@/lib/server/account";
+import { deleteAccount, deletionPreview, EXPORT_MAX_BYTES, exportWorkspace, finishDeletions, purgeSampleAccounts, retryStorageCleanup, sweepDeletedWorkspaces } from "@/lib/server/account";
 import { TERMS_VERSION } from "@/lib/legal";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
@@ -29,6 +29,13 @@ async function sampleWorkspace(): Promise<Ctx> {
   const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
   await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
   return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner", today: isoToday() };
+}
+
+/** A signed-up person (an email, no Cognito identity here) who just signed in, alone in their own real workspace. */
+async function realOwner(email: string): Promise<Ctx> {
+  const userId = await db.user(email);
+  const [org] = await asUser(userId, (tx) => tx.query<{ id: string }>("select app.create_workspace('Real Co') as id"));
+  return { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Real Co", role: "owner", today: isoToday() };
 }
 
 const count = async (table: string, orgId: string) =>
@@ -460,25 +467,69 @@ describe("account deletion", () => {
     await db.root((tx) => tx.query("delete from app.storage_cleanup where path like $1", [`${org}/%`]));
   });
 
-  it("stops at the daily run's deadline: one batch of files, no further deletions, and nothing is lost (review #15)", async () => {
-    await retryStorageCleanup(); // whatever earlier tests left behind, so the batch below is this test's own
+  it("stops at the daily run's deadline: no batch of files starts past it, no further deletions, and nothing is lost (review #15, W11-16)", async () => {
+    await retryStorageCleanup(); // whatever earlier tests left behind, so the queue below is this test's own
     const org = crypto.randomUUID();
     await db.root((tx) => tx.query("insert into app.storage_cleanup (path) select $1 || '/' || gen_random_uuid() || '/v1.pdf' from generate_series(1, 1500)", [org]));
     const past = Date.now() - 1;
-    expect(await retryStorageCleanup(past)).toBe(1000);
-    expect(await queued(org)).toHaveLength(500);
+    expect(await retryStorageCleanup(past)).toBe(0);
+    expect(await queued(org)).toHaveLength(1500);
     const old = await sampleWorkspace();
     await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '3 days' where id = $1", [old.userId]));
     expect(await purgeSampleAccounts(past)).toEqual({ purged: 0, failed: 0 });
     expect(await finishDeletions(past)).toEqual({ finished: 0, failed: 0 });
     expect(await count("documents", old.orgId)).toBeGreaterThan(0);
-    expect(await retryStorageCleanup()).toBeGreaterThanOrEqual(500);
+    expect(await retryStorageCleanup()).toBeGreaterThanOrEqual(1500);
+    expect(await queued(org)).toEqual([]);
     expect(await purgeSampleAccounts()).toEqual({ purged: 1, failed: 0 }); // the deferred one goes on the next run
+  });
+
+  it("removes the person's own waitlist row, matched as the waitlist stores it; nobody else's, and a sample's deletion removes none (W11-15)", async () => {
+    const me = await realOwner("Pat.Doe@Example.com");
+    await db.root((tx) => tx.query("insert into app.waitlist (email) values ('pat.doe@example.com'), ('someone-else@example.com'), ('')"));
+    await deleteAccount(me);
+    const left = async () => (await db.root((tx) => tx.query<{ email: string }>("select email from app.waitlist order by email"))).map((r) => r.email);
+    expect(await left()).toEqual(["", "someone-else@example.com"]);
+    await deleteAccount(await sampleWorkspace()); // no sign-in email: matches no row, not even an empty one
+    expect(await left()).toEqual(["", "someone-else@example.com"]);
+    await db.root((tx) => tx.query("delete from app.waitlist"));
+  });
+
+  it("the daily run removes what a deleted workspace left stored with no row, and nothing of a workspace still there (W11-7)", async () => {
+    const store = blobStore();
+    const stray = (orgId: string) => `${orgId}/${crypto.randomUUID()}/v1.pdf`;
+    const me = await realOwner("sweep-me@example.com");
+    const other = await realOwner("sweep-other@example.com");
+    // A workspace I co-own with someone else stays when I go; so does another person's own.
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'owner')", [other.orgId, me.userId]));
+    const [mine, theirs] = [stray(me.orgId), stray(other.orgId)];
+    await store.put(mine, new TextEncoder().encode("%PDF-1.7 no row"), "application/pdf");
+    await store.put(theirs, new TextEncoder().encode("%PDF-1.7 no row"), "application/pdf");
+    // A queued prefix whose workspace still exists is never swept.
+    await db.root((tx) => tx.query("insert into app.storage_prefix_cleanup (prefix) values ($1)", [`${other.orgId}/`]));
+
+    await deleteAccount(me);
+    expect(existsSync(path.join(blobDir, mine))).toBe(true); // no row pointed at it, so the deletion itself didn't see it
+    expect(await sweepDeletedWorkspaces()).toBe(1);
+    expect(existsSync(path.join(blobDir, mine))).toBe(false);
+    expect(existsSync(path.join(blobDir, theirs))).toBe(true);
+    const prefixes = async () => (await db.root((tx) => tx.query<{ prefix: string }>("select prefix from app.storage_prefix_cleanup"))).map((r) => r.prefix);
+    expect(await prefixes()).toEqual([`${other.orgId}/`]);
+    await db.root((tx) => tx.query("delete from app.storage_prefix_cleanup"));
+  });
+
+  it("queues only a workspace id and a slash: anything that could list more of the bucket is refused, in the database and again in the store (W11-7)", async () => {
+    const id = crypto.randomUUID();
+    for (const bad of ["", "/", `${id}`, `${id}//`, `${id}/x/`, `${id.slice(0, 35)}/`, `${id.toUpperCase()}/`, "../"]) {
+      await expect(db.root((tx) => tx.query("insert into app.storage_prefix_cleanup (prefix) values ($1)", [bad])), bad).rejects.toThrow(/check constraint/);
+      await expect(blobStore().removePrefix(bad), bad).rejects.toThrow("Invalid workspace prefix");
+    }
+    await expect(asUser(await db.user("prefix-reader@example.com"), (tx) => tx.query("select * from app.storage_prefix_cleanup"))).rejects.toThrow(/permission denied/);
   });
 });
 
 describe("sample account purge", () => {
-  it("deletes sample accounts after two days with their workspace and stored files, and leaves newer ones alone", async () => {
+  it("deletes sample accounts over a day old with their workspace and stored files, and leaves newer ones alone", async () => {
     const old = await sampleWorkspace();
     const fresh = await sampleWorkspace();
     await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '3 days' where id = $1", [old.userId]));
@@ -504,5 +555,46 @@ describe("sample account purge", () => {
     expect(await storedFiles(path.join(blobDir, fresh.orgId))).toBe(freshFiles);
 
     expect(await purgeSampleAccounts()).toEqual({ purged: 0, failed: 0 });
+  });
+
+  it("a sample goes after one day, so it's gone within two of being made (W11-8); 120 old samples go in one run, a real workspace and a fresh sample stay (W11-2)", async () => {
+    // Bare sample accounts (no seeded files): the loop, not the seeding, is under test.
+    const olds: string[] = [];
+    for (let i = 0; i < 120; i++) {
+      const userId = await createLocalUser(null, true);
+      await asService((tx) => tx.query("select app.create_sample_workspace($1, 'Sample')", [userId]));
+      olds.push(userId);
+    }
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '25 hours' where id = any($1::uuid[])", [olds]));
+    const fresh = await sampleWorkspace();
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '23 hours' where id = $1", [fresh.userId]));
+    const real = await db.user("stays@example.com");
+    const [org] = await asUser(real, (tx) => tx.query<{ id: string }>("select app.create_workspace('Stays Co') as id"));
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '30 days' where id = $1", [real]));
+    // An anonymous account in a real workspace is never the sample purge's to delete, however old.
+    const anonMember = await createLocalUser(null, true);
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'owner')", [org.id, anonMember]));
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '30 days' where id = $1", [anonMember]));
+
+    expect(await purgeSampleAccounts()).toEqual({ purged: 120, failed: 0 });
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = any($1::uuid[])", [olds]))).toEqual([]);
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [fresh.userId]))).toHaveLength(1);
+    expect(await db.root((tx) => tx.query("select 1 from app.organizations where id = $1", [org.id]))).toHaveLength(1);
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [anonMember]))).toHaveLength(1);
+    expect(await purgeSampleAccounts()).toEqual({ purged: 0, failed: 0 });
+  });
+
+  it("a sample the database refuses to delete doesn't stop the ones behind it, and isn't retried in the same run", async () => {
+    const stuck = await createLocalUser(null, true);
+    const [stuckOrg] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Stuck') as id", [stuck]));
+    // A billing row makes delete_my_account refuse (SS001): the sample purge never handles billing.
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_Stuck', 'active', 'pro')", [stuckOrg.id]));
+    const behind = await createLocalUser(null, true);
+    await asService((tx) => tx.query("select app.create_sample_workspace($1, 'Behind')", [behind]));
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '2 days' where id = $1", [stuck]));
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '1 day 1 hour' where id = $1", [behind]));
+    expect(await purgeSampleAccounts()).toEqual({ purged: 1, failed: 1 });
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [behind]))).toEqual([]);
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [stuck]))).toHaveLength(1);
   });
 });

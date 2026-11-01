@@ -187,6 +187,10 @@ describe("a vendor sending files", () => {
     big.set(PDF);
     expect(await send("w9", "", big)).toBe("too_big");
     expect(await send("w9", "", null)).toBe("empty");
+    // A PDF that launches programs or carries embedded files is refused here as it is on the owner's upload (W11-1).
+    const active = (name: string) => new TextEncoder().encode(`%PDF-1.4\n1 0 obj << /Type /Action /S /${name} >> endobj\n%%EOF`);
+    expect(await send("w9", "", active("Launch"))).toBe("active");
+    expect(await send("w9", "", new TextEncoder().encode("%PDF-1.4\n1 0 obj << /Type /Filespec /EF << /F 2 0 R >> /EmbeddedFile >> endobj\n%%EOF"))).toBe("active");
 
     expect((await getVendor(ctx, vendorId))?.files).toEqual([]);
     expect(await storedFiles()).toBe(before);

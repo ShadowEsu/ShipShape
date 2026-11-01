@@ -28,13 +28,14 @@ const PROBLEMS: Record<Problem, (org: string) => string> = {
   empty: () => "Choose a file to send.",
   too_big: () => "That file is over 4 MB. Send a smaller copy, such as a PDF scanned at a lower resolution.",
   type: () => "That file isn't a PDF, PNG or JPEG. Save it as one of those, then send it again.",
+  active: () => "That PDF launches other programs or carries embedded files, so nothing was sent. Print it to a new PDF, then send that.",
   link_full: (org) => `This link has taken all the files it can (25), so nothing was sent. Ask ${org} for a new link.`,
   workspace_full: (org) => `${org} has no room left for files, so nothing was sent. Let them know.`,
   busy: () => "Too many tries from this network, so nothing was sent. Wait 10 minutes, then send it again.",
 };
 
 /** Problems with one field of a document's form: the message goes under that field. */
-const FIELD: Partial<Record<Problem, "file" | "expires">> = { empty: "file", too_big: "file", type: "file", date: "expires" };
+const FIELD: Partial<Record<Problem, "file" | "expires">> = { empty: "file", too_big: "file", type: "file", active: "file", date: "expires" };
 
 const isProblem = (r: string): r is Problem => Object.hasOwn(PROBLEMS, r);
 

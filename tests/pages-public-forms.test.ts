@@ -190,6 +190,7 @@ describe("an upload link's answers (/c)", () => {
   it.each([
     ["empty", "file-coi", "Choose a file to send."],
     ["type", "file-coi", "That file isn't a PDF, PNG or JPEG. Save it as one of those, then send it again."],
+    ["active", "file-coi", "That PDF launches other programs or carries embedded files, so nothing was sent. Print it to a new PDF, then send that."],
     ["date", "expires-coi", "Enter the end date as a full date, or leave it empty."],
   ])("%s: the fix sits under that document's field, which is marked and takes focus; nothing at the top", async (r, id, sentence) => {
     const { id: linkId, token } = await realLink();

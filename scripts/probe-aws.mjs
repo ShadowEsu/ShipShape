@@ -366,8 +366,10 @@ await attempt("the app role trusts exactly this account's Vercel provider, its a
 });
 // Exactly these: one more is a wider grant; one fewer breaks the app where it matters least visibly (a missing
 // s3:DeleteObject or kms:Decrypt strands a deleted account's files, Security N-091a). And nothing that could
-// quietly take one away again: no permissions boundary, no condition on a grant (P-b0a).
-await attempt("the app role allows each action it needs, every one, unconditionally, on its one resource only: the bucket's objects, the key, the pool (no wildcards, no managed policies, no permissions boundary; PR-2)", async () => {
+// quietly take one away again: no permissions boundary, and no condition on a grant (P-b0a) except the one that
+// narrows s3:ListBucket to a single workspace's "<org id>/" prefix (the daily sweep, W11-7).
+const SWEEP_CONDITION = JSON.stringify({ StringLike: { "s3:prefix": "????????-????-????-????-????????????/" } });
+await attempt("the app role allows each action it needs, every one, on its one resource only: the bucket's objects, listing one workspace's prefix, the key, the pool (no wildcards, no managed policies, no permissions boundary; PR-2)", async () => {
   if (!poolArn) return [false, "no pool ARN to compare AdminDeleteUser with"];
   if (!roleRead) return [false, "couldn't read the role, so its permissions boundary is unknown"];
   const objects = `arn:aws:s3:::${bucket}/*`;
@@ -375,6 +377,7 @@ await attempt("the app role allows each action it needs, every one, unconditiona
     ["s3:PutObject", objects],
     ["s3:GetObject", objects],
     ["s3:DeleteObject", objects],
+    ["s3:ListBucket", `arn:aws:s3:::${bucket}`],
     ["kms:GenerateDataKey", env.PROBE_KMS_KEY_ARN],
     ["kms:Decrypt", env.PROBE_KMS_KEY_ARN],
     ["cognito-idp:AdminDeleteUser", poolArn],
@@ -389,7 +392,11 @@ await attempt("the app role allows each action it needs, every one, unconditiona
     for (const s of list(doc.Statement)) {
       if (s.Effect !== "Allow") problems.push(`${name}: ${s.Effect}`);
       if (s.NotAction || s.NotResource || s.NotPrincipal) problems.push(`${name}: NotAction/NotResource/NotPrincipal`);
-      if (Object.keys(s.Condition ?? {}).length) problems.push(`${name}: condition ${Object.keys(s.Condition).join(", ")}`);
+      // Only a statement granting s3:ListBucket alone carries a condition, and only the prefix one;
+      // s3:ListBucket anywhere else, or without it, is a wider grant.
+      const listing = list(s.Action).includes("s3:ListBucket");
+      if (listing && !(same(s.Action, ["s3:ListBucket"]) && JSON.stringify(s.Condition ?? {}) === SWEEP_CONDITION)) problems.push(`${name}: s3:ListBucket other than alone, under the one-workspace prefix condition`);
+      if (!listing && Object.keys(s.Condition ?? {}).length) problems.push(`${name}: condition ${Object.keys(s.Condition).join(", ")}`);
       const resources = list(s.Resource);
       if (!resources.length) problems.push(`${name}: no resource`);
       for (const a of list(s.Action)) {

@@ -50,22 +50,29 @@ export function setStripeForTests(port: StripePort | null) {
   testPort = port;
 }
 
-function stripePort(cfg: BillingConfig): StripePort {
+/**
+ * `until` (ms since epoch): the daily run's deadline. Each call it makes then waits at most what is
+ * left of the run (never over 15 s) with no retry, so a slow Stripe can't carry the run past the
+ * cron function's limit (W11-16); the deletion fails and waits for the next run.
+ */
+function stripePort(cfg: BillingConfig, until?: number): StripePort {
   if (testPort) return testPort;
   // Some calls run inside a database transaction whose idle timeout is 60 s (lib/server/db.ts): one
   // attempt and one retry of 15 s each, plus backoff, finish well before Postgres closes the session.
   const s = new Stripe(cfg.secretKey, { apiVersion: STRIPE_API_VERSION, maxNetworkRetries: 1, timeout: 15_000 });
+  const within = (): Stripe.RequestOptions => (until === undefined ? {} : { timeout: Math.min(15_000, Math.max(1, until - Date.now())), maxNetworkRetries: 0 });
   return {
     createCustomer: (params, idempotencyKey) => s.customers.create(params, { idempotencyKey }),
     createCheckout: (params) => s.checkout.sessions.create(params),
     createPortal: (params) => s.billingPortal.sessions.create(params),
     retrievePrice: (id) => s.prices.retrieve(id),
     retrieveSubscription: (id) => s.subscriptions.retrieve(id),
-    cancelSubscription: (id) => s.subscriptions.cancel(id),
-    listSubscriptions: async (customer) => (await s.subscriptions.list({ customer, status: "all", limit: 100 }).autoPagingToArray({ limit: 1000 })).map((x) => ({ id: x.id, status: x.status })),
+    cancelSubscription: (id) => s.subscriptions.cancel(id, {}, within()),
+    listSubscriptions: async (customer) =>
+      (await s.subscriptions.list({ customer, status: "all", limit: 100 }, within()).autoPagingToArray({ limit: 1000 })).map((x) => ({ id: x.id, status: x.status })),
     listOpenCheckouts: async (customer) =>
-      (await s.checkout.sessions.list({ customer, status: "open", limit: 100 }).autoPagingToArray({ limit: 1000 })).map((x) => ({ id: x.id, status: x.status ?? "unknown" })),
-    expireCheckout: (id) => s.checkout.sessions.expire(id),
+      (await s.checkout.sessions.list({ customer, status: "open", limit: 100 }, within()).autoPagingToArray({ limit: 1000 })).map((x) => ({ id: x.id, status: x.status ?? "unknown" })),
+    expireCheckout: (id) => s.checkout.sessions.expire(id, {}, within()),
     chargeOwner: async (id) => {
       // A charge names its payment intent; the invoice payment for that intent names the invoice, whose parent is the subscription.
       const charge = await s.charges.retrieve(id);
@@ -358,9 +365,10 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
  *
  * Returns the workspaces whose billing it handled. The deletion refuses any billed workspace outside
  * that list: another owner leaving at the same moment can make this person the sole owner after
- * this check ran (Security F5-r2).
+ * this check ran (Security F5-r2). `until`: the daily run's deadline, which bounds each Stripe call
+ * (stripePort); a person's own deletion has none.
  */
-export async function cancelSubscriptionsBeforeDeletion(userId: string): Promise<string[]> {
+export async function cancelSubscriptionsBeforeDeletion(userId: string, until?: number): Promise<string[]> {
   const customers = await asService((tx) =>
     tx.query<{ org_id: string; stripe_customer_id: string; known_live: boolean }>(
       `select b.org_id, b.stripe_customer_id, (b.stripe_subscription_id is not null and b.status = any($2::text[])) as known_live from app.billing b
@@ -379,7 +387,7 @@ export async function cancelSubscriptionsBeforeDeletion(userId: string): Promise
     if (customers.some((c) => c.known_live)) throw new SubscriptionStillRunning();
     return handled;
   }
-  const stripe = stripePort(cfg);
+  const stripe = stripePort(cfg, until);
   const busy = "Your subscription couldn't be cancelled just now. Try again in a minute, or cancel it with Manage billing under Plan first.";
   for (const c of customers) {
     const open = await stripe.listOpenCheckouts(c.stripe_customer_id).catch(() => {

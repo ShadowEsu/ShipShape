@@ -1,8 +1,8 @@
 import "server-only";
 import { createHmac } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DeleteObjectsCommand, GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
+import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { productionAwsClient } from "./aws";
 import { safeEqual } from "./crypto";
 
@@ -27,6 +27,11 @@ export interface BlobStore {
   put(objectPath: string, bytes: Uint8Array, mime: string): Promise<void>;
   get(objectPath: string): Promise<Uint8Array>;
   remove(objectPaths: string[]): Promise<void>;
+  /**
+   * Removes everything stored under a deleted workspace's `<org id>/` prefix, including objects no
+   * row ever pointed at (W11-7); returns how many. Refuses any prefix that isn't exactly a workspace id and a slash.
+   */
+  removePrefix(prefix: string): Promise<number>;
   signedUrl(objectPath: string, opts: FileUrlOptions): Promise<string>;
 }
 
@@ -46,6 +51,14 @@ const SAFE_PATH = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\/v[0-9]+\.(pdf|png|jpg)$/;
 
 export function assertObjectPath(p: string) {
   if (!SAFE_PATH.test(p)) throw new Error("Invalid object path");
+}
+
+// A workspace's own prefix: its id and a slash, nothing else. An empty or short prefix would list
+// the whole bucket, and without the slash one id could prefix-match another (Security, 0040).
+const WORKSPACE_PREFIX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/$/;
+
+export function assertWorkspacePrefix(prefix: string) {
+  if (!WORKSPACE_PREFIX.test(prefix)) throw new Error("Invalid workspace prefix");
 }
 
 function urlKey(): string {
@@ -141,6 +154,19 @@ export function localBlobStore(root: string): BlobStore {
     async remove(paths) {
       await Promise.all(paths.map((p) => rm(full(p), { force: true })));
     },
+    async removePrefix(prefix) {
+      assertWorkspacePrefix(prefix);
+      const dir = path.join(root, prefix);
+      let files = 0;
+      try {
+        files = (await readdir(dir, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length;
+      } catch (e) {
+        if (typeof e === "object" && e !== null && "code" in e && e.code === "ENOENT") return 0;
+        throw e;
+      }
+      await rm(dir, { recursive: true, force: true });
+      return files;
+    },
     signedUrl: fileUrl,
   };
 }
@@ -180,6 +206,23 @@ export function s3BlobStore(client: S3Client, bucket: string): BlobStore {
         const { Errors } = await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: objects, Quiet: true } }));
         if (Errors?.length) throw new Error(`S3 kept ${Errors.length} of the files to delete (${Errors[0].Code ?? "no error code"})`);
       }
+    },
+    async removePrefix(prefix) {
+      // Checked before any listing: an empty or short prefix would list the whole bucket.
+      assertWorkspacePrefix(prefix);
+      let removed = 0;
+      let token: string | undefined;
+      do {
+        const page = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token, MaxKeys: S3_DELETE_BATCH }));
+        const keys = (page.Contents ?? []).flatMap((o) => (o.Key?.startsWith(prefix) ? [o.Key] : []));
+        if (keys.length) {
+          const { Errors } = await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true } }));
+          if (Errors?.length) throw new Error(`S3 kept ${Errors.length} of the files to delete (${Errors[0].Code ?? "no error code"})`);
+          removed += keys.length;
+        }
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (token);
+      return removed;
     },
     signedUrl: fileUrl,
   };

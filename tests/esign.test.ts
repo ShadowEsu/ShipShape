@@ -8,13 +8,14 @@ import { signProblem } from "@/app/s/[id]/messages";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { downloadUrl, getDocument, insertDocument, listDocuments, setArchived, uploadVersion } from "@/lib/server/documents";
-import { completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
+import { CERTIFICATE_ALLOWANCE, completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { freshDb, type TestDb } from "./support/db";
 
 /** E-signatures (Security R8): consent stored, email proven by a one-time code, signed copy immutable, every step audited. */
@@ -52,6 +53,16 @@ function certificateText(signed: PDFDocument): string {
   return signed.getPages().map((_, i) => pageText(i)).join("\n");
 }
 const word = (s: string) => `<${Buffer.from(s, "latin1").toString("hex").toUpperCase()}>`;
+
+/** A JPEG of `size` bytes: a 1×1 frame header, then filler. pdf-lib embeds a JPEG as it is (never decoded), so the review copy is about this size. */
+function jpegOfSize(size: number): Uint8Array {
+  const bytes = new Uint8Array(size);
+  bytes.set([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x01, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
+  bytes.set([0xff, 0xd9], size - 2);
+  return bytes;
+}
+/** A real 1×1 PNG. */
+const PNG = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
 
 beforeAll(async () => {
   db = await freshDb();
@@ -297,6 +308,37 @@ describe("signing", () => {
       expect(await db.root((tx) => tx.query("select 1 from app.signature_requests where document_id = $1", [documentId]))).toEqual([]);
     }
     expect(await files()).toBe(before + 2); // the two uploads themselves, nothing for a request
+  });
+
+  it("sends a JPEG or PNG photo for signature, built in its own process: the review copy is one page holding it", async () => {
+    // A JPEG reaches the build process at an offset in a larger buffer, which pdf-lib's JPEG reader ignored: every JPEG was refused.
+    const c = await sampleWorkspace();
+    for (const [bytes, mime] of [
+      [jpegOfSize(2048), "image/jpeg"],
+      [PNG, "image/png"],
+    ] as const) {
+      const documentId = await asUser(c.userId, (tx) => insertDocument(tx, c, { title: "Site photo", kind: "agreement" }, { bytes, mime }, "upload"));
+      await requestSignature(c, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+      const [row] = await db.root((tx) => tx.query<{ to_sign_path: string }>("select to_sign_path from app.signature_requests where document_id = $1", [documentId]));
+      const copy = await PDFDocument.load(await blobStore().get(row.to_sign_path));
+      expect(copy.getPageCount(), mime).toBe(1);
+    }
+  });
+
+  it("refuses a file that leaves no room for the certificate, and the largest file it sends can always be signed (W11-6)", async () => {
+    const c = await sampleWorkspace();
+    const upload = (size: number) =>
+      asUser(c.userId, (tx) => insertDocument(tx, c, { title: "Site photo", kind: "agreement" }, { bytes: jpegOfSize(size), mime: "image/jpeg" }, "upload"));
+    const send = (documentId: string) => requestSignature(c, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    const tooBig = await upload(MAX_UPLOAD_BYTES - 128 * 1024);
+    await expect(send(tooBig)).rejects.toThrow("This document is too large to send for signature.");
+    expect(await db.root((tx) => tx.query("select 1 from app.signature_requests where document_id = $1", [tooBig]))).toEqual([]);
+
+    const largest = await upload(MAX_UPLOAD_BYTES - CERTIFICATE_ALLOWANCE - 8 * 1024);
+    const { id, token } = await send(largest);
+    await sendSigningCode(id, token);
+    expect(await completeSigning(id, token, { code: await lastCode(c.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
+    expect((await getDocument(c, largest))?.versions[0]?.version).toBe(2);
   });
 
   it("still signs when a new version landed between the signer's open and the signing: the copy takes the number after it (schema sweep row 41)", async () => {

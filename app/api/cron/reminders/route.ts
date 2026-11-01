@@ -1,4 +1,4 @@
-import { DAILY_RUN_BUDGET_MS, finishDeletions, purgeSampleAccounts, retryStorageCleanup } from "@/lib/server/account";
+import { DAILY_RUN_BUDGET_MS, finishDeletions, purgeSampleAccounts, retryStorageCleanup, sweepDeletedWorkspaces } from "@/lib/server/account";
 import { safeEqual } from "@/lib/server/crypto";
 import { purgeOutbox, runReminders } from "@/lib/server/deadlines";
 import { fail, purgeRateHits } from "@/lib/server/http";
@@ -15,8 +15,9 @@ export const maxDuration = 60;
  * they're cleared within about a day), finishing account deletions that didn't finish when they
  * were asked for (Security CG-3; the privacy policy says within two days: Vercel runs a daily cron
  * anywhere in its hour, and a failed run leaves the request for the next, CG-6), deleting sample
- * workspaces' accounts after two days, removing stored files a deletion couldn't remove
- * (Security N-091a), deleting session rows that ended over 30 days ago (Design row 34), and deleting
+ * workspaces' accounts within two days, removing stored files a deletion couldn't remove
+ * (Security N-091a) and whatever else is still stored under a deleted workspace (W11-7, 0040),
+ * deleting session rows that ended over 30 days ago (Design row 34), and deleting
  * outbox reminders over 90 days old and signing-code messages over 1 day old (the privacy policy
  * says so; Security 2026-11-01 0749). The scheduler (vercel.json) sends
  * `Authorization: Bearer $CRON_SECRET`; nothing else may run it.
@@ -30,7 +31,7 @@ export async function GET(req: Request) {
   // cleanup, so files a deletion couldn't remove today are retried in the same run.
   const until = Date.now() + DAILY_RUN_BUDGET_MS;
   const [sent, cleared, deletions, samples, sessions, outbox] = await Promise.allSettled([runReminders(), purgeRateHits(), finishDeletions(until), purgeSampleAccounts(until), purgeSessions(), purgeOutbox()]);
-  const [files] = await Promise.allSettled([retryStorageCleanup(until)]);
+  const [files, swept] = await Promise.allSettled([retryStorageCleanup(until), sweepDeletedWorkspaces(until)]);
   // Logs the error's name only: its message may hold addresses or query text.
   const log = (what: string, r: PromiseSettledResult<unknown>) => {
     if (r.status === "rejected") console.error(`cron: ${what} failed (${r.reason instanceof Error ? r.reason.name : "error"})`);
@@ -40,10 +41,11 @@ export async function GET(req: Request) {
   log("account deletions", deletions);
   log("sample purge", samples);
   log("stored-file cleanup", files);
+  log("workspace sweep", swept);
   log("session purge", sessions);
   log("outbox purge", outbox);
-  if (sent.status === "rejected" || sent.value.failed > 0 || cleared.status === "rejected" || deletions.status === "rejected" || deletions.value.failed > 0 || samples.status === "rejected" || samples.value.failed > 0 || files.status === "rejected" || sessions.status === "rejected" || outbox.status === "rejected") {
+  if (sent.status === "rejected" || sent.value.failed > 0 || cleared.status === "rejected" || deletions.status === "rejected" || deletions.value.failed > 0 || samples.status === "rejected" || samples.value.failed > 0 || files.status === "rejected" || swept.status === "rejected" || sessions.status === "rejected" || outbox.status === "rejected") {
     return fail("The daily run failed.", 500);
   }
-  return Response.json({ ok: true, sent: sent.value, cleared: cleared.value, deletions: deletions.value, samples: samples.value, files: files.value, sessions: sessions.value, outbox: outbox.value }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ ok: true, sent: sent.value, cleared: cleared.value, deletions: deletions.value, samples: samples.value, files: files.value, swept: swept.value, sessions: sessions.value, outbox: outbox.value }, { headers: { "Cache-Control": "no-store" } });
 }
