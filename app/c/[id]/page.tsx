@@ -7,6 +7,7 @@ import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { COLLECT_COOKIE, openCollect, type PublicCollect, type ReceiveOutcome } from "@/lib/server/collect";
 import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
+import { linkEnd } from "@/lib/server/links";
 import { SendButton } from "./send-button";
 
 export const metadata: Metadata = { title: "Send documents", robots: { index: false, follow: false } };
@@ -51,6 +52,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
   const ip = clientIp(await headers());
   const busy = token ? await rateLimited("collect-view", ip, 60, 600) : false;
   const collect = token && !busy ? await openCollect(id, token) : null;
+  const end = token && !busy && !collect ? await linkEnd("c", id, token) : null;
   const result = collect && outcome(r, k, collect);
   const left = collect ? collect.items.filter((i) => !i.receivedAt).length : 0;
   const fieldError = (kind: string, field: "file" | "expires") =>
@@ -174,7 +176,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
       ) : busy ? (
         <LinkBusy href={`/c/${id}`} />
       ) : token ? (
-        <LinkUnavailable noun="upload link" why="closed" />
+        <LinkUnavailable noun="upload link" why="closed" end={end} />
       ) : (
         <FragmentOpener openUrl={`/c/${id}/open`} unavailable={<LinkUnavailable noun="upload link" why="incomplete" />} />
       )}

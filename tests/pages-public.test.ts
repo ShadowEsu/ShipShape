@@ -5,12 +5,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import CollectPage from "@/app/c/[id]/page";
 import { POST as upload } from "@/app/c/[id]/upload/route";
 import PassportPage from "@/app/p/[id]/page";
+import { fmtDateTime } from "@/components/ui";
 import SigningPage from "@/app/s/[id]/page";
 import { SignButton } from "@/app/s/[id]/sign-form";
 import { signIn } from "@/app/signin/actions";
 import SignInPage from "@/app/signin/page";
 import { addVendor, createVendorLink, receiveFile, revokeVendorLink } from "@/lib/server/collect";
-import { asService, asUser } from "@/lib/server/db";
+import { sha256Hex } from "@/lib/server/crypto";
+import { asAnon, asService, asUser } from "@/lib/server/db";
 import { listDocuments } from "@/lib/server/documents";
 import { completeSigning, requestSignature, revokeSignatureRequest, sendSigningCode } from "@/lib/server/esign";
 import { rateLimited } from "@/lib/server/http";
@@ -94,6 +96,9 @@ const collectPage = (id: string, search: Record<string, string> = {}) => renderP
 /** The page's text as read: no gap left before punctuation where React split the text around a value. */
 const said = (html: string) => textOf(html).replace(/ ([.,;])/g, "$1");
 
+/** The same token with its last character changed: well-formed, and wrong. */
+const otherToken = (token: string) => token.slice(0, -1) + (token.endsWith("A") ? "B" : "A");
+
 /** The one thing a closed link offers: a drafted email asking whoever sent it for a new one. */
 function expectAskForNewLink(html: string) {
   const actions = actionsOf(html);
@@ -114,14 +119,46 @@ describe("a passport link (/p)", () => {
     expect(actionsOf(html).filter((a) => a.label === "Download")).toHaveLength(2);
   });
 
-  it("once turned off, says so in one line, names the fix, and offers one action", async () => {
+  it("once turned off, says so to the holder of the link, names the fix, and offers one action; no date, no sender", async () => {
     const docs = await listDocuments(sample);
     const { id, token } = await createPassport(sample, { label: "Turned off", days: 7, documentIds: [docs[0].id] });
     await revokePassport(sample, id);
     jar.set("ss_passport", token);
     const html = await passportPage(id);
-    expect(textOf(html)).toContain("This link has stopped working It has expired or been turned off. Ask whoever sent it for a new one.");
+    expect(textOf(html)).toContain("This link was turned off Whoever sent it turned it off. Ask them for a new one.");
+    expect(textOf(html)).not.toContain("Turned off");
+    expect(textOf(html)).not.toContain("Harbor Plumbing");
     expectAskForNewLink(html);
+  });
+
+  it("once past its end, tells the holder of the link when it stopped working; a wrong token learns nothing (Security row 18)", async () => {
+    const docs = await listDocuments(sample);
+    const { id, token } = await createPassport(sample, { label: "Ran out", days: 7, documentIds: [docs[0].id] });
+    const [row] = await db.root((tx) =>
+      tx.query<{ at: string }>("update app.share_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 hour' where id = $1 returning expires_at::text as at", [id]),
+    );
+    jar.set("ss_passport", token);
+    const html = await passportPage(id);
+    expect(said(html)).toContain(`This link has expired It stopped working on ${fmtDateTime(row.at)}. Ask whoever sent it for a new one.`);
+    expect(textOf(html)).not.toContain("Ran out");
+    expectAskForNewLink(html);
+
+    jar.set("ss_passport", otherToken(token));
+    const wrong = await passportPage(id);
+    expect(textOf(wrong)).toContain("This link has stopped working It has expired or been turned off. Ask whoever sent it for a new one.");
+    expect(textOf(wrong)).not.toContain("stopped working on");
+  });
+
+  it("the database itself answers a link's state only for its own token hash, with a date for an expired link and none for a turned-off one", async () => {
+    const docs = await listDocuments(sample);
+    const off = await createPassport(sample, { label: "Off", days: 7, documentIds: [docs[0].id] });
+    await revokePassport(sample, off.id);
+    const state = (id: string, token: string) =>
+      asAnon((tx) => tx.query<{ state: string; ended_at: string | null }>("select state, ended_at::text as ended_at from app.passport_state($1, $2)", [id, sha256Hex(token)]));
+    expect(await state(off.id, off.token)).toEqual([{ state: "revoked", ended_at: null }]);
+    expect(await state(off.id, otherToken(off.token))).toEqual([]);
+    const live = await createPassport(sample, { label: "Live", days: 7, documentIds: [docs[0].id] });
+    expect(await state(live.id, live.token)).toEqual([]);
   });
 
   it("after too many views from one network, says to wait and reload, not that the link is gone", async () => {
@@ -160,13 +197,26 @@ describe("a signing link (/s)", () => {
     expect(html).toMatch(/<div aria-busy="true"[^>]*><p role="status"[^>]*>Opening the document to sign…<\/p>/);
   });
 
-  it("once withdrawn, says so in one line, names the fix, and offers one action", async () => {
+  it("once withdrawn, says so to the holder of the link, names the fix, and offers one action", async () => {
     const { id, token } = await request();
     await revokeSignatureRequest(sample, id);
     jar.set("ss_sign", token);
     const html = await signingPage(id);
-    expect(textOf(html)).toContain("This signing link has stopped working It has expired or been turned off. Ask whoever sent it for a new one.");
+    expect(textOf(html)).toContain("This signing link was turned off Whoever sent it turned it off. Ask them for a new one.");
     expectAskForNewLink(html);
+  });
+
+  it("once past its end while unsigned, tells the holder when it stopped working; a wrong token learns nothing", async () => {
+    const { id, token } = await request();
+    const [row] = await db.root((tx) =>
+      tx.query<{ at: string }>("update app.signature_requests set created_at = now() - interval '2 days', expires_at = now() - interval '1 hour' where id = $1 returning expires_at::text as at", [id]),
+    );
+    jar.set("ss_sign", token);
+    const html = await signingPage(id);
+    expect(said(html)).toContain(`This signing link has expired It stopped working on ${fmtDateTime(row.at)}. Ask whoever sent it for a new one.`);
+    expectAskForNewLink(html);
+    jar.set("ss_sign", otherToken(token));
+    expect(textOf(await signingPage(id))).toContain("This signing link has stopped working It has expired or been turned off.");
   });
 
   it("once signed, ends calmly: done, who has the record, until when this copy stays here, and one action", async () => {
@@ -183,6 +233,12 @@ describe("a signing link (/s)", () => {
       /There's nothing else you need to do\. Harbor Plumbing \(sample\) has the same signed copy, saved to their documents in ShipShape\. The certificate at the end records the name you typed, when you signed and that a code sent to your email confirmed it\. Download yours for your records; this link works until \w{3} \d{1,2}, \d{4}\./,
     );
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Download the signed copy", href: `/s/${id}/file` }]);
+
+    // Once that day has passed, the signer learns when the copy stopped being here, not that it was withdrawn.
+    const [row] = await db.root((tx) =>
+      tx.query<{ at: string }>("update app.signature_requests set created_at = now() - interval '2 days', expires_at = now() - interval '1 hour' where id = $1 returning expires_at::text as at", [id]),
+    );
+    expect(said(await signingPage(id))).toContain(`This signing link has expired It stopped working on ${fmtDateTime(row.at)}.`);
   });
 });
 
@@ -230,13 +286,27 @@ describe("an upload link (/c)", () => {
     expect(/<input[^>]*id="file-w9"[^>]*>/.exec(html)?.[0]).not.toContain("aria-invalid");
   });
 
-  it("once turned off, says so in one line, names the fix, and offers one action", async () => {
+  it("once turned off, says so to the holder of the link, names the fix, and offers one action", async () => {
     const { id, token } = await link(sample, "Bayside Drywall");
     await revokeVendorLink(sample, id);
     jar.set("ss_collect", token);
     const html = await collectPage(id);
-    expect(textOf(html)).toContain("This upload link has stopped working It has expired or been turned off. Ask whoever sent it for a new one.");
+    expect(textOf(html)).toContain("This upload link was turned off Whoever sent it turned it off. Ask them for a new one.");
+    expect(textOf(html)).not.toContain("Bayside Drywall");
     expectAskForNewLink(html);
+  });
+
+  it("once past its end, tells the holder when it stopped working; a wrong token learns nothing", async () => {
+    const { id, token } = await link(sample, "Bayside Drywall");
+    const [row] = await db.root((tx) =>
+      tx.query<{ at: string }>("update app.vendor_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 hour' where id = $1 returning expires_at::text as at", [id]),
+    );
+    jar.set("ss_collect", token);
+    const html = await collectPage(id);
+    expect(said(html)).toContain(`This upload link has expired It stopped working on ${fmtDateTime(row.at)}. Ask whoever sent it for a new one.`);
+    expectAskForNewLink(html);
+    jar.set("ss_collect", otherToken(token));
+    expect(textOf(await collectPage(id))).toContain("This upload link has stopped working It has expired or been turned off.");
   });
 });
 
