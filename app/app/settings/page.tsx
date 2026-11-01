@@ -7,15 +7,24 @@ import { deletionPreview, EXPORT_MAX_BYTES } from "@/lib/server/account";
 import { billingView } from "@/lib/server/billing";
 import { signInMethod } from "@/lib/server/cognito";
 import { contactEmail } from "@/lib/server/flags";
-import { RECENT_AUTH_SECONDS, requireWorkspace } from "@/lib/server/session";
+import { liveSessions, RECENT_AUTH_SECONDS, requireWorkspace } from "@/lib/server/session";
 import { signOut } from "../../signin/actions";
-import { signOutEverywhere } from "./actions";
+import { signOutEverywhere, signOutSession } from "./actions";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
 import { DeleteAccountForm, RenameWorkspaceForm } from "./forms";
 
 export const metadata: Metadata = { title: "Settings" };
 
 const ROLE: Record<"owner" | "admin" | "member", string> = { owner: "Owner", admin: "Admin", member: "Member" };
+
+/** How long ago a session was last used. requireWorkspace notes it at most every 10 minutes, so nothing finer than the hour. */
+function lastActive(idleSeconds: number): string {
+  const hours = Math.floor(idleSeconds / 3600);
+  if (hours < 1) return "last active less than an hour ago";
+  if (hours < 24) return `last active ${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  const days = Math.floor(hours / 24);
+  return `last active ${days} ${days === 1 ? "day" : "days"} ago`;
+}
 
 /** What a refused export (`?error=` from export/route.ts) means, and the one link that fixes it when there is one. */
 function exportProblem(error: string | undefined, contact: string | null): { text: string; fix?: { href: string; label: string } } | undefined {
@@ -41,7 +50,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const ctx = await requireWorkspace();
   const { error, billing } = await searchParams;
   const exportError = exportProblem(error, contactEmail());
-  const [view, goes, method] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId), ctx.demo ? "local" : signInMethod(ctx.userId)]);
+  const [view, goes, method, sessions] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId), ctx.demo ? "local" : signInMethod(ctx.userId), liveSessions(ctx)]);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -170,6 +179,27 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           )}
         </section>
       )}
+      <section id="sessions" className="card space-y-3">
+        <div>
+          <h2 className="font-semibold">Where you&apos;re signed in</h2>
+          <p className="text-sm text-ink-2">Each browser you&apos;re signed in on. Sign out of any you don&apos;t use or don&apos;t recognize.</p>
+        </div>
+        <ul className="divide-y divide-line">
+          {sessions.map((s) => (
+            <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
+              <p className="text-sm">
+                {s.family} <span className="text-ink-2">· {s.current ? "this browser" : lastActive(s.idleSeconds)}</span>
+              </p>
+              <form action={signOutSession}>
+                <input type="hidden" name="id" value={s.id} />
+                <SubmitButton className="btn-ghost" pendingLabel="Signing out…">
+                  Sign out
+                </SubmitButton>
+              </form>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {/* The sidebar's Sign out is desktop-only; on a phone this is the way out. */}
       <section className="card space-y-4">

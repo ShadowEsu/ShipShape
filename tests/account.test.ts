@@ -12,7 +12,7 @@ import { requestSignature } from "@/lib/server/esign";
 import { createPassport, openPassport } from "@/lib/server/passport";
 import { NeedsRecentSignIn, type Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
-import { createLocalUser } from "@/lib/server/session";
+import { createLocalUser, newSessionId } from "@/lib/server/session";
 import { blobStore, localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
@@ -41,6 +41,13 @@ const queued = async (orgId: string) =>
 const storedFiles = async (dir: string) =>
   existsSync(dir) ? (await readdir(dir, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length : 0;
 
+/** A session row for `userId` on a browser named `family`, as a sign-in makes one (Design row 34). Returns its id. */
+async function signedInOn(userId: string, family: string): Promise<string> {
+  const id = newSessionId();
+  await asUser(userId, (tx) => tx.query("select app.start_session($1, $2)", [id, family]));
+  return id;
+}
+
 beforeAll(async () => {
   db = await freshDb();
   blobDir = await mkdtemp(path.join(os.tmpdir(), "shipshape-account-"));
@@ -60,7 +67,7 @@ describe("export", () => {
     await writeFile(file, bytes);
     expect(execFileSync("unzip", ["-tq", file]).toString()).toMatch(/No errors detected/);
     const names = execFileSync("unzip", ["-Z1", file]).toString().trim().split("\n");
-    expect(names.slice(0, 5)).toEqual(["README.txt", "documents.json", "facts.json", "vendors.json", "history.csv"]);
+    expect(names.slice(0, 6)).toEqual(["README.txt", "documents.json", "facts.json", "vendors.json", "history.csv", "sessions.json"]);
 
     const docs: { title: string; versions: { file: string; sha256: string }[] }[] = JSON.parse(execFileSync("unzip", ["-p", file, "documents.json"]).toString());
     const versionFiles = docs.flatMap((d) => d.versions);
@@ -82,6 +89,24 @@ describe("export", () => {
     // Every version's fingerprint is in the hash-chained history too (Security F2).
     for (const v of versionFiles) expect(history.some((h) => h.includes("version_added") && h.endsWith(`,${v.sha256}`))).toBe(true);
     expect(history.at(-1)).toContain(",workspace.exported,");
+  });
+
+  it("lists the exporting person's own sessions, and no one else's, by browser name and times only (Design row 34)", async () => {
+    const ctx = await sampleWorkspace();
+    const partner = await db.user("export-sessions-partner@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'admin')", [ctx.orgId, partner]));
+    await signedInOn(ctx.userId, "Safari on a Mac");
+    const phone = await signedInOn(ctx.userId, "Chrome on an iPhone");
+    await asUser(ctx.userId, (tx) => tx.query("select app.end_session($1)", [phone]));
+    await signedInOn(partner, "Edge on Android");
+
+    const file = path.join(blobDir, "export-sessions.zip");
+    await writeFile(file, (await exportWorkspace(ctx)).bytes);
+    const sessions: Record<string, string | null>[] = JSON.parse(execFileSync("unzip", ["-p", file, "sessions.json"]).toString());
+    expect(sessions.map((s) => s.ua_family).sort()).toEqual(["Chrome on an iPhone", "Safari on a Mac"]);
+    for (const s of sessions) expect(Object.keys(s)).toEqual(["ua_family", "created_at", "last_seen_at", "revoked_at"]);
+    expect(sessions.find((s) => s.ua_family === "Chrome on an iPhone")?.revoked_at).not.toBeNull();
+    expect(sessions.find((s) => s.ua_family === "Safari on a Mac")?.revoked_at).toBeNull();
   });
 
   it("is for owners and admins only, and needs a recent sign-in in a real workspace", async () => {
@@ -233,6 +258,20 @@ describe("account deletion", () => {
     expect(profile.updated_by).toBeNull();
     const [chain] = await asUser(other, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1) as broken", [shared.id]));
     expect(chain.broken).toBeNull();
+  });
+
+  it("removes the person's sessions at once, and nobody else's (Design row 34)", async () => {
+    const me = await sampleWorkspace();
+    const other = await db.user("deletion-sessions-other@example.com");
+    await signedInOn(me.userId, "Safari on a Mac");
+    await signedInOn(me.userId, "Chrome on an iPhone");
+    const theirs = await signedInOn(other, "Firefox on Windows");
+    const sessionsOf = (userId: string) => db.root((tx) => tx.query<{ id: string }>("select id from app.sessions where user_id = $1", [userId]));
+    expect(await sessionsOf(me.userId)).toHaveLength(2);
+
+    await deleteAccount(me);
+    expect(await sessionsOf(me.userId)).toEqual([]);
+    expect(await sessionsOf(other)).toEqual([{ id: theirs }]);
   });
 
   it("names, before anything goes, the workspaces it deletes (you're the only owner) and the ones you leave", async () => {

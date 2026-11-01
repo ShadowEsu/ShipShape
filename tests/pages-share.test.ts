@@ -11,7 +11,7 @@ import { makePassport } from "@/app/app/passport/actions";
 import { PassportReady } from "@/app/app/passport/forms";
 import PassportPage from "@/app/app/passport/page";
 import PassportPreviewPage from "@/app/app/passport/preview/page";
-import { deleteMyAccount } from "@/app/app/settings/actions";
+import { deleteMyAccount, signOutSession } from "@/app/app/settings/actions";
 import SettingsPage from "@/app/app/settings/page";
 import { fmtDay } from "@/components/app-ui";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
@@ -19,7 +19,7 @@ import { asService, asUser } from "@/lib/server/db";
 import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
-import { createLocalUser, finishSignIn, RECENT_AUTH_SECONDS, requireWorkspace, startSession } from "@/lib/server/session";
+import { createLocalUser, finishSignIn, newSessionId, RECENT_AUTH_SECONDS, requireWorkspace, startSession, type SignedIn } from "@/lib/server/session";
 import { freshDb, type TestDb } from "./support/db";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
@@ -65,7 +65,7 @@ afterEach(() => {
 });
 
 /** Signs a new person in to a new (Free) workspace of their own, the way the sign-in page does. */
-async function signIn(email: string): Promise<Ctx> {
+async function signIn(email: string): Promise<SignedIn> {
   await finishSignIn(await createLocalUser(email, false), { demo: false });
   return requireWorkspace();
 }
@@ -450,6 +450,75 @@ describe("Settings", () => {
     expect(textOf(html)).toContain(`Deleted with everything in it ${ctx.name}`);
     expect(textOf(html)).toContain("Payments aren't switched on yet, so the plan can't change for now.");
   });
+
+  describe("Where you're signed in (Design row 34)", () => {
+    /** The card's own HTML, so the Sign out card further down doesn't count. */
+    const card = (html: string) => {
+      const start = html.indexOf('id="sessions"');
+      return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
+    };
+    /** A session of `userId`'s on another browser, last used `idle` ago (a Postgres interval). */
+    const otherBrowser = async (userId: string, family: string, idle: string) => {
+      const id = newSessionId();
+      await asUser(userId, (tx) => tx.query("select app.start_session($1, $2)", [id, family]));
+      await db.root((tx) => tx.query("update app.sessions set created_at = now() - $2::interval, last_seen_at = now() - $2::interval where id = $1", [id, idle]));
+      return id;
+    };
+
+    it("lists this person's live sessions: this browser marked, the others with when they were last active, and one Sign out each", async () => {
+      const someoneElse = await signIn("settings-sessions-other@example.com");
+      await otherBrowser(someoneElse.userId, "Edge on Android", "1 hour");
+      const ctx = await signIn("settings-sessions@example.com");
+      await db.root((tx) => tx.query("update app.sessions set ua_family = 'Safari on a Mac' where id = $1", [ctx.sessionId]));
+      const phone = await otherBrowser(ctx.userId, "Chrome on an iPhone", "2 days 3 hours");
+      const tablet = await otherBrowser(ctx.userId, "Safari on an iPad", "3 hours 20 minutes");
+      const recent = await otherBrowser(ctx.userId, "Firefox on Linux", "25 minutes");
+      // Signed out, and past its 12 hours: neither is listed.
+      const gone = await otherBrowser(ctx.userId, "Firefox on Windows", "1 day");
+      await asUser(ctx.userId, (tx) => tx.query("select app.end_session($1)", [gone]));
+      const old = await otherBrowser(ctx.userId, "Opera on Windows", "13 hours");
+      await db.root((tx) => tx.query("update app.sessions set expires_at = now() - interval '1 hour' where id = $1", [old]));
+
+      const html = card(await settings());
+      const text = textOf(html);
+      expect(text).toContain("Where you're signed in");
+      expect(text).toMatch(/Safari on a Mac\s*·\s*this browser\s*Sign out/);
+      expect(text).toMatch(/Firefox on Linux\s*·\s*last active less than an hour ago/);
+      expect(text).toMatch(/Safari on an iPad\s*·\s*last active 3 hours ago/);
+      expect(text).toMatch(/Chrome on an iPhone\s*·\s*last active 2 days ago/);
+      expect(text.match(/this browser/g)).toHaveLength(1);
+      expect(text).not.toMatch(/Firefox on Windows|Opera on Windows|Edge on Android/);
+      // This browser first, then the most recently used; one Sign out for each, naming its own session.
+      expect(actionsOf(html).map((a) => a.label)).toEqual(["Sign out", "Sign out", "Sign out", "Sign out"]);
+      expect([...html.matchAll(/name="id" value="([^"]+)"/g)].map((m) => m[1])).toEqual([ctx.sessionId, recent, tablet, phone]);
+    });
+
+    it("Sign out on a row ends that browser and leaves this one; on this browser's own row it signs out here", async () => {
+      const someoneElse = await signIn("settings-sessions-signout-other@example.com");
+      const theirs = await otherBrowser(someoneElse.userId, "Edge on Android", "1 hour");
+      const ctx = await signIn("settings-sessions-signout@example.com");
+      const phone = await otherBrowser(ctx.userId, "Chrome on an iPhone", "1 day");
+
+      await signOutSession(form({ id: phone }));
+      expect(textOf(card(await settings()))).not.toContain("Chrome on an iPhone");
+      // Junk does nothing; another person's session is refused by the database.
+      await signOutSession(form({ id: "not-a-session" }));
+      await expect(signOutSession(form({ id: theirs }))).rejects.toMatchObject({ code: "42501" });
+      expect(textOf(card(await settings()))).toMatch(/this browser/);
+
+      await expect(signOutSession(form({ id: ctx.sessionId }))).rejects.toThrow("redirect /");
+      expect(jar.has("ss_session")).toBe(false);
+    });
+
+    it("shows in a sample workspace too: its visitor's one browser, marked as this one", async () => {
+      const userId = await createLocalUser(null, true);
+      const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
+      await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+      await finishSignIn(userId, { demo: true });
+      const text = textOf(card(await settings()));
+      expect(text).toMatch(/Where you're signed in.*a browser\s*·\s*this browser\s*Sign out/);
+    });
+  });
 });
 
 const form = (fields: Record<string, string | string[]>) => {
@@ -500,7 +569,7 @@ describe("form errors name the field to fix", () => {
 
   it("deleting the account after an old sign-in: says why, and the fix is signing in again", async () => {
     const ctx = await signIn("form-delete-old@example.com");
-    await startSession({ userId: ctx.userId, demo: false, authAt: Math.floor(Date.now() / 1000) - 3600 });
+    await startSession({ userId: ctx.userId, demo: false, authAt: Math.floor(Date.now() / 1000) - 3600, sessionId: ctx.sessionId });
     expect(await deleteMyAccount({}, form({ confirm: "DELETE" }))).toEqual({ error: "For your security, sign in again to delete your account.", reauth: true });
   });
 });

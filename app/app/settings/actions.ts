@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { deleteAccount } from "@/lib/server/account";
 import { openPortal, startCheckout } from "@/lib/server/billing";
 import { UserError } from "@/lib/server/errors";
 import { NeedsRecentSignIn, renameWorkspace } from "@/lib/server/profile";
-import { endAllSessions, endSession, requireWorkspace } from "@/lib/server/session";
+import { endAllSessions, endOneSession, endSession, requireWorkspace } from "@/lib/server/session";
 
 export interface RenameState {
   error?: string;
@@ -58,6 +59,19 @@ export async function signOutEverywhere() {
   const ctx = await requireWorkspace();
   await endAllSessions(ctx.userId);
   redirect("/signin?signed_out=everywhere");
+}
+
+// Any 32 hex digits in uuid form: session ids are 128 random bits, so z.uuid()'s version check would refuse them.
+const SessionId = z.guid();
+
+/** "Sign out" on one row of Where you're signed in (Design row 34). On this browser's own row, it signs out here. */
+export async function signOutSession(data: FormData) {
+  const ctx = await requireWorkspace();
+  const id = SessionId.safeParse(data.get("id"));
+  if (!id.success) return;
+  await endOneSession(ctx, id.data);
+  if (id.data === ctx.sessionId) redirect("/");
+  revalidatePath("/app/settings");
 }
 
 export interface BillingState {

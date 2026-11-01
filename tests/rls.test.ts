@@ -123,6 +123,7 @@ const TABLES: Record<string, string | null> = {
   deletion_requests: null, // server only: accounts the daily run finishes deleting, checked below
   storage_cleanup: null, // server only: stored files a deletion couldn't remove yet, checked below
   session_revocations: null, // each person's own row only: when they last signed out everywhere, checked below
+  sessions: null, // each person's own rows only: the browsers they're signed in on, checked below
 };
 
 describe("row level security", () => {
@@ -199,6 +200,46 @@ describe("row level security", () => {
     await expectDenied(asUser(a, (tx) => tx.query("update app.session_revocations set valid_after = '-infinity'")));
     await expectDenied(asUser(a, (tx) => tx.query("delete from app.session_revocations")));
     await expectDenied(asAnon((tx) => tx.query("select app.end_my_sessions()")));
+  });
+
+  it("sessions: each person reads only their own, moves only last_seen_at on their own live rows, and signs out only their own (Design row 34)", async () => {
+    const mine = crypto.randomUUID();
+    const theirs = crypto.randomUUID();
+    await asUser(a, (tx) => tx.query("select app.start_session($1, 'Safari on a Mac')", [mine]));
+    await asUser(b, (tx) => tx.query("select app.start_session($1, 'Chrome on an iPhone')", [theirs]));
+    await db.root((tx) => tx.query("update app.sessions set last_seen_at = '2026-01-01' where id = any($1::uuid[])", [[mine, theirs]]));
+    const state = async (id: string) =>
+      (await db.root((tx) => tx.query<{ seen: string; revoked: boolean }>("select last_seen_at::date::text as seen, revoked_at is not null as revoked from app.sessions where id = $1", [id])))[0];
+
+    expect((await asUser(a, (tx) => tx.query<{ id: string }>("select id from app.sessions"))).map((r) => r.id)).toEqual([mine]);
+    expect(await asUser(a, (tx) => tx.query("select 1 from app.sessions where id = $1", [theirs]))).toEqual([]);
+
+    // Someone else's session can't be signed out: refused, and it stays live.
+    await expect(asUser(a, (tx) => tx.query("select app.end_session($1)", [theirs]))).rejects.toMatchObject({ code: "42501" });
+    expect(await state(theirs)).toEqual({ seen: "2026-01-01", revoked: false });
+    await expect(asUser(a, (tx) => tx.query("select app.end_session($1)", [crypto.randomUUID()]))).rejects.toMatchObject({ code: "42501" });
+
+    // last_seen_at moves on my own rows only, with or without a WHERE (which alone would bring in the read rule); nothing else moves at all.
+    await asUser(a, (tx) => tx.query("update app.sessions set last_seen_at = now() where id = any($1::uuid[])", [[mine, theirs]]));
+    expect((await state(mine)).seen).not.toBe("2026-01-01");
+    expect(await state(theirs)).toEqual({ seen: "2026-01-01", revoked: false });
+    await asUser(a, (tx) => tx.query("update app.sessions set last_seen_at = now()"));
+    expect(await state(theirs)).toEqual({ seen: "2026-01-01", revoked: false });
+    await expectDenied(asUser(a, (tx) => tx.query("update app.sessions set expires_at = 'infinity' where id = $1", [mine])));
+    await expectDenied(asUser(a, (tx) => tx.query("update app.sessions set user_id = $2 where id = $1", [mine, b])));
+    await expectDenied(asUser(a, (tx) => tx.query("update app.sessions set ua_family = 'x' where id = $1", [mine])));
+    await expectDenied(asUser(a, (tx) => tx.query("insert into app.sessions (id, user_id, expires_at, ua_family) values ($1, $2, 'infinity', 'x')", [crypto.randomUUID(), a])));
+    await expectDenied(asUser(a, (tx) => tx.query("delete from app.sessions where id = $1", [mine])));
+    await expectDenied(asAnon((tx) => tx.query("select app.start_session($1, 'a browser')", [crypto.randomUUID()])));
+    await expectDenied(asAnon((tx) => tx.query("select app.end_session($1)", [mine])));
+
+    // My own: signed out, and then it can't be moved or revived.
+    await asUser(a, (tx) => tx.query("select app.end_session($1)", [mine]));
+    expect((await state(mine)).revoked).toBe(true);
+    await db.root((tx) => tx.query("update app.sessions set last_seen_at = '2026-01-01' where id = $1", [mine]));
+    await asUser(a, (tx) => tx.query("update app.sessions set last_seen_at = now() where id = $1", [mine]));
+    expect(await state(mine)).toEqual({ seen: "2026-01-01", revoked: true });
+    await expectDenied(asUser(a, (tx) => tx.query("update app.sessions set revoked_at = null where id = $1", [mine])));
   });
 
   it("billing is read-only to members, Stripe ids and webhook events stay server-side", async () => {
