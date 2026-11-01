@@ -311,7 +311,7 @@ describe("What are they asking for?", () => {
     await signIn("ask-on@example.com");
     const html = await renderPage(AskPage, {});
     const text = textOf(html);
-    expect(text).toContain("and nothing from your documents is sent. Anthropic says it doesn't train on what its API receives.");
+    expect(text).toContain("and nothing from your documents is sent. Anthropic says that by default it doesn't train on what its API receives.");
     expect(text).not.toContain("Anthropic doesn't train on it");
     expect(text).toMatch(/Source:\s*Anthropic's privacy center\s*, checked Oct 31, 2026\s*\./);
     expect(html).toMatch(/<a href="https:\/\/privacy\.claude\.com\/en\/articles\/7996868-is-my-data-used-for-model-training"[^>]*rel="noopener noreferrer"/);

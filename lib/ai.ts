@@ -6,7 +6,7 @@ export const AI_REQUEST_CONSENT_VERSION = "ai-request-2026-11-01";
 export const AI_REQUEST_CONSENT_TEXT =
   `Send the text above to ${AI_RECIPIENT} to list the documents it asks for. ` +
   "Numbers shaped like an SSN or EIN are removed first, and nothing from your documents is sent. " +
-  "Anthropic says it doesn't train on what its API receives.";
+  "Anthropic says that by default it doesn't train on what its API receives.";
 
 /** Where that claim comes from, and when ShipShape last read it (Design row 49: a third-party claim names its source). */
 export const AI_TRAINING_SOURCE = {
