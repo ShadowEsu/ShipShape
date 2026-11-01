@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { turnOffVendorLink } from "@/app/app/collect/actions";
-import { archive, askToSign } from "@/app/app/documents/actions";
+import { addDocument, archive, askToSign } from "@/app/app/documents/actions";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
 import { getDocument, setArchived, uploadDocument } from "@/lib/server/documents";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
@@ -84,6 +84,14 @@ describe("plain form actions", () => {
 
     expect(await sentTo(archive(form({ id: first, archived: "0" })))).toBe(`/app/documents/${first}?error=limit`);
     expect((await getDocument(ctx, first))?.doc.status).toBe("archived");
+  });
+
+  it("adding an 11th document on Free comes back with the limit message and the one fix, a link to the documents list; no Pro offer while payments are off", async () => {
+    const ctx = await signIn("limit-upload@example.com");
+    for (let i = 1; i <= 10; i++) await uploadDocument(ctx, { title: `Document ${i}`, kind: "other" }, PDF);
+    const data = form({ title: "Document 11", kind: "other" });
+    data.set("file", new File([PDF], "doc.pdf", { type: "application/pdf" }));
+    expect(await addDocument({}, data)).toMatchObject({ error: "The Free plan holds 10 active documents.", fix: { href: "/app/documents", label: "Archive one to make room" } });
   });
 
   it("turning off a vendor's upload link twice says the second time that it was already off", async () => {

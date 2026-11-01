@@ -170,7 +170,7 @@ export function FillForm({
   // Each result with errors moves focus to the summary (its links lead to each field) or, on the review, to the approval box.
   // A result that is only a message (the plan's limit, a closed gate) moves it to the message: the person pressed a button at
   // the bottom of the view, and the message sits at its top.
-  const messageRef = useRef<HTMLParagraphElement>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!state.errors || Object.keys(state.errors).length === 0) {
       if (state.error) messageRef.current?.focus();
@@ -218,9 +218,14 @@ export function FillForm({
       <input type="hidden" name="template" value={template.id} />
       <input type="hidden" name="at" value={current} />
       {state.error && (
-        <p ref={messageRef} role="alert" tabIndex={-1} className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-          {state.error}
-        </p>
+        <div ref={messageRef} role="alert" tabIndex={-1} className="space-y-2 rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+          <p>{state.error}</p>
+          {state.fix && (
+            <Link href={state.fix.href} className="underline">
+              {state.fix.label}
+            </Link>
+          )}
+        </div>
       )}
       {!reviewing && problems.length > 0 && <ErrorSummary ref={summaryRef} problems={problems} onPick={goTo} />}
 
