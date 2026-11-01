@@ -10,6 +10,7 @@ import PassportDetail from "@/app/app/passport/[id]/page";
 import { makePassport } from "@/app/app/passport/actions";
 import { PassportReady } from "@/app/app/passport/forms";
 import PassportPage from "@/app/app/passport/page";
+import PassportPreviewPage from "@/app/app/passport/preview/page";
 import { deleteMyAccount } from "@/app/app/settings/actions";
 import SettingsPage from "@/app/app/settings/page";
 import { fmtDay } from "@/components/app-ui";
@@ -127,6 +128,38 @@ describe("Passport", () => {
     const both = textOf(await page(`${coi},${w9.id}`));
     expect(both).toMatch(/view and download these 2 documents\s*\./);
     expect(both).toContain("Your W-9 shows your full EIN or SSN to whoever opens it.");
+  });
+
+  it("offers 'Preview what they'll see' once a document is ticked, carrying the form's state in the address", async () => {
+    const ctx = await signIn("passport-preview-link@example.com");
+    const coi = await addDoc(ctx, "Liability certificate");
+    const untouched = await renderPage(PassportPage, none());
+    expect(actionsOf(untouched).map((a) => a.label)).not.toContain("Preview what they'll see");
+    const ticked = await renderPage(PassportPage, { searchParams: Promise.resolve({ docs: coi, label: "Northwind onboarding", days: "7" }) });
+    expect(actionsOf(ticked).find((a) => a.label === "Preview what they'll see")?.href).toBe(`/app/passport/preview?docs=${coi}&amp;label=Northwind+onboarding&amp;days=7`);
+    expect(ticked).toMatch(/<input[^>]*id="label"[^>]*value="Northwind onboarding"/);
+    expect(ticked).toMatch(/<input[^>]*name="days"[^>]*checked=""[^>]*value="7"/);
+  });
+
+  it("the preview shows the recipient's page for the ticked documents only, from this workspace only, with the owner's own downloads and a way back", async () => {
+    const other = await signIn("passport-preview-other@example.com");
+    const theirs = await addDoc(other, "Someone else's certificate");
+    const ctx = await signIn("passport-preview@example.com");
+    const coi = await addDoc(ctx, "Liability certificate", 400);
+    await addDoc(ctx, "Not ticked");
+    const html = await renderPage(PassportPreviewPage, { searchParams: Promise.resolve({ docs: `${coi},${theirs}`, label: "Northwind onboarding", days: "7" }) });
+    const text = textOf(html);
+    expect(text).toContain("Preview what they'll see");
+    expect(text).toContain("Nothing is shared yet: the link doesn't exist until you make it, and these downloads are your own copies.");
+    expect(text).toContain(`${ctx.name} Northwind onboarding · this link works until ${fmtDay(new Date(Date.now() + 7 * 86_400_000).toISOString())}`);
+    expect(text).toContain("Liability certificate");
+    expect(text).not.toContain("Not ticked");
+    expect(text).not.toContain("Someone else's certificate");
+    expect(html).toMatch(new RegExp(`<a href="/app/documents/${coi}/file" aria-label="Download Liability certificate"`));
+    expect(actionsOf(html).find((a) => a.label === "← Back to the link")?.href).toBe(`/app/passport?docs=${coi}%2C${theirs}&amp;label=Northwind+onboarding&amp;days=7`);
+
+    const empty = textOf(await renderPage(PassportPreviewPage, { searchParams: Promise.resolve({}) }));
+    expect(empty).toContain("No documents are ticked yet. Go back and tick at least one.");
   });
 
   it("with a link: lists it instead of the example", async () => {
