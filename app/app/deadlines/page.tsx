@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, fmtDay } from "@/components/app-ui";
-import { fmtDateTime } from "@/components/ui";
 import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
 import { listDeadlines, listOutbox, type Deadline } from "@/lib/server/deadlines";
 import { DOC_KINDS, firstDocument } from "@/lib/server/documents";
-import { requireWorkspace } from "@/lib/server/session";
+import { requireWorkspace, viewerZone } from "@/lib/server/session";
+import { timeOf } from "@/lib/today";
 
 export const metadata: Metadata = { title: "Deadlines" };
 
@@ -47,6 +47,7 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
 
 export default async function DeadlinesPage() {
   const ctx = await requireWorkspace();
+  const zone = await viewerZone();
   const [all, outbox, { plan }] = await Promise.all([listDeadlines(ctx), listOutbox(ctx), billingView(ctx)]);
   // Reminders from ShipShape are a Pro feature (lib/server/deadlines.ts runs them for Pro only); the calendar file works on every plan.
   const reminders = PLANS[plan].emailReminders;
@@ -108,7 +109,7 @@ export default async function DeadlinesPage() {
                 <p className="flex flex-wrap justify-between gap-2 text-sm">
                   <span className="font-medium">{m.subject}</span>
                   <time className="text-xs text-ink-3" dateTime={m.created_at}>
-                    {fmtDateTime(m.created_at)}
+                    {timeOf(m.created_at, zone)}
                   </time>
                 </p>
                 <p className="text-xs text-ink-3">To {m.to_email}</p>

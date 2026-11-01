@@ -19,7 +19,8 @@ function linkStatus(l: VendorLink) {
   return "Working";
 }
 
-const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+// A non-breaking space keeps "1 KB" on one line at 390 wide (Design).
+const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))}\u00A0KB` : `${(bytes / 1024 / 1024).toFixed(1)}\u00A0MB`);
 
 /** What went wrong in a form posted from this page (see backToVendor in ../actions.ts). */
 const ERRORS: Record<string, string> = {

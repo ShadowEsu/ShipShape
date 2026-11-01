@@ -5,7 +5,6 @@ import { Notice, ValidityChip, fmtDay } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
-import { fmtDateTime } from "@/components/ui";
 import { PLANS } from "@/lib/plans";
 import { FACT_LABELS } from "@/lib/profile-fields";
 import { DOC_KINDS, getDocument } from "@/lib/server/documents";
@@ -13,7 +12,7 @@ import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequest
 import { realDocsEnabled } from "@/lib/server/flags";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
-import { dayOf } from "@/lib/today";
+import { dayOf, timeOf } from "@/lib/today";
 import type { TemplateInfo } from "@/lib/templates/types";
 import { archive, withdrawSignature } from "../actions";
 import { DetailsForm, SignRequestForm, VersionForm } from "../forms";
@@ -83,7 +82,8 @@ const SOURCE: Record<string, string> = {
   typed_saved: "Typed, saved to Business facts",
 };
 
-const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+// A non-breaking space keeps "1 KB" on one line at 390 wide (Design).
+const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}\u00A0MB` : `${Math.max(1, Math.round(n / 1024))}\u00A0KB`);
 
 /**
  * Each filled field with the label the form showed, in the form's order: the stored record's keys
@@ -221,7 +221,7 @@ export default async function DocumentPage({
               {versions.map((v) => (
                 <li key={v.version} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <span>
-                    Version {v.version} · {fmtDateTime(v.created_at)} · {size(v.size_bytes)}
+                    Version {v.version} · {timeOf(v.created_at, zone)} · {size(v.size_bytes)}
                     {v.origin === "signed" && <span className="ml-2 rounded-full bg-ok-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-ok">Signed copy</span>}
                     <span className="ml-2 font-mono text-xs text-ink-3" title={`SHA-256 ${v.sha256}`}>
                       {v.sha256.slice(0, 12)}
@@ -267,7 +267,7 @@ export default async function DocumentPage({
                         </p>
                         <p className="truncate text-xs text-ink-3">
                           {r.signer_email} · version {r.version}
-                          {r.status === "signed" && r.signed_at && <> · signed {fmtDateTime(r.signed_at)}</>}
+                          {r.status === "signed" && r.signed_at && <> · signed {timeOf(r.signed_at, zone)}</>}
                           {r.status === "pending" && !lapsed && <> · open until {dayOf(r.expires_at, zone)}</>}
                         </p>
                         {(r.has_review_file || (r.status === "pending" && !lapsed)) && (
@@ -323,7 +323,7 @@ export default async function DocumentPage({
                 <li key={a.seq} className="flex justify-between gap-3">
                   <span>{historyLabel(a.action, a.about_name)}</span>
                   <time className="shrink-0 text-xs text-ink-3" dateTime={a.at}>
-                    {fmtDateTime(a.at)}
+                    {timeOf(a.at, zone)}
                   </time>
                 </li>
               ))}
