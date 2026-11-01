@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { GET as cron } from "@/app/api/cron/reminders/route";
-import { asService, asUser } from "@/lib/server/db";
-import { deadlinesIcs, fold, listDeadlines, listOutbox, runReminders, type Deadline } from "@/lib/server/deadlines";
+import { asAnon, asService, asUser } from "@/lib/server/db";
+import { deadlinesIcs, fold, listDeadlines, listOutbox, purgeOutbox, runReminders, type Deadline } from "@/lib/server/deadlines";
 import { listDocuments } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
@@ -209,6 +209,117 @@ describe("reminders", () => {
     expect(runs.map((r) => r.failed)).toEqual([0, 0]);
     const sent = await db.root((tx) => tx.query<{ to_email: string }>("select to_email from app.outbox where org_id = $1", [pro.orgId]));
     expect(sent.map((m) => m.to_email)).toEqual(["twice@example.com"]);
+  });
+});
+
+describe("the outbox (0039: W10-4, W10-5)", () => {
+  /** What the Deadlines page reads for this person in this workspace (listOutbox runs as them, so RLS alone decides). */
+  const viewer = (userId: string, orgId: string, role: Ctx["role"], demo = false): Ctx => ({
+    userId,
+    demo,
+    authAt: Math.floor(Date.now() / 1000),
+    orgId,
+    name: "Pro Co",
+    role,
+    today: isoToday(),
+  });
+  const addMember = (orgId: string, userId: string, role: Ctx["role"]) =>
+    db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, $3)", [orgId, userId, role]));
+  const remind = (orgId: string, subject: string) =>
+    asService((tx) => tx.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, 'boss@example.com', $2, 'x')", [orgId, subject]));
+
+  /** A signing request on a new document, and a code issued for it the way the signer's page does (app.esign_issue_code, as anon). */
+  async function issueCode(orgId: string, userId: string) {
+    const secret = crypto.randomUUID().replaceAll("-", "").repeat(2);
+    const req = await asUser(userId, async (tx) => {
+      const [d] = await tx.query<{ id: string }>("insert into app.documents (org_id, title, kind, created_by) values ($1, 'NDA to sign', 'nda', $2) returning id", [orgId, userId]);
+      await tx.query(
+        "insert into app.document_versions (document_id, version, org_id, storage_path, mime, size_bytes, sha256, origin, created_by) values ($1, 1, $2, $3, 'application/pdf', 100, $4, 'upload', $5)",
+        [d.id, orgId, `${orgId}/${d.id}/1.pdf`, "a".repeat(64), userId],
+      );
+      const [r] = await tx.query<{ id: string }>(
+        `insert into app.signature_requests (id, org_id, document_id, version, signer_name, signer_email, token_hash, expires_at, created_by, to_sign_path, to_sign_sha256)
+         select r.id, $1::uuid, $2, 1, 'Sam Signer', 'sam@example.com', $3, now() + interval '7 days', $4, $1::uuid::text || '/' || r.id::text || '/v1.pdf', $5
+         from (select gen_random_uuid() as id) r returning id`,
+        [orgId, d.id, secret, userId, "d".repeat(64)],
+      );
+      return r.id;
+    });
+    const [issued] = await asAnon((tx) =>
+      tx.query<{ answer: string }>("select app.esign_issue_code($1, $2, $3, 'Your signing code', 'Your code is 123456.') as answer", [req, secret, "c".repeat(64)]),
+    );
+    expect(issued.answer).toBe("ok");
+  }
+
+  it("only the workspace's owners and admins read its reminders: a member sees none, nor does another workspace's owner (W10-4)", async () => {
+    const pro = await proWorkspace("outbox-owner@example.com");
+    const admin = await db.user("outbox-admin@example.com");
+    const member = await db.user("outbox-member@example.com");
+    await addMember(pro.orgId, admin, "admin");
+    await addMember(pro.orgId, member, "member");
+    const other = await proWorkspace("outbox-other@example.com");
+    await remind(pro.orgId, "Permit expires in 7 days");
+    await remind(pro.orgId, "Permit expires in 30 days");
+
+    const subjects = async (ctx: Ctx) => (await listOutbox(ctx)).map((m) => m.subject).sort();
+    expect(await subjects(viewer(pro.owner, pro.orgId, "owner"))).toEqual(["Permit expires in 30 days", "Permit expires in 7 days"]);
+    expect(await subjects(viewer(admin, pro.orgId, "admin"))).toEqual(["Permit expires in 30 days", "Permit expires in 7 days"]);
+    expect(await subjects(viewer(member, pro.orgId, "member"))).toEqual([]);
+    expect(await subjects(viewer(other.owner, pro.orgId, "owner"))).toEqual([]);
+    expect(await asUser(other.owner, (tx) => tx.query("select 1 from app.outbox where org_id = $1", [pro.orgId]))).toEqual([]);
+  });
+
+  it("a signing code is hidden from a real workspace's owner and admin, and shown in the sample workspace (W10-5)", async () => {
+    const real = await proWorkspace("codes-owner@example.com");
+    const admin = await db.user("codes-admin@example.com");
+    await addMember(real.orgId, admin, "admin");
+    await remind(real.orgId, "Permit expires in 7 days");
+    await issueCode(real.orgId, real.owner);
+    const kinds = await db.root((tx) => tx.query<{ kind: string }>("select kind from app.outbox where org_id = $1 order by kind", [real.orgId]));
+    expect(kinds.map((r) => r.kind)).toEqual(["esign_code", "reminder"]);
+    expect((await listOutbox(viewer(real.owner, real.orgId, "owner"))).map((m) => m.subject)).toEqual(["Permit expires in 7 days"]);
+    expect((await listOutbox(viewer(admin, real.orgId, "admin"))).map((m) => m.subject)).toEqual(["Permit expires in 7 days"]);
+
+    const sample = await freshSample();
+    await issueCode(sample.orgId, sample.userId);
+    expect((await listOutbox(sample)).map((m) => m.subject)).toContain("Your signing code");
+  });
+
+  it("purge_outbox can't be run by a signed-in user", async () => {
+    const pro = await proWorkspace("purge-denied@example.com");
+    await expect(asUser(pro.owner, (tx) => tx.query("select app.purge_outbox()"))).rejects.toThrow(/permission denied/);
+  });
+
+  it("the daily purge keeps an 89-day reminder and deletes a 91-day one, keeps a 23-hour code and deletes a 25-hour one; a second run deletes none", async () => {
+    const pro = await proWorkspace("purge@example.com");
+    const add = (subject: string, kind: string, age: string) =>
+      asService((tx) =>
+        tx.query("insert into app.outbox (org_id, to_email, subject, body, kind, created_at) values ($1, 'purge@example.com', $2, 'x', $3, now() - $4::interval)", [
+          pro.orgId,
+          subject,
+          kind,
+          age,
+        ]),
+      );
+    await add("reminder 89 days", "reminder", "89 days");
+    await add("reminder 91 days", "reminder", "91 days");
+    await add("code 23 hours", "esign_code", "23 hours");
+    await add("code 25 hours", "esign_code", "25 hours");
+    const left = async () =>
+      (await db.root((tx) => tx.query<{ subject: string }>("select subject from app.outbox where org_id = $1 order by subject", [pro.orgId]))).map((r) => r.subject);
+
+    expect(await purgeOutbox()).toBe(2);
+    expect(await left()).toEqual(["code 23 hours", "reminder 89 days"]);
+    expect(await purgeOutbox()).toBe(0);
+    expect(await left()).toEqual(["code 23 hours", "reminder 89 days"]);
+
+    // The daily job runs it.
+    await add("reminder 92 days", "reminder", "92 days");
+    vi.stubEnv("CRON_SECRET", "s".repeat(40));
+    const run = await cron(new Request("http://x/api/cron/reminders", { headers: { authorization: `Bearer ${"s".repeat(40)}` } }));
+    vi.unstubAllEnvs();
+    expect(await run.json()).toMatchObject({ ok: true, outbox: 1 });
+    expect(await left()).toEqual(["code 23 hours", "reminder 89 days"]);
   });
 });
 
