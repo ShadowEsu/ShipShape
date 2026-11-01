@@ -314,7 +314,7 @@ describe("an upload link (/c)", () => {
     const back = new URL(res.headers.get("location") ?? "", "http://shipshape.test");
     expect(`${back.pathname}${back.search}`).toBe(`/c/${id}?r=busy&k=coi`);
     const html = await collectPage(id, Object.fromEntries(back.searchParams));
-    expect(textOf(html)).toContain("Too many tries from this network, so nothing was sent. Wait up to an hour, then send it again.");
+    expect(textOf(html)).toContain("Too many tries from this network, so nothing was sent. Wait 10 minutes, then send it again.");
     // Not a file problem: nothing is marked invalid, the message stays at the top.
     expect(html).not.toContain('aria-invalid="true"');
   });

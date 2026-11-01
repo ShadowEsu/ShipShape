@@ -26,7 +26,7 @@ const PROBLEMS: Record<Problem, (org: string) => string> = {
   type: () => "That file isn't a PDF, PNG or JPEG. Save it as one of those, then send it again.",
   link_full: (org) => `This link has taken all the files it can (25), so nothing was sent. Ask ${org} for a new link.`,
   workspace_full: (org) => `${org} has no room left for files, so nothing was sent. Let them know.`,
-  busy: () => "Too many tries from this network, so nothing was sent. Wait up to an hour, then send it again.",
+  busy: () => "Too many tries from this network, so nothing was sent. Wait 10 minutes, then send it again.",
 };
 
 /** Problems with one field of a document's form: the message goes under that field. */
