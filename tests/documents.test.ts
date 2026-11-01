@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { canSaveFacts, checkFill, DOCUMENT_GONE, downloadUrl, fillTemplate, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { canSaveFacts, checkFill, DOCUMENT_GONE, documentsById, downloadUrl, fillTemplate, firstDocument, getDocument, listDocuments, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import { checkUpload, UploadRefused } from "@/lib/server/files";
 import { fillW9Form, formValues, loadW9, prefill } from "@/lib/server/fill";
@@ -446,6 +446,32 @@ describe("business facts", () => {
     expect(await refusal(saveProfile(real, { ...facts, legal_name: "x".repeat(121) }))).toEqual({ field: "legal_name", message: "Shorten this to 120 characters or fewer." });
     expect(await refusal(saveProfile(real, { ...facts, entity_type: "spaceship" }))).toEqual({ field: "entity_type", message: "Choose a business type from the list." });
     vi.unstubAllEnvs();
+  });
+});
+
+describe("single reads for pages that don't need the whole list (review #24)", () => {
+  it("documentsById returns the asked-for active documents of this workspace only: not others', not archived, not unknown ids", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await workspace("byid@example.com", "real");
+    const other = await workspace("byid-other@example.com", "real");
+    const a = await uploadDocument(ctx, { title: "A", kind: "coi" }, PDF);
+    const b = await uploadDocument(ctx, { title: "B", kind: "coi" }, PDF);
+    const c = await uploadDocument(ctx, { title: "C", kind: "coi" }, PDF);
+    await setArchived(ctx, c, true);
+    const theirs = await uploadDocument(other, { title: "Theirs", kind: "coi" }, PDF);
+    const got = await documentsById(ctx, [a, c, theirs, "00000000-0000-0000-0000-000000000000"]);
+    expect(got.map((d) => d.title).sort()).toEqual(["A"]);
+    expect((await documentsById(ctx, [a, b])).map((d) => d.title).sort()).toEqual(["A", "B"]);
+    expect(await documentsById(ctx, [])).toEqual([]);
+  });
+
+  it("firstDocument is the first in the list's order (soonest to run out, then newest), or null", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const ctx = await workspace("first@example.com", "real");
+    expect(await firstDocument(ctx)).toBeNull();
+    await uploadDocument(ctx, { title: "Undated", kind: "coi" }, PDF);
+    const soon = await uploadDocument(ctx, { title: "Soonest", kind: "coi", expires_on: "2030-01-01" }, PDF);
+    expect(await firstDocument(ctx)).toEqual({ id: soon, title: "Soonest" });
   });
 });
 

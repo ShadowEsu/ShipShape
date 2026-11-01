@@ -3,7 +3,7 @@ import Link from "next/link";
 import { z } from "zod";
 import { PassportView } from "@/app/p/passport-view";
 import { Notice, PageHeader } from "@/components/app-ui";
-import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { DOC_KINDS, documentsById } from "@/lib/server/documents";
 import { contactEmail } from "@/lib/server/flags";
 import { PASSPORT_DAYS } from "@/lib/server/passport";
 import { requireWorkspace } from "@/lib/server/session";
@@ -27,7 +27,7 @@ export default async function PassportPreviewPage({ searchParams }: { searchPara
   const back = `/app/passport?${new URLSearchParams({ docs: ids.join(","), label, days: String(days) })}`;
 
   // Only this workspace's documents, in the order they were ticked; unknown ids (or another workspace's) drop out.
-  const mine = await listDocuments(ctx);
+  const mine = await documentsById(ctx, ids);
   const latest = new Map(mine.map((m) => [m.id, m.versions]));
   const documents = ids.flatMap((id) => {
     const d = mine.find((m) => m.id === id);
