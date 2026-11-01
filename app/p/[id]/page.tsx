@@ -5,6 +5,7 @@ import { NamedByWorkspace, ValidityChip, fmtDay } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
+import { linkEnd } from "@/lib/server/links";
 import { openPassport, PASSPORT_COOKIE } from "@/lib/server/passport";
 import { viewerToday } from "@/lib/server/session";
 import { validityOn } from "@/lib/today";
@@ -17,6 +18,8 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
   const ip = clientIp(await headers());
   const busy = token ? await rateLimited("passport-view", ip, 60, 600) : false;
   const passport = token && !busy ? await openPassport(id, token, ip) : null;
+  // Only once the open came back empty, for the same token: why (ran out, or turned off), nothing else.
+  const end = token && !busy && !passport ? await linkEnd("p", id, token) : null;
   // The outsider's own date: a document is current through its last day where they are, as in the app.
   const today = await viewerToday();
 
@@ -58,9 +61,9 @@ export default async function PassportPage({ params }: { params: Promise<{ id: s
       ) : busy ? (
         <LinkBusy href={`/p/${id}`} />
       ) : token ? (
-        <LinkUnavailable noun="link" why="closed" />
+        <LinkUnavailable noun="link" why="closed" end={end} />
       ) : (
-        <FragmentOpener openUrl={`/p/${id}/open`} unavailable={<LinkUnavailable noun="link" why="incomplete" />} />
+        <FragmentOpener openUrl={`/p/${id}/open`} opening="Opening the shared documents…" unavailable={<LinkUnavailable noun="link" why="incomplete" />} />
       )}
     </main>
   );

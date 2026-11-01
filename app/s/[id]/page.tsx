@@ -8,6 +8,7 @@ import { ESIGN_CONSENT_TEXT } from "@/lib/consent";
 import { openSigning, SIGN_COOKIE } from "@/lib/server/esign";
 import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
+import { linkEnd } from "@/lib/server/links";
 import { SignForm } from "./sign-form";
 
 export const metadata: Metadata = { title: "Sign a document", robots: { index: false, follow: false } };
@@ -18,6 +19,7 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
   // Same view limit as passport and upload pages (Security F8).
   const busy = token ? await rateLimited("sign-view", clientIp(await headers()), 60, 600) : false;
   const view = token && !busy ? await openSigning(id, token) : null;
+  const end = token && !busy && !view ? await linkEnd("s", id, token) : null;
 
   return (
     <main id="main" className="mx-auto min-h-screen max-w-2xl px-5 py-12 sm:py-16">
@@ -80,7 +82,7 @@ export default async function SigningPage({ params }: { params: Promise<{ id: st
       ) : busy ? (
         <LinkBusy href={`/s/${id}`} />
       ) : token ? (
-        <LinkUnavailable noun="signing link" why="closed" />
+        <LinkUnavailable noun="signing link" why="closed" end={end} />
       ) : (
         <FragmentOpener
           openUrl={`/s/${id}/open`}
