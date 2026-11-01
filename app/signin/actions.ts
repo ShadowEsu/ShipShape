@@ -7,7 +7,7 @@ import { asService, asUser } from "@/lib/server/db";
 import { CALLBACK_PATH, cognitoConfig, SIGN_IN_COOKIE, SIGN_IN_SECONDS, startSignIn } from "@/lib/server/cognito";
 import { runReminders } from "@/lib/server/deadlines";
 import { clientIp, rateLimited } from "@/lib/server/http";
-import { createLocalUser, endSession, finishSignIn, localSignInAllowed, viewerToday } from "@/lib/server/session";
+import { createLocalUser, finishSignIn, localSignInAllowed, signOutHere, viewerToday } from "@/lib/server/session";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 
 export interface SignInState {
@@ -71,11 +71,11 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
     // The sample's expired permit and expiring certificate show their reminders straight away.
     await runReminders(undefined, org.id);
   }
-  await finishSignIn(userId, { demo: mode === "demo" });
+  await finishSignIn(userId, { demo: mode === "demo", userAgent: (await headers()).get("user-agent") });
   redirect("/app");
 }
 
 export async function signOut() {
-  await endSession();
+  await signOutHere();
   redirect("/");
 }

@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     if (await rateLimited("signin-callback", clientIp(request.headers), 20, 3600)) throw new SignInFailed("busy");
     const query = new URL(request.url).searchParams;
     const { userId, authAt } = await completeSignIn(cognito, { code: query.get("code"), state: query.get("state"), error: query.get("error") }, cookie);
-    await finishSignIn(userId, { demo: false, authAt });
+    await finishSignIn(userId, { demo: false, authAt, userAgent: request.headers.get("user-agent") });
   } catch (e) {
     // Reasons and our own details only: never the token, the code or the email.
     const detail = e instanceof SignInFailed ? e.message : `${e instanceof Error ? e.name : "unknown"}${pgErrorCode(e) ? ` ${pgErrorCode(e)}` : ""}`;

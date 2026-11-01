@@ -180,7 +180,7 @@ describe("a sign-in", () => {
 
   it("the session's sign-in time is Cognito's, so an old Cognito sign-in doesn't count as recent", () => {
     const authAt = Math.floor(NOW / 1000) - 11 * 60;
-    const session = decodeSession(encodeSession({ userId: randomUUID(), demo: false, authAt }, NOW), NOW);
+    const session = decodeSession(encodeSession({ userId: randomUUID(), demo: false, authAt, sessionId: randomUUID() }, NOW), NOW);
     expect(session?.authAt).toBe(authAt);
     expect(session && authIsRecent(session, NOW)).toBe(false);
   });
@@ -227,7 +227,7 @@ describe("the callback refuses", () => {
     await expect(signInWith({ cookie: (c) => `${c.slice(0, -2)}xx` }).result).rejects.toMatchObject({ reason: "expired" });
     await expect(signInWith({ now: NOW + 11 * 60_000 }).result).rejects.toMatchObject({ reason: "expired" });
     // A session cookie isn't a sign-in cookie, and the other way round.
-    const session = encodeSession({ userId: randomUUID(), demo: false }, NOW);
+    const session = encodeSession({ userId: randomUUID(), demo: false, sessionId: randomUUID() }, NOW);
     await expect(signInWith({ cookie: () => session }).result).rejects.toMatchObject({ reason: "expired" });
     expect(decodeSession(signInWith().cookie, NOW)).toBeNull();
   });

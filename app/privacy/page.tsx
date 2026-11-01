@@ -23,6 +23,10 @@ export default function PrivacyPage() {
           version of these policies you agreed to and when.
         </li>
         <li>
+          <strong>The browsers you&apos;re signed in on:</strong> browser and system name, when you signed in and were last active,
+          so you can sign each one out. No IP addresses.
+        </li>
+        <li>
           <strong>Business facts:</strong> the details you save to fill forms (legal name, address, entity type, signer). A tax ID
           (EIN) is encrypted with a key kept outside the database; the app shows only its last 4 digits unless you ask to see it
           after signing in recently, and that request is recorded.

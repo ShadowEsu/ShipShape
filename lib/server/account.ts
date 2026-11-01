@@ -72,18 +72,26 @@ interface ExportVendorFile {
   storage_path: string;
 }
 
+interface ExportSession {
+  ua_family: string;
+  created_at: string;
+  last_seen_at: string;
+  revoked_at: string | null;
+}
+
 const csvCell = (v: string | null) => (v === null ? "" : /[",\n]/.test(v) ? `"${v.replaceAll('"', '""')}"` : v);
 
 /**
  * Everything in the workspace as a ZIP: every version of every document, their details, the
- * business facts (tax ID only as its last 4 digits) and the full history. Owners and admins only,
- * after a recent sign-in; the export itself is recorded in the history.
+ * business facts (tax ID only as its last 4 digits), the full history, and the exporting person's
+ * own sessions (browser and system name and times, Design row 34). Owners and admins only, after a
+ * recent sign-in; the export itself is recorded in the history.
  */
 export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; bytes: Uint8Array }> {
   if (ctx.role === "member") throw new UserError("Only owners and admins can export the workspace.");
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to export.");
 
-  const { docs, versions, vendors, vendorFiles } = await asUser(ctx.userId, async (tx) => {
+  const { docs, versions, vendors, vendorFiles, sessions } = await asUser(ctx.userId, async (tx) => {
     const docs = await tx.query<ExportDoc>(
       "select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on, d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.created_at::text as created_at from app.documents d where d.org_id = $1 order by d.created_at, d.id",
       [ctx.orgId],
@@ -103,7 +111,12 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     if ([...versions, ...vendorFiles].reduce((n, v) => n + v.size_bytes, 0) > EXPORT_MAX_BYTES) {
       throw new UserError("This workspace is too large to export in one file. Write to us and we'll send it another way.");
     }
-    return { docs, versions, vendors, vendorFiles };
+    // The exporting person's own sign-ins only: another member's are theirs to export.
+    const sessions = await tx.query<ExportSession>(
+      "select ua_family, created_at::text as created_at, last_seen_at::text as last_seen_at, revoked_at::text as revoked_at from app.sessions where user_id = $1 order by created_at, id",
+      [ctx.userId],
+    );
+    return { docs, versions, vendors, vendorFiles, sessions };
   });
 
   const profile = await loadProfile(ctx);
@@ -168,6 +181,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     "vendor-files/    files your vendors sent through Collect upload links",
     "vendors.json     your vendors, what you asked each for, and the files they sent with SHA-256 fingerprints",
     "history.csv      the workspace history, oldest first",
+    "sessions.json    the browsers you signed in on: browser and system name, when you signed in, were last active and signed out",
     "",
     "Check a file against its fingerprint with: shasum -a 256 <file>",
     ...(missing.length ? ["", "NOT INCLUDED: the stored copy of these files could not be found. Their details and fingerprints are still listed.", ...missing.map((m) => `  ${m}`)] : []),
@@ -190,6 +204,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
             ["seq,at,actor,action,object_id,sha256", ...history.map((h) => [h.seq, h.at, h.actor, h.action, h.object_id, h.detail_sha256].map(csvCell).join(","))].join("\n"),
           ),
         },
+        { name: "sessions.json", data: enc.encode(JSON.stringify(sessions, null, 2)) },
         ...files,
       ],
       now,
