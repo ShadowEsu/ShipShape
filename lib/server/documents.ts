@@ -92,6 +92,49 @@ export async function listDocuments(ctx: Ctx, opts: ListOpts = {}): Promise<DocR
   return asUser(ctx.userId, (tx) => tx.query<DocRow>(LIST_SQL, listParams(ctx, opts)));
 }
 
+/** How many documents Home lists under "Needs attention" at once; the rest are a count and a link to the list. */
+export const ATTENTION_MAX = 20;
+
+export interface HomeSummary {
+  /** Active documents, and how many of those are current (no date, or more than 30 days left). */
+  total: number;
+  current: number;
+  hasW9: boolean;
+  hasDates: boolean;
+  /** The first document in the list's order (none when there are none): the setup step's "start with" document. */
+  first: { id: string; title: string } | null;
+  /** Expired or expiring, soonest first, at most ATTENTION_MAX; `attentionTotal` counts them all. */
+  attention: DocRow[];
+  attentionTotal: number;
+}
+
+const SUMMARY_SQL = `
+  select count(*)::int as total,
+         count(*) filter (where d.expires_on is null or d.expires_on > $1::date + 30)::int as current,
+         coalesce(bool_or(d.template_id = 'irs-w9'), false) as has_w9,
+         coalesce(bool_or(d.expires_on is not null or d.renews_on is not null), false) as has_dates
+  from app.documents d where d.org_id = $2 and d.status = 'active'`;
+const FIRST_SQL = `select d.id, d.title from app.documents d where d.org_id = $1 and d.status = 'active'` + LIST_ORDER + " limit 1";
+const ATTENTION_SQL = DOC_SELECT + LIST_WHERE + " and d.expires_on <= $1::date + 30" + LIST_ORDER + " limit $6";
+
+/** What Home needs, without reading every document: Pro has no document limit. */
+export async function homeSummary(ctx: Ctx): Promise<HomeSummary> {
+  return asUser(ctx.userId, async (tx) => {
+    const [counts] = await tx.query<{ total: number; current: number; has_w9: boolean; has_dates: boolean }>(SUMMARY_SQL, [ctx.today, ctx.orgId]);
+    const [first] = await tx.query<{ id: string; title: string }>(FIRST_SQL, [ctx.orgId]);
+    const attention = await tx.query<DocRow>(ATTENTION_SQL, [...listParams(ctx, {}), ATTENTION_MAX]);
+    return {
+      total: counts.total,
+      current: counts.current,
+      hasW9: counts.has_w9,
+      hasDates: counts.has_dates,
+      first: first ?? null,
+      attention,
+      attentionTotal: counts.total - counts.current,
+    };
+  });
+}
+
 /** How many documents the documents page lists at once (Pro has no document limit, so the list is paged). */
 export const DOCUMENTS_PAGE_SIZE = 50;
 
