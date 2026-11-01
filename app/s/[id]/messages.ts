@@ -3,10 +3,10 @@ import type { SignResult } from "@/lib/server/esign";
 /** The form field a signing answer is about, so its message sits next to that field. */
 export type SignField = "consent" | "name" | "code";
 
-/** Every answer from /s/<id>/code and /s/<id>/sign except "ok". */
-export type SignProblem = Exclude<SignResult, "ok"> | "too_many";
+/** Every answer from /s/<id>/code and /s/<id>/sign except "ok": the lib's results, the network limit, and the routes' "reopen" (cookie gone). */
+export type SignProblem = Exclude<SignResult, "ok"> | "too_many" | "reopen";
 
-const FIELD: Partial<Record<SignProblem, SignField>> = { needs_consent: "consent", needs_name: "name", bad_code: "code", locked: "code", expired_code: "code" };
+const FIELD: Partial<Record<SignProblem, SignField>> = { needs_consent: "consent", needs_name: "name", name_chars: "name", bad_code: "code", locked: "code", expired_code: "code" };
 
 /** What went wrong and what to do, naming the workspace that sent the request. */
 const MESSAGES: Record<SignProblem, (sender: string) => string> = {
@@ -15,11 +15,14 @@ const MESSAGES: Record<SignProblem, (sender: string) => string> = {
   expired_code: () => "That code is more than 10 minutes old. Send a new code and use that one.",
   needs_consent: () => "Check the box to agree to sign electronically.",
   needs_name: () => "Type your full name to sign.",
+  name_chars: () => "The certificate can only print Latin letters, numbers and common punctuation. Type your name with those, for example Lukasz Nowak.",
   unsupported: (sender) => `This file can't be signed here; it may be password-protected. Ask ${sender} for another copy.`,
   too_large: (sender) => `The signed copy would be over 4 MB, which ShipShape can't store. Ask ${sender} for a smaller copy.`,
   file_changed: (sender) => `This document changed after it was sent, so it can't be signed. Ask ${sender} to send it again.`,
   too_many: (sender) => `You've had all 5 codes this signing link allows. Ask ${sender} for a new link.`,
   invalid: (sender) => `This signing link has stopped working. Ask ${sender} for a new one.`,
+  already_signed: () => "You've already signed this. Reload the page for your signed copy.",
+  reopen: () => "This page was open too long, so nothing was signed. Open the link from your message again.",
 };
 
 const isProblem = (r: string): r is SignProblem => Object.hasOwn(MESSAGES, r);

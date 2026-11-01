@@ -32,7 +32,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!form) return back("empty");
   const upload = form.get("file");
   const file = upload instanceof File && upload.size > 0 ? { name: upload.name, bytes: new Uint8Array(await upload.arrayBuffer()) } : null;
-  const token = (await cookies()).get(COLLECT_COOKIE)?.value ?? "";
+  const token = (await cookies()).get(COLLECT_COOKIE)?.value;
+  // No cookie: the page outlived its 30-minute token (lib/server/links.ts); nothing about the link itself. The page says to reopen it.
+  if (!token) return back("reopen");
   const outcome = await receiveFile(id, token, { kind: form.get("kind"), expiresOn: form.get("expires_on"), file });
   return back(outcome === "sent" ? `sent-${String(form.get("kind"))}` : outcome);
 }

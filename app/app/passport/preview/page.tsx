@@ -6,7 +6,7 @@ import { Notice, PageHeader } from "@/components/app-ui";
 import { DOC_KINDS, documentsById } from "@/lib/server/documents";
 import { contactEmail } from "@/lib/server/flags";
 import { PASSPORT_DAYS } from "@/lib/server/passport";
-import { requireWorkspace } from "@/lib/server/session";
+import { requireWorkspace, viewerZone } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Preview a passport link" };
 
@@ -57,7 +57,7 @@ export default async function PassportPreviewPage({ searchParams }: { searchPara
       ) : (
         <section aria-label="The recipient's page" className="rounded-3xl border border-line bg-canvas p-5 sm:p-8">
           <p className="eyebrow mb-6">ShipShape passport</p>
-          <PassportView passport={passport} today={ctx.today} contact={contactEmail()} page="/app/passport/preview" fileHref={(id) => `/app/documents/${id}/file?v=${latest.get(id)}&mode=download`} heading="h2" />
+          <PassportView passport={passport} today={ctx.today} zone={await viewerZone()} contact={contactEmail()} page="/app/passport/preview" fileHref={(id) => `/app/documents/${id}/file?v=${latest.get(id)}&mode=download`} heading="h2" />
         </section>
       )}
     </div>

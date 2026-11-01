@@ -15,7 +15,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = Body.safeParse(await req.json().catch(() => null));
   if (!body.success) return fail("Check the form and try again.");
   const { id } = await params;
-  const token = (await cookies()).get(SIGN_COOKIE)?.value ?? "";
-  const result = await completeSigning(id, token, { ...body.data, code: body.data.code.trim(), ip });
+  const token = (await cookies()).get(SIGN_COOKIE)?.value;
+  // No cookie: the page outlived its 30-minute token (lib/server/links.ts), nothing about the link itself. Nothing was signed.
+  const result = token ? await completeSigning(id, token, { ...body.data, code: body.data.code.trim(), ip }) : "reopen";
   return Response.json({ result }, { status: result === "invalid" ? 404 : 200, headers: { "Cache-Control": "no-store" } });
 }

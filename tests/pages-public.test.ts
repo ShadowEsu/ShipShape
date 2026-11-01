@@ -4,10 +4,16 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import CollectPage from "@/app/c/[id]/page";
 import { POST as upload } from "@/app/c/[id]/upload/route";
+import { LinkUnavailable } from "@/app/link-states";
+import { GET as passportFile } from "@/app/p/[id]/file/route";
 import PassportPage from "@/app/p/[id]/page";
 import { fmtDay } from "@/components/app-ui";
+import { POST as signCode } from "@/app/s/[id]/code/route";
+import { GET as signFile } from "@/app/s/[id]/file/route";
 import SigningPage from "@/app/s/[id]/page";
+import { POST as signPost } from "@/app/s/[id]/sign/route";
 import { SignButton } from "@/app/s/[id]/sign-form";
+import { signProblem } from "@/app/s/[id]/messages";
 import { signIn } from "@/app/signin/actions";
 import SignInPage from "@/app/signin/page";
 import { addVendor, createVendorLink, receiveFile, revokeVendorLink } from "@/lib/server/collect";
@@ -153,7 +159,7 @@ describe("a passport link (/p)", () => {
 
     jar.set("ss_passport", otherToken(token));
     const wrong = await passportPage(id);
-    expect(textOf(wrong)).toContain("This link has stopped working It has expired or been turned off. Ask whoever sent it for a new one.");
+    expect(textOf(wrong)).toContain("This link has stopped working It has expired, been turned off, or what it shared is no longer available. Ask whoever sent it for a new one.");
     expect(textOf(wrong)).not.toContain("stopped working on");
   });
 
@@ -178,6 +184,64 @@ describe("a passport link (/p)", () => {
     expect(textOf(html)).toContain("Too many tries from this network Wait 10 minutes, then reload this page.");
     expect(textOf(html)).not.toContain("stopped working");
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Reload this page", href: `/p/${id}` }]);
+  });
+
+  /** A download click: a plain GET from the browser, with the request's own network address. */
+  const download = (id: string, d: string) =>
+    passportFile(new Request(`http://shipshape.test/p/${id}/file?d=${d}`, { headers: { "x-forwarded-for": visitor.ip } }), { params: Promise.resolve({ id }) });
+
+  it("a download that's refused sends the visitor back to the page, which says why: the link closed, its cookie gone, or too many downloads; never a JSON answer", async () => {
+    const docs = await listDocuments(sample);
+    const { id, token } = await createPassport(sample, { label: "Download later", days: 7, documentIds: [docs[0].id] });
+    // The page sat open past its 30-minute cookie: back to the page, which says the download didn't start and to reopen the link.
+    await expect(download(id, docs[0].id)).rejects.toThrow(`redirect /p/${id}?r=reopen`);
+    // The page hands FragmentOpener the stale state (seen once the browser finds no token in the address); the copy itself, rendered directly:
+    const page = await renderPage(PassportPage, props(id, { r: "reopen" }));
+    expect(page).toContain("Opening the shared documents…");
+    const stale = textOf(await renderPage(LinkUnavailable, { noun: "link", why: "stale", undone: "the download didn't start", zone: "UTC" }));
+    expect(stale).toBe("Open the full link you were sent This page was open too long, so the download didn't start. Open the link from your message again, or ask whoever sent it for a new one. Ask for a new link");
+    const incomplete = textOf(await renderPage(LinkUnavailable, { noun: "link", why: "incomplete", zone: "UTC" }));
+    expect(incomplete).toBe("Open the full link you were sent This page opens only from the complete link in your message. Open that link again, or ask whoever sent it for a new one. Ask for a new link");
+    // With the cookie, a good download goes to the file; after the link is turned off, back to the page, which says so.
+    jar.set("ss_passport", token);
+    await expect(download(id, docs[0].id)).rejects.toThrow(/^redirect \/api\/files\?/);
+    await revokePassport(sample, id);
+    await expect(download(id, docs[0].id)).rejects.toThrow(`redirect /p/${id}`);
+    expect(textOf(await passportPage(id))).toContain("This link was turned off");
+  });
+
+  it("too many downloads from one network: back to the page, with the one line about it above the list; the page itself still opens", async () => {
+    const docs = await listDocuments(sample);
+    const { id, token } = await createPassport(sample, { label: "Many downloads", days: 7, documentIds: [docs[0].id] });
+    jar.set("ss_passport", token);
+    for (let i = 0; i < 60; i++) await rateLimited("passport-file", visitor.ip, 60, 600);
+    await expect(download(id, docs[0].id)).rejects.toThrow(`redirect /p/${id}?r=busy`);
+    const html = await renderPage(PassportPage, props(id, { r: "busy" }));
+    expect(html).toMatch(/<div role="alert"><div[^>]*>Too many downloads from this network\. Wait 10 minutes, then try again\.<\/div><\/div>/);
+    expect(textOf(html)).toContain("Harbor Plumbing (sample)");
+    expect(actionsOf(html).filter((a) => a.label === "Download")).toHaveLength(1);
+    // Without the download route's say-so, the page doesn't show the line.
+    expect(textOf(await passportPage(id))).not.toContain("Too many downloads");
+  });
+
+  it("says the link's last day where the viewer is, not the UTC day (Security: the viewer's zone comes from their own cookie)", async () => {
+    const docs = await listDocuments(sample);
+    const { id, token } = await createPassport(sample, { label: "West coast", days: 7, documentIds: [docs[0].id] });
+    // Ends at 01:00 UTC on the 8th: still the 7th in Los Angeles, already the 8th in Tokyo.
+    await db.root((tx) => tx.query("update app.share_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    jar.set("ss_passport", token);
+    jar.set("ss_tz", "America/Los_Angeles");
+    expect(textOf(await passportPage(id))).toContain("this link works until Nov 7, 2026");
+    jar.set("ss_tz", "Asia/Tokyo");
+    expect(textOf(await passportPage(id))).toContain("this link works until Nov 8, 2026");
+    // Junk zone: UTC.
+    jar.set("ss_tz", "Mars/Olympus");
+    expect(textOf(await passportPage(id))).toContain("this link works until Nov 8, 2026");
+    // The same for an expired link's end.
+    await db.root((tx) => tx.query("update app.share_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 hour' where id = $1", [id]));
+    jar.set("ss_tz", "Pacific/Kiritimati");
+    const [row] = await db.root((tx) => tx.query<{ day: string }>("select to_char(expires_at at time zone 'Pacific/Kiritimati', 'Mon FMDD, YYYY') as day from app.share_links where id = $1", [id]));
+    expect(said(await passportPage(id))).toContain(`It stopped working on ${row.day}.`);
   });
 });
 
@@ -221,10 +285,11 @@ describe("a signing link (/s)", () => {
     );
     jar.set("ss_sign", token);
     const html = await signingPage(id);
-    expect(said(html)).toContain(`This signing link has expired It stopped working on ${fmtDay(row.at)}. Ask whoever sent it for a new one.`);
+    // A signed request past its end reads the same (the page says no more about the link), so the next step covers both: a new link, or the signed copy.
+    expect(said(html)).toContain(`This signing link has expired It stopped working on ${fmtDay(row.at)}. Ask whoever sent it for a new link, or for a copy of what you signed.`);
     expectAskForNewLink(html);
     jar.set("ss_sign", otherToken(token));
-    expect(textOf(await signingPage(id))).toContain("This signing link has stopped working It has expired or been turned off.");
+    expect(textOf(await signingPage(id))).toContain("This signing link has stopped working It has expired, been turned off, or what it shared is no longer available.");
   });
 
   it("once signed, ends calmly: done, who has the record, until when this copy stays here, and one action", async () => {
@@ -247,6 +312,75 @@ describe("a signing link (/s)", () => {
       tx.query<{ at: string }>("update app.signature_requests set created_at = now() - interval '2 days', expires_at = now() - interval '1 hour' where id = $1 returning expires_at::text as at", [id]),
     );
     expect(said(await signingPage(id))).toContain(`This signing link has expired It stopped working on ${fmtDay(row.at)}.`);
+  });
+
+  const same = { origin: "http://shipshape.test", host: "shipshape.test", "sec-fetch-site": "same-origin", "x-forwarded-for": visitor.ip, "content-type": "application/json" };
+  const postCode = (id: string) => signCode(new Request(`http://shipshape.test/s/${id}/code`, { method: "POST", headers: same }), { params: Promise.resolve({ id }) });
+  const postSign = (id: string, body: object) =>
+    signPost(new Request(`http://shipshape.test/s/${id}/sign`, { method: "POST", headers: same, body: JSON.stringify(body) }), { params: Promise.resolve({ id }) });
+  const download = (id: string) => signFile(new Request(`http://shipshape.test/s/${id}/file`, { headers: { "x-forwarded-for": visitor.ip } }), { params: Promise.resolve({ id }) });
+
+  it("a page open past its 30-minute cookie: the code and sign posts answer 'reopen' (nothing was signed), not that the link stopped working", async () => {
+    const { id, token } = await request();
+    // No cookie: the answer names the page, not the link, and is a 200 (the link is fine).
+    const code = await postCode(id);
+    expect(code.status).toBe(200);
+    expect(await code.json()).toEqual({ result: "reopen" });
+    const sign = await postSign(id, { code: "123456", typedName: "Jordan Lee", consented: true });
+    expect(await sign.json()).toEqual({ result: "reopen" });
+    expect(signProblem("reopen", "Harbor Plumbing (sample)")).toEqual({ field: null, message: "This page was open too long, so nothing was signed. Open the link from your message again." });
+    // The same posts with the cookie reach the request.
+    jar.set("ss_sign", token);
+    expect(await (await postCode(id)).json()).toEqual({ result: "ok" });
+    // The download, too: back to the page's stale state without the cookie; to the file with it.
+    jar.clear();
+    await expect(download(id)).rejects.toThrow(`redirect /s/${id}?r=reopen`);
+    jar.set("ss_sign", token);
+    await expect(download(id)).rejects.toThrow(/^redirect \/api\/files\?/);
+    await revokeSignatureRequest(sample, id);
+    await expect(download(id)).rejects.toThrow(`redirect /s/${id}`);
+  });
+
+  it("a second signature from a stale tab is told it's already signed, with the way to the copy; the words for each answer name its field", async () => {
+    const { id, token } = await request();
+    jar.set("ss_sign", token);
+    expect(await (await postCode(id)).json()).toEqual({ result: "ok" });
+    const [m] = await db.root((tx) => tx.query<{ body: string }>("select body from app.outbox where org_id = $1 order by created_at desc limit 1", [sample.orgId]));
+    const code = /\b(\d{6})\b/.exec(m.body)?.[1] ?? "";
+    // A name the certificate can't print: its own words, under the name field.
+    const chars = await postSign(id, { code, typedName: "Łukasz Nowak", consented: true });
+    expect(await chars.json()).toEqual({ result: "name_chars" });
+    expect(signProblem("name_chars", "x")).toEqual({
+      field: "name",
+      message: "The certificate can only print Latin letters, numbers and common punctuation. Type your name with those, for example Lukasz Nowak.",
+    });
+    expect(await (await postSign(id, { code, typedName: "Lukasz Nowak", consented: true })).json()).toEqual({ result: "ok" });
+    // The stale tab posts again.
+    const again = await postSign(id, { code, typedName: "Lukasz Nowak", consented: true });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ result: "already_signed" });
+    expect(await (await postCode(id)).json()).toEqual({ result: "already_signed" });
+    expect(signProblem("already_signed", "x")).toEqual({ field: null, message: "You've already signed this. Reload the page for your signed copy." });
+  });
+
+  it("too many downloads from one network: back to the page with the one line about it; the page still opens", async () => {
+    const { id, token } = await request();
+    jar.set("ss_sign", token);
+    for (let i = 0; i < 30; i++) await rateLimited("sign-file", visitor.ip, 30, 600);
+    await expect(download(id)).rejects.toThrow(`redirect /s/${id}?r=busy`);
+    const html = await renderPage(SigningPage, props(id, { r: "busy" }));
+    expect(textOf(html)).toContain("Too many downloads from this network. Wait 10 minutes, then try again.");
+    expect(textOf(html)).toContain("1. Read the document");
+  });
+
+  it("says until when it can be signed on the viewer's day, not the UTC day", async () => {
+    const { id, token } = await request();
+    await db.root((tx) => tx.query("update app.signature_requests set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    jar.set("ss_sign", token);
+    jar.set("ss_tz", "America/Los_Angeles");
+    expect(said(await signingPage(id))).toContain("You can sign until Nov 7, 2026.");
+    jar.set("ss_tz", "Asia/Tokyo");
+    expect(said(await signingPage(id))).toContain("You can sign until Nov 8, 2026.");
   });
 });
 
@@ -339,7 +473,52 @@ describe("an upload link (/c)", () => {
     expect(said(html)).toContain(`This upload link has expired It stopped working on ${fmtDay(row.at)}. Ask whoever sent it for a new one.`);
     expectAskForNewLink(html);
     jar.set("ss_collect", otherToken(token));
-    expect(textOf(await collectPage(id))).toContain("This upload link has stopped working It has expired or been turned off.");
+    expect(textOf(await collectPage(id))).toContain("This upload link has stopped working It has expired, been turned off, or what it shared is no longer available.");
+  });
+
+  it("a post after the page's cookie ran out comes back as 'reopen', and the page says nothing was sent and to open the link again", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const owner = await db.user("owner-stale@example.com");
+    const [org] = await asUser(owner, (tx) => tx.query<{ id: string }>("select app.create_workspace('Harbor Stale Co') as id"));
+    const real: Ctx = { userId: owner, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Stale Co", role: "owner", today: isoToday() };
+    const { id } = await link(real, "Summit Supply");
+    const body = new FormData();
+    body.set("kind", "coi");
+    body.set("file", new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "coi.pdf", { type: "application/pdf" }));
+    const res = await upload(
+      new Request(`http://shipshape.test/c/${id}/upload?k=coi`, {
+        method: "POST",
+        headers: { origin: "http://shipshape.test", host: "shipshape.test", "sec-fetch-site": "same-origin", "x-forwarded-for": visitor.ip, "content-length": "400" },
+        body,
+      }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(res.status).toBe(303);
+    const back = new URL(res.headers.get("location") ?? "", "http://shipshape.test");
+    expect(`${back.pathname}${back.search}`).toBe(`/c/${id}?r=reopen&k=coi`);
+    // Nothing landed.
+    expect(await db.root((tx) => tx.query("select 1 from app.vendor_files f join app.vendor_links l on l.vendor_id = f.vendor_id where l.id = $1", [id]))).toHaveLength(0);
+    // The page (no cookie) opens from the address first; the state it falls back to names what didn't happen.
+    expect(await collectPage(id, { r: "reopen", k: "coi" })).toContain("Opening the link…");
+    expect(textOf(await renderPage(LinkUnavailable, { noun: "upload link", why: "stale", undone: "nothing was sent", zone: "UTC" }))).toContain(
+      "Open the full upload link you were sent This page was open too long, so nothing was sent. Open the link from your message again, or ask whoever sent it for a new one.",
+    );
+  });
+
+  it("says the link's last day and a file's received day where the vendor is, not the UTC day", async () => {
+    const { id, token } = await link(sample, "Night Owl Supply");
+    await db.root((tx) => tx.query("update app.vendor_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    jar.set("ss_collect", token);
+    expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: null })).toBe("sent");
+    await db.root((tx) => tx.query("update app.vendor_files f set received_at = '2026-11-01 01:00:00+00' from app.vendor_links l where l.vendor_id = f.vendor_id and l.id = $1", [id]));
+    jar.set("ss_tz", "America/Los_Angeles");
+    const la = said(await collectPage(id));
+    expect(la).toContain("this link works until Nov 7, 2026");
+    expect(la).toContain("Received Oct 31, 2026");
+    jar.set("ss_tz", "Asia/Tokyo");
+    const tokyo = said(await collectPage(id));
+    expect(tokyo).toContain("this link works until Nov 8, 2026");
+    expect(tokyo).toContain("Received Nov 1, 2026");
   });
 });
 

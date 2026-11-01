@@ -331,8 +331,9 @@ describe("signing", () => {
     );
     expect(entry.detail_sha256).toBe(signed.sha256);
 
-    // Done means done: no second signature, and the link now hands out the signed copy.
-    expect(await completeSigning(id, token, { code, typedName: "Someone Else", consented: true, ip: IP })).toBe("invalid");
+    // Done means done: no second signature (a stale tab is told it's already signed, not that the link died), and the link now hands out the signed copy.
+    expect(await completeSigning(id, token, { code, typedName: "Someone Else", consented: true, ip: IP })).toBe("already_signed");
+    expect(await sendSigningCode(id, token)).toBe("already_signed");
     expect((await openSigning(id, token))?.status).toBe("signed");
     const file = verifyFileParams(new URL((await signingFileUrl(id, token))!, "http://x").searchParams);
     expect(file?.objectPath).toBe(`${a.orgId}/${doc.id}/v${signed.version}.pdf`);
@@ -408,7 +409,11 @@ describe("signing", () => {
     await expect(requestSignature(a, { documentId, signerName: "Jordan\nLee", signerEmail: "jordan@northwind.example", days: 7 })).rejects.toThrow();
     const { id, token } = await requestSignature(a, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
     await sendSigningCode(id, token);
-    expect(await completeSigning(id, token, { code: "000000", typedName: "Jordan\nLee", consented: true, ip: IP })).toBe("needs_name");
+    expect(await completeSigning(id, token, { code: "000000", typedName: "Jordan\nLee", consented: true, ip: IP })).toBe("name_chars");
+    // A real name outside WinAnsi (Ł, Cyrillic, CJK) is refused with its own reason, not "type your full name"; an empty one still is that.
+    for (const typedName of ["Łukasz Nowak", "Иван Петров", "李明"]) expect(await completeSigning(id, token, { code: "000000", typedName, consented: true, ip: IP })).toBe("name_chars");
+    expect(await completeSigning(id, token, { code: "000000", typedName: " ", consented: true, ip: IP })).toBe("needs_name");
+    expect(await completeSigning(id, token, { code: "000000", typedName: "Antonin Dvorak", consented: true, ip: IP })).toBe("bad_code");
     expect(await completeSigning(id, token, { code: await lastCode(a.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
 
     const [signed] = (await getDocument(a, documentId))!.versions;

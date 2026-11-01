@@ -10,6 +10,8 @@ import { MAX_UPLOAD_BYTES } from "@/lib/server/files";
 import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
+import { viewerZone } from "@/lib/server/session";
+import { dayOf } from "@/lib/today";
 import { SendButton } from "./send-button";
 
 export const metadata: Metadata = { title: "Send documents", robots: { index: false, follow: false } };
@@ -53,6 +55,7 @@ function outcome(r: string | undefined, k: string | undefined, collect: PublicCo
 export default async function CollectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ r?: string; k?: string }> }) {
   const [{ id }, { r, k }] = await Promise.all([params, searchParams]);
   const token = (await cookies()).get(COLLECT_COOKIE)?.value;
+  const zone = await viewerZone();
   const ip = clientIp(await headers());
   const busy = token ? await rateLimited("collect-view", ip, 60, 600) : false;
   const collect = token && !busy ? await openCollect(id, token) : null;
@@ -71,7 +74,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
           <header className="space-y-2">
             <h1 className="font-serif text-4xl font-semibold tracking-tight">{collect.orgName} asks for your documents</h1>
             <p className="text-ink-2">
-              For {collect.vendorName} · this link works until {fmtDay(collect.expiresAt)}
+              For {collect.vendorName} · this link works until {dayOf(collect.expiresAt, zone)}
             </p>
             <NamedByWorkspace contact={contactEmail()} page={`/c/${id}`} />
           </header>
@@ -107,7 +110,7 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
                       {item.receivedAt ? (
                         <>
                           <span aria-hidden="true">✓ </span>
-                          Received {fmtDay(item.receivedAt)}
+                          Received {dayOf(item.receivedAt, zone)}
                           {item.expiresOn && `, valid through ${fmtDay(item.expiresOn)}`}
                         </>
                       ) : (
@@ -188,9 +191,9 @@ export default async function CollectPage({ params, searchParams }: { params: Pr
       ) : busy ? (
         <LinkBusy href={`/c/${id}`} />
       ) : token ? (
-        <LinkUnavailable noun="upload link" why="closed" end={end} />
+        <LinkUnavailable noun="upload link" why="closed" end={end} zone={zone} />
       ) : (
-        <FragmentOpener openUrl={`/c/${id}/open`} unavailable={<LinkUnavailable noun="upload link" why="incomplete" />} />
+        <FragmentOpener openUrl={`/c/${id}/open`} unavailable={<LinkUnavailable noun="upload link" why={r === "reopen" ? "stale" : "incomplete"} undone="nothing was sent" zone={zone} />} />
       )}
     </main>
   );

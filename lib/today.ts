@@ -26,6 +26,14 @@ export function todayIn(timeZone: string, now = new Date()): string {
 /** The UTC date: the cron's day, and the fallback when the viewer's zone is unknown. */
 export const isoToday = () => todayIn("UTC");
 
+/**
+ * The calendar day of an instant (a `timestamptz`, as PostgreSQL prints it or ISO) where the viewer is,
+ * in the chips' form ("Nov 7, 2026"). A link that ends at 01:00 UTC on the 8th ended on the 7th in Los Angeles.
+ */
+export function dayOf(instant: string, timeZone: string): string {
+  return new Date(instant).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
+}
+
 /** Adds days to a YYYY-MM-DD date. */
 export function plusDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
