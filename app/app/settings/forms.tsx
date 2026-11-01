@@ -129,7 +129,7 @@ export function DeleteRefused({ error, reauth, write }: Pick<DeleteState, "reaut
             and we&apos;ll cancel it; then delete your account.
           </>
         ) : (
-          " Your subscription isn't cancelled yet, and ShipShape can't cancel it until payments are back on. Try again later: deleting cancels it for you."
+          " ShipShape can't cancel it until payments are back on. Try again later: deleting cancels it for you."
         ))}
     </div>
   );

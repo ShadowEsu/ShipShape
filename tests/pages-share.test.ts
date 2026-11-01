@@ -630,7 +630,7 @@ describe("the deletion refusal box", () => {
     expect(actionsOf(write)).toEqual([{ tag: "a", label: "Write to us", href: "mailto:help@shipshape.example?subject=Cancel%20my%20ShipShape%20subscription" }]);
 
     const wait = await renderPage(DeleteRefused, { error: still, write: { contact: null } });
-    expect(textOf(wait)).toBe(`${still} Your subscription isn't cancelled yet, and ShipShape can't cancel it until payments are back on. Try again later: deleting cancels it for you.`);
+    expect(textOf(wait)).toBe(`${still} ShipShape can't cancel it until payments are back on. Try again later: deleting cancels it for you.`);
     expect(actionsOf(wait)).toEqual([]);
   });
 });
