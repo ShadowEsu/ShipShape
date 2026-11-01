@@ -329,3 +329,14 @@ export async function deleteSignIn(userId: string): Promise<boolean> {
   await signInAdmin(cfg, process.env).deleteUser(identity.subject);
   return true;
 }
+
+/**
+ * How a person signs in, for the Settings card (Design row 35). An account with a Cognito identity signs in
+ * with a password and an authenticator app: the pool is built with `MfaConfiguration: ON` and TOTP as the
+ * only method (infra/signin.yaml), so there is no per-account switch to read or to offer. Local accounts
+ * (development, tests) have no second step.
+ */
+export async function signInMethod(userId: string): Promise<"cognito" | "local"> {
+  const [identity] = await asService((tx) => tx.query<{ subject: string }>("select subject from app.identities where provider = 'cognito' and user_id = $1", [userId]));
+  return identity ? "cognito" : "local";
+}
