@@ -56,8 +56,9 @@ export async function viewerToday(): Promise<string> {
   return todayIn(await viewerZone());
 }
 
-export function sessionSecret(): string {
-  const s = process.env.SHIPSHAPE_SESSION_SECRET;
+/** SHIPSHAPE_SESSION_SECRET (signs sessions, sign-in state and file links); throws while unset or under 32 characters. */
+export function sessionSecret(env: Record<string, string | undefined> = process.env): string {
+  const s = env.SHIPSHAPE_SESSION_SECRET;
   if (!s || s.length < 32) throw new Error("SHIPSHAPE_SESSION_SECRET must be at least 32 characters");
   return s;
 }

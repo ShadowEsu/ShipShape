@@ -41,9 +41,9 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
     }
     attachLinkTargets(out);
   } else {
-    // pdf-lib decodes a whole PNG (about 9 bytes a pixel, outside V8's heap, which the build's heap
-    // limit doesn't cap), and a small, flat PNG can declare 100 megapixels (W11-3), so its declared
-    // size is checked first. A JPEG is copied into the PDF as it is, never decoded here.
+    // pdf-lib decodes a whole PNG outside V8's heap, which the build's heap limit doesn't cap, and a
+    // small, flat PNG can declare 100 megapixels (W11-3), so what decoding it takes is checked
+    // first. A JPEG is copied into the PDF as it is, never decoded here.
     if (mime === "image/png") checkPng(original);
     try {
       // pdf-lib 1.17 reads a JPEG through `new DataView(bytes.buffer)`, ignoring where the view
@@ -62,25 +62,37 @@ export async function buildToSign(original: Uint8Array, mime: "application/pdf" 
 }
 
 /**
- * The most pixels a PNG sent for signature may have: about 360 MB decoded per build (MAX_BUILDS
- * at once), and more than a scan needs (a letter page at 600 dpi is 34 megapixels).
+ * The most memory decoding one PNG sent for signature may take (MAX_BUILDS at once). UPNG inflates
+ * the image as stored (a filter byte a row; an interlaced one is copied once more), turns it into
+ * 4 bytes a pixel, and pdf-lib copies that and splits it into 3 + 1: 12 bytes a pixel on top of the
+ * stored size (Security INFO-D1). 512 MiB lets in an 8-bit RGB letter page at 600 dpi (5100 × 6600,
+ * 505 MB) and refuses the same page with alpha or 16 bits a channel.
  */
-export const MAX_PNG_PIXELS = 40_000_000;
+export const MAX_PNG_DECODE_BYTES = 512 * 1024 * 1024;
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
+/** Channels for each PNG color type, and the bit depths the format allows it (PNG spec, table 11.1). */
+const PNG_COLOR_TYPES = new Map([
+  [0, { channels: 1, depths: [1, 2, 4, 8, 16] }],
+  [2, { channels: 3, depths: [8, 16] }],
+  [3, { channels: 1, depths: [1, 2, 4, 8] }],
+  [4, { channels: 2, depths: [8, 16] }],
+  [6, { channels: 4, depths: [8, 16] }],
+]);
+
 /**
- * Refuses a PNG pdf-lib's decoder (UPNG) would size past MAX_PNG_PIXELS, without decoding it
- * (W11-3). UPNG takes the last IHDR before IEND wherever it sits, and for an animated PNG
- * allocates every frame at its fcTL size before pdf-lib refuses animation (Security MUST-P1), so
- * the chunks are walked to IEND: the first is the only IHDR, 13 bytes long; there are no animation
- * chunks (acTL, fcTL, fdAT); every chunk ends inside the file.
+ * Refuses a PNG whose decoding would take over MAX_PNG_DECODE_BYTES, without decoding it (W11-3).
+ * UPNG takes the last IHDR before IEND wherever it sits, and for an animated PNG allocates every
+ * frame at its fcTL size before pdf-lib refuses animation (Security MUST-P1), so the chunks are
+ * walked to IEND: the first is the only IHDR, 13 bytes long; there are no animation chunks (acTL,
+ * fcTL, fdAT); every chunk ends inside the file. Exported for its tests, which needn't decode.
  */
-function checkPng(bytes: Uint8Array): void {
+export function checkPng(bytes: Uint8Array): void {
   const refuse = (why: string) => new NotSignable("unreadable", new Error(why));
   if (bytes.length < 8 || PNG_SIGNATURE.some((b, i) => bytes[i] !== b)) throw refuse("no PNG signature");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let pixels = 0;
+  let decodeBytes = 0;
   for (let at = 8; ; ) {
     // Length, type and CRC are 12 bytes around the chunk's data.
     if (at + 12 > bytes.length) throw refuse("the PNG ends before IEND");
@@ -90,11 +102,15 @@ function checkPng(bytes: Uint8Array): void {
     if ((at === 8) !== (type === "IHDR")) throw refuse(at === 8 ? "no IHDR first" : "a second IHDR");
     if (type === "IHDR") {
       if (length !== 13) throw refuse("an IHDR that isn't 13 bytes");
-      pixels = view.getUint32(at + 8) * view.getUint32(at + 12);
+      const [width, height, depth, color, interlaced] = [view.getUint32(at + 8), view.getUint32(at + 12), bytes[at + 16], bytes[at + 17], bytes[at + 20] === 1];
+      const kind = PNG_COLOR_TYPES.get(color);
+      if (!kind || !kind.depths.includes(depth)) throw refuse(`color type ${color} at ${depth} bits`);
+      const stored = (Math.ceil((width * kind.channels * depth) / 8) + 1) * height;
+      decodeBytes = stored * (interlaced ? 2 : 1) + 12 * width * height;
     }
     if (type === "acTL" || type === "fcTL" || type === "fdAT") throw refuse("an animated PNG");
     if (type === "IEND") break;
     at += 12 + length;
   }
-  if (pixels > MAX_PNG_PIXELS) throw refuse(`${pixels} pixels is over the limit`);
+  if (decodeBytes > MAX_PNG_DECODE_BYTES) throw refuse(`${Math.ceil(decodeBytes / 1e6)} MB to decode is over the limit`);
 }

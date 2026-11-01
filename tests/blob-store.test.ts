@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { CreateBucketCommand, GetObjectCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, GetObjectCommand, PutBucketVersioningCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { productionAwsClient } from "@/lib/server/aws";
-import { type BlobStore, localBlobStore, MAX_URL_SECONDS, ObjectExists, s3BlobStore, storeFromEnv, verifyFileParams } from "@/lib/server/storage";
+import { type BlobStore, localBlobStore, MAX_URL_SECONDS, ObjectExists, ObjectMissing, s3BlobStore, storeFromEnv, verifyFileParams } from "@/lib/server/storage";
 
 const newPath = () => `${randomUUID()}/${randomUUID()}/v1.pdf`;
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -208,6 +208,42 @@ describe("S3 store, offline", () => {
     expect(await s3BlobStore(client, "documents").removePrefix(`${org}/`)).toBe(1500);
     expect(listed).toEqual([{ prefix: `${org}/`, token: undefined }, { prefix: `${org}/`, token: "next" }]);
     expect(deleted.flat()).toEqual(keys);
+  });
+
+  it("after a 403 on a file, says it's missing only when listing that exact key finds nothing; otherwise keeps the 403 (W12-1)", async () => {
+    // Without s3:ListBucket for the key, S3 answers a missing object with 403 AccessDenied, not 404.
+    const denied = () => new S3ServiceException({ name: "AccessDenied", $fault: "client", $metadata: { httpStatusCode: 403 }, message: "Access Denied" });
+    const storeListing = (list: () => Promise<{ Contents?: { Key: string }[] }>) => {
+      const client = offlineClient();
+      const listed: string[] = [];
+      client.middlewareStack.add(
+        () => async (args) => {
+          if (!("MaxKeys" in args.input && "Prefix" in args.input)) throw denied();
+          listed.push(String(args.input.Prefix));
+          return { output: { ...(await list()), $metadata: {} }, response: {} };
+        },
+        { step: "initialize" },
+      );
+      return { store: s3BlobStore(client, "documents"), listed };
+    };
+    const p = newPath();
+    // Nothing under the key, or only a longer key it is a prefix of: missing.
+    for (const keys of [[], [`${p}.bak`]]) {
+      const { store, listed } = storeListing(async () => ({ Contents: keys.map((Key) => ({ Key })) }));
+      await expect(store.get(p)).rejects.toBeInstanceOf(ObjectMissing);
+      expect(listed).toEqual([p]);
+    }
+    // The key is there (a real permission or key fault), or the list fails too: the original 403.
+    const there = storeListing(async () => ({ Contents: [{ Key: p }] }));
+    await expect(there.store.get(p)).rejects.toMatchObject({ name: "AccessDenied", message: "Access Denied" });
+    const failing = storeListing(async () => {
+      throw new Error("list refused");
+    });
+    await expect(failing.store.get(p)).rejects.toMatchObject({ name: "AccessDenied", message: "Access Denied" });
+    // A key whose first part isn't a workspace id is never listed.
+    const odd = storeListing(async () => ({ Contents: [] }));
+    await expect(odd.store.get(`${"-".repeat(36)}/${randomUUID()}/v1.pdf`)).rejects.toMatchObject({ name: "AccessDenied" });
+    expect(odd.listed).toEqual([]);
   });
 });
 

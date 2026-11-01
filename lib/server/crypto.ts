@@ -11,8 +11,11 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 
 const FORMAT = "v1";
 
-function fieldKey(): { key: Buffer; id: string } {
-  const raw = process.env.SHIPSHAPE_FIELD_KEY;
+type Env = Record<string, string | undefined>;
+
+/** SHIPSHAPE_FIELD_KEY (32 bytes, base64) and its short id; throws while unset or the wrong size. */
+export function fieldKey(env: Env = process.env): { key: Buffer; id: string } {
+  const raw = env.SHIPSHAPE_FIELD_KEY;
   if (!raw) throw new Error("SHIPSHAPE_FIELD_KEY is not set");
   const key = Buffer.from(raw, "base64");
   if (key.length !== 32) throw new Error("SHIPSHAPE_FIELD_KEY must be 32 bytes, base64");
@@ -47,14 +50,19 @@ export function newToken() {
   return { token, hash: sha256Hex(token) };
 }
 
+/** SHIPSHAPE_HASH_KEY; throws while unset or under 32 characters. */
+export function hashKey(env: Env = process.env): string {
+  const secret = env.SHIPSHAPE_HASH_KEY;
+  if (!secret || secret.length < 32) throw new Error("SHIPSHAPE_HASH_KEY must be at least 32 characters");
+  return secret;
+}
+
 /**
  * HMAC for values we must correlate but never store raw (IP addresses in rate limits and access
  * logs). Its own key, so rotating the session secret doesn't reset rate limits.
  */
 export function keyedHash(value: string, purpose: string): string {
-  const secret = process.env.SHIPSHAPE_HASH_KEY;
-  if (!secret || secret.length < 32) throw new Error("SHIPSHAPE_HASH_KEY must be at least 32 characters");
-  return createHmac("sha256", secret).update(`${purpose}:${value}`).digest("hex").slice(0, 32);
+  return createHmac("sha256", hashKey()).update(`${purpose}:${value}`).digest("hex").slice(0, 32);
 }
 
 export function safeEqual(a: string, b: string): boolean {

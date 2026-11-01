@@ -1,10 +1,10 @@
-import { assertLaunchConfig } from "./lib/server/flags";
-
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    // Refuse to start without what production needs (contact address with real documents open).
+    // Node-only modules; the edge runtime never loads them.
+    // Refuse to serve without what this deployment needs: every secret and setting in production,
+    // the contact address with real documents open (W12-2).
+    const { assertLaunchConfig } = await import("./lib/server/launch-check");
     assertLaunchConfig(process.env);
-    // Node-only module; the edge runtime never loads it.
     const { installLogScrubber } = await import("./lib/server/log");
     installLogScrubber();
   }

@@ -27,6 +27,12 @@ const SECRET_LINK_HEADERS = [
 // the link's token is only ever in the fragment or its cookie, never in a Referer).
 const UPLOAD_LINK_HEADERS = SECRET_LINK_HEADERS.map((h) => (h.key === "Referrer-Policy" ? { ...h, value: "same-origin" } : h));
 
+// proxy.ts sets the per-request CSP for pages and skips /api, so a path under /api that no route
+// answers would get the app's not-found page with no policy at all (W12-13). API routes answer JSON,
+// files or calendars, which need nothing. /api/files sets its own policy (inline images need
+// img-src 'self'), and a second one would be enforced on top of it.
+const API_HEADERS = [{ key: "Content-Security-Policy", value: "default-src 'none'; frame-ancestors 'none'" }];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Development logs every server action's arguments and result by default; ours carry pasted
@@ -59,6 +65,7 @@ const nextConfig: NextConfig = {
       { source: "/p/:path*", headers: SECRET_LINK_HEADERS },
       { source: "/s/:path*", headers: SECRET_LINK_HEADERS },
       { source: "/c/:path*", headers: UPLOAD_LINK_HEADERS },
+      { source: "/api/:path((?!files$).*)", headers: API_HEADERS },
       { source: "/app/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }, { key: "X-Robots-Tag", value: "noindex" }] },
     ];
   },

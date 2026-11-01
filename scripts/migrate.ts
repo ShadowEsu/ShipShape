@@ -7,17 +7,23 @@
  * DATABASE_CA_CERT      the provider's CA bundle (PEM); the certificate is always verified.
  *
  * First run: the platform file (roles, auth schema), then every migration as shipshape_owner, each
- * in its own transaction (lib/server/migrations.ts). Later runs apply only new migrations. Ends by
- * checking BOSS's rule 2: shipshape_app isn't a superuser, can't bypass row level security, owns
- * nothing and is a member of exactly anon, authenticated and service_role (no ADMIN; Security S-PG1).
+ * in its own transaction (lib/server/migrations.ts). Later runs apply only new migrations, and
+ * refuse, before changing anything, when an applied migration's file has changed since or a new one
+ * sorts before an applied one; `--allow-late <file name>` (exact, repeatable) lets a named late one
+ * run. Ends by checking BOSS's rule 2: shipshape_app isn't a superuser, can't bypass row level
+ * security, create roles or databases, or replicate, owns nothing and is a member of exactly anon,
+ * authenticated and service_role (no ADMIN; Security S-PG1).
  * Its login (password or IAM auth) is set separately (aws-plan.md); IAM auth would add rds_iam,
  * which this check refuses until that choice is made here too.
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { parseArgs } from "node:util";
 import postgres from "postgres";
 import { appMemberships, migrate, roleProblems, type MigrationStep } from "../lib/server/migrations.ts";
 import { pgTls } from "../lib/server/pg-tls.ts";
+
+const { values: args } = parseArgs({ options: { "allow-late": { type: "string", multiple: true } } });
 
 const url = process.env.MIGRATE_DATABASE_URL;
 if (!url) {
@@ -37,6 +43,9 @@ try {
   const root = path.resolve(import.meta.dirname, "..");
   const dir = path.join(root, "supabase/migrations");
   const files = (await readdir(dir)).filter((n) => n.endsWith(".sql"));
+  const allowLate = args["allow-late"] ?? [];
+  const unknown = allowLate.filter((name) => !files.includes(name));
+  if (unknown.length) throw new Error(`--allow-late names no migration file: ${unknown.join(", ")} (exact file names only)`);
   const migrations = await Promise.all(files.map(async (name) => ({ name, sql: await readFile(path.join(dir, name), "utf8") })));
   const applied = await migrate(
     {
@@ -47,6 +56,7 @@ try {
     },
     [await readFile(path.join(root, "supabase/platform/plain-postgres.sql"), "utf8")],
     migrations,
+    { allowLate, log: (line) => console.log(line) },
   );
   console.log(applied.length ? `Applied ${applied.length}: ${applied.join(", ")}` : "Up to date.");
 
@@ -63,7 +73,7 @@ try {
     process.exitCode = 1;
   } else {
     console.log(
-      `Roles OK: shipshape_app is no superuser, has no BYPASSRLS, owns nothing and holds only the three request roles (no ADMIN); the other roles can't log in. shipshape_app's login is ${app?.rolcanlogin ? "set" : "not set yet (see aws-plan.md)"}.`,
+      `Roles OK: shipshape_app is no superuser, has no BYPASSRLS, can't create roles or databases or replicate, owns nothing and holds only the three request roles (no ADMIN); the other roles can't log in. shipshape_app's login is ${app?.rolcanlogin ? "set" : "not set yet (see aws-plan.md)"}.`,
     );
   }
 } catch (e) {

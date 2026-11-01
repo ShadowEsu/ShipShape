@@ -5,7 +5,7 @@ import { PDFDict, PDFDocument, PDFRef } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { appendPagesIsolated, BuildBusy, BuildCrashed, BuildSlots, buildInChild, buildToSignIsolated, ISOLATION_LIMITS } from "@/lib/pdf/build-isolated";
 import { loadUntrusted, MAX_INFLATED_BYTES, MAX_PACKED_OBJECTS, PdfTooComplex } from "@/lib/pdf/load";
-import { buildToSign, NotSignable } from "@/lib/pdf/to-sign";
+import { buildToSign, checkPng, NotSignable } from "@/lib/pdf/to-sign";
 
 /** Loading uploads: what pdf-lib unpacks while loading is bounded per file (Security R6-3). */
 
@@ -158,16 +158,44 @@ describe("each upload is built in a process of its own, at most two at once (Sec
     await expect(buildToSignIsolated(a6, "application/pdf")).rejects.toMatchObject({ reason: "unreadable" });
   });
 
-  it("refuses a PNG that declares more than 40 megapixels before decoding any of it (W11-3)", async () => {
-    // A real 1×1 PNG whose header then claims 8,000 × 8,000: decoding that would take about 576 MB.
+  it("refuses a PNG whose decoding would take over 512 MiB before decoding any of it (W11-3)", async () => {
+    // A real 1×1 PNG whose header then claims 8,000 × 8,000: decoding that would take about 1 GB.
     const png = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
     const huge = png.slice();
     new DataView(huge.buffer).setUint32(16, 8000);
     new DataView(huge.buffer).setUint32(20, 8000);
     const refused = await buildToSign(huge, "image/png").catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(NotSignable);
-    expect(refused).toMatchObject({ reason: "unreadable", cause: new Error("64000000 pixels is over the limit") });
+    expect(refused).toMatchObject({ reason: "unreadable", cause: new Error("1025 MB to decode is over the limit") });
     expect((await buildToSign(png, "image/png")).length).toBeGreaterThan(0);
+
+    // What decoding takes follows the stored format (Security INFO-D1), checked here without decoding.
+    const header = (width: number, height: number, depth: number, color: number, interlace = 0) => {
+      const out = png.slice();
+      new DataView(out.buffer).setUint32(16, width);
+      new DataView(out.buffer).setUint32(20, height);
+      out.set([depth, color], 24);
+      out[28] = interlace;
+      return out;
+    };
+    const why = (bytes: Uint8Array) => {
+      try {
+        checkPng(bytes);
+        return "fits";
+      } catch (e) {
+        return e instanceof NotSignable && e.cause instanceof Error ? e.cause.message : String(e);
+      }
+    };
+    // 6000 × 5000 at 8 bits RGBA fits; 16 bits a channel, or interlaced (UPNG copies it once more), doesn't.
+    expect(why(header(6000, 5000, 8, 6))).toBe("fits");
+    expect(why(header(6000, 5000, 16, 6))).toBe("601 MB to decode is over the limit");
+    expect(why(header(6000, 5000, 8, 6, 1))).toBe("601 MB to decode is over the limit");
+    // A letter page scanned at 600 dpi: RGB fits, RGB with alpha doesn't.
+    expect(why(header(5100, 6600, 8, 2))).toBe("fits");
+    expect(why(header(5100, 6600, 8, 6))).toBe("539 MB to decode is over the limit");
+    // Formats the PNG spec doesn't define: UPNG would size them from undefined.
+    expect(why(header(1, 1, 16, 3))).toBe("color type 3 at 16 bits");
+    expect(why(header(1, 1, 8, 5))).toBe("color type 5 at 8 bits");
   });
 
   it("reads a PNG's size the way the decoder will: one IHDR, first; no animation chunks; every chunk inside the file, up to IEND (Security MUST-P1)", async () => {

@@ -45,12 +45,8 @@ export function appUrl(env: Env = process.env): URL | null {
   return parsed.success ? new URL(new URL(parsed.data).origin) : null;
 }
 
-/**
- * Checked when the server starts (instrumentation.ts): production with real documents open must
- * have a contact address, which /privacy promises and every shared page's "Report this page" uses.
- */
-export function assertLaunchConfig(env: Env) {
-  if (env.NODE_ENV === "production" && env.SHIPSHAPE_REAL_DOCS === "1" && !contactEmail(env)) {
-    throw new Error("Production with real documents needs CONTACT_EMAIL (not configured)");
-  }
+/** The daily run's bearer secret (CRON_SECRET), or null while unset or under 32 characters (the run then refuses). */
+export function cronSecret(env: Env = process.env): string | null {
+  const secret = env.CRON_SECRET;
+  return secret && secret.length >= 32 ? secret : null;
 }

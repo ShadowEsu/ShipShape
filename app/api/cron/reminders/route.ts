@@ -1,6 +1,7 @@
 import { DAILY_RUN_BUDGET_MS, finishDeletions, purgeSampleAccounts, retryStorageCleanup, sweepDeletedWorkspaces } from "@/lib/server/account";
 import { safeEqual } from "@/lib/server/crypto";
 import { purgeOutbox, runReminders } from "@/lib/server/deadlines";
+import { cronSecret } from "@/lib/server/flags";
 import { fail, purgeRateHits } from "@/lib/server/http";
 import { purgeSessions } from "@/lib/server/session";
 
@@ -23,8 +24,8 @@ export const maxDuration = 60;
  * `Authorization: Bearer $CRON_SECRET`; nothing else may run it.
  */
 export async function GET(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || secret.length < 32) return fail("Reminders aren't set up.", 503);
+  const secret = cronSecret();
+  if (!secret) return fail("Reminders aren't set up.", 503);
   if (!safeEqual(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) return fail("Forbidden", 403);
   // Each runs whatever the others do: a reminders failure mustn't leave fingerprints, deleted
   // accounts or their files past the day the privacy policy promises. Deletions go before the file
