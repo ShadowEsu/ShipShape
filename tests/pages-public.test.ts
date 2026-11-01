@@ -26,7 +26,7 @@ import { createPassport, revokePassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
-import { isoToday } from "@/lib/today";
+import { isoToday, timeOf } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
@@ -369,6 +369,15 @@ describe("a signing link (/s)", () => {
     expect(await again.json()).toEqual({ result: "already_signed" });
     expect(await (await postCode(id)).json()).toEqual({ result: "already_signed" });
     expect(signProblem("already_signed", "x")).toEqual({ field: null, message: "You've already signed this. Reload the page for your signed copy." });
+    // The signed page says when, in the signer's own zone (Design); a zone the cookie made up is read as UTC, so a
+    // forged cookie can't make the page print anything but a real zone's time (Security INFO).
+    const [signed] = await db.root((tx) => tx.query<{ at: string }>("select signed_at::text as at from app.signature_requests where id = $1", [id]));
+    jar.set("ss_tz", "Asia/Tokyo");
+    expect(textOf(await signingPage(id))).toContain(`Signed ${timeOf(signed.at, "Asia/Tokyo")}`);
+    expect(timeOf(signed.at, "Asia/Tokyo")).toMatch(/ GMT\+9$/);
+    jar.set("ss_tz", "Not/AZone");
+    expect(textOf(await signingPage(id))).toContain(`Signed ${timeOf(signed.at, "UTC")}`);
+    expect(timeOf(signed.at, "UTC")).toMatch(/ UTC$/);
   });
 
   it("too many downloads from one network: back to the page with the one line about it; the page still opens", async () => {

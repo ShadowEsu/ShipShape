@@ -3,14 +3,13 @@ import { cookies, headers } from "next/headers";
 import { DownloadBusy, LinkBusy, LinkUnavailable } from "@/app/link-states";
 import { NamedByWorkspace } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
-import { fmtDateTime } from "@/components/ui";
 import { ESIGN_CONSENT_TEXT } from "@/lib/consent";
 import { openSigning, SIGN_COOKIE } from "@/lib/server/esign";
 import { contactEmail } from "@/lib/server/flags";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
 import { viewerZone } from "@/lib/server/session";
-import { dayOf } from "@/lib/today";
+import { dayOf, timeOf } from "@/lib/today";
 import { SignForm } from "./sign-form";
 
 export const metadata: Metadata = { title: "Sign a document", robots: { index: false, follow: false } };
@@ -44,7 +43,7 @@ export default async function SigningPage({ params, searchParams }: { params: Pr
           {view.status === "signed" ? (
             <section className="card space-y-3">
               <p className="font-semibold">
-                <span aria-hidden="true">✓ </span>Signed{view.signedAt && <> {fmtDateTime(view.signedAt)}</>}
+                <span aria-hidden="true">✓ </span>Signed{view.signedAt && <> {timeOf(view.signedAt, zone)}</>}
               </p>
               {/* True to completeSigning (lib/server/esign.ts): the signed copy becomes the newest version of the sender's
                   document, and the appended certificate records the typed name, the time, the emailed one-time code and a
