@@ -319,7 +319,10 @@ export async function completeSigning(
   // The signature covers what the signer downloaded; a stored file that changed since is never signed (R3-4).
   if (sha256Hex(toSign) !== r.to_sign_sha256) return "file_changed";
   const visitor = visitorId(input.ip);
-  const signedAt = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+  // The instant printed on the certificate (whole seconds) is the one stored as signed_at (0037), so the certificate,
+  // the signer's page and the document agree exactly.
+  const stampedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+  const signedAt = stampedAt.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
   let bytes: Uint8Array;
   try {
     const certificate = await certificatePdf([
@@ -351,7 +354,7 @@ export async function completeSigning(
     const path = `${r.org_id}/${r.document_id}/v${next}.pdf`;
     try {
       return await asAnon(async (tx) => {
-        const [row] = await tx.query<{ result: SignResult }>("select app.esign_complete($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) as result", [
+        const [row] = await tx.query<{ result: SignResult }>("select app.esign_complete($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) as result", [
           id,
           sha256Hex(token),
           codeHash(id, input.code),
@@ -362,6 +365,7 @@ export async function completeSigning(
           path,
           sha256Hex(bytes),
           bytes.length,
+          stampedAt.toISOString(),
         ]);
         // Stored last, inside the transaction: if storing fails, the signature rolls back with it.
         if (row.result === "ok") await putVersionFile(path, bytes, "application/pdf");

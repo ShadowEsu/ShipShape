@@ -42,6 +42,17 @@ async function lastCode(orgId: string): Promise<string> {
   return /\b(\d{6})\b/.exec(m.body)![1];
 }
 
+/** The signed copy's page streams, inflated: pdf-lib writes the certificate's text a word at a time as hex strings, over one or two pages. */
+function certificateText(signed: PDFDocument): string {
+  const pageText = (i: number) => {
+    const contents = signed.getPage(i).node.Contents();
+    const streams = contents instanceof PDFArray ? contents.asArray().map((r) => signed.context.lookup(r)) : [contents];
+    return streams.map((s) => (s instanceof PDFRawStream ? inflateSync(s.contents).toString("latin1") : "")).join("\n");
+  };
+  return signed.getPages().map((_, i) => pageText(i)).join("\n");
+}
+const word = (s: string) => `<${Buffer.from(s, "latin1").toString("hex").toUpperCase()}>`;
+
 beforeAll(async () => {
   db = await freshDb();
   blobDir = await mkdtemp(path.join(os.tmpdir(), "shipshape-esign-"));
@@ -351,18 +362,66 @@ describe("signing", () => {
     expect(await completeSigning(id, token, { code: await lastCode(ctx.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
     const docId = (await nda(ctx)).id;
     const { versions } = (await getDocument(ctx, docId))!;
-    const signed = await PDFDocument.load(await blobStore().get(`${ctx.orgId}/${docId}/v${versions[0].version}.pdf`));
-    // pdf-lib writes the certificate's text a word at a time as hex strings, in compressed streams, over one or two pages.
-    const pageText = (i: number) => {
-      const contents = signed.getPage(i).node.Contents();
-      const streams = contents instanceof PDFArray ? contents.asArray().map((r) => signed.context.lookup(r)) : [contents];
-      return streams.map((s) => (s instanceof PDFRawStream ? inflateSync(s.contents).toString("latin1") : "")).join("\n");
-    };
-    const certificate = signed.getPages().map((_, i) => pageText(i)).join("\n");
-    const word = (s: string) => `<${Buffer.from(s, "latin1").toString("hex").toUpperCase()}>`;
+    const certificate = certificateText(await PDFDocument.load(await blobStore().get(`${ctx.orgId}/${docId}/v${versions[0].version}.pdf`)));
     expect(certificate).toContain(word("Sent"));
     expect(certificate).toContain(word("Sample"));
     expect(certificate).not.toContain(word("Renamed"));
+  });
+
+  it("stores the instant it printed: the certificate's Signed at is the signed_at the pages show, exactly (wave 7 #12)", async () => {
+    const ctx = await sampleWorkspace();
+    const { id, token } = await request(ctx);
+    await sendSigningCode(id, token);
+    const code = await lastCode(ctx.orgId);
+    // The app's clock three minutes behind the database's: what's stored is the printed instant, not the database's now().
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() - 3 * 60_000 });
+    try {
+      expect(await completeSigning(id, token, { code, typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
+    } finally {
+      vi.useRealTimers();
+    }
+    const [row] = await db.root((tx) =>
+      tx.query<{ stamp: string; age: number; whole: boolean; same: boolean }>(
+        `select to_char(signed_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') as stamp, extract(epoch from now() - signed_at)::int as age,
+           signed_at = date_trunc('second', signed_at) as whole, consented_at = signed_at as same from app.signature_requests where id = $1`,
+        [id],
+      ),
+    );
+    expect(row).toMatchObject({ whole: true, same: true });
+    expect(row.age).toBeGreaterThanOrEqual(170);
+    const docId = (await nda(ctx)).id;
+    const { versions } = (await getDocument(ctx, docId))!;
+    const certificate = certificateText(await PDFDocument.load(await blobStore().get(`${ctx.orgId}/${docId}/v${versions[0].version}.pdf`)));
+    const [day, time] = row.stamp.split(" ");
+    expect(certificate).toContain(word(day));
+    expect(certificate).toContain(word(time));
+    expect(certificate).toContain(word("UTC"));
+  });
+
+  it("takes a signing stamp from the last 10 minutes to a minute ahead; outside that it's refused with 22008 (not the retried version-race code) and nothing is stored", async () => {
+    const ctx = await sampleWorkspace();
+    const { id, token } = await request(ctx);
+    await sendSigningCode(id, token);
+    const [{ otp_hash }] = await db.root((tx) => tx.query<{ otp_hash: string }>("select otp_hash from app.signature_requests where id = $1", [id]));
+    const docId = (await nda(ctx)).id;
+    const call = (offsetSeconds: number) =>
+      asUser(ctx.userId, (tx) =>
+        tx.query("select app.esign_complete($1, $2, $3, 'v', $4, 'X', $5, $6, $4, 10, now() + $7 * interval '1 second')", [
+          id,
+          sha256Hex(token),
+          otp_hash,
+          "e".repeat(64),
+          "0".repeat(16),
+          `${ctx.orgId}/${docId}/v9.pdf`,
+          offsetSeconds,
+        ]),
+      );
+    // Inside the window the stamp passes, and the wrong path is what's refused (22023): 9 minutes ago, 30 seconds ahead.
+    for (const s of [-9 * 60, 30]) await expect(call(s)).rejects.toMatchObject({ code: "22023" });
+    // Outside it the stamp is refused first: 11 minutes ago, 2 minutes ahead.
+    for (const s of [-11 * 60, 2 * 60]) await expect(call(s)).rejects.toMatchObject({ code: "22008" });
+    const [row] = await db.root((tx) => tx.query<{ status: string; n: number }>("select status, (select count(*)::int from app.document_versions where document_id = $2 and origin = 'signed') as n from app.signature_requests where id = $1", [id, docId]));
+    expect(row).toEqual({ status: "pending", n: 0 });
   });
 
   it("can't be pointed at another document's storage path", async () => {
@@ -372,7 +431,7 @@ describe("signing", () => {
     const other = await nda(b);
     await expect(
       asUser(a.userId, (tx) =>
-        tx.query("select app.esign_complete($1, $2, $3, 'v', $4, 'X', $5, $6, $4, 10)", [
+        tx.query("select app.esign_complete($1, $2, $3, 'v', $4, 'X', $5, $6, $4, 10, now())", [
           id,
           sha256Hex(token),
           sha256Hex(code),
