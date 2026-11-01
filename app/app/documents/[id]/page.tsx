@@ -302,7 +302,7 @@ export default async function DocumentPage({
                 </li>
               ))}
             </ol>
-            <p className="text-xs text-ink-3">Each entry is linked to the one before it, so a changed or deleted entry shows up.</p>
+            <p className="text-xs text-ink-3">Entries can&apos;t be edited or deleted through ShipShape, and each is linked to the one before it.</p>
           </section>
 
           <form action={archive}>

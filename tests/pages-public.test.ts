@@ -238,7 +238,7 @@ describe("a signing link (/s)", () => {
     const text = said(html);
     expect(text).toContain("Signed");
     expect(text).toMatch(
-      /There's nothing else you need to do\. Harbor Plumbing \(sample\) has the same signed copy, saved to their documents in ShipShape\. The certificate at the end records the name you typed, when you signed and that a code sent to your email confirmed it\. Download yours for your records; this link works until \w{3} \d{1,2}, \d{4}\./,
+      /There's nothing else you need to do\. Harbor Plumbing \(sample\) has the same signed copy, saved to their documents in ShipShape\. The certificate at the end records the name you typed, when you signed, that a code sent to your email confirmed it, and a fingerprint of your network connection \(not your address\)\. Download yours for your records; this link works until \w{3} \d{1,2}, \d{4}\./,
     );
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Download the signed copy", href: `/s/${id}/file` }]);
 
