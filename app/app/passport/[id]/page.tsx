@@ -62,16 +62,21 @@ export default async function PassportDetail({ params, searchParams }: { params:
 
       <section className="card space-y-2">
         <h2 className="font-semibold">Documents on this link</h2>
-        <ul className="text-sm">
-          {p.documents.map((d) => (
-            <li key={d.id} className="flex justify-between gap-3 border-b border-line py-2 last:border-0">
-              <Link href={`/app/documents/${d.id}`} className="hover:underline">
-                {d.title}
-              </Link>
-              <span className="text-ink-3">{DOC_KINDS[d.kind]}</span>
-            </li>
-          ))}
-        </ul>
+        {/* A link is made with at least one document; it ends up with none only when they were all archived (0041). */}
+        {p.documents.length === 0 ? (
+          <p className="text-sm text-ink-3">None left. Archived documents come off for good.</p>
+        ) : (
+          <ul className="text-sm">
+            {p.documents.map((d) => (
+              <li key={d.id} className="flex justify-between gap-3 border-b border-line py-2 last:border-0">
+                <Link href={`/app/documents/${d.id}`} className="hover:underline">
+                  {d.title}
+                </Link>
+                <span className="text-ink-3">{DOC_KINDS[d.kind]}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="card space-y-2">

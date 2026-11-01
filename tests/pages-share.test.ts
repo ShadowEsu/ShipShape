@@ -268,16 +268,20 @@ describe("Passport", () => {
     expect(actionsOf(step2?.[2] ?? "").map((a) => a.label)).toEqual(["Turn off the link", "Cancel"]);
   });
 
-  it("a working link whose documents were all archived says it shows nothing, and keeps Turn off (W14-3)", async () => {
+  it("a working link whose documents were all archived says it shows nothing, its documents card says why, and it keeps Turn off (W14-3)", async () => {
     const ctx = await signIn("passport-emptied@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
     const { id } = await createPassport(ctx, { label: "Northwind", days: 7, documentIds: [doc] });
     const detail = () => renderPage(PassportDetail, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
     const notice = "Every document on this link was archived, so it shows nothing. Turn it off, or make a new link.";
-    expect(textOf(await detail())).not.toContain(notice);
+    const card = (html: string) => textOf(html.split("Documents on this link</h2>")[1]?.split("</section>")[0] ?? "");
+    const before = await detail();
+    expect(textOf(before)).not.toContain(notice);
+    expect(card(before)).toBe("Liability certificate Insurance certificate");
     await setArchived(ctx, doc, true);
     const html = await detail();
     expect(textOf(html)).toContain(notice);
+    expect(card(html)).toBe("None left. Archived documents come off for good.");
     expect(actionsOf(html).map((a) => a.label)).toContain("Turn off this link");
     // Restoring doesn't put it back, so the notice stays.
     await setArchived(ctx, doc, false);
