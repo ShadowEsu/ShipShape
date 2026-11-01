@@ -1,7 +1,7 @@
 import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument, PDFName, StandardFonts, TextAlignment, layoutMultilineText, rgb, type PDFFont } from "pdf-lib";
+import { PDFDocument, PDFName, StandardFonts, TextAlignment, degrees, layoutMultilineText, rgb, type PDFFont } from "pdf-lib";
 import { z } from "zod";
 import { composePdf, inlineRuns, isPrintable, isPrintableText, type Block } from "@/lib/pdf/compose";
 import { makeInert } from "@/lib/pdf/inert";
@@ -211,7 +211,7 @@ export function fillW9Form(doc: PDFDocument, v: Values, facts: Facts) {
   }
 }
 
-async function renderW9(v: Values, facts: Facts, today: string): Promise<Rendered> {
+async function renderW9(v: Values, facts: Facts, today: string, sample: boolean): Promise<Rendered> {
   const doc = await loadW9();
   fillW9Form(doc, v, facts);
   const form = doc.getForm();
@@ -224,6 +224,15 @@ async function renderW9(v: Values, facts: Facts, today: string): Promise<Rendere
     page.drawText(today, { x: 410, y: 197, size: 10, font: plain, color: rgb(0.05, 0.1, 0.35) });
   }
   form.flatten();
+  if (sample) {
+    // Like the sample's own certificates (lib/pdf/sample-pdf.ts): a PDF filled in a sample says so on every page (W14-2).
+    const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+    const width = bold.widthOfTextAtSize(SAMPLE_STAMP, 96);
+    for (const p of doc.getPages()) {
+      const { width: pw, height: ph } = p.getSize();
+      p.drawText(SAMPLE_STAMP, { x: pw / 2 - (width / 2) * 0.7, y: ph / 2 - width * 0.35, size: 96, font: bold, color: rgb(0.86, 0.2, 0.18), opacity: 0.15, rotate: degrees(35) });
+    }
+  }
   // The IRS file carries document-level JavaScript (its own field scripts) and a usage-rights
   // signature (/Perms) that filling breaks, so Reader would warn the form was changed. Like every PDF
   // ShipShape serves, the W-9 runs nothing (W11-11).
@@ -245,7 +254,7 @@ const plusYears = (iso: string, years: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-async function renderNda(v: Values): Promise<Rendered> {
+async function renderNda(v: Values, sample: boolean): Promise<Rendered> {
   const standard = await readFile(path.join(ROOT, "templates/common-paper-mnda-1.0/Mutual-NDA.md"), "utf8");
   const clauses = standard
     .split("\n")
@@ -261,6 +270,8 @@ async function renderNda(v: Values): Promise<Rendered> {
     v.conf_term === "years"
       ? `${years(v.conf_years)} from Effective Date, but in the case of trade secrets until Confidential Information is no longer considered a trade secret under applicable laws.`
       : "In perpetuity.";
+  // A sample's NDA is stamped SAMPLE on every page (W14-2); the stamp goes last, once every page exists.
+  const stamp: Block[] = sample ? [{ type: "stamp", text: SAMPLE_STAMP }] : [];
 
   const blocks: Block[] = [
     { type: "title", text: "Mutual Non-Disclosure Agreement" },
@@ -300,6 +311,7 @@ async function renderNda(v: Values): Promise<Rendered> {
     { type: "heading", text: "Standard Terms" },
     ...clauses,
     { type: "para", muted: true, size: 9, runs: [{ text: "Common Paper Mutual Non-Disclosure Agreement Version 1.0 (https://commonpaper.com/standards/mutual-nda/1.0/) free to use under CC BY 4.0." }] },
+    ...stamp,
   ];
   const bytes = await composePdf(blocks, {
     title: `Mutual NDA: ${v.p1_company} and ${v.p2_company}`,
@@ -315,7 +327,12 @@ async function renderNda(v: Values): Promise<Rendered> {
   };
 }
 
-/** `today` is the viewer's date: the W-9's certification date and issue date where the signer is. */
-export function render(t: TemplateInfo, v: Values, facts: Facts, today: string): Promise<Rendered> {
-  return t.kind === "w9" ? renderW9(v, facts, today) : renderNda(v);
+const SAMPLE_STAMP = "SAMPLE";
+
+/**
+ * `today` is the viewer's date: the W-9's certification date and issue date where the signer is.
+ * `sample`: filled in a sample workspace, so every page is stamped SAMPLE.
+ */
+export function render(t: TemplateInfo, v: Values, facts: Facts, today: string, sample: boolean): Promise<Rendered> {
+  return t.kind === "w9" ? renderW9(v, facts, today, sample) : renderNda(v, sample);
 }

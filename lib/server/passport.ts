@@ -74,25 +74,40 @@ export async function listPassports(ctx: Ctx, onlyId: string | null = null): Pro
 export interface PassportDetail {
   link: PassportRow;
   documents: { id: string; title: string; kind: DocKind }[];
+  /** The latest PASSPORT_ACCESS_SHOWN events, newest first; `moreAccess` when there are older ones (the export has every one). */
   access: { at: string; action: string; title: string | null; visitor: string }[];
+  moreAccess: boolean;
 }
+
+export const PASSPORT_ACCESS_SHOWN = 200;
 
 export async function getPassport(ctx: Ctx, id: string): Promise<PassportDetail | null> {
   if (!z.uuid().safeParse(id).success) return null;
   const [link] = await listPassports(ctx, id);
   if (!link) return null;
-  return asUser(ctx.userId, async (tx) => ({
-    link,
-    documents: await tx.query<{ id: string; title: string; kind: DocKind }>(
+  return asUser(ctx.userId, async (tx) => {
+    const documents = await tx.query<{ id: string; title: string; kind: DocKind }>(
       "select d.id, d.title, d.kind from app.share_link_documents sd join app.documents d on d.id = sd.document_id where sd.link_id = $1 order by d.title",
       [id],
-    ),
+    );
     // seq (0027) only breaks ties in time. Never select or export it: its gaps count other workspaces' events (Security S-0027a).
-    access: await tx.query<{ at: string; action: string; title: string | null; visitor: string }>(
-      "select a.at::text as at, a.action, d.title, a.visitor from app.share_access a left join app.documents d on d.id = a.document_id where a.link_id = $1 order by a.at desc, a.seq desc limit 200",
-      [id],
+    const access = await tx.query<{ at: string; action: string; title: string | null; visitor: string }>(
+      "select a.at::text as at, a.action, d.title, a.visitor from app.share_access a left join app.documents d on d.id = a.document_id where a.link_id = $1 order by a.at desc, a.seq desc limit $2",
+      [id, PASSPORT_ACCESS_SHOWN + 1],
+    );
+    return { link, documents, access: access.slice(0, PASSPORT_ACCESS_SHOWN), moreAccess: access.length > PASSPORT_ACCESS_SHOWN };
+  });
+}
+
+/** How many links that still work (not turned off, not expired) hold this document: archiving takes it off them for good (0041). */
+export async function openLinksWith(ctx: Ctx, documentId: string): Promise<number> {
+  const [row] = await asUser(ctx.userId, (tx) =>
+    tx.query<{ n: number }>(
+      "select count(*)::int as n from app.share_link_documents sd join app.share_links l on l.id = sd.link_id where sd.document_id = $1 and l.org_id = $2 and l.revoked_at is null and l.expires_at > now()",
+      [documentId, ctx.orgId],
     ),
-  }));
+  );
+  return row?.n ?? 0;
 }
 
 export async function revokePassport(ctx: Ctx, id: string) {

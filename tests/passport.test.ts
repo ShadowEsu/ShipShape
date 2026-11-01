@@ -7,7 +7,7 @@ import { asService, asUser } from "@/lib/server/db";
 import { getDocument, listDocuments, setArchived } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import type { Ctx } from "@/lib/server/profile";
-import { createPassport, getPassport, listPassports, openPassport, passportFileUrl, revokePassport } from "@/lib/server/passport";
+import { createPassport, getPassport, listPassports, openLinksWith, openPassport, PASSPORT_ACCESS_SHOWN, passportFileUrl, revokePassport } from "@/lib/server/passport";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
@@ -165,14 +165,53 @@ describe("passport links", () => {
     expect((await getPassport(a, id))?.access.map((x) => x.action)).toEqual(["downloaded", "opened"]);
   });
 
-  it("stops showing a document once it is archived, and won't hand out a document that isn't on the link", async () => {
-    const [w9, coi, third] = await docIds(a);
-    const { id, token } = await createPassport(a, { label: "Archive", days: 7, documentIds: [w9, coi] });
+  it("archiving takes a document off every link for good: restoring doesn't put it back, and the owner's page lists it no more (W14-3)", async () => {
+    const ctx = await sampleWorkspace("archive-unshare@example.com");
+    const [w9, coi, third] = await docIds(ctx);
+    const { id, token } = await createPassport(ctx, { label: "Archive", days: 7, documentIds: [w9, coi] });
+    const other = await createPassport(ctx, { label: "Other", days: 7, documentIds: [coi] });
+    const off = await createPassport(ctx, { label: "Off", days: 7, documentIds: [coi] });
+    await revokePassport(ctx, off.id);
+    const expired = await createPassport(ctx, { label: "Expired", days: 7, documentIds: [coi] });
+    await db.root((tx) => tx.query("update app.share_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 day' where id = $1", [expired.id]));
     expect(await passportFileUrl(id, token, third, IP)).toBeNull();
-    await setArchived(a, coi, true);
+    // What the Archive button warns about: the two links that still work, not the one turned off or the expired one.
+    expect(await openLinksWith(ctx, coi)).toBe(2);
+    expect(await openLinksWith(b, coi)).toBe(0);
+
+    await setArchived(ctx, coi, true);
     expect((await openPassport(id, token, IP))?.documents.map((d) => d.id)).toEqual([w9]);
     expect(await passportFileUrl(id, token, coi, IP)).toBeNull();
-    await setArchived(a, coi, false);
+    expect((await getPassport(ctx, id))?.documents.map((d) => d.id)).toEqual([w9]);
+    expect(Object.fromEntries((await listPassports(ctx)).map((l) => [l.label, l.documents]))).toEqual({ Archive: 1, Other: 0, Off: 0, Expired: 0 });
+    expect(await openLinksWith(ctx, coi)).toBe(0);
+
+    await setArchived(ctx, coi, false);
+    expect((await openPassport(id, token, IP))?.documents.map((d) => d.id)).toEqual([w9]);
+    expect(await openPassport(other.id, other.token, IP)).toBeNull();
+    expect(await passportFileUrl(id, token, coi, IP)).toBeNull();
+    expect(await openLinksWith(ctx, coi)).toBe(0);
+    // Archiving the last one leaves the link holding nothing: the owner's page says so (Design, wave 14).
+    await setArchived(ctx, w9, true);
+    expect((await getPassport(ctx, id))?.documents).toEqual([]);
+    expect(await openPassport(id, token, IP)).toBeNull();
+  });
+
+  it("the owner's page shows the latest 200 opens and downloads, and says when there are more (W14-8)", async () => {
+    const [w9] = await docIds(a);
+    const { id } = await createPassport(a, { label: "Busy", days: 7, documentIds: [w9] });
+    const add = (n: number) =>
+      db.root((tx) =>
+        tx.query("insert into app.share_access (link_id, org_id, action, visitor) select $1, $2, 'opened', lpad(to_hex(g), 16, '0') from generate_series(1, $3::int) g", [id, a.orgId, n]),
+      );
+    await add(PASSPORT_ACCESS_SHOWN);
+    const all = await getPassport(a, id);
+    expect(all?.access).toHaveLength(PASSPORT_ACCESS_SHOWN);
+    expect(all?.moreAccess).toBe(false);
+    await add(1);
+    const p = await getPassport(a, id);
+    expect(p?.access).toHaveLength(PASSPORT_ACCESS_SHOWN);
+    expect(p?.moreAccess).toBe(true);
   });
 
   it("records creating and revoking in the workspace history", async () => {

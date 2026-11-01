@@ -18,7 +18,7 @@ export function assertRealData(ws: { demo: boolean }) {
   if (!realDocsEnabled()) throw new GateClosed("Real documents aren't open yet. They open after our security review.");
 }
 
-/** Filling a template: fine in a sample workspace (sample facts); real workspaces need the gate. */
+/** Filling a template: fine in a sample workspace (sample facts, no SSN, stamped SAMPLE: documents.ts); real workspaces need the gate. */
 export function assertCanFill(ws: { demo: boolean }) {
   if (!ws.demo && !realDocsEnabled()) throw new GateClosed("Real documents aren't open yet. They open after our security review.");
 }

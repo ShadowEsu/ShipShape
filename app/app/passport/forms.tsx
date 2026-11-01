@@ -69,7 +69,7 @@ export function NewPassportForm({
   docs: PickableDoc[];
   days: readonly number[];
   preselected: string[];
-  /** Today's date in UTC (YYYY-MM-DD), from the server: the browser must not count from its own clock, or hydration differs around midnight. */
+  /** The viewer's date (ctx.today, YYYY-MM-DD) from the server, so the end day matches Your links; the browser must not count from its own clock, or hydration differs around midnight. */
   today: string;
   /** What the person had typed before opening the preview (the preview's "Back" carries it in the address). */
   initial?: { label: string; days: number };
@@ -181,7 +181,7 @@ export function NewPassportForm({
             </label>
           ))}
         </div>
-        {/* The server counts the days from the moment the link is made, and dates show in UTC (fmtDay). */}
+        {/* The server counts the days from the moment the link is made; the day shown is in the viewer's zone, as on Your links. */}
         {days.includes(chosen) && (
           <p id="days-end" className="mt-2 text-sm text-ink-2">
             {`Stops working on ${fmtDay(plusDays(today, chosen))}. You can turn it off sooner.`}

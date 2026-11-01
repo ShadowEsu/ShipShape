@@ -10,13 +10,14 @@ import { FACT_LABELS } from "@/lib/profile-fields";
 import { DOC_KINDS, getDocument } from "@/lib/server/documents";
 import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { realDocsEnabled } from "@/lib/server/flags";
+import { openLinksWith } from "@/lib/server/passport";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
 import { dayOf, fmtDay, timeOf } from "@/lib/today";
 import type { TemplateInfo } from "@/lib/templates/types";
 import { archive, withdrawSignature } from "../actions";
 import { DetailsForm, SignRequestForm, VersionForm } from "../forms";
-import { archiveQuestion, versionWarning } from "../messages";
+import { archiveLinksWarning, archiveQuestion, versionWarning } from "../messages";
 
 export const metadata: Metadata = { title: "Document" };
 
@@ -126,6 +127,9 @@ export default async function DocumentPage({
   const now = Date.now();
   // Who still has a working signing link: archiving or a new version withdraws these, and the page says so first.
   const openSigners = requests.filter((r) => r.status === "pending" && Date.parse(r.expires_at) > now).map((r) => r.signer_name);
+  // Links that still work and hold it: archiving takes it off them for good (0041), and the page says so before the click.
+  const openLinks = doc.status === "active" ? await openLinksWith(ctx, doc.id) : 0;
+  const linksWarning = openLinks > 0 ? archiveLinksWarning(openLinks) : null;
 
   return (
     <div className="space-y-6">
@@ -184,7 +188,10 @@ export default async function DocumentPage({
             </div>
             {doc.status === "archived" && (
               <div className="mt-4">
-                <Notice>This document is archived. It keeps its history and isn&apos;t shared, reminded about, or open for signing.</Notice>
+                <Notice>
+                  This document is archived. It keeps its history and was taken off your passport links; it isn&apos;t reminded about or open for
+                  signing. Restoring it won&apos;t put it back on any link.
+                </Notice>
               </div>
             )}
             {latest && (
@@ -331,26 +338,29 @@ export default async function DocumentPage({
             <p className="text-xs text-ink-3">Entries can&apos;t be edited or deleted through ShipShape, and each is linked to the one before it.</p>
           </section>
 
-          {doc.status === "active" && openSigners.length > 0 ? (
-            <ConfirmForm
-              action={archive}
-              fields={{ id: doc.id, archived: "1" }}
-              trigger="Archive document"
-              question={archiveQuestion(openSigners)}
-              confirm="Archive and withdraw"
-              cancel="Keep it"
-              destructive
-              pendingLabel="Archiving…"
-            />
-          ) : (
-            <form action={archive}>
-              <input type="hidden" name="id" value={doc.id} />
-              <input type="hidden" name="archived" value={doc.status === "archived" ? "0" : "1"} />
-              <SubmitButton className="inline-flex min-h-6 items-center text-sm text-ink-2 underline" pendingLabel={doc.status === "archived" ? "Restoring…" : "Archiving…"}>
-                {doc.status === "archived" ? "Restore document" : "Archive document"}
-              </SubmitButton>
-            </form>
-          )}
+          <div className="space-y-1">
+            {doc.status === "active" && openSigners.length > 0 ? (
+              <ConfirmForm
+                action={archive}
+                fields={{ id: doc.id, archived: "1" }}
+                trigger="Archive document"
+                question={linksWarning ? `${archiveQuestion(openSigners)} ${linksWarning}` : archiveQuestion(openSigners)}
+                confirm="Archive and withdraw"
+                cancel="Keep it"
+                destructive
+                pendingLabel="Archiving…"
+              />
+            ) : (
+              <form action={archive}>
+                <input type="hidden" name="id" value={doc.id} />
+                <input type="hidden" name="archived" value={doc.status === "archived" ? "0" : "1"} />
+                <SubmitButton className="inline-flex min-h-6 items-center text-sm text-ink-2 underline" pendingLabel={doc.status === "archived" ? "Restoring…" : "Archiving…"}>
+                  {doc.status === "archived" ? "Restore document" : "Archive document"}
+                </SubmitButton>
+              </form>
+            )}
+            {linksWarning && <p className="text-xs text-ink-3">{linksWarning}</p>}
+          </div>
         </aside>
       </div>
     </div>

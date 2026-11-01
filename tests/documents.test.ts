@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
-import { PDFDict, PDFDocument, PDFName, PDFPage, PDFRawStream, PDFStream } from "pdf-lib";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFPage, PDFRawStream, PDFRef, PDFStream } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
@@ -321,7 +321,7 @@ describe("W-9 fill", () => {
     }
     expect(await checkFill(sample, t.id, { ...base, requester: fits })).toEqual({});
     // The flattened page draws the box's text as an XObject clipped at y = 1: every baseline must sit above that.
-    const { bytes } = await render(t, { ...base, requester: fits }, facts, sample.today);
+    const { bytes } = await render(t, { ...base, requester: fits }, facts, sample.today, sample.demo);
     const baselines = requesterBaselines(await PDFDocument.load(bytes));
     expect(baselines).toHaveLength(3);
     for (const y of baselines) expect(y).toBeGreaterThan(1);
@@ -334,7 +334,7 @@ describe("W-9 fill", () => {
   it("refuses a one-line field wider than its line on the form, and a typed signature that would run into the Date label (W11-5)", async () => {
     const t = templateById("irs-w9");
     if (!t) throw new Error("the W-9 template is missing");
-    const base = { ...prefill(t, await factsForFill(sample), sample.today), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
+    const base = { ...prefill(t, await factsForFill(sample), sample.today), tin_kind: "ein", sign: "on", signature: "Alex Rivera" };
     // Helvetica's W is 0.944 em: 60 at 9 pt are 509.8 pt of the 515.4 the name line holds, 61 are 518.3.
     expect(await checkFill(sample, t.id, { ...base, name: "W".repeat(60) })).toEqual({});
     expect(await checkFill(sample, t.id, { ...base, name: "W".repeat(61) })).toEqual({
@@ -348,28 +348,76 @@ describe("W-9 fill", () => {
   });
 
   it("needs the acknowledgment, records where each value came from, and never stores tax ids", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     const t = templateById("irs-w9")!;
-    const facts = await factsForFill(sample);
-    const values = { ...prefill(t, facts, sample.today), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
-    const refused = await fillTemplate(sample, t.id, values, false);
+    const facts = await factsForFill(real);
+    const values = { ...prefill(t, facts, real.today), name: "Typed SSN Co", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
+    const refused = await fillTemplate(real, t.id, values, false);
     expect(refused).toEqual({ ok: false, errors: { _ack: expect.any(String) } });
 
-    const made = await fillTemplate(sample, t.id, values, true);
+    const made = await fillTemplate(real, t.id, values, true);
     expect(made.ok).toBe(true);
     const id = made.ok ? made.id : "";
-    const got = await getDocument(sample, id);
+    const got = await getDocument(real, id);
     const record = got!.versions[0].fill_record!;
-    expect(record.fields).toMatchObject({ name: "facts", ssn: "typed_not_saved", tax_class: "facts" });
+    expect(record.fields).toMatchObject({ name: "typed", ssn: "typed_not_saved", tax_class: "typed" });
     expect(record.fields).not.toHaveProperty("ein");
     const everything = JSON.stringify(await db.root((tx) => tx.query("select * from app.document_versions v join app.documents d on d.id = v.document_id join app.profiles p on p.org_id = d.org_id")));
     for (const secret of ["900123456", "900-12-3456", "12-3456", "1234567"]) expect(everything).not.toContain(secret);
     expect(got!.audit.map((a) => a.action)).toContain("document.acknowledged");
+    vi.unstubAllEnvs();
+  });
+
+  it("a sample never takes a real SSN, and every PDF made in a sample says SAMPLE on every page (W14-2)", async () => {
+    const stamped = async (bytes: Uint8Array) => {
+      const doc = await PDFDocument.load(bytes);
+      return doc.getPages().map((page) => {
+        const contents = page.node.Contents();
+        const refs = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : [];
+        return refs.some((ref) => {
+          const s = ref instanceof PDFRef ? doc.context.lookup(ref) : ref;
+          if (!(s instanceof PDFStream)) return false;
+          const raw = s instanceof PDFRawStream ? s.contents : s.getContents();
+          const flate = s.dict.get(PDFName.of("Filter"))?.toString().includes("FlateDecode");
+          return (flate ? inflateSync(raw) : Buffer.from(raw)).toString("latin1").includes("<53414D504C45> Tj");
+        });
+      });
+    };
+    const ctx = await workspace("sample-ssn@example.com", "sample");
+    const t = templateById("irs-w9")!;
+    const base = { ...prefill(t, await factsForFill(ctx), ctx.today), sign: "on", signature: "Alex Rivera" };
+    const before = (await listDocuments(ctx)).length;
+    const sampleSsn = "This sample uses its made-up EIN, so choose EIN. Your own SSN can go in once real accounts open.";
+    expect(await checkFill(ctx, t.id, { ...base, tin_kind: "ssn", ssn: "900-12-3456" })).toEqual({ ssn: sampleSsn });
+    expect(await fillTemplate(ctx, t.id, { ...base, tin_kind: "ssn", ssn: "900-12-3456" }, true)).toEqual({ ok: false, errors: { ssn: sampleSsn } });
+    expect(await listDocuments(ctx)).toHaveLength(before);
+
+    const w9 = await fillTemplate(ctx, t.id, { ...base, tin_kind: "ein" }, true);
+    const w9Bytes = await blobStore().get(`${ctx.orgId}/${w9.ok ? w9.id : ""}/v1.pdf`);
+    expect(await stamped(w9Bytes)).toEqual(Array(6).fill(true));
+    const nda = templateById("common-paper-mnda");
+    if (!nda) throw new Error("the NDA template is missing");
+    const ndaValues = { mnda_term: "until_terminated", conf_term: "perpetual", governing_law: "California", jurisdiction: "San Francisco, CA", p2_company: "Northwind", p2_name: "Jordan Lee", p2_notice: "legal@northwind.example" };
+    const ndaMade = await fillTemplate(ctx, nda.id, { ...prefill(nda, await factsForFill(ctx), ctx.today), ...ndaValues }, true);
+    expect(ndaMade.ok ? [] : ndaMade.errors).toEqual([]);
+    const pages = await stamped(await blobStore().get(`${ctx.orgId}/${ndaMade.ok ? ndaMade.id : ""}/v1.pdf`));
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.every(Boolean)).toBe(true);
+    // The W-9 the sample starts with is stamped too.
+    const seeded = (await listDocuments(ctx)).find((d) => d.template_id === "irs-w9" && d.id !== (w9.ok ? w9.id : ""));
+    expect(await stamped(await blobStore().get(`${ctx.orgId}/${seeded?.id}/v1.pdf`))).toEqual(Array(6).fill(true));
+
+    // A real workspace's W-9 isn't.
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const own = await fillTemplate(real, t.id, { name: "Unstamped Co", tax_class: "c_corp", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ein", ein: "98-7654321", sign: "", signature: "" }, true);
+    expect((await stamped(await blobStore().get(`${real.orgId}/${own.ok ? own.id : ""}/v1.pdf`))).some(Boolean)).toBe(false);
+    vi.unstubAllEnvs();
   });
 
   it("makes a filled W-9 that runs nothing: the IRS file's scripts, triggers and usage-rights signature are gone, the form is drawn in (W11-11)", async () => {
     const t = templateById("irs-w9");
     if (!t) throw new Error("the W-9 template is missing");
-    const values = { ...prefill(t, await factsForFill(sample), sample.today), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
+    const values = { ...prefill(t, await factsForFill(sample), sample.today), tin_kind: "ein", sign: "on", signature: "Alex Rivera" };
     const made = await fillTemplate(sample, t.id, values, true);
     const id = made.ok ? made.id : "";
     const w9 = await PDFDocument.load(await blobStore().get(`${sample.orgId}/${id}/v1.pdf`));
@@ -390,16 +438,18 @@ describe("W-9 fill", () => {
     const t = templateById("irs-w9")!;
     const facts = await factsForFill(sample);
     const evening = { ...sample, today: "2031-02-03" };
-    const values = { ...prefill(t, facts, evening.today), tin_kind: "ssn", ssn: "900-12-3456", sign: "on", signature: "Alex Rivera" };
+    const values = { ...prefill(t, facts, evening.today), tin_kind: "ein", sign: "on", signature: "Alex Rivera" };
     const made = await fillTemplate(evening, t.id, values, true);
     expect((await getDocument(sample, made.ok ? made.id : ""))?.doc.issued_on).toBe("2031-02-03");
     expect(prefill(templateById("common-paper-mnda")!, facts, "2031-02-03").effective_date).toBe("2031-02-03");
   });
 
   it("reports missing and invalid fields instead of making a document", async () => {
-    const res = await fillTemplate(sample, "irs-w9", { name: "", tax_class: "nope", tin_kind: "ssn", ssn: "12" }, true);
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const res = await fillTemplate(real, "irs-w9", { name: "", tax_class: "nope", tin_kind: "ssn", ssn: "12" }, true);
     expect(res.ok).toBe(false);
     expect(res.ok ? {} : res.errors).toMatchObject({ name: "Fill this in.", tax_class: "Choose one of the options.", ssn: "Enter the SSN as 9 digits, like 123-45-6789." });
+    vi.unstubAllEnvs();
   });
 
   it("says what to do about each kind of missing or over-long field", async () => {
@@ -419,9 +469,9 @@ describe("W-9 fill", () => {
     const t = templateById("irs-w9")!;
     const ctx = await workspace("review-step@example.com", "sample");
     const before = (await listDocuments(ctx)).length;
-    const good = { ...prefill(t, await factsForFill(ctx), ctx.today), tin_kind: "ssn", ssn: "900-12-3456" };
+    const good = { ...prefill(t, await factsForFill(ctx), ctx.today), tin_kind: "ein" };
     expect(await checkFill(ctx, t.id, good)).toEqual({});
-    expect(await checkFill(ctx, t.id, { ...good, ssn: "12" })).toEqual({ ssn: "Enter the SSN as 9 digits, like 123-45-6789." });
+    expect(await checkFill(ctx, t.id, { ...good, name: "" })).toEqual({ name: "Fill this in." });
     expect(await listDocuments(ctx)).toHaveLength(before);
   });
 

@@ -97,7 +97,7 @@ export function FactsForm({ values, readOnly }: { values: Record<ProfileKey, str
   );
 }
 
-export function EinPanel({ masked, readOnly }: { masked: string | null; readOnly: boolean }) {
+export function EinPanel({ masked, readOnly, sample }: { masked: string | null; readOnly: boolean; sample: boolean }) {
   const [shown, revealAction, revealing] = useActionState<FactsState>(reveal, {});
   const [saveState, saveAction, saving] = useActionState<FactsState, FormData>(saveTaxId, {});
   const [visible, setVisible] = useState(false);
@@ -138,7 +138,11 @@ export function EinPanel({ masked, readOnly }: { masked: string | null; readOnly
           )}
         </p>
       )}
-      <p className="text-xs text-ink-3">Stored encrypted. Showing it needs a recent sign-in and is recorded in your history.</p>
+      <p className="text-xs text-ink-3">
+        {sample
+          ? "In a real workspace, showing the full EIN needs a recent sign-in. This one is made up, so it shows straight away."
+          : "Stored encrypted. Showing it here needs a recent sign-in and is recorded in the workspace history (your export includes it). Every W-9 you make carries the full number, as the IRS form requires."}
+      </p>
       {!readOnly && (
         <form action={saveAction} className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1">

@@ -37,7 +37,7 @@ const SAMPLE_FACTS: Record<ProfileKey, string> = {
 async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides: Record<string, string>) {
   const start = prefill(t, facts, ctx.today);
   const values = { ...start, ...overrides };
-  const out = await render(t, values, facts, ctx.today);
+  const out = await render(t, values, facts, ctx.today, true);
   // Titles built from a sample party's name already end in "(sample)".
   const title = out.title.endsWith("(sample)") ? out.title : `${out.title} (sample)`;
   await insertDocument(

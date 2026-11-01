@@ -12,9 +12,9 @@ import { fill } from "@/app/app/make/actions";
 import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
-import { DOCUMENTS_PAGE_SIZE, fillTemplate, uploadDocument } from "@/lib/server/documents";
+import { DOCUMENTS_PAGE_SIZE, fillTemplate, setArchived, uploadDocument } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
-import { createPassport, passportFileUrl } from "@/lib/server/passport";
+import { createPassport, passportFileUrl, revokePassport } from "@/lib/server/passport";
 import { factsForFill, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
@@ -598,6 +598,39 @@ describe("a document's page", () => {
     expect(after).not.toContain("version-file-warning");
     expect(after).not.toContain("Archive and withdraw");
     expect(textOf(after)).toContain("Withdrawn");
+  });
+
+  it("on passport links that still work, Archive says first that it takes the document off them for good, in the confirm too; archived, the page says restoring won't put it back (W14-3)", async () => {
+    const ctx = await signIn("doc-archive-links@example.com");
+    const pdf = await PDFDocument.create();
+    pdf.addPage([612, 792]);
+    const id = await uploadDocument(ctx, { title: "Liability certificate", kind: "coi" }, await pdf.save());
+    // Pro: more than one open link, and signing requests.
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_W14', 'active', 'pro')", [ctx.orgId]));
+    const line = (html: string) => textOf(/<p class="text-xs text-ink-3">(Archiving takes it off[\s\S]*?)<\/p>/.exec(html)?.[1] ?? "");
+    expect(line(await documentPage(id, {}))).toBe("");
+
+    await createPassport(ctx, { label: "Northwind", days: 7, documentIds: [id] });
+    expect(line(await documentPage(id, {}))).toBe("Archiving takes it off 1 passport link for good; restoring won't add it back.");
+    const off = await createPassport(ctx, { label: "Turned off", days: 7, documentIds: [id] });
+    await revokePassport(ctx, off.id);
+    await createPassport(ctx, { label: "Acme", days: 30, documentIds: [id] });
+    expect(line(await documentPage(id, {}))).toBe("Archiving takes it off 2 passport links for good; restoring won't add it back.");
+
+    // With a signing request open, the confirm carries the same sentence.
+    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    const html = await documentPage(id, {});
+    const step2 = /<form\b([^>]*)>([\s\S]*?)<\/form>/.exec(html.slice(html.indexOf(">Archive document</button>")));
+    expect(textOf(step2?.[2] ?? "")).toBe(
+      "Archiving withdraws the open signing request for Jordan Lee. Restoring the document won't bring it back; you'd send it again. Archiving takes it off 2 passport links for good; restoring won't add it back. Archive and withdraw Keep it",
+    );
+
+    await setArchived(ctx, id, true);
+    const archived = await documentPage(id, {});
+    expect(line(archived)).toBe("");
+    expect(textOf(archived)).toContain(
+      "This document is archived. It keeps its history and was taken off your passport links; it isn't reminded about or open for signing. Restoring it won't put it back on any link.",
+    );
   });
 });
 
