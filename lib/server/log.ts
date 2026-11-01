@@ -7,9 +7,11 @@ import { formatWithOptions } from "node:util";
  * any library logging go through the same scrubber as ours.
  */
 
-// Invisible format characters (zero-width space, soft hyphen, direction marks...) are dropped, so
-// they can't split a number. NFKC turns full-width digits into ASCII ones.
-const FORMAT_CHARS = /\p{Cf}/gu;
+// Invisible format characters (zero-width space, soft hyphen, direction marks...) and C0/C1 control
+// characters other than tab, newline and return are dropped, so they can't split a number ("900\u0000
+// 12\u00003456"; Security LOW-L1) and no input can carry the \u0000 the UUID pass below uses as its
+// sentinel. NFKC turns full-width digits into ASCII ones.
+const FORMAT_CHARS = /\p{Cf}|[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/gu;
 // Unicode dashes and minus signs (hyphen, non-breaking hyphen, figure/en/em dash, minus, small and
 // full-width hyphen-minus), read as "-".
 const DASHES = /[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g;
