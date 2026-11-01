@@ -160,20 +160,46 @@ describe("business facts", () => {
 });
 
 describe("making a document", () => {
-  it("starts with the fields and a review button; approving comes after the review", async () => {
+  it("starts on step 1 of 4 with a Continue button; the later steps are present but hidden, and approving comes after the review", async () => {
     await signIn("fill-start@example.com");
     const html = await renderPage(FillPage, { params: Promise.resolve({ template: "irs-w9" }) });
     const text = textOf(html);
-    expect(primaryActions(html)).toEqual([{ label: "Review the W-9", href: undefined }]);
-    expect(text).toContain("Nothing is saved until you approve.");
+    expect(text).toContain("Step 1 of 4 Who's filling it in");
+    expect(primaryActions(html)).toEqual([{ label: "Continue", href: undefined }]);
+    expect(text).toMatch(/Next: tax type and number\s*\./);
+    // Step 2's fields are in the form (hidden) so every post carries every value.
+    expect(html).toMatch(/<div hidden=""[^>]*>(?:(?!<\/div>)[\s\S])*name="tax_class"/);
+    expect(text).not.toContain("Review the W-9");
     expect(text).not.toContain("Approve and make");
+  });
+
+  it("the NDA, which has no steps, is one page with the review button", async () => {
+    await signIn("fill-nda@example.com");
+    const html = await renderPage(FillPage, { params: Promise.resolve({ template: "common-paper-mnda" }) });
+    expect(textOf(html)).not.toContain("Step 1 of");
+    expect(primaryActions(html)).toEqual([{ label: "Review the NDA", href: undefined }]);
+  });
+
+  it("Continue checks only the step being left and answers with the next step; the review checks everything and names the first step with a problem", async () => {
+    await signIn("fill-steps@example.com");
+    const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
+    // Step 1 (name) is fine even though step 2 is still empty.
+    expect(await fill({}, form({ ...w9, tax_class: "", ssn: "", step: "next", at: "0" }))).toEqual({ at: 1 });
+    // Leaving step 2 with its own problems: only those come back, and the form stays on step 2.
+    expect(await fill({}, form({ ...w9, tax_class: "", ssn: "12", address: "", step: "next", at: "1" }))).toEqual({
+      errors: { tax_class: "Choose one of the options.", ssn: "Enter the SSN as 9 digits, like 123-45-6789." },
+      at: 1,
+    });
+    // The review: every problem, and the form goes to the first step that has one (the address is on step 3).
+    expect(await fill({}, form({ ...w9, address: "", step: "review" }))).toEqual({ errors: { address: "Fill this in." }, at: 2 });
+    expect(await fill({}, form({ ...w9, name: "", address: "", step: "review" }))).toEqual({ errors: { name: "Fill this in.", address: "Fill this in." }, at: 0 });
   });
 
   it("checks the values for the review without saving, and stays on the review when only the approval box is missing", async () => {
     await signIn("fill-review@example.com");
     const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
     expect(await fill({}, form({ ...w9, step: "review" }))).toEqual({ review: true });
-    expect(await fill({}, form({ ...w9, name: "", step: "review" }))).toEqual({ errors: { name: "Fill this in." } });
+    expect(await fill({}, form({ ...w9, name: "", step: "review" }))).toEqual({ errors: { name: "Fill this in." }, at: 0 });
     expect(await fill({}, form(w9))).toEqual({ errors: { _ack: "Tick the box to confirm you've reviewed the document." }, review: true });
     await expect(fill({}, form({ ...w9, ack: "on" }))).rejects.toThrow(/^redirect \/app\/documents\/.+\?made=1$/);
   });

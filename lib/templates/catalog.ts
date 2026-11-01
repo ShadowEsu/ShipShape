@@ -84,6 +84,12 @@ const W9: TemplateInfo = {
     { section: "Sign (Part II)", key: "sign", label: "Sign the certification with my typed name and today's date", kind: "checkbox" },
     { section: "Sign (Part II)", key: "signature", label: "Signature (type your full name)", kind: "text", max: 80, required: true, fact: "signer_name", when: { key: "sign", equals: "on" } },
   ],
+  steps: [
+    { title: "Who's filling it in", sections: ["Who is filling it in"] },
+    { title: "Tax type and number", sections: ["Federal tax classification (line 3a)", "Exemptions (line 4)", "Taxpayer identification number (Part I)"] },
+    { title: "Address", sections: ["Address"] },
+    { title: "Sign", sections: ["Sign (Part II)"] },
+  ],
 };
 
 const NDA: TemplateInfo = {
@@ -156,3 +162,15 @@ export const templateById = (id: string) => TEMPLATES.find((t) => t.id === id);
 
 /** A field is shown (and validated) only when its `when` condition holds. */
 export const isVisible = (f: FieldDef, values: Record<string, string>) => !f.when || values[f.when.key] === f.when.equals;
+
+/** The form's steps: the template's own, or one step holding every section. */
+export function stepsOf(t: TemplateInfo): { title: string; sections: string[] }[] {
+  return t.steps ?? [{ title: t.title, sections: [...new Set(t.fields.map((f) => f.section))] }];
+}
+
+/** The step (0-based) a field is on; the first step for anything unknown, such as the approval box. */
+export function stepOf(t: TemplateInfo, key: string): number {
+  const section = t.fields.find((f) => f.key === key)?.section;
+  const at = stepsOf(t).findIndex((s) => section !== undefined && s.sections.includes(section));
+  return at < 0 ? 0 : at;
+}

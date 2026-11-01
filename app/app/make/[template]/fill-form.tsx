@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 import { flushSync } from "react-dom";
-import { isVisible as visible } from "@/lib/templates/catalog";
+import { isVisible as visible, stepOf, stepsOf } from "@/lib/templates/catalog";
 import type { FieldDef, TemplateInfo } from "@/lib/templates/types";
 import { fill, type FillState } from "../actions";
 
@@ -103,16 +103,20 @@ export function FillForm({
   const [left, setLeft] = useState<FillState | null>(null);
   // Fields changed since this result came back: their error clears at once (it's being corrected) until the next check.
   const [fixed, setFixed] = useState<{ of: FillState; keys: string[] }>({ of: state, keys: [] });
+  // The step the person moved to on their own (Back, a summary link, Change) since this result; the result's step otherwise.
+  const [moved, setMoved] = useState<{ of: FillState; at: number } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
+  const steps = stepsOf(template);
   const reviewing = state.review === true && left !== state;
+  const current = Math.min(moved?.of === state ? moved.at : (state.at ?? 0), steps.length - 1);
+  const last = current === steps.length - 1;
   const fixedKeys = fixed.of === state ? fixed.keys : [];
   const errors = Object.fromEntries(Object.entries(state.errors ?? {}).filter(([k]) => !fixedKeys.includes(k)));
   const set = (k: string, v: string) => {
     setValues((old) => ({ ...old, [k]: v }));
     setFixed((old) => (old.of === state ? { of: state, keys: old.keys.includes(k) ? old.keys : [...old.keys, k] } : { of: state, keys: [k] }));
   };
-  const sections = [...new Set(template.fields.map((f) => f.section))];
   const shownFields = template.fields.filter((f) => visible(f, values));
   const problems = shownFields.filter((f) => errors[f.key]).map((f) => ({ key: f.key, label: f.label, message: errors[f.key] }));
 
@@ -123,42 +127,61 @@ export function FillForm({
     else if (state.errors._ack) focusField(formRef.current, "_ack");
   }, [state]);
 
+  /** Shows the step a field is on, then focuses the field. */
+  function goTo(key: string) {
+    flushSync(() => setMoved({ of: state, at: stepOf(template, key) }));
+    focusField(formRef.current, key);
+  }
+
   function change(key: string) {
     // Show the fields before moving focus into them; changed values need approving afresh.
     flushSync(() => {
       setLeft(state);
       setAck(false);
     });
-    focusField(formRef.current, key);
+    goTo(key);
   }
 
   return (
     <form ref={formRef} action={action} className="space-y-6" noValidate>
       <input type="hidden" name="template" value={template.id} />
+      <input type="hidden" name="at" value={current} />
       {state.error && (
         <p role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad">
           {state.error}
         </p>
       )}
-      {!reviewing && problems.length > 0 && <ErrorSummary ref={summaryRef} problems={problems} onPick={(key) => focusField(formRef.current, key)} />}
+      {!reviewing && problems.length > 0 && <ErrorSummary ref={summaryRef} problems={problems} onPick={goTo} />}
 
-      {/* While reviewing, the fields stay in the form (hidden) so approving posts the reviewed values. */}
+      {/* Every step stays in the form (hidden) so the next check and the approval post every value. */}
       <div hidden={reviewing} className="space-y-6">
-        {sections.map((section) => {
-          const fields = shownFields.filter((f) => f.section === section);
-          if (!fields.length) return null;
-          return (
-            <fieldset key={section} className="card">
-              {/* A floated legend sits inside the card instead of on its border; fields clear it. */}
-              <legend className="float-left mb-4 w-full font-semibold">{section}</legend>
-              <div className="clear-both space-y-4">
-                {fields.map((f) => (
-                  <Field key={f.key} f={f} value={values[f.key] ?? ""} onChange={(v) => set(f.key, v)} error={errors[f.key]} chip={f.fact ? chips[f.key] : undefined} initial={initial[f.key] ?? ""} />
-                ))}
-              </div>
-            </fieldset>
-          );
-        })}
+        {steps.length > 1 && !reviewing && (
+          <h2 className="font-semibold">
+            <span className="block font-mono text-xs font-medium tracking-widest text-ink-3 uppercase">
+              Step {current + 1} of {steps.length}
+            </span>
+            {steps[current].title}
+          </h2>
+        )}
+        {steps.map((step, i) => (
+          <div key={step.title} hidden={i !== current} className="space-y-6">
+            {step.sections.map((section) => {
+              const fields = shownFields.filter((f) => f.section === section);
+              if (!fields.length) return null;
+              return (
+                <fieldset key={section} className="card">
+                  {/* A floated legend sits inside the card instead of on its border; fields clear it. */}
+                  <legend className="float-left mb-4 w-full font-semibold">{section}</legend>
+                  <div className="clear-both space-y-4">
+                    {fields.map((f) => (
+                      <Field key={f.key} f={f} value={values[f.key] ?? ""} onChange={(v) => set(f.key, v)} error={errors[f.key]} chip={f.fact ? chips[f.key] : undefined} initial={initial[f.key] ?? ""} />
+                    ))}
+                  </div>
+                </fieldset>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       {reviewing ? (
@@ -217,15 +240,45 @@ export function FillForm({
             <p className="text-sm text-ink-3">Nothing is saved until you approve.</p>
           </section>
         </>
-      ) : (
+      ) : left ? (
+        <section className="card space-y-3 border-ink">
+          <p className="text-sm text-ink-2">Your other answers are kept. Changed values need approving afresh.</p>
+          <button className="btn" name="step" value="review" disabled={pending}>
+            {pending ? "Checking…" : "Return to the check"}
+          </button>
+        </section>
+      ) : last ? (
         <section className="card space-y-3 border-ink">
           <p className="text-sm text-ink-2">Next, you check every value and where it came from. Nothing is saved until you approve.</p>
-          <button className="btn" name="step" value="review" disabled={pending}>
-            {pending ? "Checking…" : `Review the ${template.short}`}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn" name="step" value="review" disabled={pending}>
+              {pending ? "Checking…" : `Review the ${template.short}`}
+            </button>
+            {steps.length > 1 && <BackButton onClick={() => setMoved({ of: state, at: current - 1 })} />}
+          </div>
+        </section>
+      ) : (
+        <section className="card space-y-3 border-ink">
+          <p className="text-sm text-ink-2">
+            Next: {steps[current + 1].title.toLowerCase()}. Nothing is saved until you approve at the end.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn" name="step" value="next" disabled={pending}>
+              {pending ? "Checking…" : "Continue"}
+            </button>
+            {current > 0 && <BackButton onClick={() => setMoved({ of: state, at: current - 1 })} />}
+          </div>
         </section>
       )}
     </form>
+  );
+}
+
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="btn-ghost" onClick={onClick}>
+      Back
+    </button>
   );
 }
 
