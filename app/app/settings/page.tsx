@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { fmtDay, Notice, PageHeader } from "@/components/app-ui";
+import { Notice, PageHeader } from "@/components/app-ui";
 import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
 import { PLANS } from "@/lib/plans";
@@ -8,7 +8,8 @@ import { deletionPreview, EXPORT_MAX_BYTES } from "@/lib/server/account";
 import { billingView } from "@/lib/server/billing";
 import { signInMethod } from "@/lib/server/cognito";
 import { contactEmail } from "@/lib/server/flags";
-import { liveSessions, RECENT_AUTH_SECONDS, requireWorkspace } from "@/lib/server/session";
+import { liveSessions, RECENT_AUTH_SECONDS, requireWorkspace, viewerZone } from "@/lib/server/session";
+import { dayOf } from "@/lib/today";
 import { signOut } from "../../signin/actions";
 import { signOutEverywhere, signOutSession } from "./actions";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
@@ -52,6 +53,7 @@ function exportProblem(error: string | undefined, contact: string | null): { tex
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; billing?: string }> }) {
   const ctx = await requireWorkspace();
+  const zone = await viewerZone();
   const { error, billing } = await searchParams;
   const exportError = exportProblem(error, contactEmail());
   const [view, goes, method, sessions] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId), ctx.demo ? "local" : signInMethod(ctx.userId), liveSessions(ctx)]);
@@ -100,7 +102,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           {!ctx.demo && view.plan === "pro" && view.periodEnd && (
             <span className="text-ink-2">
               {" "}
-              · {view.cancelAtPeriodEnd ? `ends ${fmtDay(view.periodEnd)}, then Free` : `renews ${fmtDay(view.periodEnd)}`}
+              · {view.cancelAtPeriodEnd ? `ends ${dayOf(view.periodEnd, zone)}, then Free` : `renews ${dayOf(view.periodEnd, zone)}`}
             </span>
           )}
         </p>

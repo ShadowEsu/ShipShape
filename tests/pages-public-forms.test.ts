@@ -183,7 +183,7 @@ describe("an upload link's answers (/c)", () => {
 
   /** The notice that took focus at the top of the page, with its role; null when there is none. */
   const focusedNotice = (html: string) => {
-    const m = /<div role="(alert|status)" tabindex="-1"><div class="[^"]*">([\s\S]*?)<\/div><\/div>/.exec(html);
+    const m = /<div role="(alert|status)" tabindex="-1"[^>]*><div class="[^"]*">([\s\S]*?)<\/div><\/div>/.exec(html);
     return m ? { role: m[1], text: said(m[2]) } : null;
   };
 

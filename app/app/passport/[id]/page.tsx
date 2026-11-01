@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Notice, PageHeader, fmtDay } from "@/components/app-ui";
+import { Notice, PageHeader } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { fmtDateTime } from "@/components/ui";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { getPassport } from "@/lib/server/passport";
-import { requireWorkspace } from "@/lib/server/session";
+import { requireWorkspace, viewerZone } from "@/lib/server/session";
+import { dayOf } from "@/lib/today";
 import { turnOff } from "../actions";
 
 export const metadata: Metadata = { title: "Passport link" };
@@ -20,6 +21,7 @@ const ERRORS: Record<string, string> = {
 
 export default async function PassportDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const ctx = await requireWorkspace();
+  const zone = await viewerZone();
   const { id } = await params;
   const { error } = await searchParams;
   const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
@@ -46,13 +48,13 @@ export default async function PassportDetail({ params, searchParams }: { params:
         <Notice tone="info">Turned off {fmtDateTime(revokedAt)}. Nobody can open it any more.</Notice>
       ) : expired ? (
         <div className="space-y-3">
-          <Notice>Expired {fmtDay(p.link.expires_at)}, so nobody can open it. If they still need these documents, make a new link.</Notice>
+          <Notice>Expired {dayOf(p.link.expires_at, zone)}, so nobody can open it. If they still need these documents, make a new link.</Notice>
           <Link href={`/app/passport?docs=${p.documents.map((d) => d.id).join(",")}`} className="btn">
             Make a new link with these documents
           </Link>
         </div>
       ) : (
-        <p className="text-ink-2">Works until {fmtDay(p.link.expires_at)}. The link itself was shown once when you made it.</p>
+        <p className="text-ink-2">Works until {dayOf(p.link.expires_at, zone)}. The link itself was shown once when you made it.</p>
       )}
 
       <section className="card space-y-2">

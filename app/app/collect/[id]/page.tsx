@@ -5,7 +5,8 @@ import { EmptyState, Notice, PageHeader, fmtDay } from "@/components/app-ui";
 import { SubmitButton } from "@/components/submit-button";
 import { COLLECT_DAYS, getVendor, type VendorLink } from "@/lib/server/collect";
 import { collectOpen } from "@/lib/server/flags";
-import { requireWorkspace } from "@/lib/server/session";
+import { requireWorkspace, viewerZone } from "@/lib/server/session";
+import { dayOf } from "@/lib/today";
 import { archiveVendor, turnOffVendorLink } from "../actions";
 import { CollectChip } from "../chip";
 import { DeleteVendorFileForm, VendorLinkForm } from "../forms";
@@ -27,6 +28,8 @@ const ERRORS: Record<string, string> = {
 
 export default async function VendorPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const ctx = await requireWorkspace();
+  // Link ends and arrival times are instants: shown as the day where the owner is.
+  const zone = await viewerZone();
   if (!collectOpen(ctx)) notFound();
   const { id } = await params;
   const { error } = await searchParams;
@@ -76,7 +79,7 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
             <li key={i.kind} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="font-medium">{i.label}</span>
               <span className="flex flex-wrap items-center gap-3 text-sm text-ink-2">
-                {i.receivedAt && <span>Received {fmtDay(i.receivedAt)}</span>}
+                {i.receivedAt && <span>Received {dayOf(i.receivedAt, zone)}</span>}
                 <CollectChip state={i.state} expiresOn={i.expiresOn} />
               </span>
             </li>
@@ -95,7 +98,7 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
             ) : working ? (
               <EmptyState
                 title={`Waiting for ${vendor.name}`}
-                body={`Your upload link works until ${fmtDay(working.expires_at)}. Their files land here as soon as they send them; there's nothing for you to do until then.`}
+                body={`Your upload link works until ${dayOf(working.expires_at, zone)}. Their files land here as soon as they send them; there's nothing for you to do until then.`}
               />
             ) : (
               <EmptyState
@@ -111,7 +114,7 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
                     <span className="block font-mono text-xs tracking-wide text-ink-3 uppercase">{f.label}</span>
                     <span className="block truncate font-medium">{f.filename}</span>
                     <span className="block text-sm text-ink-2">
-                      {fmtDay(f.received_at)} · {size(f.size_bytes)}
+                      {dayOf(f.received_at, zone)} · {size(f.size_bytes)}
                       {f.expires_on && ` · valid through ${fmtDay(f.expires_on)}`}
                       {f.sample && " · sample"}
                     </span>
@@ -148,7 +151,7 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
                       <span>
                         <span className="font-medium">{status}</span>
                         <span className="block text-ink-2">
-                          Made {fmtDay(l.created_at)} · until {fmtDay(l.expires_at)}
+                          Made {dayOf(l.created_at, zone)} · until {dayOf(l.expires_at, zone)}
                         </span>
                       </span>
                       {status === "Working" && (

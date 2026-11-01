@@ -217,7 +217,7 @@ describe("a passport link (/p)", () => {
     for (let i = 0; i < 60; i++) await rateLimited("passport-file", visitor.ip, 60, 600);
     await expect(download(id, docs[0].id)).rejects.toThrow(`redirect /p/${id}?r=busy`);
     const html = await renderPage(PassportPage, props(id, { r: "busy" }));
-    expect(html).toMatch(/<div role="alert" tabindex="-1"><div[^>]*>Too many downloads from this network\. Wait 10 minutes, then try again\.<\/div><\/div>/);
+    expect(html).toMatch(/<div role="alert" tabindex="-1"[^>]*><div[^>]*>Too many downloads from this network\. Wait 10 minutes, then try again\.<\/div><\/div>/);
     expect(textOf(html)).toContain("Harbor Plumbing (sample)");
     expect(actionsOf(html).filter((a) => a.label === "Download")).toHaveLength(1);
     // Without the download route's say-so, the page doesn't show the line.

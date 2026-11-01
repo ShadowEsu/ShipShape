@@ -413,6 +413,8 @@ describe("signing", () => {
     // A real name outside WinAnsi (Ł, Cyrillic, CJK) is refused with its own reason, not "type your full name"; an empty one still is that.
     for (const typedName of ["Łukasz Nowak", "Иван Петров", "李明"]) expect(await completeSigning(id, token, { code: "000000", typedName, consented: true, ip: IP })).toBe("name_chars");
     expect(await completeSigning(id, token, { code: "000000", typedName: " ", consented: true, ip: IP })).toBe("needs_name");
+    // "e" + a combining acute composes (NFC) to the printable "é": accepted, and the certificate gets the composed form.
+    expect(await completeSigning(id, token, { code: "000000", typedName: "Rene\u0301e Dupont", consented: true, ip: IP })).toBe("bad_code");
     expect(await completeSigning(id, token, { code: "000000", typedName: "Antonin Dvorak", consented: true, ip: IP })).toBe("bad_code");
     expect(await completeSigning(id, token, { code: await lastCode(a.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
 

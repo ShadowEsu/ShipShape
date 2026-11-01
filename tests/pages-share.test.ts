@@ -225,6 +225,26 @@ describe("Passport", () => {
     expect(primary(html)).toEqual([]);
   });
 
+  it("shows a link's end on the owner's day, not the UTC day: the list, its badge once ended, and the detail page", async () => {
+    const ctx = await signIn("passport-zone@example.com");
+    const doc = await addDoc(ctx, "Liability certificate");
+    const { id } = await createPassport(ctx, { label: "West coast", days: 7, documentIds: [doc] });
+    // Ends at 01:00 UTC on the 8th: the 7th in Los Angeles, the 8th in Tokyo.
+    await db.root((tx) => tx.query("update app.share_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    const detail = () => renderPage(PassportDetail, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
+    jar.set("ss_tz", "America/Los_Angeles");
+    expect(textOf(await detail())).toMatch(/Works until Nov 7, 2026 ?\./);
+    expect(textOf(await renderPage(PassportPage, none()))).toContain("until Nov 7, 2026");
+    jar.set("ss_tz", "Asia/Tokyo");
+    expect(textOf(await detail())).toMatch(/Works until Nov 8, 2026 ?\./);
+    expect(textOf(await renderPage(PassportPage, none()))).toContain("until Nov 8, 2026");
+    // Once ended, the badge and the detail's notice say the same day.
+    await db.root((tx) => tx.query("update app.share_links set created_at = '2026-10-25 01:00:00+00', expires_at = '2026-10-31 02:00:00+00' where id = $1", [id]));
+    jar.set("ss_tz", "America/Los_Angeles");
+    expect(textOf(await renderPage(PassportPage, none()))).toContain("Ended Oct 30, 2026");
+    expect(textOf(await detail())).toMatch(/Expired Oct 30, 2026 ?, so nobody can open it\./);
+  });
+
   it("turning off a working link asks first: the question names who loses access, with Turn off the link and Cancel", async () => {
     const ctx = await signIn("passport-confirm@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
@@ -271,9 +291,13 @@ describe("Collect", () => {
   it("a vendor with a working link and no files yet: says it's waiting and until when", async () => {
     const ctx = await signIn("collect-waiting@example.com");
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
-    await createVendorLink(ctx, { vendorId, days: 7 });
+    const { id } = await createVendorLink(ctx, { vendorId, days: 7 });
+    await db.root((tx) => tx.query("update app.vendor_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    jar.set("ss_tz", "America/Los_Angeles");
     const html = await renderPage(VendorPage, { params: Promise.resolve({ id: vendorId }), searchParams: Promise.resolve({}) });
-    expect(textOf(html)).toMatch(/Waiting for Rivera Electric Your upload link works until \w{3} \d{1,2}, \d{4}\. Their files land here as soon as they send them/);
+    // The end is an instant (01:00 UTC on the 8th): the owner in Los Angeles reads the 7th.
+    expect(textOf(html)).toContain("Waiting for Rivera Electric Your upload link works until Nov 7, 2026. Their files land here as soon as they send them");
+    expect(textOf(html)).toContain("until Nov 7, 2026");
     expect(textOf(html)).not.toContain("Nothing received yet");
   });
 
