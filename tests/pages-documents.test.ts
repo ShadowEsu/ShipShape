@@ -223,7 +223,7 @@ describe("home", () => {
     expect(text).not.toContain("Add an expiry date (to do)");
   });
 
-  it("with up to 20 lapsing documents lists them all and says nothing about more", async () => {
+  it("with up to 20 lapsing documents lists them all and says nothing about more; at 21 it says '1 more needs attention'", async () => {
     const ctx = await signIn("home-twenty@example.com");
     await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeTwenty', 'active', 'pro')", [ctx.orgId]));
     await db.root((tx) =>
@@ -233,7 +233,9 @@ describe("home", () => {
     expect(text).toMatch(/0 of 20 documents current/);
     expect(text).toContain("Permit 01");
     expect(text).toContain("Permit 20");
-    expect(text).not.toContain("more need attention");
+    expect(text).not.toContain("need attention");
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Permit 21', 'permit', current_date + 21)", [ctx.orgId]));
+    expect(textOf(await homePage())).toContain("The 20 soonest are listed; 1 more needs attention.");
   });
 });
 

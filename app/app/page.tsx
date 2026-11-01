@@ -157,7 +157,7 @@ export default async function AppHome() {
         )}
         {docs.attentionTotal > ATTENTION_MAX && (
           <p className="text-sm text-ink-2">
-            The {ATTENTION_MAX} soonest are listed; {docs.attentionTotal - ATTENTION_MAX} more need attention.{" "}
+            The {ATTENTION_MAX} soonest are listed; {docs.attentionTotal - ATTENTION_MAX === 1 ? "1 more needs" : `${docs.attentionTotal - ATTENTION_MAX} more need`} attention.{" "}
             <Link href="/app/documents" className="underline">
               See all documents
             </Link>{" "}
