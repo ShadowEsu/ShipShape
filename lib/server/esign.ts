@@ -42,7 +42,7 @@ export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: 
   if (!esignAvailable(ctx)) throw new GateClosed("Signing by email opens once ShipShape can send email.");
   const p = NewRequest.parse(input);
   if (await rateLimited("esign-send", ctx.userId, 20, 3600)) {
-    throw new UserError("You've sent a lot of signature requests in the last hour. Try again later.");
+    throw new UserError("You've made 20 signing links in the last hour, which is the most ShipShape sends. Nothing was sent; try again in an hour.");
   }
   const { token, hash } = newToken();
   const id = randomUUID();
