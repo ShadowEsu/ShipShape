@@ -668,7 +668,7 @@ describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
     }
   });
 
-  it("records each migration's hash, and refuses before changing anything when an applied one changed or a new one sorts before an applied one (W12-8)", async () => {
+  it("records each migration's hash, and refuses before changing anything when an applied one changed or is gone or a new one sorts before an applied one (W12-8)", async () => {
     const pg = await PGlite.create();
     try {
       const step = (t: Pick<PGlite, "exec" | "query">): MigrationStep => ({
@@ -701,6 +701,9 @@ describe("works without BYPASSRLS, as on RDS and Aurora (AWS plan)", () => {
       expect((await recorded()).length).toBe(2);
       await expect(migrate(conn, setup, [a, b, late, c], { allowLate: ["0001b"] })).rejects.toThrow("0001b_late.sql sorts before");
       expect(await migrate(conn, setup, [a, b, late, c], { allowLate: ["0001b_late.sql"] })).toEqual(["0001b_late.sql", "0003_c.sql"]);
+      // An applied one whose file is gone: a fresh database would never run it, so 0004 waits.
+      await expect(migrate(conn, setup, [a, late, c, file("0004_d.sql")])).rejects.toThrow("Nothing was changed: 0002_b.sql is applied but its file is gone.");
+      expect((await recorded()).map((r) => r.name)).toEqual(["0001_a.sql", "0001b_late.sql", "0002_b.sql", "0003_c.sql"]);
 
       // A database migrated before hashes were kept: each applied one's hash is recorded once, and said.
       await pg.exec("alter table meta.migrations drop column sha256");

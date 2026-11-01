@@ -41,9 +41,10 @@ export interface MigrateOptions {
  *
  * Each applied migration's SHA-256 is recorded (W12-8). Before anything changes, the run refuses
  * when an applied migration's file no longer matches its hash (production would skip the edit that
- * every fresh test database runs), or when a pending one sorts before the newest applied one (a
- * branch merged after a later number shipped) unless `allowLate` names it. Migrations applied
- * before hashes were kept have theirs recorded once, and logged.
+ * every fresh test database runs) or is gone (a fresh database would never run it), or when a
+ * pending one sorts before the newest applied one (a branch merged after a later number shipped)
+ * unless `allowLate` names it. Migrations applied before hashes were kept have theirs recorded
+ * once, and logged.
  *
  * The connecting user needn't be a superuser (RDS's master isn't, Security MG-1): it only reads the
  * catalog itself, and reads meta.migrations as shipshape_owner, which it may become but doesn't inherit.
@@ -79,6 +80,8 @@ export async function migrate(conn: MigrationConn, setup: string[], migrations: 
       problems.push(`${f.name} sorts before ${newest}, which is applied (to run it anyway, name it with --allow-late)`);
     }
   }
+  const named = new Set(files.map((f) => f.name));
+  for (const name of [...applied.keys()].sort((a, b) => a.localeCompare(b))) if (!named.has(name)) problems.push(`${name} is applied but its file is gone`);
   if (problems.length) throw new Error(`Nothing was changed: ${problems.join("; ")}. Locally: delete .data/pglite (sample data only) and restart.`);
 
   const unhashed = files.filter((f) => applied.get(f.name) === null);

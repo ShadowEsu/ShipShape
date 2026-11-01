@@ -8,8 +8,8 @@
  *
  * First run: the platform file (roles, auth schema), then every migration as shipshape_owner, each
  * in its own transaction (lib/server/migrations.ts). Later runs apply only new migrations, and
- * refuse, before changing anything, when an applied migration's file has changed since or a new one
- * sorts before an applied one; `--allow-late <file name>` (exact, repeatable) lets a named late one
+ * refuse, before changing anything, when an applied migration's file has changed since or is gone,
+ * or a new one sorts before an applied one; `--allow-late <file name>` (exact, repeatable) lets a named late one
  * run. Ends by checking BOSS's rule 2: shipshape_app isn't a superuser, can't bypass row level
  * security, create roles or databases, or replicate, owns nothing and is a member of exactly anon,
  * authenticated and service_role (no ADMIN; Security S-PG1).
