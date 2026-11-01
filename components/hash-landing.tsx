@@ -12,7 +12,11 @@ import { useEffect } from "react";
 export function HashLanding() {
   useEffect(() => {
     const id = decodeURIComponent(window.location.hash.slice(1));
-    if (id) document.getElementById(id)?.scrollIntoView();
+    const target = id ? document.getElementById(id) : null;
+    if (!target) return;
+    target.scrollIntoView();
+    // A field as the target (#expires_on, #version-file) takes focus too, as a browser does after a fragment link.
+    if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) target.focus({ preventScroll: true });
   }, []);
   return null;
 }
