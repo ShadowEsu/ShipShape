@@ -17,6 +17,7 @@ import { dayOf } from "@/lib/today";
 import type { TemplateInfo } from "@/lib/templates/types";
 import { archive, withdrawSignature } from "../actions";
 import { DetailsForm, SignRequestForm, VersionForm } from "../forms";
+import { archiveQuestion, versionWarning } from "../messages";
 
 export const metadata: Metadata = { title: "Document" };
 
@@ -104,6 +105,8 @@ export default async function DocumentPage({
   const canUpload = !ctx.demo && realDocsEnabled();
   const requests = await listSignatureRequests(ctx, doc.id);
   const now = Date.now();
+  // Who still has a working signing link: archiving or a new version withdraws these, and the page says so first.
+  const openSigners = requests.filter((r) => r.status === "pending" && Date.parse(r.expires_at) > now).map((r) => r.signer_name);
 
   return (
     <div className="space-y-6">
@@ -142,7 +145,7 @@ export default async function DocumentPage({
       {added && !made && (
         <div role="status">
           <Notice tone="ok">
-            Added to your documents as version 1. Every view and download goes into its history.{" "}
+            Added to your documents as version 1. Your team&apos;s views and downloads go into its history.{" "}
             {doc.expires_on
               ? `Next: it shows under Needs attention on Home 30 days before it expires on ${fmtDay(doc.expires_on)}.`
               : "Next: add its expiry date under Details, so Home can warn you before it lapses."}
@@ -162,7 +165,7 @@ export default async function DocumentPage({
             </div>
             {doc.status === "archived" && (
               <div className="mt-4">
-                <Notice>This document is archived. It keeps its history and isn&apos;t shared or reminded about.</Notice>
+                <Notice>This document is archived. It keeps its history and isn&apos;t shared, reminded about, or open for signing.</Notice>
               </div>
             )}
             {latest && (
@@ -212,7 +215,7 @@ export default async function DocumentPage({
               ))}
             </ol>
             {canUpload ? (
-              <VersionForm id={doc.id} />
+              <VersionForm id={doc.id} warning={openSigners.length ? versionWarning(openSigners) : undefined} />
             ) : (
               <p className="text-xs text-ink-3">
                 {ctx.demo ? "Sample workspaces can't take uploads." : "Uploads open after our security review."}
@@ -309,13 +312,26 @@ export default async function DocumentPage({
             <p className="text-xs text-ink-3">Entries can&apos;t be edited or deleted through ShipShape, and each is linked to the one before it.</p>
           </section>
 
-          <form action={archive}>
-            <input type="hidden" name="id" value={doc.id} />
-            <input type="hidden" name="archived" value={doc.status === "archived" ? "0" : "1"} />
-            <SubmitButton className="inline-flex min-h-6 items-center text-sm text-ink-2 underline" pendingLabel={doc.status === "archived" ? "Restoring…" : "Archiving…"}>
-              {doc.status === "archived" ? "Restore document" : "Archive document"}
-            </SubmitButton>
-          </form>
+          {doc.status === "active" && openSigners.length > 0 ? (
+            <ConfirmForm
+              action={archive}
+              fields={{ id: doc.id, archived: "1" }}
+              trigger="Archive document"
+              question={archiveQuestion(openSigners)}
+              confirm="Archive and withdraw"
+              cancel="Keep it"
+              destructive
+              pendingLabel="Archiving…"
+            />
+          ) : (
+            <form action={archive}>
+              <input type="hidden" name="id" value={doc.id} />
+              <input type="hidden" name="archived" value={doc.status === "archived" ? "0" : "1"} />
+              <SubmitButton className="inline-flex min-h-6 items-center text-sm text-ink-2 underline" pendingLabel={doc.status === "archived" ? "Restoring…" : "Archiving…"}>
+                {doc.status === "archived" ? "Restore document" : "Archive document"}
+              </SubmitButton>
+            </form>
+          )}
         </aside>
       </div>
     </div>

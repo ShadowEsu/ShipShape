@@ -117,8 +117,9 @@ interface DueReminder {
 
 function reminderText(r: DueReminder): { subject: string; body: string } {
   const what = r.date_kind === "expires" ? "expires" : "is due for renewal";
-  const when = r.days_left > 0 ? `in ${r.days_left} ${r.days_left === 1 ? "day" : "days"} (${r.due_on})` : r.days_left === 0 ? "today" : `on ${r.due_on}`;
-  const subject = (r.days_left >= 0 ? `${r.title} ${what} ${r.days_left > 0 ? `in ${r.days_left} days` : "today"}` : `${r.title} has lapsed`).slice(0, 200);
+  const days = `${r.days_left} ${r.days_left === 1 ? "day" : "days"}`;
+  const when = r.days_left > 0 ? `in ${days} (${r.due_on})` : r.days_left === 0 ? "today" : `on ${r.due_on}`;
+  const subject = (r.days_left >= 0 ? `${r.title} ${what} ${r.days_left > 0 ? `in ${days}` : "today"}` : `${r.title} has lapsed`).slice(0, 200);
   const body = [
     `${r.title} ${r.days_left >= 0 ? what : r.date_kind === "expires" ? "expired" : "passed its renewal date"} ${when}.`,
     "Renew it, then upload the new version in ShipShape so your passport links share the current one.",

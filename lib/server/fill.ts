@@ -1,7 +1,7 @@
 import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, TextAlignment, layoutMultilineText, rgb, type PDFFont } from "pdf-lib";
 import { z } from "zod";
 import { composePdf, inlineRuns, isPrintable, isPrintableText, type Block } from "@/lib/pdf/compose";
 import type { EntityType, ProfileKey } from "@/lib/profile-fields";
@@ -91,7 +91,20 @@ export function einFor(v: Values, facts: Facts): string {
   return d ? `${d.slice(0, 2)}-${d.slice(2)}` : "";
 }
 
-export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<string, string> {
+/** Helvetica as the flattened form's text is set in it: what pdf-lib lays out with this is what the page shows. */
+let helvetica: Promise<PDFFont> | undefined;
+function measuringFont(): Promise<PDFFont> {
+  helvetica ??= PDFDocument.create().then((d) => d.embedStandardFont(StandardFonts.Helvetica));
+  return helvetica;
+}
+
+/** How many lines pdf-lib lays `value` out on in a box of `fits` (the same function and bounds the field's appearance uses). */
+async function linesInBox(value: string, fits: NonNullable<FieldDef["fits"]>): Promise<number> {
+  const font = await measuringFont();
+  return layoutMultilineText(value, { alignment: TextAlignment.Left, fontSize: fits.size, font, bounds: { x: 1, y: 1, width: fits.width, height: fits.size * fits.lines * 1.2 } }).lines.length;
+}
+
+export async function validate(t: TemplateInfo, v: Values, facts: Facts): Promise<Record<string, string>> {
   const errors: Record<string, string> = {};
   for (const f of t.fields) {
     if (!visible(f, v)) continue;
@@ -104,6 +117,9 @@ export function validate(t: TemplateInfo, v: Values, facts: Facts): Record<strin
     if (f.required && !value) errors[f.key] = f.key === "ssn" ? SSN_FORMAT : MISSING[f.kind];
     else if (f.max && f.kind !== "number" && value.length > f.max) errors[f.key] = `Shorten this to ${f.max} characters or fewer.`;
     else if (!(f.kind === "textarea" ? isPrintableText(value) : isPrintable(value))) errors[f.key] = "Use letters, numbers and common punctuation.";
+    else if (f.fits && value && (await linesInBox(value, f.fits)) > f.fits.lines)
+      // About how many characters a line holds: Helvetica's mixed text averages half the size per character.
+      errors[f.key] = `This won't fit in the form's box, which holds ${f.fits.lines} lines of about ${Math.floor(f.fits.width / (f.fits.size / 2))} characters. Shorten it so nothing is cut off the PDF.`;
     else if (f.options && value && !f.options.some((o) => o.value === value)) errors[f.key] = "Choose one of the options.";
     else if (f.kind === "date" && value && !realDate(value)) errors[f.key] = "Enter a date between 1900 and 2200.";
     else if (f.kind === "number" && value && !/^[1-9][0-9]?$/.test(value)) errors[f.key] = "Enter a whole number from 1 to 99.";

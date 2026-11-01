@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { COLLECT_COOKIE, receiveFile } from "@/lib/server/collect";
-import { MAX_UPLOAD_BYTES } from "@/lib/server/files";
 import { clientIp, fail, rateLimited, sameOrigin } from "@/lib/server/http";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 
 export const dynamic = "force-dynamic";
 

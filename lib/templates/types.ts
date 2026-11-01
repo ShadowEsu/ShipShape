@@ -9,6 +9,11 @@ export interface FieldDef {
   options?: { value: string; label: string }[];
   required?: boolean;
   max?: number;
+  /**
+   * The box on the official form: `lines` lines of `width` points at `size` points (Helvetica, the font the
+   * flattened form is set in). Text laid out past `lines` would fall below the box and be clipped, so it's refused.
+   */
+  fits?: { lines: number; width: number; size: number };
   /** The browser's autofill hint (HTML autocomplete token); secrets are always `off`. */
   autoComplete?: string;
   /** Prefilled from this business fact (shown with a source chip). */

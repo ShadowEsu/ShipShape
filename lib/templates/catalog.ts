@@ -57,7 +57,8 @@ const W9: TemplateInfo = {
     { section: "Exemptions (line 4)", key: "fatca", label: "FATCA exemption code", hint: "Most businesses leave this blank.", kind: "text", max: 4 },
     { section: "Address", key: "address", label: "Line 5: Address", kind: "text", required: true, max: 120, autoComplete: "street-address", fact: "address" },
     { section: "Address", key: "city_state_zip", label: "Line 6: City, state and ZIP code", hint: "Like Portland, OR 97201.", kind: "text", required: true, max: 120, fact: "city_state_zip" },
-    { section: "Address", key: "requester", label: "Requester's name and address", hint: "Optional. Who asked you for this W-9.", kind: "textarea", max: 160 },
+    // f1_09 is 186.2 × 38 pt with 1 pt of padding, set at 9 pt: baselines at 27, 17 and 7 pt; a fourth line lands below the box.
+    { section: "Address", key: "requester", label: "Requester's name and address", hint: "Optional. Who asked you for this W-9.", kind: "textarea", max: 160, fits: { lines: 3, width: 184.2, size: 9 } },
     { section: "Address", key: "accounts", label: "Line 7: Account numbers", hint: "Optional.", kind: "text", max: 80 },
     {
       section: "Taxpayer identification number (Part I)",

@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { signProblem } from "@/app/s/[id]/messages";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { downloadUrl, getDocument, insertDocument, listDocuments } from "@/lib/server/documents";
+import { downloadUrl, getDocument, insertDocument, listDocuments, setArchived, uploadVersion } from "@/lib/server/documents";
 import { completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
@@ -82,6 +82,32 @@ describe("signature requests", () => {
     await revokeSignatureRequest(a, id);
     expect(await openSigning(id, token)).toBeNull();
     expect(await sendSigningCode(id, token)).toBe("invalid");
+  });
+
+  it("stop working when the document is archived: the signer's link, the code, the request list say so; restoring doesn't bring it back (wave 8 #2)", async () => {
+    const ctx = await sampleWorkspace();
+    const { id, token } = await request(ctx);
+    const docId = (await nda(ctx)).id;
+    await setArchived(ctx, docId, true);
+    expect(await openSigning(id, token)).toBeNull();
+    expect(await sendSigningCode(id, token)).toBe("invalid");
+    expect((await listSignatureRequests(ctx, docId)).map((r) => r.status)).toEqual(["revoked"]);
+    await setArchived(ctx, docId, false);
+    expect(await openSigning(id, token)).toBeNull();
+    expect((await listSignatureRequests(ctx, docId)).map((r) => r.status)).toEqual(["revoked"]);
+  });
+
+  it("stop working when a new version is uploaded: the signature belonged to the version the signer saw (wave 8 #7)", async () => {
+    const ctx = await sampleWorkspace();
+    const { id, token } = await request(ctx);
+    const docId = (await nda(ctx)).id;
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const added = await uploadVersion({ ...ctx, demo: false }, docId, await (await PDFDocument.create()).save());
+    vi.unstubAllEnvs();
+    expect(added).toEqual({ version: 2, withdrawn: [{ signerName: "Jordan Lee", version: 1 }] });
+    expect(await openSigning(id, token)).toBeNull();
+    expect(await sendSigningCode(id, token)).toBe("invalid");
+    expect((await listSignatureRequests(ctx, docId)).map((r) => r.status)).toEqual(["revoked"]);
   });
 
   it("for a document another workspace holds, say it isn't here and where to look", async () => {

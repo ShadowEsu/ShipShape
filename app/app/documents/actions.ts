@@ -9,6 +9,7 @@ import { requestSignature, revokeSignatureRequest } from "@/lib/server/esign";
 import { UploadRefused } from "@/lib/server/files";
 import { GateClosed } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
+import { versionAdded } from "./messages";
 
 export interface FormState {
   error?: string;
@@ -17,6 +18,8 @@ export interface FormState {
   /** The field the error is about (its input's name): the form shows the message there and moves focus to it. */
   field?: string;
   saved?: boolean;
+  /** With `saved`: a line that replaces the form's usual one (a new version that withdrew open signing requests). */
+  savedText?: string;
   /** What was typed, sent back with an error so the form shows it again after React resets it. */
   values?: DetailInput;
 }
@@ -86,14 +89,16 @@ export async function saveDetails(_prev: FormState, data: FormData): Promise<For
 export async function addVersion(_prev: FormState, data: FormData): Promise<FormState> {
   const ctx = await requireWorkspace();
   let id: string;
+  let added: Awaited<ReturnType<typeof uploadVersion>>;
   try {
     id = documentId(data);
-    await uploadVersion(ctx, id, await fileBytes(data));
+    added = await uploadVersion(ctx, id, await fileBytes(data));
   } catch (e) {
     return problem(e);
   }
   revalidatePath(`/app/documents/${id}`);
-  return { saved: true };
+  const savedText = versionAdded(added.version, added.withdrawn);
+  return savedText ? { saved: true, savedText } : { saved: true };
 }
 
 /**

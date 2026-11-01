@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useMemo, useState, type FormEvent } from "react";
 import { CopyLink } from "@/components/copy-link";
+import { MAX_UPLOAD_BYTES, UPLOAD_TOO_BIG } from "@/lib/upload-limit";
 import { addDocument, addVersion, askToSign, saveDetails, type FormState, type SignFormState } from "./actions";
 
 const KINDS: [string, string][] = [
@@ -27,7 +28,7 @@ export interface DetailValues {
   renews_on: string | null;
 }
 
-/** The line under a form: an error not about one field, or what was saved. Field errors show under their field. */
+/** The line under a form: an error not about one field, or what was saved (the server's own line when it sends one). Field errors show under their field. */
 function Status({ state, savedText }: { state: FormState; savedText: string }) {
   if (state.error && !state.field)
     return (
@@ -43,7 +44,7 @@ function Status({ state, savedText }: { state: FormState; savedText: string }) {
   if (state.saved)
     return (
       <p role="status" className="text-sm text-ok">
-        {savedText}
+        {state.savedText ?? savedText}
       </p>
     );
   return null;
@@ -74,6 +75,31 @@ function useFocusField(state: FieldState, id: string | undefined) {
   useEffect(() => {
     if (id) document.getElementById(id)?.focus();
   }, [state, id]);
+}
+
+/**
+ * The server's too-big refusal, given in the browser before the post: Next's action body limit and
+ * Vercel's request cap answer a larger post with a bare 413 before the action runs, which would land
+ * on the error page. Returns the state to show (the refusal, until the next result comes back) and
+ * the submit handler that stops the post.
+ */
+function useFileGate(state: FormState): [FormState, (e: FormEvent<HTMLFormElement>) => void] {
+  const [refusals, setRefusals] = useState(0);
+  const [seen, setSeen] = useState(state);
+  // A new result from the server replaces the browser's refusal.
+  if (seen !== state) {
+    setSeen(state);
+    setRefusals(0);
+  }
+  const shown = useMemo(() => (refusals ? { error: UPLOAD_TOO_BIG, field: "file", values: state.values } : state), [refusals, state]);
+  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+    const file = e.currentTarget.elements.namedItem("file");
+    if (file instanceof HTMLInputElement && (file.files?.[0]?.size ?? 0) > MAX_UPLOAD_BYTES) {
+      e.preventDefault();
+      setRefusals((n) => n + 1);
+    }
+  };
+  return [shown, onSubmit];
 }
 
 // Container queries: the same fields sit in the wide add form and the narrow document rail.
@@ -161,11 +187,12 @@ export function DetailsForm({ id, values }: { id: string; values: DetailValues }
 }
 
 export function NewDocumentForm() {
-  const [state, action, pending] = useActionState<FormState, FormData>(addDocument, {});
+  const [result, action, pending] = useActionState<FormState, FormData>(addDocument, {});
+  const [state, onSubmit] = useFileGate(result);
   useFocusField(state, state.field);
   const fileError = state.field === "file";
   return (
-    <form action={action} className="space-y-4" noValidate>
+    <form action={action} onSubmit={onSubmit} className="space-y-4" noValidate>
       <div>
         <label htmlFor="file" className="label">
           File
@@ -194,16 +221,33 @@ export function NewDocumentForm() {
   );
 }
 
-export function VersionForm({ id }: { id: string }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(addVersion, {});
+/** `warning`: shown under the file field while a signing request is open, since a new version withdraws it (Design, wave 8 #7). */
+export function VersionForm({ id, warning }: { id: string; warning?: string }) {
+  const [result, action, pending] = useActionState<FormState, FormData>(addVersion, {});
+  const [state, onSubmit] = useFileGate(result);
   useFocusField(state, state.field && "version-file");
+  const describedBy = [warning && "version-file-warning", state.field === "file" && "file-error"].filter(Boolean).join(" ") || undefined;
   return (
-    <form action={action} className="space-y-2" noValidate>
+    <form action={action} onSubmit={onSubmit} className="space-y-2" noValidate>
       <input type="hidden" name="id" value={id} />
       <label htmlFor="version-file" className="label">
         Upload a new version
       </label>
-      <input id="version-file" name="file" type="file" required accept="application/pdf,image/png,image/jpeg" className="input py-1.5" {...invalid(state, "file")} />
+      <input
+        id="version-file"
+        name="file"
+        type="file"
+        required
+        accept="application/pdf,image/png,image/jpeg"
+        className="input py-1.5"
+        aria-invalid={state.field === "file" || undefined}
+        aria-describedby={describedBy}
+      />
+      {warning && (
+        <p id="version-file-warning" className="text-xs text-ink-2">
+          {warning}
+        </p>
+      )}
       <FieldError state={state} name="file" />
       <Status state={state} savedText="New version added. Earlier versions stay in the history." />
       <button className="btn-ghost" disabled={pending}>
