@@ -66,6 +66,10 @@ Resources:
         # R-4: every connection and disconnection is logged (failed authentications are logged anyway).
         log_connections: "1"
         log_disconnections: "1"
+        # No CONTEXT, DETAIL or HINT lines in the exported log: a failed statement's context or a unique
+        # violation's key values would stay in CloudWatch for 30 days (W12-10). The probe checks it, and
+        # that log_statement isn't all.
+        log_error_verbosity: terse
 
   # Created before the instance, so the exported log doesn't live forever.
   DatabaseLog:
