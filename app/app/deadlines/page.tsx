@@ -5,7 +5,7 @@ import { fmtDateTime } from "@/components/ui";
 import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
 import { listDeadlines, listOutbox, type Deadline } from "@/lib/server/deadlines";
-import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { DOC_KINDS, firstDocument } from "@/lib/server/documents";
 import { requireWorkspace } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Deadlines" };
@@ -52,7 +52,7 @@ export default async function DeadlinesPage() {
   const reminders = PLANS[plan].emailReminders;
   const quiet = all.length > 0 && all.every((d) => d.days_left > 90);
   // With no dates yet, the action goes straight to the Expires field of the first document, as Home does.
-  const first = all.length === 0 ? (await listDocuments(ctx))[0] : undefined;
+  const first = all.length === 0 ? await firstDocument(ctx) : null;
 
   return (
     <div className="max-w-3xl space-y-8">

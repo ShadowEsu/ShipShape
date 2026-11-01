@@ -135,6 +135,20 @@ export async function homeSummary(ctx: Ctx): Promise<HomeSummary> {
   });
 }
 
+/** The first active document in the list's order, or null: the "start with" document for an expiry date. */
+export async function firstDocument(ctx: Ctx): Promise<{ id: string; title: string } | null> {
+  const [row] = await asUser(ctx.userId, (tx) => tx.query<{ id: string; title: string }>(FIRST_SQL, [ctx.orgId]));
+  return row ?? null;
+}
+
+const BY_ID_SQL = DOC_SELECT + ` where d.org_id = $2 and d.status = 'active' and d.id = any($3::uuid[])`;
+
+/** The given active documents of this workspace (others' ids and unknown ids drop out), in no particular order. */
+export async function documentsById(ctx: Ctx, ids: readonly string[]): Promise<DocRow[]> {
+  if (ids.length === 0) return [];
+  return asUser(ctx.userId, (tx) => tx.query<DocRow>(BY_ID_SQL, [ctx.today, ctx.orgId, ids]));
+}
+
 /** How many documents the documents page lists at once (Pro has no document limit, so the list is paged). */
 export const DOCUMENTS_PAGE_SIZE = 50;
 
