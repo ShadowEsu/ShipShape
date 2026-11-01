@@ -148,8 +148,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         )}
       </section>
 
-      {/* The sign-in pool requires an authenticator app for everyone (infra/signin.yaml), so this is a statement, not a switch. */}
-      {!ctx.demo && (
+      {/* The sign-in pool requires an authenticator app for everyone (infra/signin.yaml), so this is a statement, not a switch.
+          A missing identity row only happens for local sign-ins (development); in production it shows nothing (Security INFO-R35b). */}
+      {!ctx.demo && (method === "cognito" || process.env.NODE_ENV !== "production") && (
         <section className="card space-y-2">
           <h2 className="font-semibold">Two-step sign-in</h2>
           {method === "cognito" ? (
@@ -159,8 +160,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               </p>
               <p className="text-sm text-ink-2">
                 Every ShipShape account signs in with a password and a 6-digit code from an authenticator app. There&apos;s no way to
-                turn it off. Before you change phones, move the app&apos;s codes to the new one; a lost app means writing to us to prove
-                it&apos;s you.
+                turn it off. Before you change phones, move the app&apos;s codes to the new one.
               </p>
             </>
           ) : (
