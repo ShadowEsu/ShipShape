@@ -1,14 +1,19 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { POST as collectLinkOpen } from "@/app/c/[id]/open/route";
 import CollectPage from "@/app/c/[id]/page";
 import { POST as upload } from "@/app/c/[id]/upload/route";
 import { LinkUnavailable } from "@/app/link-states";
 import { GET as passportFile } from "@/app/p/[id]/file/route";
+import { POST as passportOpen } from "@/app/p/[id]/open/route";
 import PassportPage from "@/app/p/[id]/page";
 import { POST as signCode } from "@/app/s/[id]/code/route";
 import { GET as signFile } from "@/app/s/[id]/file/route";
+import { POST as signOpen } from "@/app/s/[id]/open/route";
+import PricingPage from "@/app/pricing/page";
 import SigningPage from "@/app/s/[id]/page";
 import { POST as signPost } from "@/app/s/[id]/sign/route";
 import { SignButton } from "@/app/s/[id]/sign-form";
@@ -20,13 +25,14 @@ import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { listDocuments } from "@/lib/server/documents";
 import { completeSigning, requestSignature, revokeSignatureRequest, sendSigningCode } from "@/lib/server/esign";
-import { rateLimited } from "@/lib/server/http";
+import { SAMPLE_SIGNIN_BUSY } from "@/lib/server/limits";
 import { createPassport, revokePassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { fmtDay, isoToday, timeOf, todayIn } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { fillBucket } from "./support/rate";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
 /** The pages people outside a workspace open: each state says what it means and offers one way on. */
@@ -177,7 +183,7 @@ describe("a passport link (/p)", () => {
   it("after too many views from one network, says to wait and reload, not that the link is gone", async () => {
     const docs = await listDocuments(sample);
     const { id, token } = await createPassport(sample, { label: "Busy", days: 7, documentIds: [docs[0].id] });
-    for (let i = 0; i < 60; i++) await rateLimited("passport-view", visitor.ip, 60, 600);
+    await fillBucket(db, "passport-view", `${visitor.ip}|${id}`, 60, 600);
     jar.set("ss_passport", token);
     const html = await passportPage(id);
     expect(textOf(html)).toContain("Too many tries from this network Wait 10 minutes, then reload this page.");
@@ -213,7 +219,7 @@ describe("a passport link (/p)", () => {
     const docs = await listDocuments(sample);
     const { id, token } = await createPassport(sample, { label: "Many downloads", days: 7, documentIds: [docs[0].id] });
     jar.set("ss_passport", token);
-    for (let i = 0; i < 60; i++) await rateLimited("passport-file", visitor.ip, 60, 600);
+    await fillBucket(db, "passport-file", `${visitor.ip}|${id}`, 60, 600);
     await expect(download(id, docs[0].id)).rejects.toThrow(`redirect /p/${id}?r=busy`);
     const html = await renderPage(PassportPage, props(id, { r: "busy" }));
     expect(html).toMatch(/<div role="alert" tabindex="-1"[^>]*><div[^>]*>Too many downloads from this network\. Wait 10 minutes, then try again\.<\/div><\/div>/);
@@ -248,7 +254,7 @@ describe("a signing link (/s)", () => {
   const request = async () => {
     const nda = (await listDocuments(sample)).find((d) => d.kind === "nda");
     if (!nda) throw new Error("the sample workspace has no NDA");
-    return requestSignature(sample, { documentId: nda.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    return requestSignature(sample, { documentId: nda.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
   };
 
   it("while open, says until when it can be signed", async () => {
@@ -382,7 +388,7 @@ describe("a signing link (/s)", () => {
   it("too many downloads from one network: back to the page with the one line about it; the page still opens", async () => {
     const { id, token } = await request();
     jar.set("ss_sign", token);
-    for (let i = 0; i < 30; i++) await rateLimited("sign-file", visitor.ip, 30, 600);
+    await fillBucket(db, "sign-file", `${visitor.ip}|${id}`, 30, 600);
     await expect(download(id)).rejects.toThrow(`redirect /s/${id}?r=busy`);
     const html = await renderPage(SigningPage, props(id, { r: "busy" }));
     expect(textOf(html)).toContain("Too many downloads from this network. Wait 10 minutes, then try again.");
@@ -452,7 +458,7 @@ describe("an upload link (/c)", () => {
     const { id, token } = await link(real, "Summit Supply");
     jar.set("ss_collect", token);
     const ip = "203.0.113.77";
-    for (let i = 0; i < 30; i++) await rateLimited("collect-upload", ip, 30, 600);
+    await fillBucket(db, "collect-upload", `${ip}|${id}`, 30, 600);
     const res = await upload(
       new Request(`http://shipshape.test/c/${id}/upload?k=coi`, {
         method: "POST",
@@ -538,6 +544,68 @@ describe("an upload link (/c)", () => {
   });
 });
 
+describe("each link's own limit, with a network backstop (W15-13)", () => {
+  const TOKEN = "A".repeat(43);
+  const sameSite = () => ({ origin: "http://shipshape.test", host: "shipshape.test", "sec-fetch-site": "same-origin", "x-forwarded-for": visitor.ip });
+  const params = (id: string) => ({ params: Promise.resolve({ id }) });
+  const post = (url: string, body: unknown) => new Request(url, { method: "POST", headers: sameSite(), body: JSON.stringify(body) });
+  /** Whether the answer is the entry point's own "too many from this network" (every other answer is kept as before). */
+  const redirectedTo = async (call: Promise<unknown>) => {
+    try {
+      await call;
+      return "";
+    } catch (e) {
+      return e instanceof Error ? e.message : "";
+    }
+  };
+  const ENTRY: [bucket: string, cap: number, busy: (id: string) => Promise<boolean>][] = [
+    ["passport-view", 60, async (id) => textOf(await passportPage(id)).includes("Too many tries from this network")],
+    ["sign-view", 60, async (id) => textOf(await signingPage(id)).includes("Too many tries from this network")],
+    ["collect-view", 60, async (id) => textOf(await collectPage(id)).includes("Too many tries from this network")],
+    [
+      "passport-file",
+      60,
+      async (id) => (await redirectedTo(passportFile(new Request(`http://shipshape.test/p/${id}/file?d=${id}`, { headers: sameSite() }), params(id)))) === `redirect /p/${id}?r=busy`,
+    ],
+    ["sign-file", 30, async (id) => (await redirectedTo(signFile(new Request(`http://shipshape.test/s/${id}/file`, { headers: sameSite() }), params(id)))) === `redirect /s/${id}?r=busy`],
+    [
+      "collect-upload",
+      30,
+      async (id) =>
+        (await upload(new Request(`http://shipshape.test/c/${id}/upload?k=w9`, { method: "POST", headers: sameSite() }), params(id))).headers.get("location") === `/c/${id}?r=busy&k=w9`,
+    ],
+    ["sign-complete", 20, async (id) => (await signPost(post(`http://shipshape.test/s/${id}/sign`, { code: "000000", typedName: "Jordan Lee", consented: true }), params(id))).status === 429],
+    ["sign-code", 10, async (id) => (await signCode(post(`http://shipshape.test/s/${id}/code`, {}), params(id))).status === 429],
+    ["p-open", 30, async (id) => (await passportOpen(post(`http://shipshape.test/p/${id}/open`, { token: TOKEN }), params(id))).status === 429],
+    ["s-open", 30, async (id) => (await signOpen(post(`http://shipshape.test/s/${id}/open`, { token: TOKEN }), params(id))).status === 429],
+    ["c-open", 30, async (id) => (await collectLinkOpen(post(`http://shipshape.test/c/${id}/open`, { token: TOKEN }), params(id))).status === 429],
+  ];
+
+  it.each(ENTRY)("W15-13 %s: one link at its cap doesn't close another for the same network; 5× the cap across links does", async (bucket, cap, busy) => {
+    // A token cookie for each kind of link: a page only counts a view that brings one.
+    for (const cookie of ["ss_passport", "ss_sign", "ss_collect"]) jar.set(cookie, TOKEN);
+    const full = randomUUID();
+    const other = randomUUID();
+    await fillBucket(db, bucket, `${visitor.ip}|${full}`, cap, 600);
+    expect(await busy(full)).toBe(true);
+    expect(await busy(other)).toBe(false);
+    await fillBucket(db, `${bucket}-net`, visitor.ip, 5 * cap, 600);
+    expect(await busy(other)).toBe(true);
+    expect(await busy(randomUUID())).toBe(true);
+  });
+});
+
+describe("pricing (/pricing)", () => {
+  it("W15-3: says Free's file total, from the plans table, in the comparison and on the Free card", async () => {
+    const html = await renderPage(PricingPage, {});
+    const text = textOf(html);
+    expect(text).toContain("Files 100 MB in all No total limit");
+    // "in all" never splits at a narrow width (Design, wave 15).
+    expect(html).toContain("100 MB in\u00a0all");
+    expect(text).toContain("For getting your papers in order: 10 active documents, 100 MB of files and 1 passport link open at a time.");
+  });
+});
+
 describe("signing in (/signin)", () => {
   const form = (fields: Record<string, string>) => {
     const data = new FormData();
@@ -590,6 +658,25 @@ describe("signing in (/signin)", () => {
     // The email sign-in lands on the section, scrolled to it; a value off the list lands on Home.
     await expect(signIn({}, form({ mode: "email", email: "back@harbor.example", terms: "on", next: "delete" }))).rejects.toThrow("redirect /app/settings#delete");
     await expect(signIn({}, form({ mode: "email", email: "back@harbor.example", terms: "on", next: "/app/admin" }))).rejects.toThrow(/^redirect \/app$/);
+  });
+
+  it("W15-13: sample tries and account sign-ins have their own limits, so one running out doesn't stop the other", async () => {
+    const sampleBusy = { email: "", terms: true, error: "Too many samples started from this network. Wait up to an hour, then try again, or sign in with your account." };
+    expect(SAMPLE_SIGNIN_BUSY).toBe(sampleBusy.error);
+    await fillBucket(db, "signin-sample", visitor.ip, 20, 3600);
+    expect(await signIn({}, form({ mode: "demo", terms: "on" }))).toEqual(sampleBusy);
+    await expect(signIn({}, form({ mode: "email", email: "split@harbor.example", terms: "on" }))).rejects.toThrow(/^redirect \/app$/);
+
+    // The reverse, from another network.
+    visitor.ip = "198.51.100.250";
+    await fillBucket(db, "signin-account", visitor.ip, 20, 3600);
+    expect(await signIn({}, form({ mode: "email", email: "split@harbor.example", terms: "on" }))).toEqual({
+      email: "split@harbor.example",
+      terms: true,
+      error: "Too many sign-in attempts from this network. Wait up to an hour, then try again.",
+    });
+    expect(await signIn({}, form({ mode: "account", terms: "on" }))).toMatchObject({ error: "Too many sign-in attempts from this network. Wait up to an hour, then try again." });
+    await expect(signIn({}, form({ mode: "demo", terms: "on" }))).rejects.toThrow(/^redirect \/app$/);
   });
 
   it("the sample's first reminders count from the visitor's own day, like its dates, not the UTC day (W10-2)", async () => {

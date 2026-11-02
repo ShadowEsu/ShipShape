@@ -7,6 +7,7 @@ import { asService, asUser } from "@/lib/server/db";
 import { CALLBACK_PATH, cognitoConfig, SIGN_IN_COOKIE, SIGN_IN_SECONDS, startSignIn } from "@/lib/server/cognito";
 import { runReminders } from "@/lib/server/deadlines";
 import { clientIp, rateLimited } from "@/lib/server/http";
+import { SAMPLE_SIGNIN_BUSY } from "@/lib/server/limits";
 import { createLocalUser, finishSignIn, localSignInAllowed, signOutHere, viewerToday } from "@/lib/server/session";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { landing, returnTo } from "@/lib/return-to";
@@ -36,11 +37,13 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
     const field = key === "terms" || key === "email" ? key : undefined;
     return { ...typed, error: issue?.message ?? "Choose how to open ShipShape, then try again.", field };
   }
-  if (await rateLimited("signin", clientIp(await headers()), 20, 3600)) {
-    return { ...typed, error: "Too many sign-in attempts from this network. Wait up to an hour, then try again." };
+  const { mode, email } = parsed.data;
+  // Separate buckets (W15-13): a network's sample tries can't lock out its account sign-ins, nor the reverse.
+  const sample = mode === "demo";
+  if (await rateLimited(sample ? "signin-sample" : "signin-account", clientIp(await headers()), 20, 3600)) {
+    return { ...typed, error: sample ? SAMPLE_SIGNIN_BUSY : "Too many sign-in attempts from this network. Wait up to an hour, then try again." };
   }
 
-  const { mode, email } = parsed.data;
   // Where a re-sign-in for export, delete or Show full EIN goes afterwards: an allow-listed choice, else Home (W9-12).
   const back = returnTo(data.get("next"));
   if (mode === "account") {

@@ -10,6 +10,8 @@ import { CalendarDate, DOC_KINDS, type DocKind } from "./documents";
 import { UserError } from "./errors";
 import { activePdf, EXTENSION, sniffMime, type AllowedMime } from "./files";
 import { collectOpen, GateClosed } from "./flags";
+import { rateLimited } from "./http";
+import { LINKS_BUSY, VENDORS_BUSY } from "./limits";
 import type { Ctx } from "./profile";
 import { blobStore } from "./storage";
 
@@ -56,6 +58,7 @@ const VendorId = z.uuid();
 export async function addVendor(ctx: Ctx, input: unknown): Promise<string> {
   assertCollect(ctx);
   const v = NewVendor.parse(input);
+  if (await rateLimited("vendors", ctx.userId, 30, 3600)) throw new UserError(VENDORS_BUSY);
   const [row] = await asUser(ctx.userId, (tx) =>
     tx.query<{ id: string }>("insert into app.vendors (org_id, name, email, requested, created_by) values ($1, $2, $3, $4, $5) returning id", [
       ctx.orgId,
@@ -210,6 +213,7 @@ const NewLink = z.object({
 export async function createVendorLink(ctx: Ctx, input: unknown): Promise<{ id: string; token: string }> {
   assertCollect(ctx);
   const p = NewLink.parse(input);
+  if (await rateLimited("links", ctx.userId, 30, 3600)) throw new UserError(LINKS_BUSY);
   const { token, hash } = newToken();
   const id = await asUser(ctx.userId, async (tx) => {
     const [active] = await tx.query("select 1 from app.vendors where id = $1 and org_id = $2 and status = 'active'", [p.vendorId, ctx.orgId]);

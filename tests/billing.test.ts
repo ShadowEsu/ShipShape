@@ -689,7 +689,7 @@ describe("plan limits, enforced by the server", () => {
 
     await createPassport(ctx, { label: "One", days: 7, documentIds: [ids[0]] });
     await expect(createPassport(ctx, { label: "Two", days: 7, documentIds: [ids[1]] })).rejects.toThrow(PlanLimit);
-    await expect(requestSignature(ctx, { documentId: ids[0], signerName: "Jordan Lee", signerEmail: "jordan@example.com", days: 7 })).rejects.toThrow(PlanLimit);
+    await expect(requestSignature(ctx, { documentId: ids[0], signerName: "Jordan Lee", signerEmail: "jordan@example.com", days: 7 }, "192.0.2.10")).rejects.toThrow(PlanLimit);
 
     await startCheckout(ctx, true);
     const customer = await customerOf(ctx);
@@ -697,7 +697,7 @@ describe("plan limits, enforced by the server", () => {
     await send("checkout.session.completed", { object: "checkout.session", customer, subscription: sub.id });
     await uploadDocument(ctx, { title: "Doc 11", kind: "other" }, bytes);
     await createPassport(ctx, { label: "Two", days: 7, documentIds: [ids[1]] });
-    await requestSignature(ctx, { documentId: ids[0], signerName: "Jordan Lee", signerEmail: "jordan@example.com", days: 7 });
+    await requestSignature(ctx, { documentId: ids[0], signerName: "Jordan Lee", signerEmail: "jordan@example.com", days: 7 }, "192.0.2.10");
   });
 
   it("Free counts only active documents: archiving one of ten makes room for another, and it can't come back over the limit", async () => {

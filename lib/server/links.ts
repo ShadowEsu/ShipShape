@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { sha256Hex } from "./crypto";
 import { asAnon } from "./db";
-import { clientIp, fail, rateLimited, sameOrigin, tooMany } from "./http";
+import { clientIp, fail, linkRateLimited, sameOrigin, tooMany } from "./http";
 
 /** How long a link's token rides in its cookie after the page posted it. */
 export const LINK_COOKIE_SECONDS = 30 * 60;
@@ -41,7 +41,7 @@ export function openLinkHandler(base: "p" | "s" | "c", cookie: string) {
     if (!sameOrigin(req.headers)) return fail("Forbidden", 403);
     const { id } = await params;
     if (!z.uuid().safeParse(id).success) return fail("Not found", 404);
-    if (await rateLimited(`${base}-open`, clientIp(req.headers), 30, 600)) return tooMany();
+    if (await linkRateLimited(`${base}-open`, clientIp(req.headers), id, 30, 600)) return tooMany();
     const body = Body.safeParse(await req.json().catch(() => null));
     if (!body.success) return fail("Not found", 404);
     const res = Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

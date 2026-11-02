@@ -13,6 +13,7 @@ import { UserError } from "./errors";
 import type { AllowedMime } from "./files";
 import { GateClosed } from "./flags";
 import { rateLimited } from "./http";
+import { ESIGN_BUSY, ESIGN_TRIES_PER_HOUR } from "./limits";
 import { visitorId } from "./passport";
 import { assertWithinPlan } from "./plans";
 import type { Ctx } from "./profile";
@@ -39,13 +40,14 @@ const NewRequest = z.object({
 
 /**
  * Creates a signature request and the file the signer will review: ShipShape's inert copy of the
- * latest version (Security R2-1). Signing appends the certificate to exactly that file.
+ * latest version (Security R2-1). Signing appends the certificate to exactly that file. `ip` is the
+ * caller's network: a new sample per sign-in resets the per-person limit, the network's doesn't (W15-2).
  */
-export async function requestSignature(ctx: Ctx, input: unknown): Promise<{ id: string; token: string }> {
+export async function requestSignature(ctx: Ctx, input: unknown, ip: string): Promise<{ id: string; token: string }> {
   if (!esignAvailable(ctx)) throw new GateClosed("Signing by email opens once ShipShape can send email.");
   const p = NewRequest.parse(input);
-  if (await rateLimited("esign-send", ctx.userId, 20, 3600)) {
-    throw new UserError("You've made 20 signing links in the last hour, which is the most ShipShape sends. Nothing was sent; try again in an hour.");
+  if ((await rateLimited("esign-send", ctx.userId, ESIGN_TRIES_PER_HOUR, 3600)) || (await rateLimited("esign-net", ip, 2 * ESIGN_TRIES_PER_HOUR, 3600))) {
+    throw new UserError(ESIGN_BUSY);
   }
   const { token, hash } = newToken();
   const id = randomUUID();

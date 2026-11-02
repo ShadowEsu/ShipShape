@@ -11,7 +11,9 @@ import { checkUpload, EXTENSION, UploadRefused, type AllowedMime } from "./files
 import { fillRecord, prefill, render, validate, type FieldSource, type Values } from "./fill";
 import { UserError } from "./errors";
 import { assertCanFill, assertRealData, realDocsEnabled } from "./flags";
-import { assertWithinPlan } from "./plans";
+import { rateLimited } from "./http";
+import { FILL_BUSY, UPLOAD_BUSY } from "./limits";
+import { assertRoomForFile, assertWithinPlan, sampleFull } from "./plans";
 import { factsForFill, saveEin, type Ctx } from "./profile";
 import { blobStore, foldName, putVersionFile } from "./storage";
 
@@ -280,6 +282,8 @@ async function insertVersion(
   origin: "upload" | "filled" | "sample" | "signed",
   record: VersionRow["fill_record"],
 ) {
+  // Every stored version passes here (uploads, new versions, filled and seeded documents), so the plan's file total holds for all of them.
+  await assertRoomForFile(tx, ctx, file.bytes.length);
   const objectPath = `${ctx.orgId}/${documentId}/v${version}.${EXTENSION[file.mime]}`;
   // `$9::text`: the JSON goes over as text and Postgres parses it. Untyped, postgres.js sees the jsonb
   // column and encodes the string again, storing a JSON string instead of the object (PGlite doesn't).
@@ -328,6 +332,7 @@ export const DOCUMENT_GONE = "This document isn't in this workspace any more. Go
 /** A file the person uploads (Security G3: real data, behind SHIPSHAPE_REAL_DOCS). */
 export async function uploadDocument(ctx: Ctx, meta: unknown, bytes: Uint8Array): Promise<string> {
   assertRealData(ctx);
+  if (await rateLimited("upload", ctx.userId, 60, 3600)) throw new UserError(UPLOAD_BUSY);
   const m = DocMeta.parse(meta);
   const check = checkUpload(bytes);
   if (!check.ok) throw new UploadRefused(check.error);
@@ -355,6 +360,7 @@ async function withdrawOpenRequests(tx: Tx, ctx: Ctx, documentId: string): Promi
  */
 export async function uploadVersion(ctx: Ctx, documentId: string, bytes: Uint8Array): Promise<{ version: number; withdrawn: Withdrawn[] }> {
   assertRealData(ctx);
+  if (await rateLimited("upload", ctx.userId, 60, 3600)) throw new UserError(UPLOAD_BUSY);
   const check = checkUpload(bytes);
   if (!check.ok) throw new UploadRefused(check.error);
   return asUser(ctx.userId, async (tx) => {
@@ -376,6 +382,11 @@ export type FillResult = { ok: true; id: string } | { ok: false; errors: Record<
 /** Who may tick "also save it to my business facts" on a W-9: the same people who can edit Business facts. */
 export function canSaveFacts(ctx: Pick<Ctx, "demo" | "role">): boolean {
   return !ctx.demo && realDocsEnabled() && ctx.role !== "member";
+}
+
+/** A sample that already holds all the documents it can: the Make page says so instead of offering a form (W15-2). */
+export async function sampleIsFull(ctx: Ctx): Promise<boolean> {
+  return ctx.demo && asUser(ctx.userId, (tx) => sampleFull(tx, ctx));
 }
 
 /** The template and the facts it fills from, with what's wrong in the values (field key -> what to fix). */
@@ -405,11 +416,16 @@ export async function checkFill(ctx: Ctx, templateId: string, values: Values): P
   return (await checked(ctx, templateId, values)).errors;
 }
 
-/** Fills a template from the person's reviewed values; needs the not-a-law-firm acknowledgment. */
-export async function fillTemplate(ctx: Ctx, templateId: string, values: Values, acknowledged: boolean): Promise<FillResult> {
+/**
+ * Fills a template from the person's reviewed values; needs the not-a-law-firm acknowledgment. `ip` is the
+ * caller's network, for the per-network hourly limit next to the per-person one (W15-2).
+ */
+export async function fillTemplate(ctx: Ctx, templateId: string, values: Values, acknowledged: boolean, ip: string): Promise<FillResult> {
   const { t, facts, errors } = await checked(ctx, templateId, values);
   if (!acknowledged) errors._ack = "Check the box to confirm you've reviewed the document.";
   if (Object.keys(errors).length) return { ok: false, errors };
+  // Counted only once the values pass, so fixing a typo doesn't use up the hour; before the render, the costly part.
+  if ((await rateLimited("fill", ctx.userId, 30, 3600)) || (await rateLimited("fill-net", ip, 60, 3600))) throw new UserError(FILL_BUSY);
   const start = prefill(t, facts, ctx.today);
   const out = await render(t, values, facts, ctx.today, ctx.demo);
   // An EIN typed here with "also save it" goes into Business facts (encrypted) once the form rendered, before the document is stored.
@@ -448,7 +464,7 @@ export async function updateDocument(ctx: Ctx, id: string, meta: unknown) {
 
 export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
   const rows = await asUser(ctx.userId, async (tx) => {
-    if (!archived) await assertWithinPlan(tx, ctx, "documents");
+    if (!archived) await assertWithinPlan(tx, ctx, "restore");
     // An archived document isn't shared: its open signing links stop working too (the page hides Withdraw while
     // it's archived). The request rows go first, in esign_complete's lock order (Security W8a).
     if (archived) await withdrawOpenRequests(tx, ctx, id);

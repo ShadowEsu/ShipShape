@@ -13,12 +13,14 @@ import { downloadUrl, getDocument, insertDocument, listDocuments, setArchived, u
 import { CERTIFICATE_ALLOWANCE, completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
+import { ESIGN_BUSY, ESIGN_TRIES_PER_HOUR } from "@/lib/server/limits";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { freshDb, type TestDb } from "./support/db";
+import { fillBucket } from "./support/rate";
 
 /** E-signatures (Security R8): consent stored, email proven by a one-time code, signed copy immutable, every step audited. */
 
@@ -44,6 +46,9 @@ let blobDir: string;
 let a: Ctx;
 let b: Ctx;
 const IP = "198.51.100.4";
+/** A fresh network for each request, so the per-network limit (esign-net) only fires where a test fills it. */
+let nets = 0;
+const nextNet = () => `198.18.0.${++nets}`;
 
 async function sampleWorkspace(): Promise<Ctx> {
   const userId = await db.user(null);
@@ -95,12 +100,12 @@ afterAll(async () => {
   await rm(blobDir, { recursive: true, force: true });
 });
 
-const request = async (ctx: Ctx) => requestSignature(ctx, { documentId: (await nda(ctx)).id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+const request = async (ctx: Ctx) => requestSignature(ctx, { documentId: (await nda(ctx)).id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, nextNet());
 
 describe("signature requests", () => {
   it("are refused for a real workspace in production while signing codes can only go to the outbox", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    await expect(requestSignature({ ...a, demo: false }, {})).rejects.toThrow(GateClosed);
+    await expect(requestSignature({ ...a, demo: false }, {}, nextNet())).rejects.toThrow(GateClosed);
     vi.unstubAllEnvs();
   });
 
@@ -143,14 +148,32 @@ describe("signature requests", () => {
   it("for a document another workspace holds, say it isn't here and where to look", async () => {
     const own = await sampleWorkspace();
     const other = await nda(b);
-    await expect(requestSignature(own, { documentId: other.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 })).rejects.toThrow(
+    await expect(requestSignature(own, { documentId: other.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, nextNet())).rejects.toThrow(
       "This document isn't in this workspace any more. Go to Documents to see what's there.",
     );
   });
 
   it("take a pasted signer address with a space or line break around it (review #18)", async () => {
-    const { id, token } = await requestSignature(a, { documentId: (await nda(a)).id, signerName: "Jordan Lee", signerEmail: " jordan@northwind.example\n", days: 7 });
+    const { id, token } = await requestSignature(a, { documentId: (await nda(a)).id, signerName: "Jordan Lee", signerEmail: " jordan@northwind.example\n", days: 7 }, nextNet());
     expect((await openSigning(id, token))?.signerEmail).toBe("j•••@northwind.example");
+  });
+
+  it("stop at the hourly limits, per person and per network, with Design's sentence and nothing made (W15-2)", async () => {
+    // The network's limit: a new sample per sign-in resets the person's, not this one.
+    const net = "198.18.1.1";
+    await fillBucket(db, "esign-net", net, 2 * ESIGN_TRIES_PER_HOUR, 3600);
+    const fresh = await sampleWorkspace();
+    const before = await db.root((tx) => tx.query("select 1 from app.signature_requests"));
+    const send = async (ctx: Ctx, ip: string) => requestSignature(ctx, { documentId: (await nda(ctx)).id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, ip);
+    await expect(send(fresh, net)).rejects.toThrow(new UserError(ESIGN_BUSY));
+    expect(ESIGN_BUSY).toBe("That's 20 signature requests tried in the last hour, the most ShipShape allows. Nothing was sent; try again in an hour.");
+    expect(await db.root((tx) => tx.query("select 1 from app.signature_requests"))).toHaveLength(before.length);
+    // Another network is unaffected.
+    expect((await send(fresh, nextNet())).token).toBeTruthy();
+    // The person's own limit, from any network.
+    const busy = await sampleWorkspace();
+    await fillBucket(db, "esign-send", busy.userId, ESIGN_TRIES_PER_HOUR, 3600);
+    await expect(send(busy, nextNet())).rejects.toThrow(new UserError(ESIGN_BUSY));
   });
 
   it("keep tokens and codes out of members' reach, and other workspaces can't revoke them", async () => {
@@ -323,7 +346,7 @@ describe("signing", () => {
     ] as const) {
       const bytes = new TextEncoder().encode(pdf);
       const documentId = await asUser(a.userId, (tx) => insertDocument(tx, a, { title: "Lease", kind: "agreement" }, { bytes, mime: "application/pdf" }, "upload"));
-      await expect(requestSignature(a, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 })).rejects.toThrow(message);
+      await expect(requestSignature(a, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, nextNet())).rejects.toThrow(message);
       expect(await db.root((tx) => tx.query("select 1 from app.signature_requests where document_id = $1", [documentId]))).toEqual([]);
     }
     expect(await files()).toBe(before + 2); // the two uploads themselves, nothing for a request
@@ -337,7 +360,7 @@ describe("signing", () => {
       [PNG, "image/png"],
     ] as const) {
       const documentId = await asUser(c.userId, (tx) => insertDocument(tx, c, { title: "Site photo", kind: "agreement" }, { bytes, mime }, "upload"));
-      await requestSignature(c, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+      await requestSignature(c, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, nextNet());
       const [row] = await db.root((tx) => tx.query<{ to_sign_path: string }>("select to_sign_path from app.signature_requests where document_id = $1", [documentId]));
       const copy = await PDFDocument.load(await blobStore().get(row.to_sign_path));
       expect(copy.getPageCount(), mime).toBe(1);
@@ -348,7 +371,7 @@ describe("signing", () => {
     const c = await sampleWorkspace();
     const upload = (size: number) =>
       asUser(c.userId, (tx) => insertDocument(tx, c, { title: "Site photo", kind: "agreement" }, { bytes: jpegOfSize(size), mime: "image/jpeg" }, "upload"));
-    const send = (documentId: string) => requestSignature(c, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    const send = (documentId: string) => requestSignature(c, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, nextNet());
     const tooBig = await upload(MAX_UPLOAD_BYTES - 128 * 1024);
     await expect(send(tooBig)).rejects.toThrow("This document is too large to send for signature.");
     expect(await db.root((tx) => tx.query("select 1 from app.signature_requests where document_id = $1", [tooBig]))).toEqual([]);
@@ -592,8 +615,8 @@ describe("signing", () => {
       insertDocument(tx, a, { title: "Lease\n→ 2027 🏠", kind: "agreement" }, { bytes, mime: "application/pdf" }, "upload"),
     );
 
-    await expect(requestSignature(a, { documentId, signerName: "Jordan\nLee", signerEmail: "jordan@northwind.example", days: 7 })).rejects.toThrow();
-    const { id, token } = await requestSignature(a, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    await expect(requestSignature(a, { documentId, signerName: "Jordan\nLee", signerEmail: "jordan@northwind.example", days: 7 }, nextNet())).rejects.toThrow();
+    const { id, token } = await requestSignature(a, { documentId, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, nextNet());
     await sendSigningCode(id, token);
     expect(await completeSigning(id, token, { code: "000000", typedName: "Jordan\nLee", consented: true, ip: IP })).toBe("name_chars");
     // A real name outside WinAnsi (Ł, Cyrillic, CJK) is refused with its own reason, not "type your full name"; an empty one still is that.

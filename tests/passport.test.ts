@@ -6,12 +6,14 @@ import { ZodError } from "zod";
 import { asService, asUser } from "@/lib/server/db";
 import { getDocument, listDocuments, setArchived } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
+import { LINKS_BUSY } from "@/lib/server/limits";
 import type { Ctx } from "@/lib/server/profile";
 import { createPassport, getPassport, listPassports, openLinksWith, openPassport, PASSPORT_ACCESS_SHOWN, passportFileUrl, revokePassport } from "@/lib/server/passport";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { fillBucket } from "./support/rate";
 
 /** Passport links (Security R6): secret in the fragment, hashed at rest, expiring, revocable, logged. */
 
@@ -118,6 +120,18 @@ describe("passport links", () => {
 
   it("answers 'not found' for a malformed link id when turning a link off", async () => {
     await expect(revokePassport(a, "not-a-uuid")).rejects.toThrow(UserError);
+  });
+
+  it("W15-2 links: past 30 new links in an hour a person is refused with nothing made; someone else isn't", async () => {
+    const busy = await sampleWorkspace("links-busy@example.com");
+    const [w9] = await docIds(busy);
+    await fillBucket(db, "links", busy.userId, 30, 3600);
+    await expect(createPassport(busy, { label: "One too many", days: 7, documentIds: [w9] })).rejects.toThrow(new UserError(LINKS_BUSY));
+    expect(LINKS_BUSY).toBe("That's the hourly limit for new links. Nothing was made; try again in an hour.");
+    expect(await listPassports(busy)).toEqual([]);
+    const next = await sampleWorkspace("links-next@example.com");
+    const [theirs] = await docIds(next);
+    expect((await createPassport(next, { label: "Still fine", days: 7, documentIds: [theirs] })).token).toBeTruthy();
   });
 
   it("can't include another workspace's documents, and others can't see or revoke the link", async () => {

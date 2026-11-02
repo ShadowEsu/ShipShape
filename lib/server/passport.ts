@@ -6,6 +6,8 @@ import { asAnon, asUser } from "./db";
 import { DOC_KINDS, downloadName, type DocKind } from "./documents";
 import { UserError } from "./errors";
 import type { AllowedMime } from "./files";
+import { rateLimited } from "./http";
+import { LINKS_BUSY } from "./limits";
 import { assertWithinPlan } from "./plans";
 import type { Ctx } from "./profile";
 import { blobStore } from "./storage";
@@ -36,6 +38,7 @@ export interface PassportRow {
  */
 export async function createPassport(ctx: Ctx, input: unknown): Promise<{ id: string; token: string }> {
   const p = NewPassport.parse(input);
+  if (await rateLimited("links", ctx.userId, 30, 3600)) throw new UserError(LINKS_BUSY);
   const { token, hash } = newToken();
   const id = await asUser(ctx.userId, async (tx) => {
     await assertWithinPlan(tx, ctx, "passports");

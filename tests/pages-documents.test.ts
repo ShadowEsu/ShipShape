@@ -6,19 +6,26 @@ import { PDFDocument } from "pdf-lib";
 import DocumentPage from "@/app/app/documents/[id]/page";
 import { addDocument, addVersion, saveDetails } from "@/app/app/documents/actions";
 import DocumentsPage from "@/app/app/documents/page";
+import { saveFacts, saveTaxId } from "@/app/app/facts/actions";
 import FactsPage from "@/app/app/facts/page";
 import FillPage from "@/app/app/make/[template]/page";
 import { fill } from "@/app/app/make/actions";
 import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
+import { asService, asUser } from "@/lib/server/db";
 import { DOCUMENTS_PAGE_SIZE, fillTemplate, setArchived, uploadDocument } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
+import { prefill } from "@/lib/server/fill";
+import { FILL_BUSY, SAMPLE_FULL } from "@/lib/server/limits";
 import { createPassport, passportFileUrl, revokePassport } from "@/lib/server/passport";
 import { factsForFill, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
+import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { templateById } from "@/lib/templates/catalog";
 import { freshDb, type TestDb } from "./support/db";
+import { fillBucket } from "./support/rate";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
 // The request's cookies, as Next.js would hold them.
@@ -32,6 +39,7 @@ vi.mock("next/headers", () => ({
     set: (name: string, value: string, options?: Record<string, unknown>) => void jar.set(name, { value, options }),
     delete: (name: string) => void jar.delete(name),
   }),
+  headers: async () => new Headers({ "x-forwarded-for": "192.0.2.31" }),
 }));
 // The address the page is rendered at, for client components that read it.
 const at = vi.hoisted(() => ({ path: "/app" }));
@@ -368,6 +376,21 @@ describe("business facts", () => {
     expect(primaryActions(html)).toEqual([{ label: "Save and confirm", href: undefined }]);
   });
 
+  it("W15-11: a member's crafted post to Save facts or Save EIN comes back as a message with what was typed, not the error page", async () => {
+    const owner = await signIn("facts-owner-w15@example.com");
+    const memberId = await createLocalUser("facts-member-w15@example.com", false);
+    // Their membership here is older than their own workspace, so this is the workspace they work in.
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role, created_at) values ($1, $2, 'member', now() - interval '1 day')", [owner.orgId, memberId]));
+    await finishSignIn(memberId, { demo: false });
+    const member = await requireWorkspace();
+    expect({ orgId: member.orgId, role: member.role }).toEqual({ orgId: owner.orgId, role: "member" });
+    const said = "Only owners and admins can change this workspace's business facts. Nothing was saved.";
+    const saved = await saveFacts({}, form({ legal_name: "Member Co", entity_type: "llc" }));
+    expect(saved.error).toBe(said);
+    expect(saved.values?.legal_name).toBe("Member Co");
+    expect(await saveTaxId({}, form({ ein: "12-3456789" }))).toEqual({ error: said });
+  });
+
   it("dates the last confirmation on the owner's day, not the UTC day: the Facts page and the fill form's source chip (wave 8 #5)", async () => {
     const ctx = await signIn("facts-zone@example.com");
     await saveProfile(ctx, { ...(await factsForFill(ctx)).values, legal_name: "West Coast Co", entity_type: "c_corp" });
@@ -449,6 +472,37 @@ describe("making a document", () => {
     expect(await fill({}, form({ ...w9, step: "review", at: "3" }))).toEqual({ error: expect.any(String), at: 3 });
   });
 
+  it("W15-2: past the hourly limit, an approval keeps the review in view with the message and makes nothing", async () => {
+    const ctx = await signIn("fill-busy-page@example.com");
+    await fillBucket(db, "fill", ctx.userId, 30, 3600);
+    const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
+    expect(await fill({}, form({ ...w9, step: "review" }))).toEqual({ review: true });
+    expect(await fill({}, form({ ...w9, ack: "on", at: "3" }))).toEqual({ error: FILL_BUSY, review: true });
+    expect(await db.root((tx) => tx.query("select 1 from app.documents where org_id = $1", [ctx.orgId]))).toEqual([]);
+  });
+
+  it("W15-2: a full sample's Make page says so instead of offering the form, and an approval posted anyway gets the same sentence", async () => {
+    const userId = await createLocalUser(null, true);
+    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    await finishSignIn(userId, { demo: true });
+    const page = () => renderPage(FillPage, { params: Promise.resolve({ template: "common-paper-mnda" }) });
+    expect(textOf(await page())).not.toContain(SAMPLE_FULL);
+    // 25 more (some archived) make 30 in all.
+    await db.root((tx) =>
+      tx.query("insert into app.documents (org_id, title, kind, status) select $1, 'Doc ' || n, 'other', case when n % 3 = 0 then 'archived' else 'active' end from generate_series(1, 25) n", [org.id]),
+    );
+    const html = await page();
+    expect(textOf(html)).toContain(SAMPLE_FULL);
+    expect(html).not.toContain("<form");
+    expect(primaryActions(html)).toEqual([]);
+    const t = templateById("common-paper-mnda");
+    if (!t) throw new Error("the NDA template is missing");
+    const ctx = await requireWorkspace();
+    const nda = { ...prefill(t, await factsForFill(ctx), ctx.today), template: t.id, mnda_term: "until_terminated", conf_term: "perpetual", governing_law: "California", jurisdiction: "San Francisco, CA", p2_company: "Northwind", p2_name: "Jordan Lee", p2_notice: "legal@northwind.example" };
+    expect(await fill({}, form({ ...nda, ack: "on" }))).toEqual({ error: SAMPLE_FULL, review: true });
+  });
+
   it("checks the values for the review without saving, and stays on the review when only the approval box is missing", async () => {
     await signIn("fill-review@example.com");
     const w9 = { template: "irs-w9", name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
@@ -470,7 +524,7 @@ describe("making a document", () => {
   it("after making one, the document's page says it's done, what was kept, and what to do next", async () => {
     const ctx = await signIn("fill-done@example.com");
     const w9 = { name: "Harbor Plumbing", tax_class: "individual", address: "1 Main St", city_state_zip: "Springfield, CA 90000", tin_kind: "ssn", ssn: "900-12-3456" };
-    const made = await fillTemplate(ctx, "irs-w9", w9, true);
+    const made = await fillTemplate(ctx, "irs-w9", w9, true, "192.0.2.10");
     const id = made.ok ? made.id : "";
     const html = await renderPage(DocumentPage, {
       params: Promise.resolve({ id }),
@@ -547,7 +601,7 @@ describe("a document's page", () => {
     const id = await uploadDocument(ctx, { title: "Mutual NDA", kind: "nda" }, await pdf.save());
     // Asking for signatures is part of Pro.
     await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_W1', 'active', 'pro')", [ctx.orgId]));
-    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
     const html = await documentPage(id, {});
     // Step 1 shows; step 2 is in the page, hidden until Withdraw is pressed.
     expect(html).toMatch(/<button type="button" class="[^"]*">Withdraw<\/button>/);
@@ -569,7 +623,7 @@ describe("a document's page", () => {
     expect(plain).toMatch(/<button class="inline-flex[^"]*"[^>]*>Archive document<\/button>/);
     expect(plain).not.toContain("Archive and withdraw");
 
-    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
     const html = await documentPage(id, {});
     expect(textOf(/<p id="version-file-warning"[^>]*>([\s\S]*?)<\/p>/.exec(html)?.[1] ?? "")).toBe("Adding a version withdraws the open signing request for Jordan Lee.");
     expect(html).toMatch(/<input[^>]*id="version-file"[^>]*aria-describedby="version-file-warning"/);
@@ -582,7 +636,7 @@ describe("a document's page", () => {
     expect(step2?.[2]).toMatch(/<button[^>]*class="btn-danger"[^>]*>Archive and withdraw<\/button>/);
 
     // A second signer: the sentences count the others, newest request first as the list shows them.
-    await requestSignature(ctx, { documentId: id, signerName: "Sam Ortiz", signerEmail: "sam@northwind.example", days: 7 });
+    await requestSignature(ctx, { documentId: id, signerName: "Sam Ortiz", signerEmail: "sam@northwind.example", days: 7 }, "192.0.2.10");
     const two = await documentPage(id, {});
     expect(textOf(two)).toContain("Adding a version withdraws the open signing requests for Sam Ortiz and 1 other.");
     expect(textOf(two)).toContain("Archiving withdraws the open signing requests for Sam Ortiz and 1 other. Restoring the document won't bring them back; you'd send them again.");
@@ -618,7 +672,7 @@ describe("a document's page", () => {
     expect(line(await documentPage(id, {}))).toBe("Archiving takes it off 2 passport links for good; restoring won't add it back.");
 
     // With a signing request open, the confirm carries the same sentence.
-    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
     const html = await documentPage(id, {});
     const step2 = /<form\b([^>]*)>([\s\S]*?)<\/form>/.exec(html.slice(html.indexOf(">Archive document</button>")));
     expect(textOf(step2?.[2] ?? "")).toBe(

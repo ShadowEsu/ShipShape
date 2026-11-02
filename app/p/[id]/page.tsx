@@ -4,7 +4,7 @@ import { DownloadBusy, LinkBusy, LinkUnavailable } from "@/app/link-states";
 import { PassportView } from "@/app/p/passport-view";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { contactEmail } from "@/lib/server/flags";
-import { clientIp, rateLimited } from "@/lib/server/http";
+import { clientIp, linkRateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
 import { openPassport, PASSPORT_COOKIE } from "@/lib/server/passport";
 import { viewerZone } from "@/lib/server/session";
@@ -17,7 +17,7 @@ export default async function PassportPage({ params, searchParams }: { params: P
   const [{ id }, { r }] = await Promise.all([params, searchParams]);
   const token = (await cookies()).get(PASSPORT_COOKIE)?.value;
   const ip = clientIp(await headers());
-  const busy = token ? await rateLimited("passport-view", ip, 60, 600) : false;
+  const busy = token ? await linkRateLimited("passport-view", ip, id, 60, 600) : false;
   const passport = token && !busy ? await openPassport(id, token, ip) : null;
   // Only once the open came back empty, for the same token: why (ran out, or turned off), nothing else.
   const end = token && !busy && !passport ? await linkEnd("p", id, token) : null;

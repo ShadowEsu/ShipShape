@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
-import { PLANS } from "@/lib/plans";
+import { megabytes, PLANS } from "@/lib/plans";
 
 const { free, pro } = PLANS;
 
@@ -11,6 +11,8 @@ export const metadata: Metadata = { title: "Pricing", description: `ShipShape is
 const ROWS: [feature: string, free: string, pro: string][] = [
   ["Active documents", `${free.documents}`, "No limit"],
   ["Passport links open at once", `${free.passports}`, "No limit"],
+  // "in all" kept together (Design, wave 15): at 390 the cell wraps "100 MB / in all", never a lone "all".
+  ["Files", `${megabytes(free.files)} in\u00a0all`, "No total limit"],
   ["Versions, history, search", "✓", "✓"],
   ["W-9 and NDA from your business facts", "✓", "✓"],
   ["Deadlines and calendar file", "✓", "✓"],
@@ -43,7 +45,8 @@ export default function PricingPage() {
               <span className="font-serif text-4xl font-semibold">$0</span>
             </p>
             <p className="text-base text-ink-2 sm:text-sm">
-              For getting your papers in order: {free.documents} active documents and {free.passports} passport link open at a time.
+              For getting your papers in order: {free.documents} active documents, {megabytes(free.files)} of files and {free.passports} passport link
+              open at a time.
             </p>
             <Link href="/signin" className="btn-ghost mt-auto">
               Try the sample

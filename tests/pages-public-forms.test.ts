@@ -291,7 +291,7 @@ describe("the dates and labels on a passport and a signing page", () => {
   it("a signing page says until when it can be signed, to the day", async () => {
     const nda = (await listDocuments(sample)).find((d) => d.kind === "nda");
     if (!nda) throw new Error("the sample workspace has no NDA");
-    const { id, token } = await requestSignature(sample, { documentId: nda.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 });
+    const { id, token } = await requestSignature(sample, { documentId: nda.id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
     const [row] = await db.root((tx) => tx.query<{ at: string }>("select expires_at::text as at from app.signature_requests where id = $1", [id]));
     jar.set("ss_sign", token);
     expect(said(await renderPage(SigningPage, props(id)))).toContain(`Harbor Plumbing (sample) asked Jordan Lee to sign this document. You can sign until ${dayOf(row.at, "UTC")}.`);

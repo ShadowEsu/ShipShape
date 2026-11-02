@@ -21,6 +21,7 @@ vi.mock("next/headers", () => ({
     set: (name: string, value: string, options?: Record<string, unknown>) => void jar.set(name, { value, options }),
     delete: (name: string) => void jar.delete(name),
   }),
+  headers: async () => new Headers({ "x-forwarded-for": "192.0.2.30" }),
 }));
 // Like Next.js, redirect() never returns.
 vi.mock("next/navigation", () => ({
