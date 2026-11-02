@@ -832,17 +832,30 @@ describe("a document's page", () => {
       expect(expires).toContain('type="date"');
       expect(expires).toContain('value="2030-01-31"');
       expect(html).not.toContain('id="signatures"');
+      // Who issues a license, as the Issued by field's hint.
+      expect(/<input [^>]*id="issuer"[^>]*>/.exec(html)?.[0]).toContain('placeholder="Agency or city"');
       vi.stubEnv("SHIPSHAPE_UI", "");
       expect(primary(await documentPage(id, {}))).toEqual([]);
     });
 
-    it("offers Ask to sign only on the kinds that get signed, and it lands on Signatures", async () => {
+    it("offers Ask to sign only on the kinds that get signed; it lands on the signer's name, in the same grouped rows as Details", async () => {
       const ctx = await signIn("doc-v2-nda@example.com");
       const id = await uploadDocument(ctx, { title: "Mutual NDA", kind: "nda" }, PDF);
       const html = await documentPage(id, {});
       expect(actions(html)).toEqual(["Download", "Ask to sign", "More"]);
-      expect(html).toContain('href="#signatures"');
-      expect(html).toMatch(/<section id="signatures"/);
+      expect(html).toContain('href="#signer-name"');
+      const signatures = html.slice(html.indexOf('<section id="signatures"'));
+      const rows = /<ul class="group-list plain">([\s\S]*?)<\/ul>/.exec(signatures)?.[1] ?? "";
+      expect([...rows.matchAll(/<label for="([^"]*)">([^<]*)<\/label>/g)].map((m) => `${m[1]} ${textOf(m[2])}`)).toEqual([
+        "signer-name Signer's name",
+        "signer-email Signer's email",
+        "sign-days Open for",
+      ]);
+      expect(/<input [^>]*id="signer-name"[^>]*>/.exec(html)?.[0]).toContain('class="row-field');
+      expect(/<input [^>]*id="issuer"[^>]*>/.exec(html)?.[0]).toContain('placeholder="The other company"');
+      // Today's page keeps its boxed form.
+      vi.stubEnv("SHIPSHAPE_UI", "");
+      expect(/<input [^>]*id="signer-name"[^>]*>/.exec(await documentPage(id, {}))?.[0]).toContain('class="input"');
     });
 
     it("an archived document says so in place of the primary and offers Restore; nothing to share and no More", async () => {

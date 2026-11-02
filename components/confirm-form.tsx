@@ -19,6 +19,7 @@ export function ConfirmForm({
   destructive = false,
   pendingLabel,
   compact = false,
+  triggerClassName,
 }: {
   action: (data: FormData) => void | Promise<void>;
   fields: Record<string, string>;
@@ -31,6 +32,8 @@ export function ConfirmForm({
   pendingLabel: string;
   /** Small text buttons, for a row in a list. */
   compact?: boolean;
+  /** The first button's own look (a row in a menu); the question and its buttons keep theirs. */
+  triggerClassName?: string;
 }) {
   const [asking, setAsking] = useState(false);
   const moved = useRef(false);
@@ -52,7 +55,7 @@ export function ConfirmForm({
 
   return (
     <div>
-      <button ref={first} type="button" hidden={asking} className={compact ? small : "btn-ghost"} onClick={toggle(true)}>
+      <button ref={first} type="button" hidden={asking} className={triggerClassName ?? (compact ? small : "btn-ghost")} onClick={toggle(true)}>
         {trigger}
       </button>
       <form action={action} hidden={!asking} className="space-y-2">

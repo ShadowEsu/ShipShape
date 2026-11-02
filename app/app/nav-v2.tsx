@@ -58,27 +58,30 @@ export function SideNav() {
 /**
  * A bottom sheet on a native <dialog>: focus moves in and is kept there, Escape and the backdrop close it, and focus
  * returns to the button that opened it. Closes itself when the page changes underneath (a link inside was followed).
- * From md up it's a card: docked bottom-left by default (the account row's), or centred.
+ * From md up it's a card docked bottom-left (the account row's), or with `menu` a menu placed by its opener (ActionSheet).
  */
-function Sheet({ id, title, open, centre, children }: { id: string; title: string; open: React.RefObject<HTMLDialogElement | null>; centre?: boolean; children: React.ReactNode }) {
+function Sheet({ id, title, open, menu, children }: { id: string; title: string; open: React.RefObject<HTMLDialogElement | null>; menu?: boolean; children: React.ReactNode }) {
   const path = usePathname();
   useEffect(() => {
     open.current?.close();
   }, [path, open]);
-  const wide = centre ? "sheet-centre md:inset-0 md:m-auto md:h-fit md:w-[420px]" : "md:inset-x-auto md:bottom-3 md:left-3 md:w-[280px]";
+  const wide = menu
+    ? "sheet-menu md:inset-auto md:h-fit md:w-60 md:rounded-xl md:backdrop:bg-transparent"
+    : "md:inset-x-auto md:bottom-3 md:left-3 md:w-[280px] md:rounded-2xl md:backdrop:bg-black/10";
   return (
     <dialog
       ref={open}
       id={id}
       aria-labelledby={`${id}-title`}
-      className={`sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:rounded-2xl md:shadow-[0_12px_40px_-12px_rgb(0_0_0/0.3)] md:backdrop:bg-black/10 ${wide}`}
+      className={`sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:shadow-[0_12px_40px_-12px_rgb(0_0_0/0.3)] ${wide}`}
       onClick={(e) => {
         // A click on the backdrop lands on the dialog element itself; a link to a #fragment on this page doesn't change the path.
         if (e.target === e.currentTarget || (e.target instanceof Element && e.target.closest("a[href]"))) e.currentTarget.close();
       }}
     >
       <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-line md:hidden" aria-hidden="true" />
-      <div className="flex items-center justify-between px-4 pt-2 pb-1">
+      {/* A menu needs no heading or close button: Escape, a click outside and its own rows close it. */}
+      <div className={`flex items-center justify-between px-4 pt-2 pb-1 ${menu ? "md:hidden" : ""}`}>
         <h2 id={`${id}-title`} className="section-title">
           {title}
         </h2>
@@ -86,23 +89,55 @@ function Sheet({ id, title, open, centre, children }: { id: string; title: strin
           <Icon name="close" />
         </button>
       </div>
-      <div className="px-4 pb-4">{children}</div>
+      <div className={menu ? "px-4 pb-4 md:p-1.5" : "px-4 pb-4"}>{children}</div>
     </dialog>
   );
 }
 
-/** A round action (icon over its label) that opens a sheet of further actions: the document page's More. */
+const WIDE = "(min-width: 768px)";
+
+/**
+ * A round action (icon over its label) that opens further actions: the document page's More. On the phone a bottom
+ * sheet; from md up a menu under the button, its right edge on the icon's, 8px below (Design, 02 Nov).
+ */
 export function ActionSheet({ id, title, label, className, children }: { id: string; title: string; label: string; className: string; children: React.ReactNode }) {
   const sheet = useRef<HTMLDialogElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  // A menu is placed for the page as it was: the page scrolling or the window resizing under it closes it.
+  useEffect(() => {
+    const close = () => {
+      if (sheet.current?.open && sheet.current.style.top) sheet.current.close();
+    };
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, { passive: true });
+    return () => {
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close);
+    };
+  }, []);
+  const show = () => {
+    const d = sheet.current;
+    const b = button.current;
+    if (!d || !b) return;
+    const icon = b.querySelector(".round-icon") ?? b;
+    if (window.matchMedia(WIDE).matches) {
+      d.style.top = `${Math.round(b.getBoundingClientRect().bottom + 8)}px`;
+      d.style.right = `${Math.round(document.documentElement.clientWidth - icon.getBoundingClientRect().right)}px`;
+    } else {
+      d.style.removeProperty("top");
+      d.style.removeProperty("right");
+    }
+    d.showModal();
+  };
   return (
     <>
-      <button type="button" aria-haspopup="dialog" aria-controls={id} onClick={() => sheet.current?.showModal()} className={className}>
+      <button ref={button} type="button" aria-haspopup="dialog" aria-controls={id} onClick={show} className={className}>
         <span className="round-icon">
           <Icon name="more" />
         </span>
         {label}
       </button>
-      <Sheet id={id} title={title} open={sheet} centre>
+      <Sheet id={id} title={title} open={sheet} menu>
         {children}
       </Sheet>
     </>

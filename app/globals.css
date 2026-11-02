@@ -191,6 +191,10 @@ body {
   .ui-v2 .round-action:hover .round-icon {
     @apply bg-line;
   }
+  /* A row in an action sheet or menu (the document page's More). */
+  .ui-v2 .menu-row {
+    @apply flex min-h-12 w-full items-center rounded-xl px-3 text-left text-[15px] text-ink transition-colors duration-[180ms] hover:bg-tile md:min-h-10;
+  }
 
   /* Tool tiles. Option A ("Tinted"): each tool its own soft tint; .mono (option B, "One accent") makes every icon ink on white. */
   .ui-v2 .tile {
@@ -254,6 +258,16 @@ body {
    skeleton it sat in view and the streamed page then pushed it down (CLS 0.02 at 1440). Appearing later shifts nothing. */
 .ui-v2 main:has(> [aria-busy="true"]) > .legal-line {
   display: none;
+}
+/* While a form's Save is docked above the phone's tab bar (the document's Details), a focused field or a row scrolled
+   to stops clear of it: the tab bar (51px + its inset, at least 20px), 8px, the 44px button and 16px more (Design). */
+@media (max-width: 767px) {
+  html:has(.ui-v2 .save-dock) {
+    scroll-padding-bottom: calc(51px + max(env(safe-area-inset-bottom), 20px) + 8px + 44px + 16px);
+  }
+  .ui-v2 main:has(.save-dock) {
+    padding-bottom: calc(8rem + 44px + 16px);
+  }
 }
 
 /* Option A's tints: a soft fill and an icon colour of at least 4.5:1 on it. */

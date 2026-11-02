@@ -38,7 +38,8 @@ function History({ audit, moreAudit, zone }: { audit: AuditRow[]; moreAudit: boo
     <details className="group rounded-2xl border border-line">
       <summary className="flex min-h-13 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 font-medium [&::-webkit-details-marker]:hidden">
         {`History (${count})`}
-        <span className="text-ink-3 transition-transform duration-[180ms] group-open:rotate-90">
+        {/* Down while closed, up while open: it opens here, it doesn't go anywhere. The summary carries the expanded state. */}
+        <span className="rotate-90 text-ink-3 transition-transform duration-[180ms] group-open:-rotate-90">
           <Icon name="chevron" />
         </span>
       </summary>
@@ -158,7 +159,8 @@ export function DocumentV2(p: {
             Download
           </a>
           {active && signable && (
-            <a href="#signatures" className="round-action press">
+            // Lands on the signer's name (HashLanding focuses it); without email signing, on the section's note.
+            <a href={p.esignOn ? "#signer-name" : "#signatures"} className="round-action press">
               <span className="round-icon">
                 <Icon name="sign" />
               </span>
@@ -167,38 +169,42 @@ export function DocumentV2(p: {
           )}
           {active && (
             <ActionSheet id="document-more" title="More" label="More" className="round-action press">
-              <div className="space-y-3">
+              <ul>
                 {p.canUpload && (
-                  <ul className="group-list plain">
-                    <li>
-                      <a href="#versions" className="group-row">
-                        Add a new version
-                      </a>
-                    </li>
-                  </ul>
+                  <li>
+                    <a href="#version-file" className="menu-row">
+                      Add a new version
+                    </a>
+                  </li>
                 )}
-                {p.openSigners.length > 0 ? (
-                  <ConfirmForm
-                    action={archive}
-                    fields={{ id: doc.id, archived: "1" }}
-                    trigger="Archive document"
-                    question={p.linksWarning ? `${archiveQuestion(p.openSigners)} ${p.linksWarning}` : archiveQuestion(p.openSigners)}
-                    confirm="Archive and withdraw"
-                    cancel="Keep it"
-                    destructive
-                    pendingLabel="Archiving…"
-                  />
-                ) : (
-                  <form action={archive}>
-                    <input type="hidden" name="id" value={doc.id} />
-                    <input type="hidden" name="archived" value="1" />
-                    <SubmitButton className="btn-ghost w-full" pendingLabel="Archiving…">
-                      Archive document
-                    </SubmitButton>
-                  </form>
-                )}
-                {p.linksWarning && <p className="text-xs text-ink-3">{p.linksWarning}</p>}
-              </div>
+                <li>
+                  {p.openSigners.length > 0 ? (
+                    // The question and its buttons, once asked, sit inside the menu's padding.
+                    <div className="[&_form]:px-3 [&_form]:py-2">
+                      <ConfirmForm
+                        action={archive}
+                        fields={{ id: doc.id, archived: "1" }}
+                        trigger="Archive document"
+                        triggerClassName="menu-row"
+                        question={p.linksWarning ? `${archiveQuestion(p.openSigners)} ${p.linksWarning}` : archiveQuestion(p.openSigners)}
+                        confirm="Archive and withdraw"
+                        cancel="Keep it"
+                        destructive
+                        pendingLabel="Archiving…"
+                      />
+                    </div>
+                  ) : (
+                    <form action={archive}>
+                      <input type="hidden" name="id" value={doc.id} />
+                      <input type="hidden" name="archived" value="1" />
+                      <SubmitButton className="menu-row" pendingLabel="Archiving…">
+                        Archive document
+                      </SubmitButton>
+                    </form>
+                  )}
+                </li>
+              </ul>
+              {p.linksWarning && <p className="px-3 pt-1 pb-2 text-xs text-ink-3">{p.linksWarning}</p>}
             </ActionSheet>
           )}
         </div>
@@ -224,7 +230,7 @@ export function DocumentV2(p: {
           {p.requests.length > 0 && <SignatureRequests docId={doc.id} requests={p.requests} zone={zone} now={p.now} />}
           {signable &&
             (p.esignOn ? (
-              <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={p.demo} />
+              <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={p.demo} rows />
             ) : (
               <p className="text-xs text-ink-3">Signing by email opens once ShipShape can send email.</p>
             ))}
