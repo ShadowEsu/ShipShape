@@ -29,14 +29,14 @@ const ROWS: [feature: string, free: string, pro: string][] = [
 
 /** The billing questions, worded for whether payments are live and where refunds are asked for (Security L6). */
 function billingQuestions(live: boolean, contact: string | null): [q: string, a: string][] {
-  const ask = contact ? `Ask at ${contact}.` : "The terms will give the address to ask before real payments start.";
+  const ask = contact ? `Email ${contact}.` : "The terms will give the address to ask before real payments start.";
   return [
     ["Can I cancel any time?", "Yes, from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free."],
     ["What happens to my documents if I go back to Free?", "Nothing is deleted. You just can't add more than Free allows until you're under its limits."],
     ["What if a payment fails?", "Pro stays on for 7 days from the first failed attempt while the payment is retried, then the workspace moves to Free."],
     [
       "Refunds?",
-      `Your first Pro payment can be refunded in full if you ask within 14 days. ${ask} After that you can cancel any time, but earlier payments aren't refunded, in whole or in part. A full refund or a disputed charge ends Pro straight away.`,
+      `If you ask within 14 days of your first Pro payment, we refund it in full. ${ask} After that you can cancel any time, but earlier payments aren't refunded, in whole or in part. A full refund or a disputed charge ends Pro straight away.`,
     ],
     ...(live ? [] : [["Am I charged now?", "No. During the preview, payments run in Stripe's test mode and no real money moves."] satisfies [string, string]]),
   ];

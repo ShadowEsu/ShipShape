@@ -74,13 +74,13 @@ export default function TermsPage() {
         <li>You can cancel any time from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free.</li>
         <li>If a payment fails, Pro stays on for 7 days from the first failed attempt while the payment is retried, then moves to Free.</li>
         <li>
-          Your first {pro.name} payment can be refunded in full if you ask within 14 days of it
+          If you ask within 14 days of your first {pro.name} payment, we refund it in full.{" "}
           {contact ? (
             <>
-              , at <a href={`mailto:${contact}`}>{contact}</a>.
+              Email <a href={`mailto:${contact}`}>{contact}</a>.
             </>
           ) : (
-            <>. The address to ask will be listed here before real accounts open (during the preview no real money moves).</>
+            "The address to ask will be listed here before real accounts open (during the preview no real money moves)."
           )}
         </li>
         <li>After that, you can cancel any time, but payments already made aren&apos;t refunded, in whole or in part.</li>
@@ -104,7 +104,7 @@ export default function TermsPage() {
 
       <h2>The service</h2>
       <ul>
-        <li>ShipShape may change, pause or have mistakes. Keep your own copies of important documents.</li>
+        <li>ShipShape may change, pause or get things wrong. Keep your own copies of important documents.</li>
         <li>We may suspend an account that breaks these terms or puts other people at risk, and we&apos;ll tell you why where we can.</li>
         <li>
           To the extent the law allows, ShipShape is provided as is, and our liability is limited to what you paid us in the 12 months
@@ -115,7 +115,7 @@ export default function TermsPage() {
 
       <h2>Changes</h2>
       <p>
-        When these terms change, the version number above changes, and signing in asks you to agree to the version in force.
+        When these terms change, the version number above changes, and the next time you sign in we ask you to agree to the new version.
       </p>
     </LegalPage>
   );

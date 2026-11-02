@@ -673,10 +673,12 @@ describe("pricing (/pricing)", () => {
     vi.stubEnv("STRIPE_PRICE_PRO", "price_Live1");
     const [pricing, terms, privacy] = await pages();
     for (const text of [pricing, terms, privacy]) expect(text).not.toMatch(/test mode|no real money|in preview/i);
-    expect(pricing).toContain("Your first Pro payment can be refunded in full if you ask within 14 days. Ask at support@example.com.");
+    // One refund sentence, word for word the same on both pages (Design, PR 17).
+    const refund = "If you ask within 14 days of your first Pro payment, we refund it in full. Email ";
+    expect(pricing).toContain(`${refund}support@example.com.`);
     expect(terms).toContain("ShipShape is operated by Unvibe.");
-    const termsHtml = await renderPage(TermsPage, {});
-    expect(termsHtml).toMatch(/within 14 days of it(<!-- -->)?, at <a href="mailto:support@example.com">support@example.com<\/a>\./);
+    const termsHtml = (await renderPage(TermsPage, {})).replaceAll("<!-- -->", "");
+    expect(termsHtml).toContain(`${refund}<a href="mailto:support@example.com">support@example.com</a>.`);
     vi.unstubAllEnvs();
   });
 });
