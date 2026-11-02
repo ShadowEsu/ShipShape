@@ -1,8 +1,17 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel, type Status } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { PLANS } from "@/lib/plans";
+import { appUrl } from "@/lib/server/flags";
+import { homeJsonLd, jsonLdText } from "@/lib/server/seo";
+
+export const metadata: Metadata = { alternates: { canonical: "/" } };
+
+/** The hero's sentence, said once: on the page and as the app's description in its structured data. */
+const PITCH =
+  "Keep your W-9, insurance certificate, licenses and agreements together. Fill new forms from facts you confirmed once, share the packet with one link, and see what's due before it lapses.";
 
 /** What keeps the documents safe, one line each; `key` is stable because some lines carry markup. */
 const TRUST: { key: string; text: ReactNode }[] = [
@@ -84,8 +93,11 @@ function SamplePassport() {
 }
 
 export default function Home() {
+  // Absolute URLs need the site's address (SHIPSHAPE_APP_URL); local runs without it skip the structured data.
+  const site = appUrl();
   return (
     <>
+      {site && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(homeJsonLd(site, PITCH)) }} />}
       <SiteHeader />
       <main id="main">
         <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pt-10 pb-20 lg:grid-cols-[1.1fr_1fr] lg:pt-16">
@@ -94,10 +106,7 @@ export default function Home() {
             <h1 className="font-serif text-5xl leading-[0.95] font-semibold tracking-tight sm:text-7xl">
               Every form. <em className="text-accent">One link.</em>
             </h1>
-            <p className="max-w-xl text-lg text-ink-2">
-              Keep your W-9, insurance certificate, licenses and agreements together. Fill new forms from facts you confirmed once, share
-              the packet with one link, and see what&apos;s due before it lapses.
-            </p>
+            <p className="max-w-xl text-lg text-ink-2">{PITCH}</p>
             {/* The two buttons need ~356px in Geist, but its fallback font fits them in 350: at 390 wide they
                 wrapped only when Geist loaded, shifting the page (CLS 0.1). Stack them below 400px from the start. */}
             <div className="flex flex-col items-start gap-3 min-[400px]:flex-row min-[400px]:flex-wrap min-[400px]:items-center">

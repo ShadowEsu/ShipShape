@@ -6,7 +6,11 @@ import { aiEnabled } from "@/lib/server/ai";
 import { dbUp } from "@/lib/server/db";
 import { realDocsEnabled } from "@/lib/server/flags";
 
-export const metadata: Metadata = { title: "Status" };
+export const metadata: Metadata = {
+  title: "Status",
+  description: "Whether ShipShape and its database are answering right now, and which features are on during the preview.",
+  alternates: { canonical: "/status" },
+};
 
 type Tone = "ok" | "bad" | "off";
 const TONE: Record<Tone, string> = { ok: "bg-ok-soft text-ok", bad: "bg-bad-soft text-bad", off: "bg-canvas text-ink-2" };

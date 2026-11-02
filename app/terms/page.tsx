@@ -4,7 +4,11 @@ import { LegalPage } from "@/components/legal-page";
 import { TERMS_VERSION } from "@/lib/legal";
 import { PLANS } from "@/lib/plans";
 
-export const metadata: Metadata = { title: "Terms (draft)" };
+export const metadata: Metadata = {
+  title: "Terms (draft)",
+  description: "The terms for using ShipShape: software, not a law firm; your documents stay yours; plans, payments and refunds. A draft pending lawyer review.",
+  alternates: { canonical: "/terms" },
+};
 
 export default function TermsPage() {
   const { free, pro } = PLANS;

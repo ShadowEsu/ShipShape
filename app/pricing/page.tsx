@@ -6,7 +6,11 @@ import { megabytes, PLANS } from "@/lib/plans";
 
 const { free, pro } = PLANS;
 
-export const metadata: Metadata = { title: "Pricing", description: `ShipShape is free for up to ${free.documents} documents. Pro is $${pro.price} a month.` };
+export const metadata: Metadata = {
+  title: "Pricing",
+  description: `ShipShape is free for up to ${free.documents} documents. Pro is $${pro.price} a month.`,
+  alternates: { canonical: "/pricing" },
+};
 
 const ROWS: [feature: string, free: string, pro: string][] = [
   ["Active documents", `${free.documents}`, "No limit"],
