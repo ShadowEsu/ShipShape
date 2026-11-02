@@ -10,6 +10,7 @@ import { saveFacts, saveTaxId } from "@/app/app/facts/actions";
 import FactsPage from "@/app/app/facts/page";
 import FillPage from "@/app/app/make/[template]/page";
 import { fill } from "@/app/app/make/actions";
+import MakePage from "@/app/app/make/page";
 import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
@@ -23,7 +24,7 @@ import { factsForFill, saveEin, saveProfile, type Ctx } from "@/lib/server/profi
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
-import { templateById } from "@/lib/templates/catalog";
+import { templateById, TEMPLATES } from "@/lib/templates/catalog";
 import { fmtDay } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { fillBucket } from "./support/rate";
@@ -469,6 +470,41 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect([...recent.matchAll(/class="block truncate font-medium">([^<]*)</g)].map((m) => m[1])).toEqual(["Doc 5", "Doc 3", "Doc 2"]);
   });
 
+  it("past 20, Needs attention ends in one row, 'See all N in Deadlines', to Deadlines filtered to what needs attention; at 20, no such row", async () => {
+    const ctx = await signIn("home-v2-cap@example.com");
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeV2Cap', 'active', 'pro')", [ctx.orgId]));
+    const seed = (from: number, to: number) =>
+      db.root((tx) =>
+        tx.query("insert into app.documents (org_id, title, kind, expires_on) select $1, 'Permit ' || lpad(n::text, 2, '0'), 'permit', $2::date + n from generate_series($3::int, $4::int) n", [
+          ctx.orgId,
+          ctx.today,
+          from,
+          to,
+        ]),
+      );
+    /** The attention section's rows, last one last. */
+    const attention = (html: string) => {
+      const section = html.slice(html.indexOf('id="attention-title"'), html.indexOf('id="recent-title"'));
+      return [...section.matchAll(/<li [^>]*>([\s\S]*?)<\/li>/g)].map((m) => m[1]);
+    };
+    // 19 due soon and one lapsed: two groups, 20 rows.
+    await seed(1, 19);
+    await seed(-1, -1);
+    const twenty = await homePage();
+    expect(attention(twenty)).toHaveLength(20);
+    expect(textOf(twenty)).not.toContain("See all");
+
+    // Two more lapsed: the most urgent 20 are the 19 and the latest lapse; the row ends the last group, after it.
+    await seed(-3, -2);
+    const html = await homePage();
+    const rows = attention(html);
+    expect(rows).toHaveLength(21);
+    expect(textOf(rows[19])).toContain("Permit -1");
+    expect(actionsOf(rows[20])).toEqual([{ tag: "a", label: "See all 22 in Deadlines", href: "/app/deadlines?soon=1" }]);
+    expect(textOf(html)).toContain("The 20 most urgent are listed; 2 more have lapsed.");
+    expect(textOf(html)).not.toContain("See every date");
+  });
+
   it("is off unless SHIPSHAPE_UI is v2: the current Home renders", async () => {
     vi.stubEnv("SHIPSHAPE_UI", "");
     await signIn("home-v2-off@example.com");
@@ -478,17 +514,27 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
   });
 });
 
-describe("business facts", () => {
+// Every state and word holds in both looks.
+describe.each([
+  ["current", ""],
+  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+])("business facts, %s", (_look, ui) => {
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
+  const mail = (name: string) => `${ui || "now"}-${name}@example.com`;
+  /** The page's primary actions: class "btn" today, "btn press …" (docked) in the redesigned app. */
+  const primary = (html: string) =>
+    ui ? [...html.matchAll(/<button class="btn press[^"]*"[^>]*>([^<]*)</g)].map((m) => ({ label: m[1], href: undefined })) : primaryActions(html);
+
   it("with nothing confirmed says so, what the facts are for, and offers one action: save them", async () => {
-    await signIn("facts-empty@example.com");
+    await signIn(mail("facts-empty"));
     const html = await renderPage(FactsPage, {});
     expect(textOf(html)).toContain("Nothing is confirmed yet: fill in what you know, then choose Save and confirm.");
-    expect(primaryActions(html)).toEqual([{ label: "Save and confirm", href: undefined }]);
+    expect(primary(html)).toEqual([{ label: "Save and confirm", href: undefined }]);
   });
 
   it("W15-11: a member's crafted post to Save facts or Save EIN comes back as a message with what was typed, not the error page", async () => {
-    const owner = await signIn("facts-owner-w15@example.com");
-    const memberId = await createLocalUser("facts-member-w15@example.com", false);
+    const owner = await signIn(mail("facts-owner-w15"));
+    const memberId = await createLocalUser(mail("facts-member-w15"), false);
     // Their membership here is older than their own workspace, so this is the workspace they work in.
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role, created_at) values ($1, $2, 'member', now() - interval '1 day')", [owner.orgId, memberId]));
     await finishSignIn(memberId, { demo: false });
@@ -502,7 +548,7 @@ describe("business facts", () => {
   });
 
   it("dates the last confirmation on the owner's day, not the UTC day: the Facts page and the fill form's source chip (wave 8 #5)", async () => {
-    const ctx = await signIn("facts-zone@example.com");
+    const ctx = await signIn(mail("facts-zone"));
     await saveProfile(ctx, { ...(await factsForFill(ctx)).values, legal_name: "West Coast Co", entity_type: "c_corp" });
     // Confirmed at 01:00 UTC on Nov 1: still Oct 31 in Los Angeles.
     await db.root((tx) => tx.query("update app.profile_facts set confirmed_at = '2026-11-01 01:00:00+00' where org_id = $1", [ctx.orgId]));
@@ -511,6 +557,38 @@ describe("business facts", () => {
     expect(textOf(await renderPage(FillPage, { params: Promise.resolve({ template: "irs-w9" }) }))).toContain("From Business facts · confirmed Oct 31, 2026");
     jar.set("ss_tz", { value: "Asia/Tokyo" });
     expect(textOf(await renderPage(FactsPage, {}))).toMatch(/Last confirmed Nov 1, 2026 ?\./);
+  });
+});
+
+describe("business facts and Make, redesigned only", () => {
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
+
+  it("Facts: Save and confirm is there with nothing changed (confirming unchanged facts is what 'still true?' asks); a sample's rows are locked, with no Save", async () => {
+    await signIn("v2-facts-owner@example.com");
+    const own = await renderPage(FactsPage, {});
+    expect(own).toMatch(/<div class="save-dock[^"]*"><button class="btn press[^"]*">Save and confirm<\/button>/);
+    expect(own).toMatch(/<fieldset class="min-w-0">/);
+    expect(own).toMatch(/<input id="legal_name"[^>]*class="row-field"/);
+
+    const userId = await createLocalUser(null, true);
+    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    await finishSignIn(userId, { demo: true });
+    const sample = await renderPage(FactsPage, {});
+    expect(sample).toMatch(/<fieldset disabled="" class="min-w-0">/);
+    expect(sample).not.toContain("Save and confirm</button>");
+    // The EIN is a row: the masked number, and the button that shows it.
+    expect(textOf(sample)).toMatch(/Employer identification number \(EIN\) \S*\d{4} Show full EIN/);
+  });
+
+  it("Make: one row per template opening its form; the SAFE row leaves for ycombinator.com in a new tab, and says so", async () => {
+    await signIn("v2-make@example.com");
+    const html = await renderPage(MakePage, {});
+    expect(actionsOf(html).filter((a) => a.href?.startsWith("/app/make/")).map((a) => a.href)).toEqual(TEMPLATES.map((t) => `/app/make/${t.id}`));
+    const safe = /<a href="https:\/\/www\.ycombinator\.com\/documents"([^>]*)>([\s\S]*?)<\/a>/.exec(html);
+    expect(safe?.[1]).toContain('target="_blank"');
+    expect(safe?.[1]).toContain('rel="noopener noreferrer"');
+    expect(textOf(safe?.[2] ?? "")).toContain("Link to the original · ycombinator.com · No redistribution license, so we link out , opens on ycombinator.com in a new tab");
   });
 });
 

@@ -6,7 +6,7 @@ import { ACK_TEXT } from "@/lib/legal";
 import { FACT_LABELS, STALE_AFTER_DAYS } from "@/lib/profile-fields";
 import { prefill } from "@/lib/server/fill";
 import { canSaveFacts, sampleIsFull } from "@/lib/server/documents";
-import { realDocsEnabled } from "@/lib/server/flags";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { SAMPLE_FULL } from "@/lib/server/limits";
 import { loadProfile } from "@/lib/server/profile";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
@@ -64,7 +64,10 @@ export default async function FillPage({ params }: { params: Promise<{ template:
   return (
     <div className="max-w-3xl space-y-6">
       <nav className="text-sm">
-        <Link href="/app/make" className="inline-flex min-h-6 items-center text-ink-2 hover:underline">
+        <Link
+          href="/app/make"
+          className={uiV2() ? "-my-2.5 inline-flex min-h-11 items-center text-ink-2 hover:text-ink" : "inline-flex min-h-6 items-center text-ink-2 hover:underline"}
+        >
           ← Make a document
         </Link>
       </nav>

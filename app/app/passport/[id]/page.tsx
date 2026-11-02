@@ -4,14 +4,15 @@ import { notFound } from "next/navigation";
 import { Notice, PageHeader } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { DOC_KINDS } from "@/lib/server/documents";
+import { uiV2 } from "@/lib/server/flags";
 import { getPassport, PASSPORT_ACCESS_SHOWN } from "@/lib/server/passport";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf, timeOf } from "@/lib/today";
 import { turnOff } from "../actions";
+import { ACTION } from "./shared";
+import { PassportLinkV2 } from "./v2";
 
 export const metadata: Metadata = { title: "Passport link" };
-
-const ACTION: Record<string, string> = { opened: "Opened the link", viewed: "Viewed", downloaded: "Downloaded" };
 
 /** What went wrong in a form posted from this page (see turnOff in ../actions.ts). */
 const ERRORS: Record<string, string> = {
@@ -26,6 +27,7 @@ export default async function PassportDetail({ params, searchParams }: { params:
   const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
   const p = await getPassport(ctx, id);
   if (!p) notFound();
+  if (uiV2()) return <PassportLinkV2 p={p} zone={zone} formError={formError} />;
   const revokedAt = p.link.revoked_at;
   const off = revokedAt !== null;
   const expired = new Date(p.link.expires_at).getTime() < Date.now();

@@ -5,16 +5,13 @@ import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
 import { listDeadlines, listOutbox, type Deadline } from "@/lib/server/deadlines";
 import { DOC_KINDS, firstDocument } from "@/lib/server/documents";
+import { uiV2 } from "@/lib/server/flags";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { fmtDay, timeOf } from "@/lib/today";
+import { DeadlinesV2 } from "./v2";
+import { when } from "./when";
 
 export const metadata: Metadata = { title: "Deadlines" };
-
-function when(d: Deadline) {
-  if (d.days_left < 0) return `${-d.days_left} ${d.days_left === -1 ? "day" : "days"} ago`;
-  if (d.days_left === 0) return "today";
-  return `in ${d.days_left} ${d.days_left === 1 ? "day" : "days"}`;
-}
 
 function Group({ title, items, tone }: { title: string; items: Deadline[]; tone: "bad" | "warn" | "ok" }) {
   if (!items.length) return null;
@@ -45,17 +42,33 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
   );
 }
 
-export default async function DeadlinesPage() {
+/** `?soon=1` (the redesigned app's Home, past its 20 rows): only the dates that put a document on Home's list. */
+export default async function DeadlinesPage({ searchParams }: { searchParams: Promise<{ soon?: string }> }) {
   const ctx = await requireWorkspace();
   const zone = await viewerZone();
   // Only owners and admins can read the outbox (0039), so a member's page doesn't ask for it.
   const member = ctx.role === "member";
-  const [all, outbox, { plan }] = await Promise.all([listDeadlines(ctx), member ? [] : listOutbox(ctx), billingView(ctx)]);
+  const [all, outbox, { plan }, sp] = await Promise.all([listDeadlines(ctx), member ? [] : listOutbox(ctx), billingView(ctx), searchParams]);
   // Reminders from ShipShape are a Pro feature (lib/server/deadlines.ts runs them for Pro only); the calendar file works on every plan.
   const reminders = PLANS[plan].emailReminders;
   const quiet = all.length > 0 && all.every((d) => d.days_left > 90);
   // With no dates yet, the action goes straight to the Expires field of the first document, as Home does.
   const first = all.length === 0 ? await firstDocument(ctx) : null;
+
+  if (uiV2())
+    return (
+      <DeadlinesV2
+        all={all}
+        outbox={outbox}
+        reminders={reminders}
+        member={member}
+        demo={ctx.demo}
+        first={first}
+        zone={zone}
+        quiet={quiet}
+        soon={sp.soon === "1"}
+      />
+    );
 
   return (
     <div className="max-w-3xl space-y-8">

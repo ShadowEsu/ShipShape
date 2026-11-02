@@ -119,6 +119,13 @@
   transition-timing-function: var(--ease-out);
 }
 
+/* A disclosure's chevron (Deadlines' "Show the email") turns 180° as it opens or closes, 150ms. Tailwind's rotate-*
+   set the individual `rotate` property, so that's what moves. */
+.ui-v2 .disclosure-chevron {
+  display: inline-block;
+  transition: rotate 150ms var(--ease-inout);
+}
+
 /* Route changes (app/app/template.tsx): the old page leaves in 150ms, the new one fades up 8px in 240ms. */
 ::view-transition-old(.v2-page) {
   animation: v2-fade-out 150ms var(--ease-inout) both;
@@ -164,6 +171,9 @@
   .ui-v2 .press,
   .ui-v2 .press:active:not(:disabled) {
     transform: none;
+    transition: none;
+  }
+  .ui-v2 .disclosure-chevron {
     transition: none;
   }
   ::view-transition-old(.v2-page) {

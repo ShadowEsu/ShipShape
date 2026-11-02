@@ -3,30 +3,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState, Notice, PageHeader } from "@/components/app-ui";
 import { SubmitButton } from "@/components/submit-button";
-import { COLLECT_DAYS, getVendor, type VendorLink } from "@/lib/server/collect";
-import { collectOpen } from "@/lib/server/flags";
+import { COLLECT_DAYS, getVendor } from "@/lib/server/collect";
+import { collectOpen, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf, fmtDay } from "@/lib/today";
 import { archiveVendor, turnOffVendorLink } from "../actions";
 import { CollectChip } from "../chip";
 import { DeleteVendorFileForm, VendorLinkForm } from "../forms";
+import { ERRORS, linkStatus, size } from "./shared";
+import { VendorV2 } from "./v2";
 
 export const metadata: Metadata = { title: "Vendor" };
-
-/** True to collect_open/collect_receive (0008/0012): a link works only while unrevoked, unexpired and the vendor is active. */
-function linkStatus(l: VendorLink, archived: boolean) {
-  if (l.revoked_at) return "Turned off";
-  if (new Date(l.expires_at).getTime() < Date.now()) return "Expired";
-  return archived ? "Off while archived" : "Working";
-}
-
-// A non-breaking space keeps "1 KB" on one line at 390 wide (Design).
-const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))}\u00A0KB` : `${(bytes / 1024 / 1024).toFixed(1)}\u00A0MB`);
-
-/** What went wrong in a form posted from this page (see backToVendor in ../actions.ts). */
-const ERRORS: Record<string, string> = {
-  off: "This link was already off, so nobody can use it. There's nothing more to do.",
-};
 
 export default async function VendorPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const ctx = await requireWorkspace();
@@ -42,6 +29,7 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
   const archived = vendor.status === "archived";
   // The working link that lasts longest: what the vendor has in hand right now.
   const working = links.filter((l) => linkStatus(l, archived) === "Working").sort((a, b) => b.expires_at.localeCompare(a.expires_at)).at(0);
+  if (uiV2()) return <VendorV2 detail={detail} zone={zone} formError={formError} working={working} member={ctx.role === "member"} />;
 
   return (
     <div className="space-y-8">

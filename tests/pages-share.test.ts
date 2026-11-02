@@ -18,7 +18,7 @@ import SettingsPage from "@/app/app/settings/page";
 import { setAiProviderForTests } from "@/lib/server/ai";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
-import { setArchived } from "@/lib/server/documents";
+import { DOC_KINDS, setArchived } from "@/lib/server/documents";
 import { LINKS_BUSY, VENDORS_BUSY } from "@/lib/server/limits";
 import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
@@ -84,8 +84,8 @@ async function addDoc(ctx: Ctx, title: string, days: number | null = null): Prom
   return row.id;
 }
 
-/** The labels of the page's primary buttons and button-styled links (class "btn"): the one thing it asks of you. */
-const primary = (html: string) => [...html.matchAll(/<(a|button)\b[^>]*\bclass="btn"[^>]*>([\s\S]*?)<\/\1>/g)].map((m) => textOf(m[2]));
+/** The labels of the page's primary buttons and button-styled links (class "btn"; "btn press" in the redesigned app): the one thing it asks of you. */
+const primary = (html: string) => [...html.matchAll(/<(a|button)\b[^>]*\bclass="btn(?: press)?"[^>]*>([\s\S]*?)<\/\1>/g)].map((m) => textOf(m[2]));
 
 const none = () => ({ searchParams: Promise.resolve({}) });
 
@@ -297,11 +297,78 @@ describe("Passport", () => {
     expect(textOf(html)).toContain("Each time someone opens it, you'll see it under Your links.");
     expect(actionsOf(html).map((a) => a.label)).toEqual(["Copy link"]);
   });
+
+  describe("redesigned (SHIPSHAPE_UI=v2)", () => {
+    beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
+    /** The page's two sections, in the order they come. */
+    const sections = (html: string) => [...html.matchAll(/<h2 id="(links|new-link)-title"/g)].map((m) => m[1]);
+    /** Your links' rows, in order. */
+    const linkRows = (html: string) => {
+      const list = html.slice(html.indexOf('id="links-title"'));
+      return [...list.slice(0, list.indexOf("</ul>")).matchAll(/<span class="block truncate font-medium">([^<]*)</g)].map((m) => m[1]);
+    };
+
+    it("one column: with no links the form comes first and what Your links will hold under it; once there are links they lead, working ones on top", async () => {
+      const ctx = await signIn("passport-v2-order@example.com");
+      const doc = await addDoc(ctx, "Liability certificate");
+      const empty = await renderPage(PassportPage, none());
+      expect(sections(empty)).toEqual(["new-link", "links"]);
+      expect(textOf(empty)).toContain("No links yet. Each link you make shows here with who it's for, how often it was opened and the day it stops working");
+
+      // Free keeps one link open at a time: the ended one is made (and ended) first, then the working one, made older.
+      const ended = await createPassport(ctx, { label: "Newer but ended", days: 7, documentIds: [doc] });
+      await db.root((tx) => tx.query("update app.share_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 day' where id = $1", [ended.id]));
+      const working = await createPassport(ctx, { label: "Working one", days: 30, documentIds: [doc] });
+      await db.root((tx) => tx.query("update app.share_links set created_at = now() - interval '10 days' where id = $1", [working.id]));
+      const html = await renderPage(PassportPage, none());
+      expect(sections(html)).toEqual(["links", "new-link"]);
+      // Newest first is the list's own order; a working link still comes before an ended newer one.
+      expect(linkRows(html)).toEqual(["Working one", "Newer but ended"]);
+      expect(textOf(html)).not.toContain("No links yet");
+    });
+
+    it("the form sends the same fields to the same action: who it's for, one box per document, and 7/30/90 days with the end day under them", async () => {
+      const ctx = await signIn("passport-v2-form@example.com");
+      await addDoc(ctx, "Liability certificate");
+      await addDoc(ctx, "Contractor license");
+      const html = await renderPage(PassportPage, none());
+      expect(html).toMatch(/<input id="label" required="" maxLength="120"[^>]*class="row-field" name="label"/);
+      const inputs = (type: string) => [...html.matchAll(new RegExp(`<input type="${type}"[^>]*>`, "g"))].map((m) => m[0]);
+      expect(inputs("checkbox").filter((i) => i.includes('name="doc"'))).toHaveLength(2);
+      const days = inputs("radio").filter((i) => i.includes('name="days"'));
+      expect(days.map((i) => /value="(\d+)"/.exec(i)?.[1])).toEqual(["7", "30", "90"]);
+      expect(days.filter((i) => i.includes('checked=""')).map((i) => /value="(\d+)"/.exec(i)?.[1])).toEqual(["30"]);
+      expect(textOf(html)).toContain(`7 days 30 days 90 days Stops working on ${fmtDay(plusDays(todayIn("UTC"), 30))}. You can turn it off sooner.`);
+      expect(textOf(html)).toContain("Who can open it Anyone who has the link can view and download the documents you tick");
+      expect([...html.matchAll(/<button class="btn press"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["Make the link"]);
+    });
+
+    it("a link's page keeps every fact: until when it works, its documents (each opening its page), who opened it, and Turn off at the foot", async () => {
+      const ctx = await signIn("passport-v2-link@example.com");
+      const doc = await addDoc(ctx, "Liability certificate");
+      const { id } = await createPassport(ctx, { label: "Northwind Builders", days: 7, documentIds: [doc] });
+      const html = await renderPage(PassportDetail, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
+      const text = textOf(html);
+      expect(text).toMatch(/Works until .* The link itself was shown once when you made it\./);
+      expect(text).toContain("Documents on this link Liability certificate Insurance certificate");
+      expect(actionsOf(html).find((a) => a.label.startsWith("Liability certificate"))?.href).toBe(`/app/documents/${doc}`);
+      expect(text).toContain("When it was opened Nobody has opened this link yet.");
+      expect(actionsOf(html).at(-3)?.label).toBe("Turn off this link");
+    });
+  });
 });
 
-describe("Collect", () => {
+// Every state and word holds in both looks: the redesigned pages are the same pages, re-laid.
+describe.each([
+  ["current", ""],
+  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+])("Collect, %s", (_look, ui) => {
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
+  /** A sign-in address of this look's own: each test makes a new person. */
+  const mail = (name: string) => `${ui || "now"}-${name}@example.com`;
+
   it("with no vendors: a ghosted example vendor, and a button to the form's first field", async () => {
-    await signIn("collect-empty@example.com");
+    await signIn(mail("collect-empty"));
     const html = await renderPage(CollectPage, {});
     expect(textOf(html)).toContain("No vendors yet Each vendor you add shows here with what you asked them for and where it stands.");
     const example = /<div aria-hidden="true"[^>]*>([\s\S]*?)<\/ul><\/div>/.exec(html)?.[1] ?? "";
@@ -313,7 +380,7 @@ describe("Collect", () => {
   });
 
   it("with only archived vendors: the empty state says 'active', and the button doesn't call the next one the first (W10-11)", async () => {
-    const ctx = await signIn("collect-only-archived@example.com");
+    const ctx = await signIn(mail("collect-only-archived"));
     const vendorId = await addVendor(ctx, { name: "Old Supplier", email: "", requested: ["w9"] });
     await db.root((tx) => tx.query("update app.vendors set status = 'archived' where id = $1", [vendorId]));
     const html = await renderPage(CollectPage, {});
@@ -325,16 +392,20 @@ describe("Collect", () => {
   });
 
   it("a vendor without files or a link: says to make a link and send it", async () => {
-    const ctx = await signIn("collect-nolink@example.com");
+    const ctx = await signIn(mail("collect-nolink"));
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
     const html = await renderPage(VendorPage, { params: Promise.resolve({ id: vendorId }), searchParams: Promise.resolve({}) });
     expect(textOf(html)).toContain("Nothing received yet Make an upload link under Ask for the files and send it to Rivera Electric.");
     expect(textOf(html)).toContain("Links you make show here with the day they stop working.");
     expect(primary(html)).toEqual(["Make an upload link"]);
+    // 7, 30 or 90 days; 30 unless another is picked.
+    const days = [...html.matchAll(/<input type="radio"[^>]*name="days"[^>]*>/g)].map((m) => ({ value: /value="(\d+)"/.exec(m[0])?.[1], on: m[0].includes('checked=""') }));
+    expect(days.map((d) => d.value)).toEqual(["7", "30", "90"]);
+    expect(days.filter((d) => d.on).map((d) => d.value)).toEqual(["30"]);
   });
 
   it("a vendor with a working link and no files yet: says it's waiting and until when", async () => {
-    const ctx = await signIn("collect-waiting@example.com");
+    const ctx = await signIn(mail("collect-waiting"));
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
     const { id } = await createVendorLink(ctx, { vendorId, days: 7 });
     await db.root((tx) => tx.query("update app.vendor_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
@@ -347,14 +418,14 @@ describe("Collect", () => {
   });
 
   it("turning off an upload link that was already off says there's nothing more to do", async () => {
-    const ctx = await signIn("collect-off@example.com");
+    const ctx = await signIn(mail("collect-off"));
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
     const html = await renderPage(VendorPage, { params: Promise.resolve({ id: vendorId }), searchParams: Promise.resolve({ error: "off" }) });
     expect(textOf(html)).toContain("This link was already off, so nobody can use it. There's nothing more to do.");
   });
 
   it("an archived vendor says how to ask for files again", async () => {
-    const ctx = await signIn("collect-archived@example.com");
+    const ctx = await signIn(mail("collect-archived"));
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
     await db.root((tx) => tx.query("update app.vendors set status = 'archived' where id = $1", [vendorId]));
     const html = await renderPage(VendorPage, { params: Promise.resolve({ id: vendorId }), searchParams: Promise.resolve({}) });
@@ -364,7 +435,7 @@ describe("Collect", () => {
   });
 
   it("an archived vendor's unexpired link reads 'Off while archived' with no Turn off; restored, it's Working again (W10-1)", async () => {
-    const ctx = await signIn("collect-archived-link@example.com");
+    const ctx = await signIn(mail("collect-archived-link"));
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
     await createVendorLink(ctx, { vendorId, days: 7 });
     await db.root((tx) => tx.query("update app.vendors set status = 'archived' where id = $1", [vendorId]));
@@ -380,17 +451,51 @@ describe("Collect", () => {
   });
 
   it("a made upload link ends calmly: for whom, how long, what happens next, and only Copy link", async () => {
-    const html = await renderPage(VendorLinkReady, { vendorName: "Rivera Electric", days: 30, url: "https://example.test/c/x#y" });
+    const html = await renderPage(VendorLinkReady, { vendorName: "Rivera Electric", days: 30, url: "https://example.test/c/x#y", v2: ui === "v2" });
     expect(textOf(html)).toContain("Upload link for Rivera Electric is ready It works for 30 days.");
     expect(textOf(html)).toContain("The files they send land under Files received.");
     expect(actionsOf(html).map((a) => a.label)).toEqual(["Copy link"]);
   });
 });
 
+describe("Collect, redesigned only", () => {
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
+
+  it("the four counts as tiles, each vendor a row with its chips, then Add a vendor as field rows sending the same fields", async () => {
+    // The sample's vendors: Summit all current; Rivera with a certificate expiring and its license not in; Bayside missing its
+    // W-9 with a lapsed certificate. Plus one with nothing in. One vendor can count under two states.
+    const userId = await createLocalUser(null, true);
+    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    await finishSignIn(userId, { demo: true });
+    await addVendor(await requireWorkspace(), { name: "Ace Electric", email: "", requested: ["w9"] });
+    const html = await renderPage(CollectPage, {});
+    const text = textOf(html);
+
+    const tiles = [...html.matchAll(/<div class="tile gap-1"><dt[^>]*>([^<]*)<\/dt><dd[^>]*><span[^>]*>(\d+)<\/span>/g)].map((m) => `${m[1]}: ${m[2]}`);
+    expect(tiles).toEqual(["All current: 1", "Expiring within 30 days: 1", "Missing something: 3", "Something lapsed: 1"]);
+    expect(text).toContain("Sample workspace: these vendors are made up");
+    expect(text).toMatch(/Bayside Drywall \(sample\) \d+ open links? ○ W-9: missing ! Insurance certificate: expired/);
+    expect(text).toContain("Ace Electric 0 open links ○ W-9: missing");
+    // Counts, then the vendors, then the form.
+    expect(text.indexOf("Something lapsed")).toBeLessThan(text.indexOf("Ace Electric"));
+    expect(text.indexOf("Ace Electric")).toBeLessThan(text.indexOf("Add a vendor Vendor or subcontractor"));
+
+    expect(html).toMatch(/<input id="vendor-name" required="" maxLength="120"[^>]*class="row-field" name="name"/);
+    expect(html).toMatch(/<input id="vendor-email" type="email"[^>]*aria-describedby="vendor-email-note"[^>]*name="email"/);
+    expect(text).toContain("Email is optional, only for you; ShipShape doesn't email vendors.");
+    // One box per kind of document; W-9 and insurance are ticked to start with, as on the current form.
+    const kinds = [...html.matchAll(/<input type="checkbox"[^>]*name="kind"[^>]*>/g)].map((m) => ({ value: /value="(\w+)"/.exec(m[0])?.[1], on: m[0].includes('checked=""') }));
+    expect(kinds.map((k) => k.value)).toEqual(Object.keys(DOC_KINDS));
+    expect(kinds.filter((k) => k.on).map((k) => k.value)).toEqual(Object.keys(DOC_KINDS).filter((k) => k === "w9" || k === "coi"));
+    expect(primary(html)).toEqual(["Add vendor"]);
+  });
+});
+
 describe("Deadlines", () => {
   it("with no dates: shows what will appear and one verb button, and on Free doesn't promise reminders ShipShape won't send", async () => {
     await signIn("deadlines-empty@example.com");
-    const html = await renderPage(DeadlinesPage, {});
+    const html = await renderPage(DeadlinesPage, none());
     expect(textOf(html)).toContain("No dates yet Expiry and renewal dates from your certificates, licenses and agreements show here, soonest first");
     expect(primary(html)).toEqual(["Add an expiry date"]);
     expect(textOf(html)).toContain("Add these dates to your calendar and set reminders there for 30 and 7 days before.");
@@ -401,7 +506,7 @@ describe("Deadlines", () => {
   it("with a document but no dates: the action goes to that document's expiry field, by name", async () => {
     const ctx = await signIn("deadlines-nodates@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
-    const html = await renderPage(DeadlinesPage, {});
+    const html = await renderPage(DeadlinesPage, none());
     expect(primary(html)).toEqual(["Add an expiry date to Liability certificate"]);
     expect(actionsOf(html).find((a) => a.label === "Add an expiry date to Liability certificate")?.href).toBe(`/app/documents/${doc}#expires_on`);
   });
@@ -409,7 +514,7 @@ describe("Deadlines", () => {
   it("with nothing in the next 90 days: says so calmly, with the reminder that's really coming", async () => {
     const ctx = await signIn("deadlines-quiet@example.com");
     await addDoc(ctx, "Liability certificate", 120);
-    const html = await renderPage(DeadlinesPage, {});
+    const html = await renderPage(DeadlinesPage, none());
     expect(textOf(html)).toContain("Nothing expires in the next 90 days. Add these dates to your calendar and set reminders there for 30 and 7 days before.");
     expect(primary(html)).toEqual([]);
   });
@@ -417,7 +522,7 @@ describe("Deadlines", () => {
   it("with something due within 90 days: no all-clear", async () => {
     const ctx = await signIn("deadlines-due@example.com");
     await addDoc(ctx, "Liability certificate", 60);
-    const html = await renderPage(DeadlinesPage, {});
+    const html = await renderPage(DeadlinesPage, none());
     expect(textOf(html)).not.toContain("Nothing expires in the next 90 days");
   });
 
@@ -427,9 +532,9 @@ describe("Deadlines", () => {
       tx.query("insert into app.outbox (org_id, to_email, subject, body, created_at) values ($1, 'me@example.com', 'Liability certificate expires in 7 days', 'x', '2026-11-01 03:30:00+00')", [ctx.orgId]),
     );
     jar.set("ss_tz", "America/Los_Angeles");
-    expect(textOf(await renderPage(DeadlinesPage, {}))).toContain("Liability certificate expires in 7 days Oct 31, 2026, 8:30 PM PDT");
+    expect(textOf(await renderPage(DeadlinesPage, none()))).toContain("Liability certificate expires in 7 days Oct 31, 2026, 8:30 PM PDT");
     jar.delete("ss_tz");
-    expect(textOf(await renderPage(DeadlinesPage, {}))).toContain("Liability certificate expires in 7 days Nov 1, 2026, 3:30 AM UTC");
+    expect(textOf(await renderPage(DeadlinesPage, none()))).toContain("Liability certificate expires in 7 days Nov 1, 2026, 3:30 AM UTC");
   });
 
   it("on Pro (the sample workspace): says ShipShape sends the reminders", async () => {
@@ -438,7 +543,7 @@ describe("Deadlines", () => {
     const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
     await finishSignIn(userId, { demo: true });
-    const html = await renderPage(DeadlinesPage, {});
+    const html = await renderPage(DeadlinesPage, none());
     expect(textOf(html)).toContain("ShipShape reminds owners and admins 90, 30 and 7 days before");
     // The sample workspace shows its signing codes too (0039).
     expect(textOf(html)).toContain("During the preview ShipShape doesn't send email; reminders and signing codes land here instead.");
@@ -449,18 +554,103 @@ describe("Deadlines", () => {
     await db.root((tx) =>
       tx.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, 'deadlines-team-owner@example.com', 'Liability certificate expires in 7 days', 'x')", [owner.orgId]),
     );
-    const ownerText = textOf(await renderPage(DeadlinesPage, {}));
+    const ownerText = textOf(await renderPage(DeadlinesPage, none()));
     expect(ownerText).toContain("During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown.");
     expect(ownerText).toContain("Liability certificate expires in 7 days");
 
     const member = await createLocalUser("deadlines-team-member@example.com", false);
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [owner.orgId, member]));
     await finishSignIn(member, { demo: false });
-    const memberText = textOf(await renderPage(DeadlinesPage, {}));
+    const memberText = textOf(await renderPage(DeadlinesPage, none()));
     expect(memberText).toContain("Reminders sent Reminders go to owners and admins, and only they can see what was sent.");
     expect(memberText).not.toContain("Liability certificate expires in 7 days");
     expect(memberText).not.toContain("During the preview");
     expect(memberText).not.toContain("Nothing here");
+  });
+
+  describe("redesigned (SHIPSHAPE_UI=v2)", () => {
+    beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
+    /** A permit with an expiry and a renewal date, each that many days from the page's own today (null: none). */
+    const dated = (ctx: Ctx, title: string, expires: number | null, renews: number | null = null) =>
+      db.root((tx) =>
+        tx.query("insert into app.documents (org_id, title, kind, expires_on, renews_on) values ($1, $2, 'permit', $3::date + $4::int, $3::date + $5::int)", [
+          ctx.orgId,
+          title,
+          ctx.today,
+          expires,
+          renews,
+        ]),
+      );
+    /** The dated rows, in order: "<title> expires|renewal notice". */
+    const rows = (html: string) =>
+      [...html.matchAll(/<li [^>]*>([\s\S]*?)<\/li>/g)]
+        .map((m) => textOf(m[1]))
+        .filter((t) => t.includes("Permit ·"))
+        .map((t) => /^(.*?) Permit · (expires|renewal notice)/.exec(t)?.slice(1).join(" "));
+    /** The count a group's heading gives. */
+    const count = (html: string, title: string) => new RegExp(`<h2[^>]*>${title}<span[^>]*>(\\d+)</span>`).exec(html)?.[1];
+    const page = (soon?: string) => renderPage(DeadlinesPage, { searchParams: Promise.resolve(soon ? { soon } : {}) });
+
+    it("?soon=1 (Home's See all) keeps exactly the dates that put a document on Home: lapsed expiries and anything due within 30 days", async () => {
+      const ctx = await signIn("deadlines-v2-soon@example.com");
+      await dated(ctx, "Lapsed expiry", -5);
+      await dated(ctx, "Due expiry", 30);
+      await dated(ctx, "Later expiry", 31);
+      await dated(ctx, "Renewal today", null, 0);
+      await dated(ctx, "Renewal due", null, 30);
+      await dated(ctx, "Renewal passed", null, -1);
+      await dated(ctx, "Renewal far", null, 31);
+
+      const soon = await page("1");
+      expect(rows(soon)).toEqual(["Lapsed expiry expires", "Renewal today renewal notice", "Due expiry expires", "Renewal due renewal notice"]);
+      expect([count(soon, "Lapsed"), count(soon, "Next 30 days"), count(soon, "Later")]).toEqual(["1", "3", undefined]);
+      expect(textOf(soon)).toContain("Showing what needs attention: what has lapsed and what's due in the next 30 days. Show every date");
+      expect(actionsOf(soon).find((a) => a.label === "Show every date")?.href).toBe("/app/deadlines");
+
+      const every = await page();
+      expect(rows(every)).toEqual([
+        "Lapsed expiry expires",
+        "Renewal passed renewal notice",
+        "Renewal today renewal notice",
+        "Due expiry expires",
+        "Renewal due renewal notice",
+        "Later expiry expires",
+        "Renewal far renewal notice",
+      ]);
+      expect([count(every, "Lapsed"), count(every, "Next 30 days"), count(every, "Later")]).toEqual(["2", "3", "2"]);
+      expect(textOf(every)).not.toContain("Show every date");
+    });
+
+    it("?soon=1 with nothing due says so and keeps the way back; the calendar stays the one primary", async () => {
+      const ctx = await signIn("deadlines-v2-calm@example.com");
+      await dated(ctx, "Later expiry", 120);
+      const html = await page("1");
+      expect(rows(html)).toEqual([]);
+      expect(textOf(html)).toContain("Nothing has lapsed or is due in the next 30 days. Show every date");
+      // The all-clear belongs to the whole list, not the filtered one.
+      expect(textOf(html)).not.toContain("Nothing expires in the next 90 days");
+      expect(actionsOf(html).find((a) => a.label === "Add to my calendar")).toEqual({ tag: "a", label: "Add to my calendar", href: "/app/deadlines/calendar.ics" });
+    });
+
+    it("each reminder sent opens in place: subject, to and when in the row, the email behind Show the email, closed at first", async () => {
+      const ctx = await signIn("deadlines-v2-sent@example.com");
+      await db.root((tx) =>
+        tx.query("insert into app.outbox (org_id, to_email, subject, body, created_at) values ($1, 'me@example.com', 'Liability certificate expires in 7 days', 'Renew it.', '2026-11-01 03:30:00+00')", [ctx.orgId]),
+      );
+      const html = await page();
+      const sent = /<details\b([^>]*)>([\s\S]*?)<\/details>/.exec(html);
+      expect(sent?.[1]).not.toContain("open");
+      expect(textOf(sent?.[2] ?? "")).toBe("Liability certificate expires in 7 days To me@example.com · Nov 1, 2026, 3:30 AM UTC Show the email Hide the email Renew it.");
+    });
+
+    it("is off unless SHIPSHAPE_UI is v2: ?soon=1 changes nothing on the current page", async () => {
+      vi.stubEnv("SHIPSHAPE_UI", "");
+      const ctx = await signIn("deadlines-v2-off@example.com");
+      await dated(ctx, "Later expiry", 31);
+      const html = await page("1");
+      expect(textOf(html)).toContain("Later expiry");
+      expect(html).not.toContain("<details");
+    });
   });
 });
 
@@ -487,7 +677,16 @@ describe("What are they asking for?", () => {
   });
 });
 
-describe("Settings", () => {
+// As Collect: every state and word holds in both looks.
+describe.each([
+  ["current", ""],
+  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+])("Settings, %s", (_look, ui) => {
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
+  /** A sign-in address of this look's own: each test makes a new person. */
+  const mail = (name: string) => `${ui || "now"}-${name}@example.com`;
+  // Two-step sign-in's status: a line today, a row (the method, then On) in the redesigned app.
+  const mfaOn = ui ? "Authenticator app On" : "On · authenticator app";
   const settings = (error?: string) => renderPage(SettingsPage, { searchParams: Promise.resolve(error ? { error } : {}) });
   const afterCheckout = () => renderPage(SettingsPage, { searchParams: Promise.resolve({ billing: "success" }) });
   const bill = (ctx: Ctx, status: string) =>
@@ -502,14 +701,14 @@ describe("Settings", () => {
     );
 
   it("back from checkout before Stripe confirms: says what's happening, with one way to check again", async () => {
-    await signIn("settings-pending@example.com");
+    await signIn(mail("settings-pending"));
     const html = await afterCheckout();
     expect(textOf(html)).toContain("Thanks. Pro switches on as soon as Stripe confirms the payment, usually within seconds. Check again");
     expect(actionsOf(html).find((a) => a.label === "Check again")?.href).toBe("/app/settings?billing=success");
   });
 
   it("says up front which actions need a recent sign-in and how recent, and that a W-9 carries the full EIN (W14-1)", async () => {
-    await signIn("settings-rule@example.com");
+    await signIn(mail("settings-rule"));
     const html = await settings();
     expect(textOf(html)).toContain(
       `Showing your full EIN in Business facts, exporting and deleting need a sign-in from the last ${RECENT_AUTH_SECONDS / 60} minutes; otherwise ShipShape asks you to sign in again first. A W-9 you made carries the full number, as the IRS form requires, so anyone in this workspace who opens it can read it.`,
@@ -518,19 +717,19 @@ describe("Settings", () => {
   });
 
   it("shows two-step sign-in as On with an authenticator app for an account that signs in through Cognito; a local account is told it has no second step", async () => {
-    const ctx = await signIn("settings-mfa@example.com");
+    const ctx = await signIn(mail("settings-mfa"));
     const local = textOf(await settings());
     expect(local).toContain("Two-step sign-in This is a local sign-in without a second step; accounts on ShipShape itself sign in with a password and an authenticator app.");
-    expect(local).not.toContain("On · authenticator app");
+    expect(local).not.toContain(mfaOn);
 
     await db.root((tx) => tx.query("insert into app.identities (provider, subject, user_id) values ('cognito', gen_random_uuid()::text, $1)", [ctx.userId]));
     const cognito = textOf(await settings());
-    expect(cognito).toContain("Two-step sign-in On · authenticator app Every ShipShape account signs in with a password and a 6-digit code from an authenticator app. There's no way to turn it off.");
+    expect(cognito).toContain(`Two-step sign-in ${mfaOn} Every ShipShape account signs in with a password and a 6-digit code from an authenticator app. There's no way to turn it off.`);
     expect(cognito).not.toContain("Turn on");
   });
 
   it("back from checkout once Stripe confirmed: says it's done and what changed, nothing else", async () => {
-    const ctx = await signIn("settings-pro@example.com");
+    const ctx = await signIn(mail("settings-pro"));
     await bill(ctx, "active");
     const html = await afterCheckout();
     expect(textOf(html)).toContain("You're on Pro now. The limits are gone and reminders are on; they land under Deadlines.");
@@ -538,7 +737,7 @@ describe("Settings", () => {
   });
 
   it("a failed payment: what it means, how long Pro lasts, and the one fix: the card while payments are on, writing to us while they're off (W9-4)", async () => {
-    const ctx = await signIn("settings-pastdue@example.com");
+    const ctx = await signIn(mail("settings-pastdue"));
     await bill(ctx, "past_due");
     vi.stubEnv("CONTACT_EMAIL", "help@shipshape.example");
     const off = await settings();
@@ -558,7 +757,7 @@ describe("Settings", () => {
   });
 
   it("export needing a fresh sign-in: one line, and Sign in again in place of the download", async () => {
-    await signIn("settings-reauth@example.com");
+    await signIn(mail("settings-reauth"));
     const html = await settings("reauth");
     expect(textOf(html)).toContain("For your security, sign in again before you export.");
     const labels = actionsOf(html).map((a) => a.label);
@@ -568,14 +767,14 @@ describe("Settings", () => {
   });
 
   it("export by someone who can't: says who can, and offers no download", async () => {
-    await signIn("settings-role@example.com");
+    await signIn(mail("settings-role"));
     const html = await settings("role");
     expect(textOf(html)).toContain("Only owners and admins can export this workspace. Ask one of them for the file.");
     expect(actionsOf(html).map((a) => a.label)).not.toContain("Download the export");
   });
 
   it("export too large: says how large, and the one way forward (write to us when there's an address)", async () => {
-    await signIn("settings-size@example.com");
+    await signIn(mail("settings-size"));
     const without = await settings("size");
     expect(textOf(without)).toContain("This workspace is over 200 MB, too large to export in one file. Download what you need from each document's page.");
     expect(actionsOf(without).find((a) => a.label === "Open your documents")?.href).toBe("/app/documents");
@@ -589,7 +788,7 @@ describe("Settings", () => {
   });
 
   it("no error: the download, and the delete step names the workspace it deletes", async () => {
-    const ctx = await signIn("settings-plain@example.com");
+    const ctx = await signIn(mail("settings-plain"));
     const html = await settings();
     expect(actionsOf(html).map((a) => a.label)).toContain("Download the export");
     expect(textOf(html)).toContain(`Deleted with everything in it ${ctx.name}`);
@@ -597,7 +796,7 @@ describe("Settings", () => {
   });
 
   it("while real documents are closed, the workspace name is read-only with a notice, and Save name is refused with a message, not a crash (W9-1)", async () => {
-    const ctx = await signIn("settings-gate@example.com");
+    const ctx = await signIn(mail("settings-gate"));
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
     const html = await settings();
     expect(actionsOf(html).map((a) => a.label)).not.toContain("Save name");
@@ -612,7 +811,7 @@ describe("Settings", () => {
   });
 
   it("the export card lists what the ZIP holds, and Sign out everywhere no longer promises a password change (W9-11, W9-13)", async () => {
-    await signIn("settings-export-list@example.com");
+    await signIn(mail("settings-export-list"));
     const text = textOf(await settings());
     expect(text).toContain(
       "One ZIP file with: every version of every document, with its details and fingerprint your business facts (the tax ID only as its last 4 digits; a W-9 you made holds the full number) your vendors and the files they sent your passport links, with when they were opened and what was downloaded your signature requests the browsers you've signed in on and the agreements you've accepted the workspace history",
@@ -636,9 +835,9 @@ describe("Settings", () => {
     };
 
     it("lists this person's live sessions: this browser marked, the others with when they were last active, and one Sign out each", async () => {
-      const someoneElse = await signIn("settings-sessions-other@example.com");
+      const someoneElse = await signIn(mail("settings-sessions-other"));
       await otherBrowser(someoneElse.userId, "Edge on Android", "1 hour");
-      const ctx = await signIn("settings-sessions@example.com");
+      const ctx = await signIn(mail("settings-sessions"));
       await db.root((tx) => tx.query("update app.sessions set ua_family = 'Safari on a Mac' where id = $1", [ctx.sessionId]));
       const phone = await otherBrowser(ctx.userId, "Chrome on an iPhone", "2 days 3 hours");
       const tablet = await otherBrowser(ctx.userId, "Safari on an iPad", "3 hours 20 minutes");
@@ -666,9 +865,9 @@ describe("Settings", () => {
     });
 
     it("Sign out on a row ends that browser and leaves this one; on this browser's own row it signs out here", async () => {
-      const someoneElse = await signIn("settings-sessions-signout-other@example.com");
+      const someoneElse = await signIn(mail("settings-sessions-signout-other"));
       const theirs = await otherBrowser(someoneElse.userId, "Edge on Android", "1 hour");
-      const ctx = await signIn("settings-sessions-signout@example.com");
+      const ctx = await signIn(mail("settings-sessions-signout"));
       const phone = await otherBrowser(ctx.userId, "Chrome on an iPhone", "1 day");
 
       await signOutSession(form({ id: phone }));
