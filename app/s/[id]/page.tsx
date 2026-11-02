@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
+import { ViewTransition } from "react";
 import { cookies, headers } from "next/headers";
 import { DownloadBusy, LinkBusy, LinkUnavailable } from "@/app/link-states";
 import { NamedByWorkspace } from "@/components/app-ui";
 import { DropFragment, FragmentOpener } from "@/components/fragment-opener";
 import { ESIGN_CONSENT_TEXT } from "@/lib/consent";
 import { openSigning, SIGN_COOKIE } from "@/lib/server/esign";
-import { contactEmail } from "@/lib/server/flags";
+import { contactEmail, uiV2 } from "@/lib/server/flags";
 import { clientIp, linkRateLimited } from "@/lib/server/http";
 import { linkEnd } from "@/lib/server/links";
 import { viewerZone } from "@/lib/server/session";
 import { dayOf, timeOf } from "@/lib/today";
 import { SignForm } from "./sign-form";
+import { SignedV2 } from "./signed-v2";
 
 export const metadata: Metadata = { title: "Sign a document", robots: { index: false, follow: false } };
 
@@ -23,12 +25,27 @@ export default async function SigningPage({ params, searchParams }: { params: Pr
   const busy = token ? await linkRateLimited("sign-view", clientIp(await headers()), id, 60, 600) : false;
   const view = token && !busy ? await openSigning(id, token) : null;
   const end = token && !busy && !view ? await linkEnd("s", id, token) : null;
+  const lawLine = (
+    <p className="text-xs text-ink-3">
+      ShipShape is document software, not a law firm. It records how this document was signed and doesn&apos;t vouch for what it says.
+    </p>
+  );
+  const v2 = uiV2();
 
   return (
     <main id="main" className="mx-auto min-h-screen max-w-2xl px-5 py-12 sm:py-16">
       <p className="eyebrow mb-6">ShipShape signature request</p>
       {token && <DropFragment />}
-      {view ? (
+      {view && v2 && view.status === "signed" ? (
+        // The redesigned done page: the stamp moment (signed-v2.tsx). Signing in this tab swaps the page below for it.
+        <div className="space-y-6">
+          {r === "busy" && <DownloadBusy />}
+          <SignedV2 id={id} view={view} zone={zone} contact={contactEmail()} />
+          {lawLine}
+        </div>
+      ) : view ? (
+        // Redesigned, the page to sign leaves (150ms fade, app/motion.css `.v2-page`) as the stamp arrives in its place.
+        <Leaves on={v2}>
         <div className="space-y-6">
           {r === "busy" && <DownloadBusy />}
           <header className="space-y-2">
@@ -81,10 +98,9 @@ export default async function SigningPage({ params, searchParams }: { params: Pr
               </section>
             </>
           )}
-          <p className="text-xs text-ink-3">
-            ShipShape is document software, not a law firm. It records how this document was signed and doesn&apos;t vouch for what it says.
-          </p>
+          {lawLine}
         </div>
+        </Leaves>
       ) : busy ? (
         <LinkBusy href={`/s/${id}`} />
       ) : token ? (
@@ -97,5 +113,15 @@ export default async function SigningPage({ params, searchParams }: { params: Pr
         />
       )}
     </main>
+  );
+}
+
+/** Off, today's page exactly as it was; on, a boundary that fades the page to sign out when signing replaces it. */
+function Leaves({ on, children }: { on: boolean; children: React.ReactNode }) {
+  if (!on) return children;
+  return (
+    <ViewTransition exit="v2-page" default="none">
+      {children}
+    </ViewTransition>
   );
 }

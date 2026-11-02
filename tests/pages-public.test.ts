@@ -30,7 +30,7 @@ import { createPassport, revokePassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
-import { fmtDay, isoToday, timeOf, todayIn } from "@/lib/today";
+import { dayOf, fmtDay, isoToday, timeOf, todayIn } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { fillBucket } from "./support/rate";
 import { actionsOf, renderPage, textOf } from "./support/render";
@@ -403,6 +403,55 @@ describe("a signing link (/s)", () => {
     expect(said(await signingPage(id))).toContain("You can sign until Nov 7, 2026.");
     jar.set("ss_tz", "Asia/Tokyo");
     expect(said(await signingPage(id))).toContain("You can sign until Nov 8, 2026.");
+  });
+
+  describe("redesigned (SHIPSHAPE_UI=v2)", () => {
+    beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
+    /** Signs the sample NDA's request with `typedName`; the request itself names Jordan Lee. */
+    const signAs = async (typedName: string) => {
+      const { id, token } = await request();
+      expect(await sendSigningCode(id, token)).toBe("ok");
+      const [m] = await db.root((tx) => tx.query<{ body: string }>("select body from app.outbox where org_id = $1 order by created_at desc limit 1", [sample.orgId]));
+      const code = /\b(\d{6})\b/.exec(m.body)?.[1] ?? "";
+      expect(await completeSigning(id, token, { code, typedName, consented: true, ip: visitor.ip })).toBe("ok");
+      jar.set("ss_sign", token);
+      const [row] = await db.root((tx) =>
+        tx.query<{ at: string; until: string }>("select signed_at::text as at, expires_at::text as until from app.signature_requests where id = $1", [id]),
+      );
+      return { id, ...row };
+    };
+
+    it("once signed, the stamp moment: Signed, the document, the name as typed on its rule, when and how, what happens next, one download", async () => {
+      jar.set("ss_tz", "America/Los_Angeles");
+      const nda = (await listDocuments(sample)).find((d) => d.kind === "nda");
+      const { id, at, until } = await signAs("J. Lee");
+      const html = await signingPage(id);
+      expect(said(html)).toContain(
+        `Signed ${nda?.title} Signed as J. Lee Signed ${timeOf(at, "America/Los_Angeles")} · code confirmed What happens next ` +
+          "Harbor Plumbing (sample) sees it's signed. They have the same signed copy, saved to their documents in ShipShape. " +
+          "A certificate page is added to the signed copy. It records the name you typed, when you signed, that a code sent to your email confirmed it, and a fingerprint of your network connection (not your address). " +
+          `Download the signed copy This link works until ${dayOf(until, "America/Los_Angeles")}. The workspace chose this name; ShipShape doesn't verify business names.`,
+      );
+      // The stamp carries the day it was signed and is decoration: "Signed" says it.
+      expect(html).toMatch(new RegExp(`<svg class="stamp[^"]*"[^>]*aria-hidden="true"[^]*?SIGNED · ${dayOf(at, "America/Los_Angeles").toUpperCase()}</textPath>`));
+      expect(said(html)).not.toContain("Jordan Lee");
+      expect(actionsOf(html)).toEqual([{ tag: "a", label: "Download the signed copy", href: `/s/${id}/file` }]);
+    });
+
+    it("the page to sign sits in a transition boundary; off, today's page and done card, with none", async () => {
+      const { id, token } = await request();
+      jar.set("ss_sign", token);
+      // React's server markup marks the boundary but never its exit class (that runs in the browser, where the smoke checks the fade).
+      expect(await signingPage(id)).toMatch(/ vt-update="none"/);
+      vi.stubEnv("SHIPSHAPE_UI", "");
+      expect(await signingPage(id)).not.toMatch(/vt-/);
+      const done = await signAs("J. Lee");
+      vi.stubEnv("SHIPSHAPE_UI", "");
+      const html = await signingPage(done.id);
+      expect(said(html)).toContain("There's nothing else you need to do.");
+      expect(said(html)).not.toContain("What happens next");
+      expect(html).not.toMatch(/vt-|class="stamp/);
+    });
   });
 });
 

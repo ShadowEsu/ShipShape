@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { FormEvent } from "react";
 import { signProblem, type SignField } from "./messages";
+import { markJustSigned } from "./stamp";
 
 const FIELD_ID: Record<SignField, string> = { consent: "sign-consent", name: "typed-name", code: "code" };
 
@@ -44,6 +45,8 @@ export function SignForm({
   const [busy, setBusy] = useState<"code" | "sign" | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<SignError | null>(null);
+  // Signed: "Signing…" holds, and nothing can be pressed, until the page has become its signed state.
+  const [refreshing, startRefresh] = useTransition();
   // These buttons work only with JavaScript; until the page has hydrated, a click would do nothing.
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
@@ -89,9 +92,13 @@ export function SignForm({
   async function sign(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const answer = await post("sign", { code, typedName: name, consented });
-    if (answer?.result === "ok") router.refresh();
-    // The name stays as typed, so the person can see which character the message names and change only that.
-    else if (answer) setError(signProblem(answer.result, sender, answer.chars));
+    if (answer?.result === "ok") {
+      markJustSigned();
+      startRefresh(() => router.refresh());
+    } else if (answer) {
+      // The name stays as typed, so the person can see which character the message names and change only that.
+      setError(signProblem(answer.result, sender, answer.chars));
+    }
   }
 
   return (
@@ -106,7 +113,7 @@ export function SignForm({
       name={name}
       code={code}
       codeSent={codeSent}
-      busy={busy}
+      busy={refreshing ? "sign" : busy}
       sent={sent}
       error={error}
       onConsent={setConsented}

@@ -230,7 +230,7 @@ export function DocumentV2(p: {
           <h2 id="signatures-title" className="section-title">
             Signatures
           </h2>
-          {p.requests.length > 0 && <SignatureRequests docId={doc.id} requests={p.requests} zone={zone} now={p.now} />}
+          {p.requests.length > 0 && <SignatureRequests docId={doc.id} requests={p.requests} zone={zone} now={p.now} v2 />}
           {signable &&
             (p.esignOn ? (
               <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={p.demo} rows />

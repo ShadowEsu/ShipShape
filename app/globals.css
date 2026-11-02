@@ -234,6 +234,11 @@ body {
     line-height: 48px;
   }
 }
+/* The signer's "Signed" takes focus right after signing (app/s/[id]/stamp.tsx). It's a place, not a control, so no ring,
+   even after a keyboard Sign, which would draw one around the heading mid-moment (Design, 02 Nov). Tab goes on to Download. */
+.ui-v2 .stamp-title:focus-visible {
+  outline: none;
+}
 /* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text. */
 .ui-v2 .page-eyebrow {
   font-family: var(--sans);
