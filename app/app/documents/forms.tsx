@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { changed, DiscardDialog, useLeaveGuard } from "@/components/leave-guard";
 import { MAX_UPLOAD_BYTES, UPLOAD_TOO_BIG } from "@/lib/upload-limit";
 import { addDocument, addVersion, askToSign, saveDetails, type FormState, type SignFormState } from "./actions";
+import { size } from "./[id]/shared";
 
 const KINDS: [string, string][] = [
   ["w9", "W-9"],
@@ -83,26 +84,38 @@ function useFocusField(state: FieldState, id: string | undefined) {
 /**
  * The server's too-big refusal, given in the browser before the post: Next's action body limit and
  * Vercel's request cap answer a larger post with a bare 413 before the action runs, which would land
- * on the error page. Returns the state to show (the refusal, until the next result comes back) and
- * the submit handler that stops the post.
+ * on the error page. Returns the state to show, the submit handler that stops the post, and the form's
+ * change handler. Choosing another file clears an error about the file (the browser's refusal or the
+ * server's), which is about a file no longer chosen. Once the browser has refused, the server's last
+ * result stays answered until the next one comes back: bringing its error back would also pull focus
+ * off the file just chosen.
  */
-function useFileGate(state: FormState): [FormState, (e: FormEvent<HTMLFormElement>) => void] {
+function useFileGate(state: FormState): [FormState, (e: FormEvent<HTMLFormElement>) => void, (e: FormEvent<HTMLFormElement>) => void] {
   const [refusals, setRefusals] = useState(0);
+  const [picked, setPicked] = useState(false);
   const [seen, setSeen] = useState(state);
   // A new result from the server replaces the browser's refusal.
   if (seen !== state) {
     setSeen(state);
     setRefusals(0);
+    setPicked(false);
   }
-  const shown = useMemo(() => (refusals ? { error: UPLOAD_TOO_BIG, field: "file", values: state.values } : state), [refusals, state]);
+  const shown = useMemo(() => {
+    if (refusals && !picked) return { error: UPLOAD_TOO_BIG, field: "file", values: state.values };
+    return refusals || (picked && state.field === "file") ? { values: state.values } : state;
+  }, [refusals, picked, state]);
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     const file = e.currentTarget.elements.namedItem("file");
     if (file instanceof HTMLInputElement && (file.files?.[0]?.size ?? 0) > MAX_UPLOAD_BYTES) {
       e.preventDefault();
       setRefusals((n) => n + 1);
+      setPicked(false);
     }
   };
-  return [shown, onSubmit];
+  const onChange = (e: FormEvent<HTMLFormElement>) => {
+    if (e.target instanceof HTMLInputElement && e.target.type === "file") setPicked(true);
+  };
+  return [shown, onSubmit, onChange];
 }
 
 // Container queries: the same fields sit in the wide add form and the narrow document rail.
@@ -206,6 +219,63 @@ function FieldRow({ name, htmlFor, label, state, children }: { name: string; htm
   );
 }
 
+/**
+ * Runs `sync` once React has put a form back to its defaults (after each action it resets the form, which fires the
+ * form's `reset` event before the fields change, and no input event at all).
+ */
+function useAfterReset(field: RefObject<HTMLInputElement | null>, sync: (el: HTMLInputElement) => void) {
+  const latest = useRef(sync);
+  useEffect(() => {
+    latest.current = sync;
+  });
+  useEffect(() => {
+    const el = field.current;
+    const form = el?.form;
+    if (!el || !form) return;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onReset = () => {
+      t = setTimeout(() => latest.current(el), 0);
+    };
+    form.addEventListener("reset", onReset);
+    return () => {
+      form.removeEventListener("reset", onReset);
+      clearTimeout(t);
+    };
+  }, [field]);
+}
+
+/**
+ * A date row's field (Design 02 Nov): an empty date says "Add" like the other rows, where the browser would show
+ * mm/dd/yyyy. Native date input underneath, so typing and the picker are the browser's own; while it has focus the
+ * browser's segments show.
+ */
+function DateRowField({ name, defaultValue, state, className = "" }: { name: string; defaultValue: string; state: FieldState; className?: string }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [empty, setEmpty] = useState(defaultValue === "");
+  useAfterReset(input, (el) => setEmpty(el.value === ""));
+  // A refresh after another action can bring a new saved date with no reset; an untouched field takes it on.
+  useEffect(() => {
+    if (input.current) setEmpty(input.current.value === "");
+  }, [defaultValue]);
+  return (
+    <span className="date-row" data-empty={empty || undefined}>
+      <input
+        ref={input}
+        id={name}
+        name={name}
+        type="date"
+        defaultValue={defaultValue}
+        onChange={(e) => setEmpty(e.currentTarget.value === "")}
+        className={`row-field ${className}`.trim()}
+        {...invalid(state, name)}
+      />
+      <span aria-hidden="true" className="date-add">
+        Add
+      </span>
+    </span>
+  );
+}
+
 /** Who issues a document of each kind, as the Issued by field's hint (Design): none where nobody obvious does. */
 const ISSUER_HINT: Record<string, string> = {
   nda: "The other company",
@@ -214,6 +284,44 @@ const ISSUER_HINT: Record<string, string> = {
   permit: "Agency or city",
   license: "Agency or city",
 };
+
+/** A document's details as grouped-list rows (the redesigned document page and Add a document). `kind`: the one chosen in the form, for the Issued by hint. */
+function DetailRows({ v, state, kind }: { v: Partial<DetailValues>; state: FormState; kind: string }) {
+  return (
+    <>
+      <FieldRow name="title" label="Title" state={state}>
+        <input id="title" name="title" required maxLength={200} defaultValue={v.title} className="row-field" placeholder="Add" {...invalid(state, "title")} />
+      </FieldRow>
+      <FieldRow name="kind" label="Kind" state={state}>
+        {/* Keyed: React applies a select's defaultValue only when it mounts, and resets the form to that after each action. */}
+        <select key={v.kind} id="kind" name="kind" defaultValue={v.kind ?? "other"} className="row-field" {...invalid(state, "kind")}>
+          {KINDS.map(([k, l]) => (
+            <option key={k} value={k}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </FieldRow>
+      <FieldRow name="issuer" label="Issued by" state={state}>
+        {/* An empty row says it can be filled (Design): the kind's issuer where one is obvious, "Add" otherwise. */}
+        <input id="issuer" name="issuer" maxLength={200} defaultValue={v.issuer ?? ""} className="row-field" placeholder={ISSUER_HINT[kind] ?? "Add"} {...invalid(state, "issuer")} />
+      </FieldRow>
+      <FieldRow name="counterparty" label="Other party" state={state}>
+        <input id="counterparty" name="counterparty" maxLength={200} defaultValue={v.counterparty ?? ""} className="row-field" placeholder="Add" {...invalid(state, "counterparty")} />
+      </FieldRow>
+      <FieldRow name="issued_on" label="Issued" state={state}>
+        <DateRowField name="issued_on" defaultValue={v.issued_on ?? ""} state={state} />
+      </FieldRow>
+      <FieldRow name="expires_on" label="Expires" state={state}>
+        {/* scroll-mt: Home's "Update its dates" lands on #expires_on; keep the rows above it in view. */}
+        <DateRowField name="expires_on" defaultValue={v.expires_on ?? ""} state={state} className="scroll-mt-24" />
+      </FieldRow>
+      <FieldRow name="renews_on" label="Renewal notice" state={state}>
+        <DateRowField name="renews_on" defaultValue={v.renews_on ?? ""} state={state} />
+      </FieldRow>
+    </>
+  );
+}
 
 /**
  * The redesigned document page's details (SHIPSHAPE_UI=v2, Design 02 Nov): a grouped list, a label and its field
@@ -249,36 +357,7 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
     >
       <input type="hidden" name="id" value={id} />
       <ul className="group-list plain">
-        <FieldRow name="title" label="Title" state={state}>
-          <input id="title" name="title" required maxLength={200} defaultValue={v.title} className="row-field" {...invalid(state, "title")} />
-        </FieldRow>
-        <FieldRow name="kind" label="Kind" state={state}>
-          {/* Keyed: React applies a select's defaultValue only when it mounts, and resets the form to that after each action. */}
-          <select key={v.kind} id="kind" name="kind" defaultValue={v.kind} className="row-field" {...invalid(state, "kind")}>
-            {KINDS.map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </FieldRow>
-        <FieldRow name="issuer" label="Issued by" state={state}>
-          {/* An empty row says it can be filled (Design): the kind's issuer where one is obvious, "Add" otherwise. */}
-          <input id="issuer" name="issuer" maxLength={200} defaultValue={v.issuer ?? ""} className="row-field" placeholder={ISSUER_HINT[kind] ?? "Add"} {...invalid(state, "issuer")} />
-        </FieldRow>
-        <FieldRow name="counterparty" label="Other party" state={state}>
-          <input id="counterparty" name="counterparty" maxLength={200} defaultValue={v.counterparty ?? ""} className="row-field" placeholder="Add" {...invalid(state, "counterparty")} />
-        </FieldRow>
-        <FieldRow name="issued_on" label="Issued" state={state}>
-          <input id="issued_on" name="issued_on" type="date" defaultValue={v.issued_on ?? ""} className="row-field" {...invalid(state, "issued_on")} />
-        </FieldRow>
-        <FieldRow name="expires_on" label="Expires" state={state}>
-          {/* scroll-mt: Home's "Update its dates" lands on #expires_on; keep the rows above it in view. */}
-          <input id="expires_on" name="expires_on" type="date" defaultValue={v.expires_on ?? ""} className="row-field scroll-mt-24" {...invalid(state, "expires_on")} />
-        </FieldRow>
-        <FieldRow name="renews_on" label="Renewal notice" state={state}>
-          <input id="renews_on" name="renews_on" type="date" defaultValue={v.renews_on ?? ""} className="row-field" {...invalid(state, "renews_on")} />
-        </FieldRow>
+        <DetailRows v={v} state={state} kind={kind} />
       </ul>
       {(state.error || !dirty) && <Status state={state} savedText="Saved. Reminders follow the new dates." />}
       {(unsaved || pending) && (
@@ -305,11 +384,11 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
 
 export function NewDocumentForm() {
   const [result, action, pending] = useActionState<FormState, FormData>(addDocument, {});
-  const [state, onSubmit] = useFileGate(result);
+  const [state, onSubmit, onChange] = useFileGate(result);
   useFocusField(state, state.field);
   const fileError = state.field === "file";
   return (
-    <form action={action} onSubmit={onSubmit} className="space-y-4" noValidate>
+    <form action={action} onSubmit={onSubmit} onChange={onChange} className="space-y-4" noValidate>
       <div>
         <label htmlFor="file" className="label">
           File
@@ -338,14 +417,114 @@ export function NewDocumentForm() {
   );
 }
 
+/** A chosen file's size, rounded up: a file just over the 4 MB limit never reads "4.0 MB" beside the refusal. */
+const chosenSize = (n: number) => (n > 1024 * 1024 ? `${(Math.ceil(n / 104857.6) / 10).toFixed(1)}\u00A0MB` : size(n));
+
+/**
+ * The file as a grouped-list row (Design 02 Nov): "Choose a file", then the chosen file's name and size with "Change".
+ * One control: the real file input, out of sight but focusable (its focus ring shows on the visible button), named by
+ * the row's label and the visible button ("File Choose a file", "File Change", so a spoken "Choose a file" finds it);
+ * "Choose a file" and "Change" are labels for it, so a click on either opens the picker.
+ */
+function FileRow({ state }: { state: FormState }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<{ name: string; size: number } | null>(null);
+  const read = (el: HTMLInputElement) => {
+    const f = el.files?.[0];
+    setFile(f ? { name: f.name, size: f.size } : null);
+  };
+  // After a refused upload React empties the field (a browser can't put a file back), so the row says so too.
+  useAfterReset(input, read);
+  const error = state.field === "file";
+  const ring = "peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2";
+  return (
+    <li>
+      <div className="field-row">
+        <span id="file-label" className="w-32 shrink-0 text-[15px] text-ink-2">
+          File
+        </span>
+        <span className="ml-auto flex min-w-0 items-center justify-end gap-3">
+          <input
+            ref={input}
+            id="file"
+            name="file"
+            type="file"
+            required
+            accept="application/pdf,image/png,image/jpeg"
+            onChange={(e) => read(e.currentTarget)}
+            className="peer sr-only"
+            aria-labelledby="file-label file-action"
+            aria-invalid={error || undefined}
+            aria-describedby={error ? "file-hint file-error" : "file-hint"}
+          />
+          {file ? (
+            <>
+              {/* A long name truncates; its size always shows. */}
+              <span className="flex min-w-0 items-baseline gap-1">
+                <span className="min-w-0 truncate">{file.name}</span>
+                <span className="shrink-0 text-ink-3">· {chosenSize(file.size)}</span>
+              </span>
+              <label id="file-action" htmlFor="file" className={`shrink-0 cursor-pointer rounded text-sm text-ink underline ${ring}`}>
+                Change
+              </label>
+            </>
+          ) : (
+            <label id="file-action" htmlFor="file" className={`btn-ghost press cursor-pointer ${ring}`}>
+              Choose a file
+            </label>
+          )}
+        </span>
+      </div>
+      <div className="px-4 pb-2.5">
+        <p id="file-hint" className="text-[13px] text-ink-3">
+          PDF, PNG or JPEG, up to 4 MB.
+        </p>
+        <FieldError state={state} name="file" />
+      </div>
+    </li>
+  );
+}
+
+/** Add a document in the redesigned app (SHIPSHAPE_UI=v2, Design 02 Nov): the same action, fields and words as NewDocumentForm, as grouped-list rows; the one primary docked on the phone. */
+export function NewDocumentFormV2() {
+  const [result, action, pending] = useActionState<FormState, FormData>(addDocument, {});
+  const [state, onSubmit, onChange] = useFileGate(result);
+  const [kind, setKind] = useState(state.values?.kind ?? "other");
+  useFocusField(state, state.field);
+  return (
+    <form
+      action={action}
+      onSubmit={onSubmit}
+      onChange={onChange}
+      onInput={(e) => {
+        if (e.target instanceof HTMLSelectElement && e.target.name === "kind") setKind(e.target.value);
+      }}
+      className="space-y-3"
+      noValidate
+    >
+      <ul className="group-list plain">
+        <FileRow state={state} />
+        <DetailRows v={state.values ?? {}} state={state} kind={kind} />
+      </ul>
+      <Status state={state} savedText="" />
+      {/* Above the phone's tab bar, as Business facts' Save and confirm. */}
+      <div className="save-dock sticky bottom-[calc(59px+max(env(safe-area-inset-bottom),20px))] z-10 md:static">
+        <button className="btn press w-full md:w-auto" disabled={pending}>
+          {pending ? "Uploading…" : "Add to documents"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** `warning`: shown under the file field while a signing request is open, since a new version withdraws it (Design, wave 8 #7). */
 export function VersionForm({ id, warning }: { id: string; warning?: string }) {
   const [result, action, pending] = useActionState<FormState, FormData>(addVersion, {});
-  const [state, onSubmit] = useFileGate(result);
+  const [state, onSubmit, onChange] = useFileGate(result);
   useFocusField(state, state.field && "version-file");
   const describedBy = [warning && "version-file-warning", state.field === "file" && "file-error"].filter(Boolean).join(" ") || undefined;
   return (
-    <form action={action} onSubmit={onSubmit} className="space-y-2" noValidate>
+    <form action={action} onSubmit={onSubmit} onChange={onChange} className="space-y-2" noValidate>
       <input type="hidden" name="id" value={id} />
       <label htmlFor="version-file" className="label">
         Upload a new version

@@ -654,10 +654,15 @@ describe("Deadlines", () => {
   });
 });
 
-describe("What are they asking for?", () => {
+describe.each([
+  ["current", ""],
+  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+])("What are they asking for?, %s", (_look, ui) => {
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
+
   it("with AI switched off: one line on what that means, and one way forward", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "");
-    await signIn("ask-off@example.com");
+    await signIn(`${ui || "now"}-ask-off@example.com`);
     const html = await renderPage(AskPage, {});
     expect(textOf(html)).toContain("Reading requests with AI is switched off right now, so check the request against your documents yourself");
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Open your documents", href: "/app/documents" }]);
@@ -666,7 +671,7 @@ describe("What are they asking for?", () => {
   it("with AI on: the consent box claims only what Anthropic says, and names the source and when it was checked", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "1");
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
-    await signIn("ask-on@example.com");
+    await signIn(`${ui || "now"}-ask-on@example.com`);
     const html = await renderPage(AskPage, {});
     const text = textOf(html);
     expect(text).toContain("and nothing from your documents is sent. Anthropic says that by default it doesn't train on what its API receives.");
@@ -674,6 +679,24 @@ describe("What are they asking for?", () => {
     expect(text).toMatch(/Source:\s*Anthropic's privacy center\s*, checked Oct 31, 2026\s*\./);
     expect(html).toMatch(/<a href="https:\/\/privacy\.claude\.com\/en\/articles\/7996868-is-my-data-used-for-model-training"[^>]*rel="noopener noreferrer"/);
     expect(html).toMatch(/<input[^>]*aria-describedby="consent-source"[^>]*name="consent"/);
+    // The consent isn't ticked for you, and the one send action is the same in both looks.
+    expect(/<input[^>]*name="consent"[^>]*>/.exec(html)?.[0]).not.toContain("checked");
+    expect(textOf(html)).toContain("Read the request");
+  });
+});
+
+describe("What are they asking for?, redesigned only", () => {
+  it("reads in the 720 column: the request in a tile well, the consent as a row, and Read the request still green (it sends text to the model)", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v2");
+    vi.stubEnv("SHIPSHAPE_AI", "1");
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
+    await signIn("v2-ask-look@example.com");
+    const html = await renderPage(AskPage, {});
+    expect(html).toMatch(/^<div class="mx-auto max-w-\[720px\] space-y-6">/);
+    expect(html).not.toMatch(/<form[^>]*class="card/);
+    expect(/<textarea[^>]*>/.exec(html)?.[0]).toContain('class="request-well"');
+    expect(html).toMatch(/<label class="group-row[^"]*">[^<]*<span[^>]*>Send the text above to Anthropic&#x27;s Claude[^<]*<\/span><input[^>]*name="consent"/);
+    expect(html).toMatch(/<button class="btn-accent press">Read the request<\/button>/);
   });
 });
 
