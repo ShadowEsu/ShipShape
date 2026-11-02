@@ -303,6 +303,7 @@ describe("a signing link (/s)", () => {
   });
 
   it("once signed, ends calmly: done, who has the record, until when this copy stays here, and one action", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier done card; the redesigned one's own test is under "redesigned"
     const { id, token } = await request();
     expect(await sendSigningCode(id, token)).toBe("ok");
     const [m] = await db.root((tx) => tx.query<{ body: string }>("select body from app.outbox where org_id = $1 order by created_at desc limit 1", [sample.orgId]));
@@ -448,10 +449,10 @@ describe("a signing link (/s)", () => {
       jar.set("ss_sign", token);
       // React's server markup marks the boundary but never its exit class (that runs in the browser, where the smoke checks the fade).
       expect(await signingPage(id)).toMatch(/ vt-update="none"/);
-      vi.stubEnv("SHIPSHAPE_UI", "");
+      vi.stubEnv("SHIPSHAPE_UI", "v1");
       expect(await signingPage(id)).not.toMatch(/vt-/);
       const done = await signAs("J. Lee");
-      vi.stubEnv("SHIPSHAPE_UI", "");
+      vi.stubEnv("SHIPSHAPE_UI", "v1");
       const html = await signingPage(done.id);
       expect(said(html)).toContain("There's nothing else you need to do.");
       expect(said(html)).not.toContain("What happens next");

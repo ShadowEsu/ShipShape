@@ -32,11 +32,12 @@ export function collectOpen(ws: { demo: boolean }): boolean {
 }
 
 /**
- * The redesigned app (Design spec 2026-11-02: sidebar of tools, the AI box first, tiles, motion) while Preston picks
- * from the stills: on only where SHIPSHAPE_UI=v2. Off, the app is exactly what it was. A look, never a gate.
+ * The redesigned app (Design spec 2026-11-02, look B: sidebar of tools, the AI box first, tiles, motion), the default
+ * since Preston picked it (ledger 416). SHIPSHAPE_UI=v1 brings back the earlier look, exactly as it was: the way back
+ * if the new one breaks somewhere. A look, never a gate.
  */
 export function uiV2(): boolean {
-  return process.env.SHIPSHAPE_UI === "v2";
+  return process.env.SHIPSHAPE_UI !== "v1";
 }
 
 type Env = Record<string, string | undefined>;

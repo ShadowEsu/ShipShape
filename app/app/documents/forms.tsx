@@ -324,7 +324,7 @@ function DetailRows({ v, state, kind }: { v: Partial<DetailValues>; state: FormS
 }
 
 /**
- * The redesigned document page's details (SHIPSHAPE_UI=v2, Design 02 Nov): a grouped list, a label and its field
+ * The redesigned document page's details (the default look, Design 02 Nov): a grouped list, a label and its field
  * per row, posting to the same `saveDetails` as DetailsForm. Save shows only once something differs from what's
  * saved (on the phone it holds above the tab bar); "Saved" stays until the next change; leaving with changes asks.
  */
@@ -485,7 +485,7 @@ function FileRow({ state }: { state: FormState }) {
   );
 }
 
-/** Add a document in the redesigned app (SHIPSHAPE_UI=v2, Design 02 Nov): the same action, fields and words as NewDocumentForm, as grouped-list rows; the one primary docked on the phone. */
+/** Add a document in the redesigned app (the default look, Design 02 Nov): the same action, fields and words as NewDocumentForm, as grouped-list rows; the one primary docked on the phone. */
 export function NewDocumentFormV2() {
   const [result, action, pending] = useActionState<FormState, FormData>(addDocument, {});
   const [state, onSubmit, onChange] = useFileGate(result);

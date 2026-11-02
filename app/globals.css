@@ -28,7 +28,7 @@
   --serif: var(--font-newsreader), "Iowan Old Style", Georgia, serif;
   --sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
-  /* The redesigned app (SHIPSHAPE_UI=v2, Design spec 2026-11-02 §2): tiles and wells, the sidebar, inset separators, the one accent. */
+  /* The redesigned app (the default look, Design spec 2026-11-02 §2): tiles and wells, the sidebar, inset separators, the one accent. */
   --tile: #f6f6f4;
   --side: #f3f3f0;
   --sep: #e9e9e5;
@@ -255,7 +255,7 @@ body {
 
 /*
  * Every page in the redesigned app, through the hooks the shared components carry. Unlayered on purpose: these win
- * over the utilities the components were written with, so the current look stays exactly as it is outside .ui-v2.
+ * over the utilities the components were written with, so the earlier look (SHIPSHAPE_UI=v1) stays exactly as it was outside .ui-v2.
  */
 .ui-v2 .page-title {
   font-size: 32px;

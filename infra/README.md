@@ -146,6 +146,10 @@ Afterwards:
   - `shipshape_app` gets a machine-generated password of 32+ characters, kept only in Vercel Production (R-1).
 - **Acceptance:** run `scripts/probe-aws.mjs` with the values from the outputs (its header lists every variable). It must exit 0.
 
+## The app's look: the way back
+
+The redesigned app is the default. If it breaks somewhere in production, set `SHIPSHAPE_UI` to exactly `v1` (lowercase, nothing else) in Vercel's Production environment and redeploy in the day's slot: every page renders the earlier look, with the same data, actions and routes. Any other value, or no value, is the redesigned app. To return to it, delete the variable and redeploy.
+
 ## Rollback
 
 Deleting a stack never deletes data. The key, bucket, pool, database and log group have `DeletionPolicy: Retain`, so they stay behind:
