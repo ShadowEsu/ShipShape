@@ -678,6 +678,12 @@ describe("Free's file total and the upload limit (W15-3)", () => {
         [id, ctx.orgId, MAX_ROW, QUOTA - 9 * MAX_ROW - 2 * PDF.length, `${ctx.orgId}/${id}/v`],
       ),
     );
+    // One byte past the line: refused (Security INFO-A1, the boundary to the byte).
+    const v11 = (delta: number) =>
+      db.root((tx) => tx.query("update app.document_versions set size_bytes = size_bytes + $3 where document_id = $1 and org_id = $2 and version = 11", [id, ctx.orgId, delta]));
+    await v11(1);
+    await expect(uploadVersion(ctx, id, PDF)).rejects.toThrow(new PlanLimit(FILES_FULL));
+    await v11(-1);
     // Exactly at the line: stored.
     expect((await uploadVersion(ctx, id, PDF)).version).toBe(12);
     // One more PDF goes past it: refused, nothing stored.
