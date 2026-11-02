@@ -30,8 +30,8 @@ export function SignedV2({ id, view, zone, contact }: { id: string; view: Signin
               <path d="M60 92l16 16 34-36" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
             </g>
           </svg>
-          {/* Takes focus right after signing (stamp.tsx): the Sign button that had it is gone. */}
-          <h1 tabIndex={-1} className="stamp-rise mt-4 font-serif text-[32px] leading-9 font-semibold tracking-tight">
+          {/* Takes focus right after signing (stamp.tsx), as the Sign button that had it is gone; never shows a ring (globals.css). */}
+          <h1 tabIndex={-1} className="stamp-title stamp-rise mt-4 font-serif text-[32px] leading-9 font-semibold tracking-tight">
             Signed
           </h1>
           <p className="stamp-rise mt-1.5 text-ink-2">{view.title}</p>
@@ -42,13 +42,14 @@ export function SignedV2({ id, view, zone, contact }: { id: string; view: Signin
                 <span className="sr-only">Signed as </span>
                 {view.signedName}
               </p>
-              <div className="mx-auto mt-0.5 h-px w-56 bg-ink-3" />
+              <div className="stamp-line mx-auto mt-0.5 h-px w-56 bg-ink-3" />
             </div>
           )}
-          {view.signedAt && <p className="mt-2 text-[13px] text-ink-3">Signed {timeOf(view.signedAt, zone)} · code confirmed</p>}
+          {view.signedAt && <p className="stamp-line mt-2 text-[13px] text-ink-3">Signed {timeOf(view.signedAt, zone)} · code confirmed</p>}
         </div>
 
-        <section aria-labelledby="next-title">
+        {/* The label and the card arrive with the first row; the rows keep their own stagger inside (stamp.tsx). */}
+        <section aria-labelledby="next-title" className="stamp-card">
           <h2 id="next-title" className="mx-4 mb-1.5 text-[13px] tracking-[0.04em] text-ink-3 uppercase">
             What happens next
           </h2>
@@ -73,7 +74,8 @@ export function SignedV2({ id, view, zone, contact }: { id: string; view: Signin
           </ul>
         </section>
 
-        <div className="space-y-2">
+        {/* The action never waits on the moment: here from the first frame. Centred under the stamp from sm up. */}
+        <div className="space-y-2 sm:text-center">
           <a href={`/s/${id}/file`} className="btn btn-block gap-2">
             <Icon name="download" />
             Download the signed copy
