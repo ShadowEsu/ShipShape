@@ -721,11 +721,13 @@ describe("the public pages once payments are live (Security MUST-3, MUST-4)", ()
     expect(preview.home).toContain("Payments Awaiting setup");
     goLive();
     const live = await texts();
-    // MUST-2 (the governing-law line in the Terms) waits on Preston's choice; every other page and line is checked.
-    const terms = live.terms.replace("Which law governs these terms, and how disputes are resolved, will be set with our lawyer before real accounts open.", "");
-    for (const [name, text] of Object.entries({ ...live, terms })) {
+    // Every page, the Terms included (Security MUST-2: Preston chose California, ledger 421).
+    for (const [name, text] of Object.entries(live)) {
       expect([name, text.match(/No real charges|before real accounts open|During the preview|Features during the preview|Hear when real accounts open/)?.[0]]).toEqual([name, undefined]);
     }
+    // No county or venue: Preston named only the state.
+    expect(live.terms).toContain("These terms are governed by the laws of the State of California.");
+    expect(live.terms).not.toMatch(/county|venue|courts? (of|in)/i);
     expect(live.home).toContain("Payments Works today Pro is paid monthly through Stripe; cancel any time from Settings.");
     expect(live.home).toContain("Accounts for real documents Works today");
     expect(live.home).toContain("Sign in or create an account");

@@ -111,7 +111,7 @@ export default function TermsPage() {
           To the extent the law allows, ShipShape is provided as is, and our liability is limited to what you paid us in the 12 months
           before a claim. Some places don&apos;t allow these limits, so they may not apply to you.
         </li>
-        <li>Which law governs these terms, and how disputes are resolved, will be set with our lawyer before real accounts open.</li>
+        <li>These terms are governed by the laws of the State of California.</li>
       </ul>
 
       <h2>Changes</h2>
