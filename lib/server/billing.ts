@@ -51,12 +51,51 @@ export function setStripeForTests(port: StripePort | null) {
 }
 
 /**
+ * What a failed Stripe call becomes before it leaves this file: Stripe's own message can name the key (masked) or the
+ * request, and an error that reaches Next is logged whole, so only its type, code and HTTP status go on (check K).
+ */
+export class StripeCallFailed extends Error {
+  constructor(e: unknown) {
+    const s = e instanceof Stripe.errors.StripeError ? e : null;
+    super(s ? `Stripe ${s.type}${s.code ? ` ${s.code}` : ""}${s.statusCode ? ` (HTTP ${s.statusCode})` : ""}` : "Stripe call failed");
+    this.name = s ? s.type : "StripeCallFailed";
+  }
+}
+
+async function guard<R>(call: () => Promise<R>): Promise<R> {
+  try {
+    return await call();
+  } catch (e) {
+    throw new StripeCallFailed(e);
+  }
+}
+
+function guarded(p: StripePort): StripePort {
+  return {
+    createCustomer: (params, key) => guard(() => p.createCustomer(params, key)),
+    createCheckout: (params) => guard(() => p.createCheckout(params)),
+    createPortal: (params) => guard(() => p.createPortal(params)),
+    retrievePrice: (id) => guard(() => p.retrievePrice(id)),
+    retrieveSubscription: (id) => guard(() => p.retrieveSubscription(id)),
+    cancelSubscription: (id) => guard(() => p.cancelSubscription(id)),
+    listSubscriptions: (customer) => guard(() => p.listSubscriptions(customer)),
+    listOpenCheckouts: (customer) => guard(() => p.listOpenCheckouts(customer)),
+    expireCheckout: (id) => guard(() => p.expireCheckout(id)),
+    chargeOwner: (id) => guard(() => p.chargeOwner(id)),
+    refundInvoice: (id) => guard(() => p.refundInvoice(id)),
+  };
+}
+
+/**
  * `until` (ms since epoch): the daily run's deadline. Each call it makes then waits at most what is
  * left of the run (never over 15 s) with no retry, so a slow Stripe can't carry the run past the
  * cron function's limit (W11-16); the deletion fails and waits for the next run.
  */
 function stripePort(cfg: BillingConfig, until?: number): StripePort {
-  if (testPort) return testPort;
+  return guarded(testPort ?? sdkPort(cfg, until));
+}
+
+function sdkPort(cfg: BillingConfig, until?: number): StripePort {
   // Some calls run inside a database transaction whose idle timeout is 60 s (lib/server/db.ts): one
   // attempt and one retry of 15 s each, plus backoff, finish well before Postgres closes the session.
   const s = new Stripe(cfg.secretKey, { apiVersion: STRIPE_API_VERSION, maxNetworkRetries: 1, timeout: 15_000 });
@@ -187,6 +226,9 @@ export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> 
     success_url: `${cfg.appUrl}/app/settings?billing=success`,
     cancel_url: `${cfg.appUrl}/app/settings?billing=cancelled`,
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+    // Stripe Tax, once Preston has turned it on in the Dashboard (STRIPE_AUTOMATIC_TAX=1): the tax comes from the
+    // billing address the buyer enters, which Checkout saves to the existing customer (docs.stripe.com/payments/checkout/taxes).
+    ...(cfg.automaticTax ? { automatic_tax: { enabled: true }, customer_update: { address: "auto" } } : {}),
   });
   if (!session.url) throw new Error("Stripe returned a checkout session without a URL");
   return session.url;

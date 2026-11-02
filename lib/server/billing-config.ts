@@ -18,6 +18,8 @@ export interface BillingConfig {
   appUrl: string;
   /** Real money: Vercel's Production with a restricted live key, SHIPSHAPE_CHECKOUT_LIVE=1, final terms and real documents. */
   live: boolean;
+  /** Stripe Tax on the checkout, only with STRIPE_AUTOMATIC_TAX exactly "1" (Preston turns Stripe Tax on in the Dashboard first). */
+  automaticTax: boolean;
 }
 
 /**
@@ -43,7 +45,7 @@ export function billingConfig(): BillingConfig | null {
     : TEST_KEY.test(secretKey) && !(process.env.NODE_ENV === "production" && realDocsEnabled());
   if (!keyOk || !webhookConfigured() || !/^price_[A-Za-z0-9]+$/.test(proPrice)) return null;
   if (!/^https?:\/\/[^/\s]+$/.test(appUrl)) return null;
-  return { secretKey, webhookSecret, proPrice, appUrl, live };
+  return { secretKey, webhookSecret, proPrice, appUrl, live, automaticTax: process.env.STRIPE_AUTOMATIC_TAX === "1" };
 }
 
 /** Whether a Stripe webhook signing secret is set (its form only), for the health check. */

@@ -6,7 +6,16 @@ import Stripe from "stripe";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as healthGet } from "@/app/api/health/route";
 import { deleteAccount } from "@/lib/server/account";
-import { billingView, handleStripeWebhook, openPortal, setStripeForTests, startCheckout, type StripePort, type SubscriptionState } from "@/lib/server/billing";
+import {
+  billingView,
+  handleStripeWebhook,
+  openPortal,
+  setStripeForTests,
+  startCheckout,
+  StripeCallFailed,
+  type StripePort,
+  type SubscriptionState,
+} from "@/lib/server/billing";
 import { billingConfig } from "@/lib/server/billing-config";
 import { asUser } from "@/lib/server/db";
 import { setArchived, uploadDocument } from "@/lib/server/documents";
@@ -221,7 +230,7 @@ describe("keys and mode", () => {
     vi.stubEnv("BILLING_ENABLED", "true");
     expect(billingConfig()).toBeNull();
     vi.stubEnv("BILLING_ENABLED", "1");
-    expect(billingConfig()).toEqual({ secretKey: KEY, webhookSecret: WHSEC, proPrice: PRO, appUrl: "http://127.0.0.1:3917", live: false });
+    expect(billingConfig()).toEqual({ secretKey: KEY, webhookSecret: WHSEC, proPrice: PRO, appUrl: "http://127.0.0.1:3917", live: false, automaticTax: false });
   });
 
   it("outside Vercel's Production takes only a test key: a live key switches billing off there, flag or not", () => {
@@ -241,7 +250,7 @@ describe("keys and mode", () => {
 
   it("Vercel's Production takes real money only with an rk_live_ key, the flag exactly 1, final terms, real documents and https (Security L3)", () => {
     goLive();
-    expect(billingConfig()).toEqual({ secretKey: LIVE, webhookSecret: WHSEC, proPrice: PRO, appUrl: "https://shipshape.example.com", live: true });
+    expect(billingConfig()).toEqual({ secretKey: LIVE, webhookSecret: WHSEC, proPrice: PRO, appUrl: "https://shipshape.example.com", live: true, automaticTax: false });
     const refused: [string, string | undefined][] = [
       ["SHIPSHAPE_CHECKOUT_LIVE", undefined],
       ["SHIPSHAPE_CHECKOUT_LIVE", "true"],
@@ -406,6 +415,36 @@ describe("checkout", () => {
     fake.price = { ...fake.price, unit_amount: 1200 };
     await expect(startCheckout(ctx, true)).rejects.toThrow(UserError);
     expect(fake.customersCreated).toBe(0);
+  });
+
+  it("adds Stripe Tax to the checkout only with STRIPE_AUTOMATIC_TAX exactly 1, saving the buyer's address to the customer", async () => {
+    const ctx = await realWorkspace();
+    await startCheckout(ctx, true);
+    expect(fake.checkouts.at(-1)).not.toHaveProperty("automatic_tax");
+    expect(fake.checkouts.at(-1)).not.toHaveProperty("customer_update");
+    vi.stubEnv("STRIPE_AUTOMATIC_TAX", "true");
+    await startCheckout(await realWorkspace(), true);
+    expect(fake.checkouts.at(-1)).not.toHaveProperty("automatic_tax");
+    vi.stubEnv("STRIPE_AUTOMATIC_TAX", "1");
+    await startCheckout(await realWorkspace(), true);
+    expect(fake.checkouts.at(-1)).toMatchObject({ automatic_tax: { enabled: true }, customer_update: { address: "auto" } });
+  });
+
+  it("a failed Stripe call leaves billing as its type, code and status only, never Stripe's message (it can name the key)", async () => {
+    const ctx = await realWorkspace();
+    const leak = "Invalid API Key provided: sk_test_****************abcd";
+    fake.createCheckout = async () => {
+      throw new Stripe.errors.StripeAuthenticationError({ message: leak, statusCode: 401 });
+    };
+    const failure = await startCheckout(ctx, true).catch((e: unknown) => e);
+    expect(failure).toBeInstanceOf(StripeCallFailed);
+    expect(failure).toMatchObject({ name: "StripeAuthenticationError", message: "Stripe StripeAuthenticationError (HTTP 401)" });
+    expect(String(failure)).not.toContain("sk_test_");
+    fake.createCheckout = async () => {
+      throw new Error(leak);
+    };
+    const other = await startCheckout(ctx, true).catch((e: unknown) => e);
+    expect(other).toMatchObject({ name: "StripeCallFailed", message: "Stripe call failed" });
   });
 
   it("refuses checkout and the billing portal while payments are switched off", async () => {
