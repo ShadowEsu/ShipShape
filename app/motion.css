@@ -1,0 +1,134 @@
+/*
+ * Motion for the redesigned app (Design spec 2026-11-02 §5-7). Tokens here, keyframes here, nothing inline (the
+ * CSP allows style attributes, which carry only a list item's index `--i`). Only transform, opacity and filter
+ * animate. Every animation ends on whole pixels at scale 1, and reduced motion keeps each final frame identical.
+ */
+:root {
+  --dur-press: 120ms;
+  --dur-fast: 180ms;
+  --dur-base: 240ms;
+  --dur-sheet: 320ms;
+  --dur-moment: 600ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+  /* A damped spring (damping 0.67, 1.6 Hz), about 6% overshoot, sampled once into linear(). */
+  --ease-spring: linear(0, 0.072, 0.236, 0.431, 0.617, 0.774, 0.894, 0.976, 1.026, 1.051, 1.059, 1.055, 1.046, 1.035, 1.024, 1.014, 1.007, 1.002, 0.999, 0.997, 0.997, 0.997, 0.997, 0.998, 1);
+  --stagger: 40ms;
+}
+
+@keyframes v2-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes v2-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes v2-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes v2-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes v2-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes v2-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+/* Staggered reveals: each child rises 6px into place, 40ms apart; the first 8 are staggered, the rest arrive with the 8th. */
+.ui-v2 .stagger > * {
+  animation: v2-rise var(--dur-base) var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 7) * var(--stagger));
+}
+
+/* An inline result or success notice arriving under what caused it. */
+.ui-v2 .arrive {
+  animation: v2-drop-in var(--dur-base) var(--ease-out) both;
+}
+
+/* Press: 0.97 while held, released on the spring. Hover and focus never move anything. */
+.ui-v2 .press {
+  transition: transform var(--dur-press) var(--ease-spring);
+}
+.ui-v2 .press:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-timing-function: var(--ease-out);
+}
+
+/* Route changes (app/app/template.tsx): the old page leaves in 150ms, the new one fades up 8px in 240ms. */
+::view-transition-old(.v2-page) {
+  animation: v2-fade-out 150ms var(--ease-inout) both;
+}
+::view-transition-new(.v2-page) {
+  animation: v2-page-in var(--dur-base) var(--ease-out) both;
+}
+/* A document's title travels from its row to the page's title (and back): position and size together, 240ms. */
+::view-transition-group(.v2-morph) {
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(.v2-morph),
+::view-transition-new(.v2-morph) {
+  height: 100%;
+}
+/* Nothing on screen takes clicks while a snapshot animates (the Next.js guide's advice). */
+::view-transition {
+  pointer-events: none;
+}
+
+/* Sheets (phone More and account): <dialog> slides up, its backdrop fades. */
+.ui-v2 dialog.sheet[open] {
+  animation: v2-sheet-up var(--dur-sheet) var(--ease-spring) both;
+}
+.ui-v2 dialog.sheet[open]::backdrop {
+  animation: v2-fade-in var(--dur-base) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Movement becomes a short fade or nothing; where things end up never changes. */
+  .ui-v2 .stagger > *,
+  .ui-v2 .arrive {
+    animation: v2-fade-in 120ms linear both;
+    animation-delay: 0s;
+  }
+  .ui-v2 .press,
+  .ui-v2 .press:active:not(:disabled) {
+    transform: none;
+    transition: none;
+  }
+  ::view-transition-old(.v2-page) {
+    animation: v2-fade-out 120ms linear both;
+  }
+  ::view-transition-new(.v2-page) {
+    animation: v2-fade-in 120ms linear both;
+  }
+  /* The title doesn't travel: the group snaps to the new place while the two snapshots crossfade. */
+  ::view-transition-group(.v2-morph) {
+    animation: none;
+  }
+  ::view-transition-old(.v2-morph) {
+    animation: v2-fade-out 120ms linear both;
+  }
+  ::view-transition-new(.v2-morph) {
+    animation: v2-fade-in 120ms linear both;
+  }
+  .ui-v2 dialog.sheet[open],
+  .ui-v2 dialog.sheet[open]::backdrop {
+    animation: v2-fade-in 120ms linear both;
+  }
+}

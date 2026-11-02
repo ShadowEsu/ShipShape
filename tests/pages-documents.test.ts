@@ -368,6 +368,115 @@ describe("home", () => {
   });
 });
 
+describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
+  /** Home's tool tiles in order: where each goes and the closed gate it names, if any. */
+  const tiles = (html: string) =>
+    [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)]
+      .filter((m) => /\bclass="tile press"/.test(m[1]))
+      .map((m) => ({
+        href: /\bhref="([^"]*)"/.exec(m[1])?.[1],
+        name: /font-semibold text-ink">([^<]*)</.exec(m[2])?.[1],
+        tag: /class="tag[^"]*">([^<]*)</.exec(m[2])?.[1] ?? null,
+      }));
+  const tagOf = (html: string, name: string) => tiles(html).find((t) => t.name === name)?.tag;
+
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
+
+  it("asks the question first and lists all ten tools, each opening its own page, gated ones saying why (AI off)", async () => {
+    await signIn("home-v2@example.com");
+    const html = await homePage();
+    expect(textOf(html)).toMatch(/^What do you need to get done\?/);
+    expect(tiles(html)).toEqual([
+      { href: "/app/documents", name: "Documents", tag: null },
+      { href: "/app/documents/new", name: "Add a document", tag: null },
+      { href: "/app/make", name: "Make a document", tag: null },
+      { href: "/app/ask", name: "Check a request", tag: "AI is off right now" },
+      { href: "/app/passport", name: "Passport", tag: null },
+      { href: "/app/documents", name: "Ask to sign", tag: null },
+      { href: "/app/collect", name: "Collect", tag: null },
+      { href: "/app/deadlines", name: "Deadlines", tag: null },
+      { href: "/app/facts", name: "Business facts", tag: null },
+      { href: "/app/settings", name: "Settings", tag: null },
+    ]);
+  });
+
+  it("before the security review, a real workspace's tiles say what isn't open yet", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    await signIn("home-v2-gated@example.com");
+    const html = await homePage();
+    expect(tagOf(html, "Add a document")).toBe("Opens after our security review");
+    expect(tagOf(html, "Make a document")).toBe("Opens after our security review");
+    expect(tagOf(html, "Business facts")).toBe("View only");
+    expect(tagOf(html, "Collect")).toBe("Not open yet");
+  });
+
+  /** Signs in to a seeded sample workspace, as "Try the sample workspace" does. */
+  const signInSample = async () => {
+    const userId = await createLocalUser(null, true);
+    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    await finishSignIn(userId, { demo: true });
+  };
+  /** Home's suggestion chips, in order. */
+  const chips = (html: string) => {
+    const list = /<ul aria-label="Suggestions"[^>]*>([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? "";
+    return [...list.matchAll(/<a [^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g)].map((m) => `${m[2]} ${m[1]}`);
+  };
+
+  it("in a sample, adding a document is the one tool that says it isn't in the sample", async () => {
+    vi.stubEnv("SHIPSHAPE_AI", "1");
+    vi.stubEnv("ANTHROPIC_API_KEY", "unused");
+    await signInSample();
+    const tagged = tiles(await homePage()).filter((t) => t.tag !== null);
+    expect(tagged).toEqual([
+      { href: "/app/documents/new", name: "Add a document", tag: "Not in the sample" },
+      { href: "/app/facts", name: "Business facts", tag: "View only" },
+    ]);
+  });
+
+  it("never offers the Next step again as a chip right under it: Collect W-9s takes its place", async () => {
+    await signInSample();
+    const sample = await homePage();
+    expect(textOf(sample)).toContain("Next: Share a passport link");
+    expect(chips(sample)).toEqual(["Check a request /app/ask", "Collect W-9s /app/collect", "Make a W-9 /app/make/irs-w9", "Ask someone to sign /app/documents"]);
+    // A new workspace's next step is something else, so the passport chip stays.
+    await signIn("home-v2-chips@example.com");
+    expect(chips(await homePage())).toContain("Share a passport link /app/passport");
+  });
+
+  it("the documents list leads with an action that works: Make in a sample (adding isn't in it), Add where files can be added", async () => {
+    await signInSample();
+    expect(primaryActions(await documentsPage({}))).toEqual([{ label: "Make a document", href: "/app/make" }]);
+    expect(await documentsPage({})).not.toContain('href="/app/documents/new"');
+    const ctx = await signIn("docs-v2-real@example.com");
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind) values ($1, 'Lease', 'agreement')", [ctx.orgId]));
+    const html = await documentsPage({});
+    expect(primaryActions(html)).toEqual([{ label: "Add a document", href: "/app/documents/new" }]);
+    expect(html).toMatch(/<a class="btn-ghost" href="\/app\/make">Make a document<\/a>/);
+  });
+
+  it("Recent lists the three newest active documents, newest first", async () => {
+    const ctx = await signIn("home-v2-recent@example.com");
+    await db.root((tx) =>
+      tx.query(
+        "insert into app.documents (org_id, title, kind, status, created_at) select $1, 'Doc ' || n, 'other', case when n = 4 then 'archived' else 'active' end, now() - make_interval(mins => 10 - n) from generate_series(1, 5) n",
+        [ctx.orgId],
+      ),
+    );
+    const html = await homePage();
+    const recent = html.slice(html.indexOf('id="recent-title"'));
+    expect([...recent.matchAll(/class="block truncate font-medium">([^<]*)</g)].map((m) => m[1])).toEqual(["Doc 5", "Doc 3", "Doc 2"]);
+  });
+
+  it("is off unless SHIPSHAPE_UI is v2: the current Home renders", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "");
+    await signIn("home-v2-off@example.com");
+    const html = await homePage();
+    expect(tiles(html)).toEqual([]);
+    expect(textOf(html)).toContain("0 of 6 done");
+  });
+});
+
 describe("business facts", () => {
   it("with nothing confirmed says so, what the facts are for, and offers one action: save them", async () => {
     await signIn("facts-empty@example.com");

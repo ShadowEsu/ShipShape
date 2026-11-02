@@ -2,15 +2,24 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Logo, NotLegalAdvice } from "@/components/ui";
 import { deletionPending } from "@/lib/server/account";
+import { uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { signOut } from "../signin/actions";
 import { NavLinks } from "./nav";
+import { ShellV2 } from "./shell-v2";
 
 export const metadata: Metadata = { robots: { index: false } };
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ws = await requireWorkspace();
   const deleting = await deletionPending(ws.userId);
+  if (uiV2()) {
+    return (
+      <ShellV2 ws={ws} deleting={deleting}>
+        {children}
+      </ShellV2>
+    );
+  }
   return (
     <div className="min-h-dvh bg-canvas md:flex">
       <aside aria-label="Workspace" className="border-b border-line bg-paper px-4 py-4 md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">

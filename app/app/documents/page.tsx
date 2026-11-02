@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ViewTransition } from "react";
 import { EmptyState, PageHeader, ValidityChip } from "@/components/app-ui";
+import { Icon } from "@/components/icons";
 import { DOC_KINDS, DOCUMENTS_PAGE_SIZE, pageDocuments } from "@/lib/server/documents";
-import { realDocsEnabled } from "@/lib/server/flags";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Documents" };
@@ -31,43 +33,98 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
   // The way to archived documents only shows once there are some.
   const hasArchived = archived || !empty || (await pageDocuments(ctx, { archived: true })).total > 0;
   const kindLabel = Object.entries(DOC_KINDS).find(([k]) => k === sp.kind)?.[1] ?? null;
+  const v2 = uiV2();
+  const canUpload = !ctx.demo && realDocsEnabled();
 
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Documents" title={archived ? "Archived documents" : "Documents"}>
-        {docs.length > 0 && (
-          <>
-            <Link href="/app/make" className="btn-ghost">
+        {docs.length > 0 &&
+          (v2 && !canUpload ? (
+            // Redesigned app: one filled primary that works here (Design 02 Nov); adding isn't open, so Make leads and Add waits.
+            <Link href="/app/make" className="btn">
               Make a document
             </Link>
-            <Link href="/app/documents/new" className="btn">
-              Add a document
-            </Link>
-          </>
-        )}
+          ) : (
+            <>
+              <Link href="/app/make" className="btn-ghost">
+                Make a document
+              </Link>
+              <Link href="/app/documents/new" className="btn">
+                Add a document
+              </Link>
+            </>
+          ))}
       </PageHeader>
 
-      {!empty && (
-        <form className="flex flex-col gap-2 sm:flex-row" role="search">
-          <label htmlFor="q" className="sr-only">
-            Search documents
-          </label>
-          <input id="q" name="q" defaultValue={sp.q} placeholder="Search by title, issuer or other party" className="input flex-1" />
-          <label htmlFor="kind" className="sr-only">
-            Kind
-          </label>
-          <select id="kind" name="kind" defaultValue={sp.kind ?? ""} className="input sm:w-48">
-            <option value="">All kinds</option>
-            {Object.entries(DOC_KINDS).map(([k, label]) => (
-              <option key={k} value={k}>
-                {label}
-              </option>
-            ))}
-          </select>
-          {archived && <input type="hidden" name="archived" value="1" />}
-          <button className="btn-ghost">Search</button>
-        </form>
-      )}
+      {!empty &&
+        (v2 ? (
+          // Redesigned app: on the phone, search runs on Enter or the icon in the field, and the kinds are a row of chips
+          // (Design F3, 02 Nov); from sm up the menu and the Search button are back. The hidden menu still sends the kind:
+          // the key remounts the form after a chip's in-app navigation, or its fields would keep the previous filter.
+          <>
+            <form key={`${sp.kind ?? ""}|${sp.q ?? ""}|${archived}`} className="flex flex-col gap-2 sm:flex-row" role="search">
+              <label htmlFor="q" className="sr-only">
+                Search documents
+              </label>
+              <span className="relative flex-1">
+                <input id="q" name="q" defaultValue={sp.q} placeholder="Search by title, issuer or other party" className="input w-full pr-12 sm:pr-3" />
+                <button aria-label="Search" className="absolute inset-y-0 right-0 grid w-11 place-items-center text-ink-3 sm:hidden">
+                  <Icon name="search" />
+                </button>
+              </span>
+              <label htmlFor="kind" className="sr-only">
+                Kind
+              </label>
+              <select id="kind" name="kind" defaultValue={sp.kind ?? ""} className="input hidden sm:block sm:w-48">
+                <option value="">All kinds</option>
+                {Object.entries(DOC_KINDS).map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              {archived && <input type="hidden" name="archived" value="1" />}
+              <button className="btn-ghost hidden sm:inline-flex">Search</button>
+            </form>
+            <ul aria-label="Kind" className="-mx-4 -mt-2 flex gap-2 overflow-x-auto px-4 pb-1 sm:hidden">
+              {[["", "All"], ...Object.entries(DOC_KINDS)].map(([k, label]) => {
+                const on = (sp.kind ?? "") === k;
+                return (
+                  <li key={k} className="shrink-0">
+                    <Link
+                      href={pageHref({ q: sp.q, kind: k || undefined, archived: sp.archived }, 1)}
+                      aria-current={on ? "true" : undefined}
+                      className={`press inline-flex min-h-11 items-center rounded-full border px-4 text-sm ${on ? "border-ink bg-ink text-white" : "border-line bg-paper text-ink-2"}`}
+                    >
+                      {label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        ) : (
+          <form className="flex flex-col gap-2 sm:flex-row" role="search">
+            <label htmlFor="q" className="sr-only">
+              Search documents
+            </label>
+            <input id="q" name="q" defaultValue={sp.q} placeholder="Search by title, issuer or other party" className="input flex-1" />
+            <label htmlFor="kind" className="sr-only">
+              Kind
+            </label>
+            <select id="kind" name="kind" defaultValue={sp.kind ?? ""} className="input sm:w-48">
+              <option value="">All kinds</option>
+              {Object.entries(DOC_KINDS).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            {archived && <input type="hidden" name="archived" value="1" />}
+            <button className="btn-ghost">Search</button>
+          </form>
+        ))}
 
       {docs.length === 0 ? (
         filtered ? (
@@ -105,6 +162,36 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             )}
           </EmptyState>
         )
+      ) : v2 ? (
+        // Grouped inset rows (Design spec 2026-11-02 §4); the title morphs into the document page's title (§6.1).
+        <ul className="group-list stagger">
+          {docs.map((d, n) => (
+            <li key={d.id} style={{ "--i": n }}>
+              {/* Phone: the chip wraps onto its own line under the text, lined up with it (32 px icon + 12 px gap), so titles
+                  aren't cut to a few letters; from sm up it sits beside the text. */}
+              <Link href={`/app/documents/${d.id}`} className="group-row flex-wrap gap-y-1.5 sm:flex-nowrap">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-tile text-ink-2">
+                  <Icon name="documents" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <ViewTransition name={`doc-${d.id}`} share="v2-morph" default="none">
+                    <span className="block truncate font-medium">{d.title}</span>
+                  </ViewTransition>
+                  <span className="block truncate text-[13px] text-ink-3">
+                    {DOC_KINDS[d.kind]}
+                    {(d.issuer || d.counterparty) && ` · ${d.issuer ?? d.counterparty}`}
+                  </span>
+                </span>
+                <span className="ml-11 basis-full sm:ml-0 sm:basis-auto">
+                  <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                </span>
+                <span className="hidden text-ink-3 sm:block">
+                  <Icon name="chevron" size={16} />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
           {docs.map((d) => (

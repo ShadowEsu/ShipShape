@@ -1,10 +1,14 @@
 import Link from "next/link";
-import { fmtMonthDay, RenewalChip, ValidityChip } from "@/components/app-ui";
-import { ATTENTION_MAX, DOC_KINDS, homeSummary } from "@/lib/server/documents";
-import { realDocsEnabled } from "@/lib/server/flags";
+import { RenewalChip, ValidityChip } from "@/components/app-ui";
+import { attentionLine } from "@/lib/attention";
+import { aiEnabled } from "@/lib/server/ai";
+import { ATTENTION_MAX, DOC_KINDS, homeSummary, recentDocuments } from "@/lib/server/documents";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { listPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
 import { DEFAULT_WORKSPACE_NAME, requireWorkspace } from "@/lib/server/session";
+import { appTools } from "@/lib/server/tools";
+import { HomeV2 } from "./home-v2";
 
 const TASKS = [
   { href: "/app/make/irs-w9", title: "Fill a W-9", body: "Filled from your business facts." },
@@ -14,7 +18,8 @@ const TASKS = [
 
 export default async function AppHome() {
   const ctx = await requireWorkspace();
-  const [docs, profile, links] = await Promise.all([homeSummary(ctx), loadProfile(ctx), listPassports(ctx)]);
+  const v2 = uiV2();
+  const [docs, profile, links, recent] = await Promise.all([homeSummary(ctx), loadProfile(ctx), listPassports(ctx), v2 ? recentDocuments(ctx) : []]);
   const { attention, current, first } = docs;
   const canUpload = !ctx.demo && realDocsEnabled();
   // The list comes most-urgent first: what can still be renewed, then what has lapsed. Shown as two labelled
@@ -51,6 +56,22 @@ export default async function AppHome() {
   ];
   const done = setup.filter((s) => s.done).length;
   const next = setup.find((s) => !s.done);
+
+  if (v2) {
+    return (
+      <HomeV2
+        today={ctx.today}
+        docs={docs}
+        groups={groups}
+        moreLine={docs.attentionTotal > ATTENTION_MAX ? `The ${ATTENTION_MAX} most urgent are listed; ${moreLine}.` : null}
+        canUpload={canUpload}
+        next={next ? { ...next, done, of: setup.length } : null}
+        recent={recent}
+        tools={appTools(ctx)}
+        aiOn={aiEnabled()}
+      />
+    );
+  }
 
   return (
     <div className="space-y-10">
@@ -149,32 +170,19 @@ export default async function AppHome() {
                 <h3 className="eyebrow">{g.label}</h3>
                 <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
                   {g.rows.map((d) => {
-                    // Days from today to the date that put the document here (its expiry, or a renewal notice).
-                    const days = Math.round((Date.parse(d.attention_on) - Date.parse(ctx.today)) / 86_400_000);
-                    const renewal = d.attention_kind === "renewal";
-                    // A renewal row keeps one chip (its reason); an expiry within 30 days is named on the state line instead.
-                    const state = renewal
-                      ? `Renewal notice due ${days === 0 ? "today" : `in ${days} ${days === 1 ? "day" : "days"}`}.${d.validity === "expiring" && d.expires_on ? ` Expires ${fmtMonthDay(d.expires_on)}.` : ""}`
-                      : d.validity === "expired"
-                        ? "It has lapsed."
-                        : days === 0
-                          ? "Expires today."
-                          : `${days} ${days === 1 ? "day" : "days"} left.`;
+                    const line = attentionLine(d, ctx.today, canUpload);
                     return (
                       <li key={d.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                         <span className="min-w-0 space-y-1">
                           <span className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{d.title}</span>
                             <span className="text-sm text-ink-3">{DOC_KINDS[d.kind]}</span>
-                            {renewal ? <RenewalChip renewsOn={d.attention_on} /> : <ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
+                            {line.renewal ? <RenewalChip renewsOn={d.attention_on} /> : <ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
                           </span>
-                          <span className="block text-sm text-ink-2">{state}</span>
+                          <span className="block text-sm text-ink-2">{line.state}</span>
                         </span>
-                        <Link
-                          href={renewal ? `/app/documents/${d.id}` : canUpload ? `/app/documents/${d.id}#version-file` : `/app/documents/${d.id}#expires_on`}
-                          className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline"
-                        >
-                          {renewal ? "Open it" : canUpload ? "Add the renewed copy" : "Update its dates"}
+                        <Link href={line.href} className="inline-flex min-h-6 shrink-0 items-center text-sm text-ink-2 underline">
+                          {line.action}
                         </Link>
                       </li>
                     );

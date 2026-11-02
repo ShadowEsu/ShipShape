@@ -169,6 +169,16 @@ export async function firstDocument(ctx: Ctx): Promise<{ id: string; title: stri
   return row ?? null;
 }
 
+/** How many documents Home and the sidebar show as recently added. */
+export const RECENT_MAX = 3;
+// d.id last: the sample workspace's documents share one created_at (one transaction).
+const RECENT_SQL = DOC_SELECT + ` where d.org_id = $2 and d.status = 'active' order by d.created_at desc, d.id limit $3`;
+
+/** The workspace's newest active documents, newest first: "Recent" on Home and in the sidebar. */
+export async function recentDocuments(ctx: Ctx): Promise<DocRow[]> {
+  return asUser(ctx.userId, (tx) => tx.query<DocRow>(RECENT_SQL, [ctx.today, ctx.orgId, RECENT_MAX]));
+}
+
 // Ordered as passport_open lists a link's documents (0003), so the preview shows them as the link will (W14-10).
 const BY_ID_SQL = DOC_SELECT + ` where d.org_id = $2 and d.status = 'active' and d.id = any($3::uuid[]) order by d.kind, d.title`;
 

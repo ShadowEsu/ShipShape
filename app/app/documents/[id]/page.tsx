@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ViewTransition } from "react";
 import { Notice, ValidityChip } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { HashLanding } from "@/components/hash-landing";
@@ -179,7 +180,10 @@ export default async function DocumentPage({
         <section className="min-w-0 space-y-6">
           <article className="rounded-2xl border border-line bg-paper p-6 shadow-sm sm:p-8">
             <p className="eyebrow">{DOC_KINDS[doc.kind]}</p>
-            <h1 className="mt-2 font-serif text-3xl font-semibold tracking-tight">{doc.title}</h1>
+            {/* The documents list's row title morphs into this one (redesigned app, Design spec 2026-11-02 §6.1); the name is inert otherwise. */}
+            <ViewTransition name={`doc-${doc.id}`} share="v2-morph" default="none">
+              <h1 className="mt-2 font-serif text-3xl font-semibold tracking-tight">{doc.title}</h1>
+            </ViewTransition>
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-ink-2">
               <ValidityChip validity={doc.validity} expiresOn={doc.expires_on} />
               {doc.issuer && <span>Issued by {doc.issuer}</span>}
