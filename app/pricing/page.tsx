@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { megabytes, PLANS } from "@/lib/plans";
-import { paymentsLive } from "@/lib/server/billing-config";
+import { billingConfig } from "@/lib/server/billing-config";
 import { contactEmail } from "@/lib/server/flags";
 
 const { free, pro } = PLANS;
@@ -22,8 +22,8 @@ const ROWS: [feature: string, free: string, pro: string][] = [
   ["Versions, history, search", "✓", "✓"],
   ["W-9 and NDA from your business facts", "✓", "✓"],
   ["Deadlines and calendar file", "✓", "✓"],
-  ["Email reminders 90, 30 and 7 days ahead", "Not included", "✓"],
-  ["Signature requests", "Not included", "✓"],
+  ["Reminders 90, 30 and 7 days ahead", "Not included", "On the Deadlines page"],
+  ["Signature requests", "Not included", "Not yet: needs email"],
   ["Export and account deletion", "✓", "✓"],
 ];
 
@@ -43,7 +43,10 @@ function billingQuestions(live: boolean, contact: string | null): [q: string, a:
 }
 
 export default function PricingPage() {
-  const live = paymentsLive();
+  const cfg = billingConfig();
+  const live = cfg?.live === true;
+  // Stripe Tax adds sales tax at checkout on top of the tax-exclusive price (Security SHOULD-3).
+  const tax = cfg?.automaticTax === true;
   const billing = billingQuestions(live, contactEmail());
   return (
     <>
@@ -52,7 +55,11 @@ export default function PricingPage() {
         <p className="eyebrow">Pricing</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Free to start. Pro when you need more.</h1>
         <p className="mt-3 max-w-2xl text-ink-2">
-          {live ? "Prices in US dollars." : "Prices in US dollars. Payments are in test mode during the preview: no real charges."}
+          {live
+            ? tax
+              ? "Prices in US dollars. Sales tax is added at checkout where it applies."
+              : "Prices in US dollars."
+            : "Prices in US dollars. Payments are in test mode during the preview: no real charges."}
         </p>
 
         <div className="mt-10 grid gap-4 md:grid-cols-3">
@@ -75,7 +82,7 @@ export default function PricingPage() {
               <span className="font-serif text-4xl font-semibold">${pro.price}</span>
               <span className="text-ink-2"> / month</span>
             </p>
-            <p className="text-base text-ink-2 sm:text-sm">No limits on documents or links, plus email reminders and signature requests.</p>
+            <p className="text-base text-ink-2 sm:text-sm">No limits on documents or links, plus deadline reminders on your Deadlines page.</p>
             <Link href="/signin" className="btn-accent mt-auto">
               Try the sample
             </Link>
@@ -128,8 +135,8 @@ export default function PricingPage() {
             </table>
           </div>
           <p className="mt-3 text-base text-ink-3 sm:text-sm">
-            Email reminders and signature requests by email start once ShipShape has an email provider. Until then, the sample workspace
-            shows them inside the app.
+            ShipShape doesn&apos;t send email yet. Until it does, Pro&apos;s reminders appear on your Deadlines page, and signature requests
+            work only in the sample workspace.
           </p>
         </section>
 

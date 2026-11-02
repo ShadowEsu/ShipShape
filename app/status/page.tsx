@@ -8,7 +8,7 @@ import { realDocsEnabled } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
   title: "Status",
-  description: "Whether ShipShape and its database are answering right now, and which features are on during the preview.",
+  description: "Whether ShipShape and its database are answering right now, and which features are on.",
   alternates: { canonical: "/status" },
 };
 
@@ -57,7 +57,7 @@ export default async function StatusPage() {
           <Row name="Database" state={db ? "Up" : "Down"} tone={db ? "ok" : "bad"} />
         </ul>
 
-        <h2 className="mt-10 font-semibold">Features during the preview</h2>
+        <h2 className="mt-10 font-semibold">{realDocs ? "Features" : "Features during the preview"}</h2>
         <ul className="mt-3 divide-y divide-line rounded-2xl border border-line bg-paper">
           <Row name="Sample workspaces" state="On" tone="ok" note="Made-up business and documents; everything except uploading your own files." />
           <Row
@@ -68,9 +68,13 @@ export default async function StatusPage() {
           />
           <Row name="Email" state="Off" tone="off" note="In the sample, reminders and signing codes show inside the app instead." />
           {payments?.live ? (
-            <Row name="Payments" state="Live payments" tone="ok" note="Real cards are charged through Stripe." />
+            payments.checkoutPaused ? (
+              <Row name="Payments" state="New subscriptions paused" tone="off" note="Existing Pro subscriptions carry on through Stripe." />
+            ) : (
+              <Row name="Payments" state="Live payments" tone="ok" note="Real cards are charged through Stripe." />
+            )
           ) : (
-            <Row name="Payments" state={payments ? "Test mode" : "Off"} tone="off" note="No real charges during the preview." />
+            <Row name="Payments" state={payments ? "Test mode" : "Off"} tone="off" note={realDocs ? "No real charges." : "No real charges during the preview."} />
           )}
           <Row
             name="AI features"

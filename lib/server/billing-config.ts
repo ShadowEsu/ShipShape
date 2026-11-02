@@ -20,6 +20,11 @@ export interface BillingConfig {
   live: boolean;
   /** Stripe Tax on the checkout, only with STRIPE_AUTOMATIC_TAX exactly "1" (Preston turns Stripe Tax on in the Dashboard first). */
   automaticTax: boolean;
+  /**
+   * New Pro checkouts stopped (SHIPSHAPE_CHECKOUT_PAUSED exactly "1"), while the webhook, the billing portal and account
+   * deletion keep working for people who already pay: the gentle way to stop selling (PRESTON-STRIPE-LIVE.md, part G).
+   */
+  checkoutPaused: boolean;
 }
 
 /**
@@ -45,7 +50,15 @@ export function billingConfig(): BillingConfig | null {
     : TEST_KEY.test(secretKey) && !(process.env.NODE_ENV === "production" && realDocsEnabled());
   if (!keyOk || !webhookConfigured() || !/^price_[A-Za-z0-9]+$/.test(proPrice)) return null;
   if (!/^https?:\/\/[^/\s]+$/.test(appUrl)) return null;
-  return { secretKey, webhookSecret, proPrice, appUrl, live, automaticTax: process.env.STRIPE_AUTOMATIC_TAX === "1" };
+  return {
+    secretKey,
+    webhookSecret,
+    proPrice,
+    appUrl,
+    live,
+    automaticTax: process.env.STRIPE_AUTOMATIC_TAX === "1",
+    checkoutPaused: process.env.SHIPSHAPE_CHECKOUT_PAUSED === "1",
+  };
 }
 
 /** Whether payments take real money here: the pages drop their test-mode lines then (Security L6). */

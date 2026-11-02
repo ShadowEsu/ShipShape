@@ -11,8 +11,9 @@ let configOk: boolean | undefined;
  * Revision, build time and dependency flags only: no environment variable names or values. `config`
  * is whether the deployment has every setting it needs (W12-2), so the launch's last check fails on
  * a missing secret, not only on a database that doesn't answer. `billing` is the mode payments run
- * in and `webhookConfigured` whether a Stripe signing secret is set, so the live switch can be
- * checked from outside (Security L4): mode names and a boolean, never a key.
+ * in, `checkout` whether new subscriptions can start (SHIPSHAPE_CHECKOUT_PAUSED), and `webhookConfigured`
+ * whether a Stripe signing secret is set, so the live switch can be checked from outside (Security L4):
+ * mode names and a boolean, never a key.
  */
 export async function GET() {
   const db = await dbUp();
@@ -26,6 +27,7 @@ export async function GET() {
       db: db ? "up" : "down",
       config: config ? "ok" : "missing",
       billing: billing ? (billing.live ? "live" : "test") : "off",
+      checkout: billing ? (billing.checkoutPaused ? "paused" : "open") : "off",
       webhookConfigured: webhookConfigured(),
     },
     { status: db && config ? 200 : 503, headers: { "Cache-Control": "no-store" } },

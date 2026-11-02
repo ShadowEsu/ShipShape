@@ -31,7 +31,7 @@ export interface StripePort {
   createCustomer(params: Stripe.CustomerCreateParams, idempotencyKey: string): Promise<{ id: string }>;
   createCheckout(params: Stripe.Checkout.SessionCreateParams): Promise<{ url: string | null }>;
   createPortal(params: Stripe.BillingPortal.SessionCreateParams): Promise<{ url: string }>;
-  retrievePrice(id: string): Promise<{ active: boolean; unit_amount: number | null; currency: string; recurring: { interval: string } | null }>;
+  retrievePrice(id: string): Promise<{ active: boolean; unit_amount: number | null; currency: string; recurring: { interval: string; interval_count: number } | null }>;
   retrieveSubscription(id: string): Promise<SubscriptionState>;
   cancelSubscription(id: string): Promise<unknown>;
   /** Every subscription the customer has in Stripe, ended ones included. */
@@ -149,6 +149,10 @@ export interface BillingView {
   available: boolean;
   /** Payments take real money: Production's live key, admitted with SHIPSHAPE_CHECKOUT_LIVE. False while payments are off. */
   live: boolean;
+  /** Stripe Tax adds sales tax at checkout (STRIPE_AUTOMATIC_TAX), so the agreement box says so (Security SHOULD-3). */
+  salesTax: boolean;
+  /** New subscriptions are paused (SHIPSHAPE_CHECKOUT_PAUSED), so Settings offers no checkout; Manage billing still opens. */
+  paused: boolean;
 }
 
 export async function billingView(ctx: Ctx): Promise<BillingView> {
@@ -168,6 +172,8 @@ export async function billingView(ctx: Ctx): Promise<BillingView> {
       subscribed: row ? LIVE_STATUSES.includes(row.status) : false,
       available: cfg !== null,
       live: cfg?.live ?? false,
+      salesTax: cfg?.automaticTax ?? false,
+      paused: cfg?.checkoutPaused ?? false,
     };
   });
 }
@@ -187,11 +193,14 @@ export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> 
   // The tick first, so an unticked box can only ever get its own refusal (app/app/settings/actions.ts marks the box by that).
   if (!agreed) throw new UserError("Check the box to agree to the Terms, including billing and refunds.");
   const cfg = canPay(ctx);
+  // Paused: no new subscriptions, and no Stripe call at all; existing ones keep their webhook, portal and deletion.
+  if (cfg.checkoutPaused) throw new UserError("New Pro subscriptions are paused for now. Nothing was charged.");
   const stripe = stripePort(cfg);
 
   // The price shown on the site must be the price charged.
   const price = await stripe.retrievePrice(cfg.proPrice);
-  if (!price.active || price.unit_amount !== PLANS.pro.price * 100 || price.currency !== "usd" || price.recurring?.interval !== "month") {
+  const monthly = price.recurring?.interval === "month" && price.recurring.interval_count === 1;
+  if (!price.active || price.unit_amount !== PLANS.pro.price * 100 || price.currency !== "usd" || !monthly) {
     console.error("billing: the Stripe Pro price doesn't match lib/plans.ts; checkout refused");
     throw new UserError("Payments are paused while we fix a price mismatch. Nothing was charged; try again later.");
   }

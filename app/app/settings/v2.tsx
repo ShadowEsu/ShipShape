@@ -113,7 +113,7 @@ export function SettingsV2({
         {view.plan === "free" && (
           <p className="text-sm text-ink-2">
             Free holds {PLANS.free.documents} active documents and {PLANS.free.passports} passport link at a time, with deadlines in the app and
-            your calendar. Pro (${PLANS.pro.price}/month) removes the limits and adds email reminders and signature requests.
+            your calendar. Pro (${PLANS.pro.price}/month) removes the limits and adds deadline reminders on your Deadlines page.
           </p>
         )}
         {!ctx.demo &&
@@ -123,7 +123,13 @@ export function SettingsV2({
             <p className="text-sm text-ink-3">Only the workspace owner changes the plan.</p>
           ) : (
             <div className="space-y-3">
-              {view.subscribed ? <ManageBillingForm /> : <UpgradeForm price={PLANS.pro.price} />}
+              {view.subscribed ? (
+                <ManageBillingForm />
+              ) : view.paused ? (
+                <p className="text-sm text-ink-3">New Pro subscriptions are paused for now.</p>
+              ) : (
+                <UpgradeForm price={PLANS.pro.price} tax={view.salesTax} />
+              )}
               {!view.subscribed && view.customer && <ManageBillingForm />}
               {!view.live && <p className="text-xs text-ink-3">Test mode: no real money moves. Pay with card 4242 4242 4242 4242, any future date and any CVC.</p>}
             </div>

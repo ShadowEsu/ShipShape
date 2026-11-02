@@ -69,7 +69,8 @@ export default function TermsPage() {
         </li>
         <li>
           <strong>{pro.name}</strong> costs ${pro.price} a month, billed monthly by Stripe until you cancel. It removes those limits and
-          adds email reminders and signature requests.
+          adds deadline reminders 90, 30 and 7 days ahead, shown on your Deadlines page. ShipShape doesn&apos;t send email yet, so
+          reminders aren&apos;t emailed and signature requests aren&apos;t available for your own workspace.
         </li>
         <li>You can cancel any time from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free.</li>
         <li>If a payment fails, Pro stays on for 7 days from the first failed attempt while the payment is retried, then moves to Free.</li>

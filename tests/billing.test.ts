@@ -66,7 +66,7 @@ class FakeStripe implements StripePort {
   customersCreated = 0;
   retrieves = 0;
   failNextRetrieve = false;
-  price = { active: true, unit_amount: 1500, currency: "usd", recurring: { interval: "month" } };
+  price: Awaited<ReturnType<StripePort["retrievePrice"]>> = { active: true, unit_amount: 1500, currency: "usd", recurring: { interval: "month", interval_count: 1 } };
 
   async createCustomer() {
     this.customersCreated++;
@@ -230,7 +230,7 @@ describe("keys and mode", () => {
     vi.stubEnv("BILLING_ENABLED", "true");
     expect(billingConfig()).toBeNull();
     vi.stubEnv("BILLING_ENABLED", "1");
-    expect(billingConfig()).toEqual({ secretKey: KEY, webhookSecret: WHSEC, proPrice: PRO, appUrl: "http://127.0.0.1:3917", live: false, automaticTax: false });
+    expect(billingConfig()).toEqual({ secretKey: KEY, webhookSecret: WHSEC, proPrice: PRO, appUrl: "http://127.0.0.1:3917", live: false, automaticTax: false, checkoutPaused: false });
   });
 
   it("outside Vercel's Production takes only a test key: a live key switches billing off there, flag or not", () => {
@@ -250,7 +250,7 @@ describe("keys and mode", () => {
 
   it("Vercel's Production takes real money only with an rk_live_ key, the flag exactly 1, final terms, real documents and https (Security L3)", () => {
     goLive();
-    expect(billingConfig()).toEqual({ secretKey: LIVE, webhookSecret: WHSEC, proPrice: PRO, appUrl: "https://shipshape.example.com", live: true, automaticTax: false });
+    expect(billingConfig()).toEqual({ secretKey: LIVE, webhookSecret: WHSEC, proPrice: PRO, appUrl: "https://shipshape.example.com", live: true, automaticTax: false, checkoutPaused: false });
     const refused: [string, string | undefined][] = [
       ["SHIPSHAPE_CHECKOUT_LIVE", undefined],
       ["SHIPSHAPE_CHECKOUT_LIVE", "true"],
@@ -333,15 +333,19 @@ describe("keys and mode", () => {
       const text = await res.text();
       expect(text).not.toMatch(/sk_|rk_|whsec_|price_/);
       const body = JSON.parse(text);
-      return [body.billing, body.webhookConfigured];
+      return [body.billing, body.checkout, body.webhookConfigured];
     };
-    expect(await mode()).toEqual(["test", true]);
+    expect(await mode()).toEqual(["test", "open", true]);
     goLive();
-    expect(await mode()).toEqual(["live", true]);
+    expect(await mode()).toEqual(["live", "open", true]);
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "true");
+    expect(await mode()).toEqual(["live", "open", true]);
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
+    expect(await mode()).toEqual(["live", "paused", true]);
     vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", undefined);
-    expect(await mode()).toEqual(["off", true]);
+    expect(await mode()).toEqual(["off", "off", true]);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", undefined);
-    expect(await mode()).toEqual(["off", false]);
+    expect(await mode()).toEqual(["off", "off", false]);
   });
 });
 
@@ -453,6 +457,40 @@ describe("checkout", () => {
     expect(other).toMatchObject({ name: "StripeCallFailed", message: "Stripe call failed" });
   });
 
+  it("every Stripe call on the checkout and portal paths fails as type and status only (Security SHOULD-2)", async () => {
+    const boom = async (): Promise<never> => {
+      throw new Stripe.errors.StripeAuthenticationError({ message: "Invalid API Key provided: sk_test_****abcd", statusCode: 401 });
+    };
+    for (const m of ["retrievePrice", "createCustomer", "createCheckout"] as const) {
+      fake = new FakeStripe();
+      setStripeForTests(fake);
+      fake[m] = boom;
+      const e = await startCheckout(await realWorkspace(), true).catch((x: unknown) => x);
+      expect([m, String(e)]).toEqual([m, "StripeAuthenticationError: Stripe StripeAuthenticationError (HTTP 401)"]);
+    }
+    const ctx = await realWorkspace();
+    fake = new FakeStripe();
+    setStripeForTests(fake);
+    await startCheckout(ctx, true);
+    fake.createPortal = boom;
+    expect(String(await openPortal(ctx).catch((x: unknown) => x))).toBe("StripeAuthenticationError: Stripe StripeAuthenticationError (HTTP 401)");
+  });
+
+  it("paused (SHIPSHAPE_CHECKOUT_PAUSED exactly 1): no new checkout and no Stripe call, while the portal and the webhook keep working", async () => {
+    const { ctx, customer } = await payingWorkspace();
+    const fresh = await realWorkspace();
+    const made = fake.checkouts.length;
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "true");
+    await startCheckout(fresh, true);
+    expect(fake.checkouts).toHaveLength(made + 1);
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
+    const before = fake.customersCreated;
+    await expect(startCheckout(await realWorkspace(), true)).rejects.toThrow("New Pro subscriptions are paused for now. Nothing was charged.");
+    expect([fake.checkouts.length, fake.customersCreated]).toEqual([made + 1, before]);
+    expect(await openPortal(ctx)).toMatch(/^https:\/\/billing\.stripe\.com\//);
+    expect(await send("customer.subscription.deleted", { ...subscription("sub_Paused1", customer), status: "canceled" })).toEqual({ status: 200, message: "ok" });
+  });
+
   it("refuses checkout and the billing portal while payments are switched off", async () => {
     const ctx = await realWorkspace();
     vi.stubEnv("STRIPE_SECRET_KEY", "");
@@ -461,10 +499,19 @@ describe("checkout", () => {
     expect(fake.customersCreated).toBe(0);
   });
 
-  it("refuses checkout when the Stripe price is in another currency than the site's", async () => {
-    const ctx = await realWorkspace();
-    fake.price = { ...fake.price, currency: "eur" };
-    await expect(startCheckout(ctx, true)).rejects.toThrow("Payments are paused while we fix a price mismatch. Nothing was charged; try again later.");
+  it("refuses checkout when the Stripe price is in another currency, archived, not monthly, or not every single month (Security SHOULD-1)", async () => {
+    const good = fake.price;
+    const bad: Partial<typeof good>[] = [
+      { currency: "eur" },
+      { active: false },
+      { recurring: { interval: "year", interval_count: 1 } },
+      { recurring: { interval: "month", interval_count: 3 } },
+      { recurring: null },
+    ];
+    for (const b of bad) {
+      fake.price = { ...good, ...b };
+      await expect(startCheckout(await realWorkspace(), true)).rejects.toThrow("Payments are paused while we fix a price mismatch. Nothing was charged; try again later.");
+    }
     expect(fake.checkouts).toEqual([]);
   });
 

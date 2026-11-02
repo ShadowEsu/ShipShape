@@ -17,7 +17,7 @@ export default function PrivacyPage() {
     <LegalPage title="Privacy policy" version={TERMS_VERSION}>
       <p>
         ShipShape holds sensitive paperwork: tax forms, licenses, insurance certificates, agreements and signatures. This page says
-        what we keep, why, who else touches it, and how to get it back or delete it.
+        what we keep, why, who else touches it, and how to get it back or delete it. ShipShape is operated by Unvibe.
       </p>
 
       <h2>What we keep</h2>
@@ -90,8 +90,8 @@ export default function PrivacyPage() {
         <li>Our hosting and database providers, which run the app and store your data for us.</li>
         <li>Stripe, for payments on the Pro plan.</li>
         <li>
-          An email provider, once ShipShape sends email (reminders and signing codes). During the preview nothing is emailed; in the
-          sample workspace those messages appear inside the app instead.
+          An email provider, once ShipShape sends email (reminders and signing codes). ShipShape doesn&apos;t send email yet;
+          reminders appear inside the app instead, and signing codes only in the sample workspace.
         </li>
         <li>
           {AI_RECIPIENT}, only when you choose an AI action and tick the box for that action. Today there is one, &ldquo;What are they
@@ -105,7 +105,8 @@ export default function PrivacyPage() {
       </ul>
       <p>
         We don&apos;t sell your data, we don&apos;t share it for advertising, and we don&apos;t use your documents to train AI
-        models. The providers above will be named, with where they store data, before real accounts open.
+        models. Our providers are Vercel (hosting), Amazon Web Services (database, file storage and sign-in, in the United States,
+        region us-east-1), Stripe (payments) and Anthropic (the AI action above).
       </p>
 
       <h2>Security</h2>
@@ -133,10 +134,7 @@ export default function PrivacyPage() {
           <strong>Sample workspaces:</strong> a &ldquo;Try the sample&rdquo; visit makes a workspace of made-up data and no email
           address. It is deleted by itself within two days of being made, files included.
         </li>
-        <li>
-          Deleted data can remain in our providers&apos; backups until those backups expire; the exact period will be stated here
-          before real accounts open.
-        </li>
+        <li>Deleted data can remain in database backups and earlier file versions for up to 7 days, then it&apos;s gone.</li>
       </ul>
       <p>
         Depending on where you live (California, for example), you may have further rights to know, correct or delete your data. The
