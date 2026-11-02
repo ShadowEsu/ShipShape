@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Icon } from "@/components/icons";
 import { Logo, NotLegalAdvice } from "@/components/ui";
 import { recentDocuments } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
@@ -46,26 +45,20 @@ export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: b
             </ul>
           </section>
         )}
-        <div className="mt-auto space-y-2 px-1">
-          <Link href="/app/settings" className="flex min-h-11 items-center gap-3 rounded-xl px-2 transition-colors duration-[180ms] hover:bg-paper/70">
-            <span className="text-ink-3">
-              <Icon name="account" />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-ink" title={ws.name}>
-                {ws.name}
-              </span>
-              <span className="block text-xs text-ink-3">Settings</span>
-            </span>
-          </Link>
-          {signOutForm}
+        {/* The workspace row opens the Account sheet (Settings, Sign out); Sign out isn't a pill here (Design F1, 02 Nov). */}
+        <div className="mt-auto px-1">
+          <AccountSheet id="account-sheet-side" workspace={ws.name} row>
+            {signOutForm}
+          </AccountSheet>
         </div>
       </aside>
 
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-line bg-paper/85 pr-1 pl-4 backdrop-blur-xl md:hidden">
           <Logo href="/app" />
-          <AccountSheet workspace={ws.name}>{signOutForm}</AccountSheet>
+          <AccountSheet id="account-sheet" workspace={ws.name}>
+            {signOutForm}
+          </AccountSheet>
         </header>
         {(deleting || ws.demo) && (
           <section aria-label="Workspace notice">

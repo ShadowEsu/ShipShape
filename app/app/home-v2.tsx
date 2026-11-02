@@ -14,6 +14,8 @@ const CHIPS = [
   { href: "/app/make/irs-w9", label: "Make a W-9" },
   { href: "/app/documents", label: "Ask someone to sign" },
 ];
+// Takes the place of a chip that would repeat the "Next:" step right under it (Design F2, 02 Nov).
+const SPARE_CHIP = { href: "/app/collect", label: "Collect W-9s" };
 
 /**
  * Home in the redesigned app: the question and the box first, then every tool, then what needs attention and what's
@@ -31,6 +33,7 @@ export function HomeV2(props: {
   aiOn: boolean;
 }) {
   const { today, docs, groups, moreLine, canUpload, next, recent, tools, aiOn } = props;
+  const chips = CHIPS.map((c) => (c.href === next?.href ? SPARE_CHIP : c));
   return (
     <div className="space-y-12">
       <section className="space-y-5">
@@ -39,7 +42,7 @@ export function HomeV2(props: {
         </h1>
         <AiBox tools={tools} aiOn={aiOn} />
         <ul aria-label="Suggestions" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-auto md:max-w-[760px] md:flex-wrap md:justify-center md:px-0">
-          {CHIPS.map((c) => (
+          {chips.map((c) => (
             <li key={c.label} className="shrink-0">
               <Link href={c.href} className="press inline-flex min-h-11 items-center rounded-full border border-line bg-paper px-4 text-sm text-ink-2 transition-colors duration-[180ms] hover:bg-tile">
                 {c.label}

@@ -410,18 +410,49 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect(tagOf(html, "Collect")).toBe("Not open yet");
   });
 
-  it("in a sample, adding a document is the one tool that says it isn't in the sample", async () => {
-    vi.stubEnv("SHIPSHAPE_AI", "1");
-    vi.stubEnv("ANTHROPIC_API_KEY", "unused");
+  /** Signs in to a seeded sample workspace, as "Try the sample workspace" does. */
+  const signInSample = async () => {
     const userId = await createLocalUser(null, true);
     const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
     await finishSignIn(userId, { demo: true });
+  };
+  /** Home's suggestion chips, in order. */
+  const chips = (html: string) => {
+    const list = /<ul aria-label="Suggestions"[^>]*>([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? "";
+    return [...list.matchAll(/<a [^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g)].map((m) => `${m[2]} ${m[1]}`);
+  };
+
+  it("in a sample, adding a document is the one tool that says it isn't in the sample", async () => {
+    vi.stubEnv("SHIPSHAPE_AI", "1");
+    vi.stubEnv("ANTHROPIC_API_KEY", "unused");
+    await signInSample();
     const tagged = tiles(await homePage()).filter((t) => t.tag !== null);
     expect(tagged).toEqual([
       { href: "/app/documents/new", name: "Add a document", tag: "Not in the sample" },
       { href: "/app/facts", name: "Business facts", tag: "View only" },
     ]);
+  });
+
+  it("never offers the Next step again as a chip right under it: Collect W-9s takes its place", async () => {
+    await signInSample();
+    const sample = await homePage();
+    expect(textOf(sample)).toContain("Next: Share a passport link");
+    expect(chips(sample)).toEqual(["Check a request /app/ask", "Collect W-9s /app/collect", "Make a W-9 /app/make/irs-w9", "Ask someone to sign /app/documents"]);
+    // A new workspace's next step is something else, so the passport chip stays.
+    await signIn("home-v2-chips@example.com");
+    expect(chips(await homePage())).toContain("Share a passport link /app/passport");
+  });
+
+  it("the documents list leads with an action that works: Make in a sample (adding isn't in it), Add where files can be added", async () => {
+    await signInSample();
+    expect(primaryActions(await documentsPage({}))).toEqual([{ label: "Make a document", href: "/app/make" }]);
+    expect(await documentsPage({})).not.toContain('href="/app/documents/new"');
+    const ctx = await signIn("docs-v2-real@example.com");
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind) values ($1, 'Lease', 'agreement')", [ctx.orgId]));
+    const html = await documentsPage({});
+    expect(primaryActions(html)).toEqual([{ label: "Add a document", href: "/app/documents/new" }]);
+    expect(html).toMatch(/<a class="btn-ghost" href="\/app\/make">Make a document<\/a>/);
   });
 
   it("Recent lists the three newest active documents, newest first", async () => {

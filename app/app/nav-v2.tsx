@@ -69,13 +69,13 @@ function Sheet({ id, title, open, children }: { id: string; title: string; open:
       ref={open}
       id={id}
       aria-labelledby={`${id}-title`}
-      className="sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30"
+      className="sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:inset-x-auto md:bottom-3 md:left-3 md:w-[280px] md:rounded-2xl md:shadow-[0_12px_40px_-12px_rgb(0_0_0/0.3)] md:backdrop:bg-black/10"
       onClick={(e) => {
         // A click on the backdrop lands on the dialog element itself.
         if (e.target === e.currentTarget) e.currentTarget.close();
       }}
     >
-      <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-line" aria-hidden="true" />
+      <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-line md:hidden" aria-hidden="true" />
       <div className="flex items-center justify-between px-4 pt-2 pb-1">
         <h2 id={`${id}-title`} className="section-title">
           {title}
@@ -143,22 +143,39 @@ export function TabBar() {
   );
 }
 
-/** The phone's account button (top right) and its sheet: the workspace, Settings, and what the server passes in (sign out). */
-export function AccountSheet({ workspace, children }: { workspace: string; children: React.ReactNode }) {
+/**
+ * The account button and its sheet: the workspace, Settings, and what the server passes in (sign out). On the phone it's
+ * the icon at the top right; in the sidebar it's the workspace row at the foot, and the sheet opens above it.
+ */
+export function AccountSheet({ id, workspace, row, children }: { id: string; workspace: string; row?: boolean; children: React.ReactNode }) {
   const sheet = useRef<HTMLDialogElement>(null);
+  const show = () => sheet.current?.showModal();
   return (
     <>
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        aria-controls="account-sheet"
-        onClick={() => sheet.current?.showModal()}
-        className="press grid size-11 place-items-center rounded-full text-ink-2"
-        aria-label="Account"
-      >
-        <Icon name="account" size={24} />
-      </button>
-      <Sheet id="account-sheet" title="Account" open={sheet}>
+      {row ? (
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-controls={id}
+          onClick={show}
+          className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left transition-colors duration-[180ms] hover:bg-paper/70"
+        >
+          <span className="text-ink-3">
+            <Icon name="account" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium text-ink" title={workspace}>
+              {workspace}
+            </span>
+            <span className="block text-xs text-ink-3">Settings</span>
+          </span>
+        </button>
+      ) : (
+        <button type="button" aria-haspopup="dialog" aria-controls={id} onClick={show} className="press grid size-11 place-items-center rounded-full text-ink-2" aria-label="Account">
+          <Icon name="account" size={24} />
+        </button>
+      )}
+      <Sheet id={id} title="Account" open={sheet}>
         <p className="mb-3 truncate text-sm text-ink-3">{workspace}</p>
         <SheetLinks items={[["/app/settings", "Settings", "settings"]]} />
         <div className="mt-3">{children}</div>

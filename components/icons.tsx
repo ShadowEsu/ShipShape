@@ -18,7 +18,8 @@ export type IconName =
   | "send"
   | "chevron"
   | "account"
-  | "close";
+  | "close"
+  | "search";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   home: <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z" />,
@@ -102,6 +103,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6" />
+      <path d="m15.5 15.5 4 4" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {

@@ -202,6 +202,10 @@ body {
   letter-spacing: 0;
   text-transform: none;
 }
+/* ...but one that only repeats the title ("Documents" over "Documents") goes. */
+.ui-v2 .page-eyebrow-repeat {
+  display: none;
+}
 .ui-v2 .input {
   min-height: 44px;
   border-radius: 12px;

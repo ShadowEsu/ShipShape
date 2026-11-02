@@ -6,7 +6,8 @@ export function PageHeader({ eyebrow, title, children }: { eyebrow?: string; tit
   return (
     <header className="page-header flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
-        {eyebrow && <p className="page-eyebrow eyebrow mb-1">{eyebrow}</p>}
+        {/* page-eyebrow-repeat: the redesigned app hides an eyebrow that only repeats the title (Design, 02 Nov). */}
+        {eyebrow && <p className={`page-eyebrow eyebrow mb-1${eyebrow === title ? " page-eyebrow-repeat" : ""}`}>{eyebrow}</p>}
         <h1 className="page-title font-serif text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
       </div>
       {children && <div className="page-actions flex flex-wrap gap-2">{children}</div>}
