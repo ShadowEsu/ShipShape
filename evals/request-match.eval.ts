@@ -150,6 +150,8 @@ const prompts: string[] = [];
 const report: { name: string; pass: boolean; why: string; items: Pick<RequestItem, "kind" | "label" | "quote" | "traced">[] }[] = [];
 let providerErrors = 0;
 let usage = { input: 0, output: 0, calls: 0 };
+/** Wall time of each model call through the runner, in ms (includes the runner's own start-up). */
+const latencies: number[] = [];
 
 const RunnerReply = z.object({
   content: z.array(z.object({ type: z.string(), text: z.string().optional() })),
@@ -161,7 +163,9 @@ const runner = async (req: AiRequest) => {
   prompts.push(req.system + req.user);
   if (!RUNNER) throw new Error("no runner");
   const body = JSON.stringify({ system: req.system, messages: [{ role: "user", content: req.user }] });
+  const started = Date.now();
   const out = spawnSync(RUNNER, [req.model, String(req.maxTokens)], { input: body, encoding: "utf8", timeout: 150_000 });
+  latencies.push(Date.now() - started);
   if (out.status !== 0) {
     providerErrors++;
     throw new Error(`runner exit ${out.status}: ${(out.stderr || "").slice(0, 200)}`);
@@ -190,14 +194,28 @@ describe.skipIf(!RUNNER)(`request matching on ${AI_MODEL}`, () => {
     setAiProviderForTests(runner);
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     setAiProviderForTests(null);
     vi.unstubAllEnvs();
     const passed = report.filter((r) => r.pass).length;
     const untraced = report.flatMap((r) => r.items).filter((i) => i.traced === false).length;
-    // List price for the pinned model: $0.10 in, $0.50 out per million tokens.
-    const dollars = (usage.input * 0.1 + usage.output * 0.5) / 1e6;
-    const summary = { model: AI_MODEL, cases: report.length, passed, failed: report.length - passed, providerErrors, untracedQuotes: untraced, usage, listPriceUsd: Number(dollars.toFixed(5)) };
+    // At list price, as the app's own meter booked it (one price for the pinned model, in lib/server/ai.ts).
+    const [meter] = await db.root((tx) => tx.query<{ micros: string }>("select coalesce(sum(cost_micros), 0)::text as micros from app.ai_calls"));
+    const dollars = Number(meter.micros) / 1e6;
+    const sorted = [...latencies].sort((a, b) => a - b);
+    const latencyMs = { median: sorted[Math.floor(sorted.length / 2)] ?? 0, max: sorted.at(-1) ?? 0 };
+    const summary = {
+      model: AI_MODEL,
+      cases: report.length,
+      passed,
+      failed: report.length - passed,
+      providerErrors,
+      untracedQuotes: untraced,
+      usage,
+      listPriceUsd: Number(dollars.toFixed(5)),
+      perCallUsd: usage.calls ? Number((dollars / usage.calls).toFixed(5)) : 0,
+      latencyMs,
+    };
     console.info(JSON.stringify(summary));
     for (const r of report) console.info(`${r.pass ? "PASS" : "FAIL"} ${r.name}${r.pass ? "" : `: ${r.why}`}`);
     if (process.env.AI_EVAL_REPORT) writeFileSync(process.env.AI_EVAL_REPORT, JSON.stringify({ summary, cases: report }, null, 1));
