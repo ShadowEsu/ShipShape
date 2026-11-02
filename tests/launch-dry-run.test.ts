@@ -159,6 +159,27 @@ describe("LAUNCH_APPLY=1 infra/launch.sh", () => {
     expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["sts get-caller-identity --query [Account,Arn] --output text"]);
   });
 
+  it.each([
+    ["STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`],
+    ["SOME_OTHER_NAME", `sk_live_${"b".repeat(24)}`],
+  ])("stops on a Stripe live key in its environment (%s) before any AWS call, printing neither name nor value (Security L3)", (name, value) => {
+    const { bin, calls } = fakeAws(`live-${name}`, `*get-caller-identity*) printf '111122223333\\tarn:aws:sts::111122223333:assumed-role/AWSReservedSSO_Admin_0123/me\\n' ;;`);
+    const { status, out, log } = launch(complete, { apply: true, bin, env: { [name]: value } });
+    expect(status).toBe(1);
+    expect(out).toContain("Stopped: A Stripe live key is in this shell's environment");
+    expect(out + log).not.toContain(value);
+    expect(out + log).not.toContain(name);
+    expect(existsSync(calls)).toBe(false);
+  });
+
+  it("goes on past the key check with a Stripe test key in its environment", () => {
+    const { bin, calls } = fakeAws("test-key", `*get-caller-identity*) printf '111122223333\\tarn:aws:iam::111122223333:root\\n' ;;`);
+    const { status, out } = launch(complete, { apply: true, bin, env: { STRIPE_SECRET_KEY: `sk_test_${"a".repeat(24)}` } });
+    expect(out).not.toContain("Stripe live key");
+    expect(status).toBe(1);
+    expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["sts get-caller-identity --query [Account,Arn] --output text"]);
+  });
+
   // A copy of what launch.sh needs from the repo, so an apply run can go all the way: its own lockfile
   // and node_modules (committed on a date the test picks), scripts/launch-checks.ts, and optionally a
   // Vercel link. The real RDS bundle needs the network, so the copy pins a fixture bundle's sha256.

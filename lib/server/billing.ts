@@ -8,7 +8,7 @@ import { SubscriptionStillRunning, UserError } from "./errors";
 import type { Ctx } from "./profile";
 
 /**
- * Stripe billing, TEST MODE unless BILLING_LIVE_KEYS_OK admits a live key (fleet rule: no live keys until an attorney names the seller).
+ * Stripe billing: test mode everywhere but Vercel's Production, which takes only a live key admitted by SHIPSHAPE_CHECKOUT_LIVE (billing-config.ts).
  *
  * Access comes only from verified webhooks, after re-reading the subscription from Stripe, so event
  * order, duplicates and stale events can't grant or keep Pro. The checkout redirect grants nothing.
@@ -108,7 +108,7 @@ export interface BillingView {
   subscribed: boolean;
   /** Payments are switched on in this environment. */
   available: boolean;
-  /** Payments take real money: a live key, admitted with BILLING_LIVE_KEYS_OK. False while payments are off. */
+  /** Payments take real money: Production's live key, admitted with SHIPSHAPE_CHECKOUT_LIVE. False while payments are off. */
   live: boolean;
 }
 
@@ -323,7 +323,7 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
     return { status: 400, message: "bad signature" };
   }
   // An event in the other mode than the key is refused before it touches anything: live-mode events only once
-  // BILLING_LIVE_KEYS_OK admitted a live key (Security B5), test-mode events never with a live key.
+  // SHIPSHAPE_CHECKOUT_LIVE admitted a live key (Security B5), test-mode events never with a live key.
   if (event.livemode !== cfg.live) return { status: 400, message: event.livemode ? "live events refused" : "test events refused" };
   if (!HANDLED.has(event.type)) return { status: 200, message: "ignored" };
 

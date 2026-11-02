@@ -7,23 +7,29 @@ import { realDocsEnabled } from "./flags";
 // and esign. Every /app page still loads it: app/app/layout.tsx → account.ts → billing.ts.
 
 const TEST_KEY = /^(sk|rk)_test_[A-Za-z0-9]{10,}$/;
-const LIVE_KEY = /^(sk|rk)_live_[A-Za-z0-9]{10,}$/;
+// A restricted key only (its scopes in PRESTON-STRIPE-LIVE.md): a full sk_live_ key could do anything to the account.
+const LIVE_KEY = /^rk_live_[A-Za-z0-9]{10,}$/;
+const WEBHOOK_SECRET = /^whsec_[A-Za-z0-9]+$/;
 
 export interface BillingConfig {
   secretKey: string;
   webhookSecret: string;
   proPrice: string;
   appUrl: string;
-  /** A live-mode key, admitted only with BILLING_LIVE_KEYS_OK=1 and final terms. */
+  /** Real money: Vercel's Production with a restricted live key, SHIPSHAPE_CHECKOUT_LIVE=1, final terms and real documents. */
   live: boolean;
 }
 
 /**
  * Billing is on only when BILLING_ENABLED is "1" and there's a Stripe key, a webhook secret, the
- * Pro price and the app URL. The key must be a TEST key unless BILLING_LIVE_KEYS_OK is also "1"
- * and the terms are final: while TERMS_VERSION is a draft, the terms and pricing say no real money
- * moves, so a live key turns billing off (W13-5). Anything else turns billing off. In production it's
- * also off once real documents are on: a test card would otherwise buy real Pro.
+ * Pro price and the app URL. Which key depends on where it runs, and anything else turns billing off
+ * before any Stripe call:
+ * - Vercel's Production takes real money or none: an rk_live_ key (never sk_live_), with
+ *   SHIPSHAPE_CHECKOUT_LIVE exactly "1", final terms (a draft says no real money moves, W13-5), real
+ *   documents on (Pro sells nothing while uploads are closed) and an https app URL. A test key there
+ *   is refused: a test card would buy Pro in the production database, and keep it once money is real.
+ * - Everywhere else (previews, local, CI) a test key only, and none in a production build with real
+ *   documents on.
  */
 export function billingConfig(): BillingConfig | null {
   if (process.env.BILLING_ENABLED !== "1") return null;
@@ -31,9 +37,16 @@ export function billingConfig(): BillingConfig | null {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
   const proPrice = process.env.STRIPE_PRICE_PRO ?? "";
   const appUrl = process.env.SHIPSHAPE_APP_URL ?? "";
-  const live = process.env.BILLING_LIVE_KEYS_OK === "1" && !TERMS_VERSION.endsWith("-draft") && LIVE_KEY.test(secretKey);
-  if (!(TEST_KEY.test(secretKey) || live) || !/^whsec_[A-Za-z0-9]+$/.test(webhookSecret) || !/^price_[A-Za-z0-9]+$/.test(proPrice)) return null;
+  const live = process.env.VERCEL_ENV === "production";
+  const keyOk = live
+    ? LIVE_KEY.test(secretKey) && process.env.SHIPSHAPE_CHECKOUT_LIVE === "1" && !TERMS_VERSION.endsWith("-draft") && realDocsEnabled() && appUrl.startsWith("https://")
+    : TEST_KEY.test(secretKey) && !(process.env.NODE_ENV === "production" && realDocsEnabled());
+  if (!keyOk || !webhookConfigured() || !/^price_[A-Za-z0-9]+$/.test(proPrice)) return null;
   if (!/^https?:\/\/[^/\s]+$/.test(appUrl)) return null;
-  if (process.env.NODE_ENV === "production" && realDocsEnabled()) return null;
   return { secretKey, webhookSecret, proPrice, appUrl, live };
+}
+
+/** Whether a Stripe webhook signing secret is set (its form only), for the health check. */
+export function webhookConfigured(): boolean {
+  return WEBHOOK_SECRET.test(process.env.STRIPE_WEBHOOK_SECRET ?? "");
 }
