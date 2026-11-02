@@ -22,38 +22,44 @@ import type { Validity } from "@/lib/today";
  * - logs get token counts and cost only, never prompt or reply text.
  */
 
-/** Pinned: the cheapest Claude model; tests/ai.test.ts holds the provider-free evals. */
-export const AI_MODEL = "claude-haiku-5-5";
+/** Pinned, the one place the model is named: Opus only (Preston, 2 Nov 00:5x); tests/ai.test.ts holds the provider-free evals. */
+export const AI_MODEL = "claude-opus-5-5";
 const MAX_TOKENS = 1200;
 /**
- * Security G4 §2: $1 a day (UTC) and $10 in total over every workspace, in micro-dollars. Inside those (W15-1, 0042):
- * every sample workspace together gets $0.10 a day and $2 in total, so visitors trying the sample can't spend real
- * customers' share; each real workspace gets $0.25 a day.
+ * ShipShape's share of the Anthropic key: $8 a calendar month (UTC, from the 1st), in micro-dollars. Preston, 2 Nov
+ * 01:1x via BOSS: one $50 a month for the whole key (Unvibe $25, Jaymini $12, ShipShape $8, tests $5), no lifetime cap.
+ * The one budget figure; every pool below is a share of it.
+ */
+export const AI_MONTH_MICROS = 8_000_000;
+/**
+ * Pools inside the month (`app.ai_reserve`, 0043). The day guard is a fifth of the month, so one bad day can't spend
+ * it (BOSS 01:1x). All sample workspaces together get a fifth of the month and a tenth of the day guard, so visitors
+ * trying the sample can't spend real customers' share (W15-1); each real workspace gets a quarter of the day guard.
  */
 export const AI_CAPS = {
-  dayMicros: 1_000_000,
-  totalMicros: 10_000_000,
-  sampleDayMicros: 100_000,
-  sampleTotalMicros: 2_000_000,
-  workspaceDayMicros: 250_000,
+  monthMicros: AI_MONTH_MICROS,
+  dayMicros: AI_MONTH_MICROS / 5,
+  sampleMonthMicros: AI_MONTH_MICROS / 5,
+  sampleDayMicros: AI_MONTH_MICROS / 50,
+  workspaceDayMicros: AI_MONTH_MICROS / 20,
 } as const;
 
-/** What a refused reservation tells the person, by the cap that refused it (`app.ai_reserve`): a lifetime cap doesn't end tomorrow (W10-6). */
+/** What a refused reservation tells the person, by the cap that refused it (`app.ai_reserve`): a month's cap doesn't end tomorrow (W10-6). */
 const CAP_REFUSED: Record<string, string> = {
-  total: "ShipShape's AI reading is paused right now. Everything else works as usual.",
-  sample_total: "ShipShape's AI reading is paused right now. Everything else works as usual.",
+  month: "ShipShape's AI has reached its limit for this month. It's back at the start of next month; everything else works as usual.",
+  sample_month: "The sample's AI reading is used up for this month. Everything else in the sample works as usual.",
   day: "ShipShape's AI has reached its spending limit for today. Try again tomorrow.",
   sample_day: "The sample's AI reading is used up for today. Everything else in the sample works as usual.",
   workspace_day: "Your workspace has used today's AI reading. Try again tomorrow; everything else works as usual.",
 };
 
 /**
- * Anthropic list price for claude-haiku-5-5 with prompts up to 100k tokens, read 2026-10-30 at
- * anthropic.com/claude-haiku-5-5: $0.10 in and $0.50 out per million tokens, i.e. 0.1 and 0.5
- * micro-dollars per token. Rounded up, so the meter never under-counts.
+ * Anthropic list price for claude-opus-5-5, Claude API standard (global) inference, read 2026-11-02 at
+ * platform.claude.com/docs/en/about-claude/pricing and the 2026-09-28 rate card: $4 in and $20 out per million
+ * tokens, i.e. 4 and 20 micro-dollars per token. Whole micro-dollars, so the meter never under-counts.
  */
 function costMicros(inputTokens: number, outputTokens: number): number {
-  return Math.ceil((inputTokens + outputTokens * 5) / 10);
+  return inputTokens * 4 + outputTokens * 20;
 }
 
 export function aiEnabled(): boolean {
@@ -247,9 +253,9 @@ export async function readRequest(ctx: Ctx, input: RequestInput, network: string
       AI_MODEL,
       reserve,
       AI_CAPS.dayMicros,
-      AI_CAPS.totalMicros,
+      AI_CAPS.monthMicros,
       AI_CAPS.sampleDayMicros,
-      AI_CAPS.sampleTotalMicros,
+      AI_CAPS.sampleMonthMicros,
       AI_CAPS.workspaceDayMicros,
     ]),
   );
