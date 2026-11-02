@@ -88,7 +88,7 @@ export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: b
         )}
         <main id="main" className="mx-auto max-w-[1040px] space-y-6 px-4 pt-6 pb-32 md:px-10 md:pt-12 md:pb-12">
           {children}
-          <NotLegalAdvice className="pt-6" />
+          <NotLegalAdvice className="legal-line pt-6" />
         </main>
       </div>
       <TabBar />

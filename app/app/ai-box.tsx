@@ -25,6 +25,8 @@ type Answer = { kind: "tool"; tool: Tool; name: string; line: string; href: stri
 export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }) {
   const [text, setText] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
+  // Each submission gets a new card (its key), so it replaces the last one and arrives again instead of changing in place.
+  const [round, setRound] = useState(0);
   const [check, runCheck, pending] = useActionState<AskState, FormData>(askAction, {});
   const [slow, setSlow] = useState(false);
   const result = useRef<HTMLElement>(null);
@@ -56,6 +58,7 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
   };
 
   const submit = (form: FormData) => {
+    setRound((r) => r + 1);
     if (checking) {
       setAnswer({ kind: "check" });
       runCheck(form);
@@ -143,7 +146,7 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
       )}
 
       {answer && !pending && !textError && !consentError && (
-        <section ref={result} tabIndex={-1} aria-label="Answer" className="arrive card space-y-4 outline-none">
+        <section key={round} ref={result} tabIndex={-1} aria-label="Answer" className="arrive card space-y-4 outline-none">
           {answer.kind === "tool" && (
             <div data-tool={answer.tool.id} className="flex flex-wrap items-center gap-4">
               <span className="tile-icon">

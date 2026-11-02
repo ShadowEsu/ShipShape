@@ -72,7 +72,9 @@ export function HomeV2(props: {
         <ToolGrid tools={tools} />
       </section>
 
-      <div className="grid gap-10 lg:grid-cols-2 lg:gap-8">
+      {/* grid-cols-1 (minmax(0, 1fr)): an implicit auto column took the truncated titles' full width and widened the phone
+          page to 463 px, which pushed the fixed tab bar below the screen. */}
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-8">
         <section aria-labelledby="attention-title" className="space-y-3">
           <div className="flex items-baseline justify-between gap-4">
             <h2 id="attention-title" className="section-title">
@@ -110,7 +112,8 @@ export function HomeV2(props: {
                           </span>
                           <span className="text-sm text-ink-2">
                             {DOC_KINDS[d.kind]} · {line.state}{" "}
-                            <Link href={line.href} className="text-ink underline">
+                            {/* 44 px to tap (18 px line + 13 px above and below), with negative margins so the row's layout doesn't move. */}
+                            <Link href={line.href} className="-my-[13px] inline-block py-[13px] text-ink underline">
                               {line.action}
                             </Link>
                           </span>

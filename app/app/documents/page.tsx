@@ -112,7 +112,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         <ul className="group-list stagger">
           {docs.map((d, n) => (
             <li key={d.id} style={{ "--i": n }}>
-              <Link href={`/app/documents/${d.id}`} className="group-row">
+              {/* Phone: the chip wraps onto its own line under the text, lined up with it (32 px icon + 12 px gap), so titles
+                  aren't cut to a few letters; from sm up it sits beside the text. */}
+              <Link href={`/app/documents/${d.id}`} className="group-row flex-wrap gap-y-1.5 sm:flex-nowrap">
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-tile text-ink-2">
                   <Icon name="documents" />
                 </span>
@@ -125,7 +127,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                     {(d.issuer || d.counterparty) && ` · ${d.issuer ?? d.counterparty}`}
                   </span>
                 </span>
-                <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                <span className="ml-11 basis-full sm:ml-0 sm:basis-auto">
+                  <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                </span>
                 <span className="hidden text-ink-3 sm:block">
                   <Icon name="chevron" size={16} />
                 </span>
