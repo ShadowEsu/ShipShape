@@ -15,12 +15,18 @@ export interface PickableDoc {
   holdsTaxId: boolean;
 }
 
-/** What making the link means, said before it exists: who can open it, what a W-9 reveals, what stays private. */
-export function WhoCanOpen({ label, documents, taxId }: { label: string; documents: number; taxId: boolean }) {
+/**
+ * What making the link means, said before it exists: who can open it, what a W-9 reveals, what stays private. In the
+ * redesigned app (`v2`) it's a well with no border (Design, PR 7 plan).
+ */
+export function WhoCanOpen({ label, documents, taxId, v2 = false }: { label: string; documents: number; taxId: boolean; v2?: boolean }) {
   const who = label.trim() || "the person it's for";
   const what = documents === 0 ? "the documents you tick" : documents === 1 ? "this document" : `these ${documents} documents`;
   return (
-    <section aria-labelledby="who-can-open" className="space-y-2 rounded-lg border border-line bg-canvas px-3 py-3 text-sm text-ink-2">
+    <section
+      aria-labelledby="who-can-open"
+      className={v2 ? "space-y-2 rounded-2xl bg-tile px-4 py-3.5 text-sm text-ink-2" : "space-y-2 rounded-lg border border-line bg-canvas px-3 py-3 text-sm text-ink-2"}
+    >
       <h3 id="who-can-open" className="font-medium text-ink">
         Who can open it
       </h3>
@@ -59,13 +65,7 @@ function FieldError({ id, error }: { id: string; error?: string }) {
   );
 }
 
-export function NewPassportForm({
-  docs,
-  days,
-  preselected,
-  today,
-  initial = { label: "", days: Number.NaN },
-}: {
+export interface PassportFormProps {
   docs: PickableDoc[];
   days: readonly number[];
   preselected: string[];
@@ -73,11 +73,13 @@ export function NewPassportForm({
   today: string;
   /** What the person had typed before opening the preview (the preview's "Back" carries it in the address). */
   initial?: { label: string; days: number };
-}) {
+}
+
+/** The new-link form's state, shared by both looks (NewPassportForm here, NewPassportFormV2 in forms-v2.tsx). */
+export function usePassportForm({ docs, days, preselected, initial = { label: "", days: Number.NaN } }: PassportFormProps) {
   const [state, action, pending] = useActionState<PassportFormState, FormData>(makePassport, {});
   const typed = state.values;
   const errors = state.fieldErrors ?? {};
-  const [url, setUrl] = useState<string | null>(null);
   const form = useRef<HTMLFormElement>(null);
   const startLabel = typed?.label ?? initial.label;
   const startDays = typed ? Number(typed.days) : days.includes(initial.days) ? initial.days : days[1];
@@ -90,15 +92,25 @@ export function NewPassportForm({
   const tick = (id: string, on: boolean) => setTicked((old) => (on ? [...new Set([...old, id])] : old.filter((x) => x !== id)));
   const chosenDocs = ticked.filter((id) => docs.some((d) => d.id === id));
   const previewHref = `/app/passport/preview?${new URLSearchParams({ docs: chosenDocs.join(","), label, days: String(chosen) })}`;
-
-  useEffect(() => {
-    if (state.created) setUrl(`${window.location.origin}/p/${state.created.id}#${state.created.token}`);
-  }, [state.created]);
+  const taxId = docs.some((d) => d.holdsTaxId && ticked.includes(d.id));
 
   // After a refused submit, the first thing to fix gets focus.
   useEffect(() => {
     form.current?.querySelector<HTMLElement>('[aria-invalid="true"], [role="alert"]')?.focus();
   }, [state]);
+
+  return { state, action, pending, typed, errors, form, startLabel, startDays, chosen, setPicked, label, setLabel, tick, chosenDocs, previewHref, taxId };
+}
+
+export function NewPassportForm(props: PassportFormProps) {
+  const { docs, days, preselected, today } = props;
+  const { state, action, pending, typed, errors, form, startLabel, startDays, chosen, setPicked, label, setLabel, tick, chosenDocs, previewHref, taxId } =
+    usePassportForm(props);
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (state.created) setUrl(`${window.location.origin}/p/${state.created.id}#${state.created.token}`);
+  }, [state.created]);
 
   if (url && state.created) return <PassportReady label={state.created.label} documents={state.created.documents} days={state.created.days} url={url} />;
 
@@ -189,7 +201,7 @@ export function NewPassportForm({
         )}
         <FieldError id="days-error" error={errors.days} />
       </fieldset>
-      <WhoCanOpen label={label} documents={chosenDocs.length} taxId={docs.some((d) => d.holdsTaxId && ticked.includes(d.id))} />
+      <WhoCanOpen label={label} documents={chosenDocs.length} taxId={taxId} />
       {state.error && (
         <div role="alert" tabIndex={-1} className="space-y-2 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
           <p>{state.error}</p>

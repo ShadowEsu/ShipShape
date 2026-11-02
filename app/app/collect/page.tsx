@@ -2,23 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, Notice, PageHeader } from "@/components/app-ui";
 import { FocusButton } from "@/components/focus-button";
-import { listArchivedVendors, listVendors, type CollectState } from "@/lib/server/collect";
+import { listArchivedVendors, listVendors } from "@/lib/server/collect";
 import { DOC_KINDS } from "@/lib/server/documents";
-import { collectOpen } from "@/lib/server/flags";
+import { collectOpen, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { CollectChip } from "./chip";
 import { NewVendorForm } from "./forms";
+import { SUMMARY, summaryCounts } from "./summary";
+import { CollectV2 } from "./v2";
 
 export const metadata: Metadata = { title: "Collect" };
-
-// "All current" counts vendors whose every document is current; the others count vendors with at
-// least one document in that state, so one vendor can appear under two of them.
-const SUMMARY: { state: CollectState; title: string }[] = [
-  { state: "ok", title: "All current" },
-  { state: "expiring", title: "Expiring within 30 days" },
-  { state: "missing", title: "Missing something" },
-  { state: "expired", title: "Something lapsed" },
-];
 
 export default async function CollectPage() {
   const ctx = await requireWorkspace();
@@ -36,9 +29,9 @@ export default async function CollectPage() {
   }
 
   const [vendors, archived] = await Promise.all([listVendors(ctx), listArchivedVendors(ctx)]);
-  const counts = Object.fromEntries(
-    SUMMARY.map((s) => [s.state, vendors.filter((v) => (s.state === "ok" ? v.state === "ok" : v.items.some((i) => i.state === s.state))).length]),
-  );
+  const kinds = Object.entries(DOC_KINDS).map(([key, label]) => ({ key, label }));
+  if (uiV2()) return <CollectV2 vendors={vendors} archived={archived} kinds={kinds} demo={ctx.demo} />;
+  const counts = summaryCounts(vendors);
 
   return (
     <div className="space-y-8">
@@ -122,7 +115,7 @@ export default async function CollectPage() {
 
         <section className="card h-fit">
           <h2 className="mb-4 font-semibold">Add a vendor</h2>
-          <NewVendorForm kinds={Object.entries(DOC_KINDS).map(([key, label]) => ({ key, label }))} />
+          <NewVendorForm kinds={kinds} />
         </section>
       </div>
     </div>

@@ -2,19 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/app-ui";
 import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { uiV2 } from "@/lib/server/flags";
 import { listPassports, PASSPORT_DAYS } from "@/lib/server/passport";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf } from "@/lib/today";
 import { NewPassportForm } from "./forms";
+import { linkStatus } from "./link-status";
+import { PassportV2 } from "./v2";
 
 export const metadata: Metadata = { title: "Passport" };
-
-// A link reaching its planned end is expected, not a fault: neutral like Turned off (red stays for lapsed documents).
-function status(l: { revoked_at: string | null; expires_at: string }, zone: string) {
-  if (l.revoked_at) return { label: "Turned off", cls: "bg-canvas text-ink-3", icon: "○" };
-  if (new Date(l.expires_at).getTime() < Date.now()) return { label: `Ended ${dayOf(l.expires_at, zone)}`, cls: "bg-canvas text-ink-3", icon: "○" };
-  return { label: "Working", cls: "bg-ok-soft text-ok", icon: "✓" };
-}
 
 /**
  * `?docs=<id>,<id>` ticks those documents in the form (from "What are they asking for?", and back from the preview); ids not
@@ -27,6 +23,17 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
   const [links, docs, picked] = await Promise.all([listPassports(ctx), listDocuments(ctx), searchParams]);
   const preselected = typeof picked.docs === "string" ? picked.docs.split(",").slice(0, 50) : [];
   const comingBack = { label: typeof picked.label === "string" ? picked.label.slice(0, 120) : "", days: Number(picked.days) };
+
+  const pickable = docs.map((d) => ({
+    id: d.id,
+    title: d.title,
+    kindLabel: DOC_KINDS[d.kind],
+    note: d.validity === "expired" ? "expired" : d.validity === "expiring" ? "expires soon" : null,
+    // A filled W-9 keeps its template whatever kind it's filed under (W14-6).
+    holdsTaxId: d.kind === "w9" || d.template_id === "irs-w9",
+  }));
+
+  if (uiV2()) return <PassportV2 links={links} docs={pickable} preselected={preselected} today={ctx.today} initial={comingBack} zone={zone} />;
 
   return (
     <div className="space-y-8">
@@ -44,14 +51,7 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
             preselected={preselected}
             today={ctx.today}
             initial={comingBack}
-            docs={docs.map((d) => ({
-              id: d.id,
-              title: d.title,
-              kindLabel: DOC_KINDS[d.kind],
-              note: d.validity === "expired" ? "expired" : d.validity === "expiring" ? "expires soon" : null,
-              // A filled W-9 keeps its template whatever kind it's filed under (W14-6).
-              holdsTaxId: d.kind === "w9" || d.template_id === "irs-w9",
-            }))}
+            docs={pickable}
           />
         </section>
 
@@ -65,7 +65,7 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
               {links.map((l) => {
-                const s = status(l, zone);
+                const s = linkStatus(l, zone);
                 return (
                   <li key={l.id}>
                     <Link href={`/app/passport/${l.id}`} className="flex flex-col gap-1 px-4 py-3 hover:bg-canvas">

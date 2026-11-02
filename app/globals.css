@@ -138,14 +138,15 @@ body {
     @apply text-[17px] leading-6 font-semibold text-ink;
   }
 
-  /* Grouped inset list: 16px corners, 60px rows, separators inset past the 32px icon. */
+  /* Grouped inset list: 16px corners, 60px rows, separators inset past the 32px icon. Rows are a list's items, or a
+     description list's term-and-value pairs (each in a div). */
   .ui-v2 .group-list {
     @apply overflow-hidden rounded-2xl border border-line bg-paper;
   }
-  .ui-v2 .group-list > li {
+  .ui-v2 .group-list > :is(li, div) {
     @apply relative;
   }
-  .ui-v2 .group-list > li + li::before {
+  .ui-v2 .group-list > :is(li, div) + :is(li, div)::before {
     content: "";
     @apply absolute top-0 right-0 left-[60px] border-t border-sep;
   }
@@ -156,7 +157,7 @@ body {
     @apply bg-tile;
   }
   /* Rows without an icon (label + value, label + field): separators start at the text. */
-  .ui-v2 .group-list.plain > li + li::before {
+  .ui-v2 .group-list.plain > :is(li, div) + :is(li, div)::before {
     @apply left-4;
   }
   /* A grouped-list row holding a label and its field: the field has no box of its own, the row is the box. */
@@ -167,7 +168,11 @@ body {
     @apply w-32 shrink-0 text-[15px] text-ink-2;
   }
   .ui-v2 .row-field {
-    @apply min-h-11 w-full min-w-0 flex-1 rounded-lg bg-transparent px-2 text-right text-base text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand;
+    @apply min-h-11 w-full min-w-0 flex-1 rounded-lg bg-transparent px-2 text-right text-base text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand;
+  }
+  /* The field's own edge under the pointer, so a row reads as editable (Design 02 Nov). Focus and an error keep their rings. */
+  .ui-v2 .row-field:enabled:not(:focus-visible, [aria-invalid="true"]):hover {
+    @apply ring-1 ring-field;
   }
   /* A long value ends in an ellipsis while the field isn't being edited, instead of being cut mid-word. Not on the select: it ellipsizes a value that fits. */
   .ui-v2 input.row-field {
@@ -258,6 +263,37 @@ body {
 }
 .ui-v2 .card {
   border-radius: 16px;
+}
+/* Make's fill form (app/app/make/[template]/fill-form.tsx): each section a titled grouped list, its title above the
+   group and each field a row inside it, separated past the row's padding as in .group-list. */
+.ui-v2 .fill-section {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.ui-v2 .fill-section > legend:not(.sr-only) {
+  float: none;
+  margin: 0 0 8px;
+  font-size: 17px;
+  line-height: 24px;
+}
+.ui-v2 .fill-fields {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+}
+.ui-v2 .fill-fields > * {
+  position: relative;
+  margin: 0;
+  padding: 14px 16px;
+}
+.ui-v2 .fill-fields > * + *::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 16px;
+  border-top: 1px solid var(--sep);
 }
 /* An "ok" Notice's check (components/app-ui.tsx) shows only in the redesigned app, beside the text. */
 .notice-icon {

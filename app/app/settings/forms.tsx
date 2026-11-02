@@ -13,41 +13,62 @@ function useFocusFirstError(state: object) {
   return form;
 }
 
-export function RenameWorkspaceForm({ name }: { name: string }) {
+/** The workspace's name; in the redesigned app (v2) the field is a grouped-list row with its hint under the group. */
+export function RenameWorkspaceForm({ name, v2 }: { name: string; v2?: boolean }) {
   const [state, action, pending] = useActionState<RenameState, FormData>(renameMyWorkspace, {});
   const form = useFocusFirstError(state);
+  const input = (className: string) => (
+    <input
+      id="workspace-name"
+      name="name"
+      defaultValue={state.name ?? name}
+      required
+      maxLength={120}
+      autoComplete="organization"
+      className={className}
+      aria-invalid={state.error ? true : undefined}
+      aria-describedby={state.error ? "workspace-name-error workspace-name-hint" : "workspace-name-hint"}
+    />
+  );
+  const notes = (
+    <>
+      {state.error && (
+        <p id="workspace-name-error" className={v2 ? "mt-2 px-1 text-sm text-bad" : "mt-1 text-sm text-bad"}>
+          {state.error}
+        </p>
+      )}
+      <p id="workspace-name-hint" className={v2 ? "mt-2 px-1 text-[13px] text-ink-3" : "mt-1 text-xs text-ink-3"}>
+        People you share with see this name on your passport links, signature requests and upload links.
+      </p>
+    </>
+  );
   return (
     <form ref={form} action={action} className="space-y-3" noValidate>
-      <div>
-        <label htmlFor="workspace-name" className="label">
-          Name
-        </label>
-        <input
-          id="workspace-name"
-          name="name"
-          defaultValue={state.name ?? name}
-          required
-          maxLength={120}
-          autoComplete="organization"
-          className="input"
-          aria-invalid={state.error ? true : undefined}
-          aria-describedby={state.error ? "workspace-name-error workspace-name-hint" : "workspace-name-hint"}
-        />
-        {state.error && (
-          <p id="workspace-name-error" className="mt-1 text-sm text-bad">
-            {state.error}
-          </p>
-        )}
-        <p id="workspace-name-hint" className="mt-1 text-xs text-ink-3">
-          People you share with see this name on your passport links, signature requests and upload links.
-        </p>
-      </div>
+      {v2 ? (
+        <div>
+          <ul className="group-list plain">
+            <li className="field-row">
+              <label htmlFor="workspace-name">Name</label>
+              {input("row-field")}
+            </li>
+          </ul>
+          {notes}
+        </div>
+      ) : (
+        <div>
+          <label htmlFor="workspace-name" className="label">
+            Name
+          </label>
+          {input("input")}
+          {notes}
+        </div>
+      )}
       {state.saved && (
         <p role="status" className="text-sm text-ok">
           Saved. People you share with see the new name from now on.
         </p>
       )}
-      <button className="btn" disabled={pending}>
+      <button className={v2 ? "btn press" : "btn"} disabled={pending}>
         {pending ? "Saving…" : "Save name"}
       </button>
     </form>
