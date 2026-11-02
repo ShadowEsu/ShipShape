@@ -52,7 +52,7 @@ export default function PricingPage() {
         <p className="eyebrow">Pricing</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Free to start. Pro when you need more.</h1>
         <p className="mt-3 max-w-2xl text-ink-2">
-          {live ? "Prices in US dollars, before any tax that applies where you live." : "Prices in US dollars. Payments are in test mode during the preview: no real charges."}
+          {live ? "Prices in US dollars." : "Prices in US dollars. Payments are in test mode during the preview: no real charges."}
         </p>
 
         <div className="mt-10 grid gap-4 md:grid-cols-3">
