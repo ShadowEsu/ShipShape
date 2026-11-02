@@ -1,11 +1,16 @@
+import { ViewTransition } from "react";
 import { ConfirmForm } from "@/components/confirm-form";
 import type { SignatureRequestRow } from "@/lib/server/esign";
 import { dayOf, timeOf } from "@/lib/today";
 import { withdrawSignature } from "../actions";
 import { REQUEST_STATUS } from "./shared";
 
-/** A document's signing requests: who, its state, the file sent, and Withdraw while it can still be signed. Both looks use it. */
-export function SignatureRequests({ docId, requests, zone, now }: { docId: string; requests: SignatureRequestRow[]; zone: string; now: number }) {
+/**
+ * A document's signing requests: who, its state, the file sent, and Withdraw while it can still be signed. Both looks
+ * use it; redesigned (`v2`), a state that changes in place (Waiting → Withdrawn, or Signed on a refresh) crossfades as
+ * the chips do (Design spec 2026-11-02 §6.4 owner side, §6.3).
+ */
+export function SignatureRequests({ docId, requests, zone, now, v2 = false }: { docId: string; requests: SignatureRequestRow[]; zone: string; now: number; v2?: boolean }) {
   return (
     <ul className="divide-y divide-line text-sm">
       {requests.map((r) => {
@@ -14,7 +19,13 @@ export function SignatureRequests({ docId, requests, zone, now }: { docId: strin
           <li key={r.id} className="space-y-1 py-2">
             <p className="flex justify-between gap-2">
               <span className="min-w-0 truncate font-medium">{r.signer_name}</span>
-              <span className="shrink-0 text-xs text-ink-2">{lapsed ? "Expired" : REQUEST_STATUS[r.status]}</span>
+              {v2 ? (
+                <ViewTransition update="v2-chip" default="none">
+                  <span className="shrink-0 text-xs text-ink-2">{lapsed ? "Expired" : REQUEST_STATUS[r.status]}</span>
+                </ViewTransition>
+              ) : (
+                <span className="shrink-0 text-xs text-ink-2">{lapsed ? "Expired" : REQUEST_STATUS[r.status]}</span>
+              )}
             </p>
             <p className="truncate text-xs text-ink-3">
               {r.signer_email} · version {r.version}

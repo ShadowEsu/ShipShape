@@ -184,13 +184,15 @@ interface OpenRow {
   /** The file the signer reviews, while the request is pending (0018). */
   to_sign_path: string | null;
   to_sign_sha256: string | null;
+  /** The name the signer typed, once signed (0044): what the certificate records. */
+  signed_name: string | null;
 }
 
 async function open(id: string, token: string, record: boolean): Promise<OpenRow | null> {
   if (!z.uuid().safeParse(id).success || !TOKEN.test(token)) return null;
   const [row] = await asAnon((tx) =>
     tx.query<OpenRow>(
-      "select org_id, org_name, is_demo, document_id, title, signer_name, signer_email, status, expires_at::text as expires_at, to_char(requested_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS \"UTC\"') as requested_at, version, next_version, storage_path, mime, sha256, signed_at::text as signed_at, to_sign_path, to_sign_sha256 from app.esign_open($1, $2, $3)",
+      "select org_id, org_name, is_demo, document_id, title, signer_name, signer_email, status, expires_at::text as expires_at, to_char(requested_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS \"UTC\"') as requested_at, version, next_version, storage_path, mime, sha256, signed_at::text as signed_at, to_sign_path, to_sign_sha256, signed_name from app.esign_open($1, $2, $3)",
       [id, sha256Hex(token), record],
     ),
   );
@@ -209,6 +211,8 @@ export interface SigningView {
   status: "pending" | "signed";
   expiresAt: string;
   signedAt: string | null;
+  /** What the signer typed to sign, once signed: their signature on the done page, as on the certificate. */
+  signedName: string | null;
 }
 
 /** What the signer sees; null for an unknown, wrong, expired, revoked or declined request. */
@@ -224,6 +228,7 @@ export async function openSigning(id: string, token: string): Promise<SigningVie
     status: r.status,
     expiresAt: r.expires_at,
     signedAt: r.signed_at,
+    signedName: r.signed_name,
   };
 }
 
