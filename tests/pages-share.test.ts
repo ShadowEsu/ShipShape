@@ -768,9 +768,10 @@ describe.each([
     const open = plan(textOf(await settings()));
     expect(open).toContain("Pro ($ 15 /month) removes the limits and adds deadline reminders on your Deadlines page.");
     expect(open).not.toMatch(/email|signature requests/i);
-    expect(open).toContain("including $ 15 a month until I cancel, and the refund policy.");
+    expect(open).toContain("including $15 a month until I cancel, and the refund policy.");
     vi.stubEnv("STRIPE_AUTOMATIC_TAX", "1");
-    expect(plan(textOf(await settings()))).toContain("including $ 15 a month plus any sales tax until I cancel, and the refund policy.");
+    // Design's wording with tax (PR 17 delta): the refund policy can't read as lasting until you cancel.
+    expect(plan(textOf(await settings()))).toContain("I agree to the Terms and the refund policy: $15 a month, plus any sales tax, until I cancel.");
     vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
     const paused = await settings();
     expect(textOf(paused)).toContain("New Pro subscriptions are paused for now.");

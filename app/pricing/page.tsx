@@ -23,7 +23,7 @@ const ROWS: [feature: string, free: string, pro: string][] = [
   ["W-9 and NDA from your business facts", "✓", "✓"],
   ["Deadlines and calendar file", "✓", "✓"],
   ["Reminders 90, 30 and 7 days ahead", "Not included", "On the Deadlines page"],
-  ["Signature requests", "Not included", "Not yet: needs email"],
+  ["Signature requests", "Not included", "Not yet"],
   ["Export and account deletion", "✓", "✓"],
 ];
 

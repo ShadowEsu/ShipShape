@@ -710,7 +710,7 @@ describe("the public pages once payments are live (Security MUST-3, MUST-4)", ()
       expect([name, /adds email reminders|plus email reminders|Email reminders 90/.test(text)]).toEqual([name, false]);
     }
     expect(live.pricing).toContain("Reminders 90, 30 and 7 days ahead Not included On the Deadlines page");
-    expect(live.pricing).toContain("Signature requests Not included Not yet: needs email");
+    expect(live.pricing).toContain("Signature requests Not included Not yet Export and account deletion");
     expect(live.home).toContain("Pro removes the limits and adds deadline reminders on your Deadlines page.");
     expect(live.faq).toContain("plus deadline reminders on your Deadlines page. ShipShape doesn't send email yet.");
   });
