@@ -4,7 +4,11 @@ import { SiteFooter, SiteHeader } from "@/components/site";
 import { AI_RECIPIENT, AI_TRAINING_SOURCE } from "@/lib/ai";
 import { PLANS } from "@/lib/plans";
 
-export const metadata: Metadata = { title: "FAQ", description: "What ShipShape does, what it doesn't, and how it keeps your paperwork safe." };
+export const metadata: Metadata = {
+  title: "FAQ",
+  description: "What ShipShape does, what it doesn't, and how it keeps your paperwork safe.",
+  alternates: { canonical: "/faq" },
+};
 
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
