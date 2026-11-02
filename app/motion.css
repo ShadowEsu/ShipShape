@@ -98,6 +98,12 @@
 .ui-v2 dialog.sheet[open]::backdrop {
   animation: v2-fade-in var(--dur-base) var(--ease-out) both;
 }
+/* From md up a centred sheet is a card in the middle: it rises 8px and fades, like a page, instead of sliding up. */
+@media (min-width: 768px) {
+  .ui-v2 dialog.sheet-centre[open] {
+    animation: v2-page-in var(--dur-base) var(--ease-out) both;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   /* Movement becomes a short fade or nothing; where things end up never changes. */

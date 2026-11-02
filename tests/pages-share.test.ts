@@ -15,6 +15,7 @@ import PassportPreviewPage from "@/app/app/passport/preview/page";
 import { deleteMyAccount, renameMyWorkspace, signOutSession, upgrade } from "@/app/app/settings/actions";
 import { DeleteRefused } from "@/app/app/settings/forms";
 import SettingsPage from "@/app/app/settings/page";
+import { setAiProviderForTests } from "@/lib/server/ai";
 import { addVendor, createVendorLink } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
 import { setArchived } from "@/lib/server/documents";
@@ -761,6 +762,22 @@ describe("form errors name the field to fix", () => {
       text: "too short",
       consent: true,
     });
+  });
+
+  it("reading a request: a completed check sends no tick back, so the box comes back unticked for the next text (Security SHOULD-V2a)", async () => {
+    vi.stubEnv("SHIPSHAPE_AI", "1");
+    vi.stubEnv("ANTHROPIC_API_KEY", "made-up-test-key");
+    setAiProviderForTests(async () => ({ text: JSON.stringify({ items: [{ kind: "w9", label: "W-9", quote: "a W-9" }] }), inputTokens: 500, outputTokens: 100, truncated: false }));
+    try {
+      await signIn("form-ask-done@example.com");
+      const text = "Before your first job we need a W-9 and a certificate of insurance.";
+      const done = await askAction({}, form({ text, consent: "yes" }));
+      expect(done.items?.map((i) => i.label)).toEqual(["W-9"]);
+      expect(done).not.toHaveProperty("consent");
+      expect(done).not.toHaveProperty("error");
+    } finally {
+      setAiProviderForTests(null);
+    }
   });
 
   it("deleting the account: a wrong confirmation goes to its field and keeps what was typed", async () => {
