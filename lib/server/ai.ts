@@ -22,8 +22,8 @@ import type { Validity } from "@/lib/today";
  * - logs get token counts and cost only, never prompt or reply text.
  */
 
-/** Pinned: the cheapest Claude model; tests/ai.test.ts holds the provider-free evals. */
-export const AI_MODEL = "claude-haiku-5-5";
+/** Pinned, the one place the model is named: Opus only (Preston, 2 Nov 00:5x); tests/ai.test.ts holds the provider-free evals. */
+export const AI_MODEL = "claude-opus-5-5";
 const MAX_TOKENS = 1200;
 /**
  * Security G4 §2: $1 a day (UTC) and $10 in total over every workspace, in micro-dollars. Inside those (W15-1, 0042):
@@ -48,12 +48,12 @@ const CAP_REFUSED: Record<string, string> = {
 };
 
 /**
- * Anthropic list price for claude-haiku-5-5 with prompts up to 100k tokens, read 2026-10-30 at
- * anthropic.com/claude-haiku-5-5: $0.10 in and $0.50 out per million tokens, i.e. 0.1 and 0.5
- * micro-dollars per token. Rounded up, so the meter never under-counts.
+ * Anthropic list price for claude-opus-5-5, Claude API standard (global) inference, read 2026-11-02 at
+ * platform.claude.com/docs/en/about-claude/pricing and the 2026-09-28 rate card: $4 in and $20 out per million
+ * tokens, i.e. 4 and 20 micro-dollars per token. Whole micro-dollars, so the meter never under-counts.
  */
 function costMicros(inputTokens: number, outputTokens: number): number {
-  return Math.ceil((inputTokens + outputTokens * 5) / 10);
+  return inputTokens * 4 + outputTokens * 20;
 }
 
 export function aiEnabled(): boolean {

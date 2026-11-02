@@ -313,8 +313,23 @@ describe("what comes back", () => {
 describe("spend meter", () => {
   it("settles the real cost after a call", async () => {
     await ask(await workspace());
-    // 500 input tokens at 0.1 and 100 output at 0.5 micro-dollars each.
-    expect(await meter()).toEqual([expect.objectContaining({ status: "done", cost_micros: "100" })]);
+    // claude-opus-5-5: 500 input tokens at 4 and 100 output at 20 micro-dollars each.
+    expect(await meter()).toEqual([expect.objectContaining({ status: "done", cost_micros: "4000" })]);
+  });
+
+  it("reserves the worst case at the model's price before calling: every prompt byte as a token, plus the whole answer", async () => {
+    // What the prompt weighed and what the meter held while the call was out.
+    let seen = 0;
+    let reserved = 0;
+    setAiProviderForTests(async (req) => {
+      sent.push(req);
+      seen = Buffer.byteLength(req.system + req.user, "utf8");
+      const [row] = await db.root((tx) => tx.query<{ reserved_micros: string }>("select reserved_micros::text from app.ai_calls where status = 'reserved'"));
+      reserved = Number(row.reserved_micros);
+      return { text: reply, inputTokens: 500, outputTokens: 100, truncated: false };
+    });
+    await ask(await workspace());
+    expect(reserved).toBe(seen * 4 + 1200 * 20);
   });
 
   it("refuses before calling once the lifetime cap would be passed", async () => {
