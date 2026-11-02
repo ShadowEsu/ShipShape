@@ -59,6 +59,16 @@ done
 say() { printf '%s\n' "$*"; }
 # One line on what stopped the run, one on what fixes it.
 fail() { printf 'Stopped: %s\nFix: %s\n' "$1" "$2" >&2; exit 1; }
+# Stripe keys are Preston's to paste into Vercel himself (PRESTON-STRIPE-LIVE.md); this script never uploads one. A live
+# key in this shell's environment, under any name, means one is where it shouldn't be: stop before anything is read,
+# changed or uploaded (Security L3). Neither its name nor its value is printed. No pipe: under pipefail an early-exiting
+# grep could lose the match to SIGPIPE.
+for name in $(compgen -e); do
+  case "${!name}" in
+    sk_live_* | rk_live_*) fail "A Stripe live key is in this shell's environment (not shown), and this script never handles one." \
+      "Remove it from the shell (unset it, or open a new terminal), then rerun. Only Preston puts a live key into Vercel, by hand." ;;
+  esac
+done
 # Step 6 gives shipshape_app a login password, and the rotation guard keys on "can already log in": a stop after
 # step 6 can only be rerun with the flag. On a first launch production isn't on that password, so nothing to redeploy.
 RERUN_AFTER_6="Rerun with LAUNCH_ROTATE_APP_PASSWORD=1 (step 6 already set a password; if production is live on it, redeploy production after)."

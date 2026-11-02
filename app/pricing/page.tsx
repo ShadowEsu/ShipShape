@@ -3,6 +3,8 @@ import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { megabytes, PLANS } from "@/lib/plans";
+import { billingConfig } from "@/lib/server/billing-config";
+import { contactEmail } from "@/lib/server/flags";
 
 const { free, pro } = PLANS;
 
@@ -20,27 +22,45 @@ const ROWS: [feature: string, free: string, pro: string][] = [
   ["Versions, history, search", "✓", "✓"],
   ["W-9 and NDA from your business facts", "✓", "✓"],
   ["Deadlines and calendar file", "✓", "✓"],
-  ["Email reminders 90, 30 and 7 days ahead", "Not included", "✓"],
-  ["Signature requests", "Not included", "✓"],
+  ["Reminders 90, 30 and 7 days ahead", "Not included", "On the Deadlines page"],
+  ["Signature requests", "Not included", "Not yet"],
   ["Export and account deletion", "✓", "✓"],
 ];
 
-const BILLING: [q: string, a: string][] = [
-  ["Can I cancel any time?", "Yes, from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free."],
-  ["What happens to my documents if I go back to Free?", "Nothing is deleted. You just can't add more than Free allows until you're under its limits."],
-  ["What if a payment fails?", "Pro stays on for 7 days from the first failed attempt while the payment is retried, then the workspace moves to Free."],
-  ["Refunds?", "Your first Pro payment can be refunded in full if you ask within 14 days. The terms will give the address to ask before real payments start. After that you can cancel any time, but earlier payments aren't refunded, in whole or in part. A full refund or a disputed charge ends Pro straight away."],
-  ["Am I charged now?", "No. During the preview, payments run in Stripe's test mode and no real money moves."],
-];
+/** The billing questions, worded for whether payments are live and where refunds are asked for (Security L6). */
+function billingQuestions(live: boolean, contact: string | null): [q: string, a: string][] {
+  const ask = contact ? `Email ${contact}.` : "The terms will give the address to ask before real payments start.";
+  return [
+    ["Can I cancel any time?", "Yes, from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free."],
+    ["What happens to my documents if I go back to Free?", "Nothing is deleted. You just can't add more than Free allows until you're under its limits."],
+    ["What if a payment fails?", "Pro stays on for 7 days from the first failed attempt while the payment is retried, then the workspace moves to Free."],
+    [
+      "Refunds?",
+      `If you ask within 14 days of your first Pro payment, we refund it in full. ${ask} After that you can cancel any time, but earlier payments aren't refunded, in whole or in part. A full refund or a disputed charge ends Pro straight away.`,
+    ],
+    ...(live ? [] : [["Am I charged now?", "No. During the preview, payments run in Stripe's test mode and no real money moves."] satisfies [string, string]]),
+  ];
+}
 
 export default function PricingPage() {
+  const cfg = billingConfig();
+  const live = cfg?.live === true;
+  // Stripe Tax adds sales tax at checkout on top of the tax-exclusive price (Security SHOULD-3).
+  const tax = cfg?.automaticTax === true;
+  const billing = billingQuestions(live, contactEmail());
   return (
     <>
       <SiteHeader />
       <main id="main" className="mx-auto max-w-5xl px-5 pt-10 pb-20">
         <p className="eyebrow">Pricing</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Free to start. Pro when you need more.</h1>
-        <p className="mt-3 max-w-2xl text-ink-2">Prices in US dollars. Payments are in test mode during the preview: no real charges.</p>
+        <p className="mt-3 max-w-2xl text-ink-2">
+          {live
+            ? tax
+              ? "Prices in US dollars. Sales tax is added at checkout where it applies."
+              : "Prices in US dollars."
+            : "Prices in US dollars. Payments are in test mode during the preview: no real charges."}
+        </p>
 
         <div className="mt-10 grid gap-4 md:grid-cols-3">
           <section className="card flex flex-col gap-4">
@@ -62,7 +82,7 @@ export default function PricingPage() {
               <span className="font-serif text-4xl font-semibold">${pro.price}</span>
               <span className="text-ink-2"> / month</span>
             </p>
-            <p className="text-base text-ink-2 sm:text-sm">No limits on documents or links, plus email reminders and signature requests.</p>
+            <p className="text-base text-ink-2 sm:text-sm">No limits on documents or links, plus deadline reminders on your Deadlines page.</p>
             <Link href="/signin" className="btn-accent mt-auto">
               Try the sample
             </Link>
@@ -115,15 +135,15 @@ export default function PricingPage() {
             </table>
           </div>
           <p className="mt-3 text-base text-ink-3 sm:text-sm">
-            Email reminders and signature requests by email start once ShipShape has an email provider. Until then, the sample workspace
-            shows them inside the app.
+            ShipShape doesn&apos;t send email yet. Until it does, Pro&apos;s reminders appear on your Deadlines page, and signature requests
+            work only in the sample workspace.
           </p>
         </section>
 
         <section className="mt-14 max-w-3xl">
           <h2 className="font-serif text-2xl font-semibold">Billing questions</h2>
           <dl className="mt-4 divide-y divide-line">
-            {BILLING.map(([q, a]) => (
+            {billing.map(([q, a]) => (
               <div key={q} className="py-4">
                 <dt className="font-medium">{q}</dt>
                 <dd className="mt-1 text-ink-2">{a}</dd>

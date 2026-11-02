@@ -13,7 +13,7 @@ function ActionError({ state, id }: { state: BillingState; id: string }) {
   );
 }
 
-export function UpgradeForm({ price }: { price: number }) {
+export function UpgradeForm({ price, tax }: { price: number; tax: boolean }) {
   const [state, action, pending] = useActionState<BillingState, FormData>(upgrade, {});
   return (
     <form action={action} className="space-y-3">
@@ -32,7 +32,8 @@ export function UpgradeForm({ price }: { price: number }) {
           <Link href="/terms" className="underline" target="_blank">
             Terms
           </Link>
-          , including ${price} a month until I cancel, and the refund policy.
+          {/* With Stripe Tax, Design's wording (PR 17 delta): the refund policy can't read as lasting until you cancel. */}
+          {tax ? ` and the refund policy: $${price} a month, plus any sales tax, until I cancel.` : `, including $${price} a month until I cancel, and the refund policy.`}
         </span>
       </label>
       <ActionError state={state} id="upgrade-error" />

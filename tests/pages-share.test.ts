@@ -756,6 +756,28 @@ describe.each([
     expect(actionsOf(on).map((a) => a.label)).toContain("Manage billing");
   });
 
+  it("Free's plan line says what Pro adds today; the agreement names sales tax only with Stripe Tax on; paused offers no checkout (Security MUST-3, SHOULD-3, SHOULD-8)", async () => {
+    await signIn(mail("settings-upgrade"));
+    vi.stubEnv("BILLING_ENABLED", "1");
+    vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "http://127.0.0.1:3917");
+    // The plan section only: the workspace-name help elsewhere mentions signature requests people send.
+    const plan = (text: string) => text.slice(text.indexOf("Plan Free"), text.indexOf("Export everything"));
+    const open = plan(textOf(await settings()));
+    expect(open).toContain("Pro ($ 15 /month) removes the limits and adds deadline reminders on your Deadlines page.");
+    expect(open).not.toMatch(/email|signature requests/i);
+    expect(open).toContain("including $15 a month until I cancel, and the refund policy.");
+    vi.stubEnv("STRIPE_AUTOMATIC_TAX", "1");
+    // Design's wording with tax (PR 17 delta): the refund policy can't read as lasting until you cancel.
+    expect(plan(textOf(await settings()))).toContain("I agree to the Terms and the refund policy: $15 a month, plus any sales tax, until I cancel.");
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
+    const paused = await settings();
+    expect(textOf(paused)).toContain("New Pro subscriptions are paused for now.");
+    expect(actionsOf(paused).map((a) => a.label)).not.toContain("Move to Pro, $15/month");
+  });
+
   it("export needing a fresh sign-in: one line, and Sign in again in place of the download", async () => {
     await signIn(mail("settings-reauth"));
     const html = await settings("reauth");

@@ -13,8 +13,13 @@ import PassportPage from "@/app/p/[id]/page";
 import { POST as signCode } from "@/app/s/[id]/code/route";
 import { GET as signFile } from "@/app/s/[id]/file/route";
 import { POST as signOpen } from "@/app/s/[id]/open/route";
+import FaqPage from "@/app/faq/page";
+import HomePage from "@/app/page";
 import PricingPage from "@/app/pricing/page";
+import PrivacyPage from "@/app/privacy/page";
 import SigningPage from "@/app/s/[id]/page";
+import StatusPage from "@/app/status/page";
+import TermsPage from "@/app/terms/page";
 import { POST as signPost } from "@/app/s/[id]/sign/route";
 import { SignButton } from "@/app/s/[id]/sign-form";
 import { plainTwin, signProblem } from "@/app/s/[id]/messages";
@@ -652,6 +657,101 @@ describe("pricing (/pricing)", () => {
     // "in all" never splits at a narrow width (Design, wave 15).
     expect(html).toContain("100 MB in\u00a0all");
     expect(text).toContain("For getting your papers in order: 10 active documents, 100 MB of files and 1 passport link open at a time.");
+  });
+
+  it("says test mode, with no real money, until payments are live; then names the seller and the refund address, and no page says test mode (Security L6)", async () => {
+    const pages = () => Promise.all([PricingPage, TermsPage, PrivacyPage].map(async (page) => textOf(await renderPage(page, {}))));
+    vi.stubEnv("CONTACT_EMAIL", "support@example.com");
+    const preview = await pages();
+    expect(preview.map((t) => /test mode/.test(t))).toEqual([true, true, true]);
+    expect(preview.join(" ")).not.toMatch(/Draft, pending lawyer review|\(draft\)/);
+    expect(preview[1]).toContain("ShipShape is in preview. Only sample workspaces with made-up documents are open.");
+    vi.stubEnv("BILLING_ENABLED", "1");
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", "1");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "https://shipshape.example.com");
+    vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_live1");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Live1");
+    const [pricing, terms, privacy] = await pages();
+    for (const text of [pricing, terms, privacy]) expect(text).not.toMatch(/test mode|no real money|in preview/i);
+    // One refund sentence, word for word the same on both pages (Design, PR 17).
+    const refund = "If you ask within 14 days of your first Pro payment, we refund it in full. Email ";
+    expect(pricing).toContain(`${refund}support@example.com.`);
+    expect(terms).toContain("ShipShape is operated by Unvibe.");
+    const termsHtml = (await renderPage(TermsPage, {})).replaceAll("<!-- -->", "");
+    expect(termsHtml).toContain(`${refund}<a href="mailto:support@example.com">support@example.com</a>.`);
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("the public pages once payments are live (Security MUST-3, MUST-4)", () => {
+  const PAGES = { home: HomePage, faq: FaqPage, pricing: PricingPage, terms: TermsPage, privacy: PrivacyPage, status: StatusPage };
+  const texts = async () => Object.fromEntries(await Promise.all(Object.entries(PAGES).map(async ([name, page]) => [name, textOf(await renderPage(page, {}))] as const)));
+  const goLive = () => {
+    vi.stubEnv("CONTACT_EMAIL", "support@example.com");
+    vi.stubEnv("BILLING_ENABLED", "1");
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", "1");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "https://shipshape.example.com");
+    vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_live1");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Live1");
+  };
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("no page promises Pro email reminders or signature requests while ShipShape sends no email, in preview or live", async () => {
+    const preview = await texts();
+    goLive();
+    const live = await texts();
+    for (const [name, text] of [...Object.entries(preview), ...Object.entries(live)]) {
+      expect([name, /adds email reminders|plus email reminders|Email reminders 90/.test(text)]).toEqual([name, false]);
+    }
+    expect(live.pricing).toContain("Reminders 90, 30 and 7 days ahead Not included On the Deadlines page");
+    expect(live.pricing).toContain("Signature requests Not included Not yet Export and account deletion");
+    expect(live.home).toContain("Pro removes the limits and adds deadline reminders on your Deadlines page.");
+    expect(live.faq).toContain("plus deadline reminders on your Deadlines page. ShipShape doesn't send email yet.");
+  });
+
+  it("live: no preview line on any page, and Home, Status and Privacy say what is open and who handles the data", async () => {
+    const preview = await texts();
+    expect(preview.home).toContain("Preview: a sample business with made-up documents.");
+    expect(preview.home).toContain("Payments Awaiting setup");
+    goLive();
+    const live = await texts();
+    // MUST-2 (the governing-law line in the Terms) waits on Preston's choice; every other page and line is checked.
+    const terms = live.terms.replace("Which law governs these terms, and how disputes are resolved, will be set with our lawyer before real accounts open.", "");
+    for (const [name, text] of Object.entries({ ...live, terms })) {
+      expect([name, text.match(/No real charges|before real accounts open|During the preview|Features during the preview|Hear when real accounts open/)?.[0]]).toEqual([name, undefined]);
+    }
+    expect(live.home).toContain("Payments Works today Pro is paid monthly through Stripe; cancel any time from Settings.");
+    expect(live.home).toContain("Accounts for real documents Works today");
+    expect(live.home).toContain("Sign in or create an account");
+    expect(live.home).toContain("Sign in to keep your own documents, or try a sample business with made-up ones.");
+    expect(live.home).not.toContain("Preview: a sample business");
+    expect(live.status).toContain("Payments Real cards are charged through Stripe. Live payments");
+    expect(live.privacy).toContain("ShipShape is operated by Unvibe.");
+    expect(live.privacy).toContain("Our providers are Vercel (hosting), Amazon Web Services (database, file storage and sign-in, in the United States, region us-east-1), Stripe (payments) and Anthropic");
+    expect(live.privacy).toContain("Deleted data can remain in database backups and earlier file versions for up to 7 days, then it's gone.");
+    expect(live.faq).toContain("You can also upload your own PDF, PNG or JPEG files (up to 4 MB each).");
+    expect(live.faq).not.toMatch(/When can I use it for real documents\?|Once real accounts open/);
+    expect(preview.faq).toContain("When can I use it for real documents?");
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
+    expect(textOf(await renderPage(StatusPage, {}))).toContain("Payments Existing Pro subscriptions carry on through Stripe. New subscriptions paused");
+    // Real documents open but payments turned off (Part G's full rollback): no preview wording either.
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", undefined);
+    const off = textOf(await renderPage(StatusPage, {}));
+    expect(off).toContain("Features Sample workspaces");
+    expect(off).toContain("Payments No real charges. Off");
+  });
+
+  it("pricing names sales tax only when Stripe Tax is on in live mode (Security SHOULD-3)", async () => {
+    goLive();
+    expect(textOf(await renderPage(PricingPage, {}))).not.toContain("Sales tax");
+    vi.stubEnv("STRIPE_AUTOMATIC_TAX", "1");
+    expect(textOf(await renderPage(PricingPage, {}))).toContain("Prices in US dollars. Sales tax is added at checkout where it applies.");
   });
 });
 

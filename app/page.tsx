@@ -4,7 +4,8 @@ import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel, type Status } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { PLANS } from "@/lib/plans";
-import { appUrl } from "@/lib/server/flags";
+import { paymentsLive } from "@/lib/server/billing-config";
+import { appUrl, realDocsEnabled } from "@/lib/server/flags";
 import { homeJsonLd, jsonLdText } from "@/lib/server/seo";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
@@ -45,21 +46,32 @@ const STEPS: { title: string; body: string }[] = [
   { title: "Stay current", body: "Expiry and renewal dates become deadlines and a calendar file with alerts; on Pro, also reminders 90, 30 and 7 days ahead." },
 ];
 
-const CAPABILITIES: { title: string; body: string; status: Status }[] = [
-  { title: "Documents, versions and history", body: "Search, archive and see every version; every change and download recorded.", status: "Works today" },
-  { title: "W-9 and NDA from your facts", body: "Official IRS form and Common Paper's standard NDA, filled and saved.", status: "Works today" },
-  { title: "Passport links", body: "Expiry up to 90 days, access log, turn off any time.", status: "Works today" },
-  { title: "Deadlines and calendar file", body: "Lapsed, due soon and later, with an .ics download.", status: "Works today" },
-  { title: "Signature requests", body: "Consent, a one-time code and a certificate page on the signed copy.", status: "Works today" },
-  { title: "Export and account deletion", body: "One ZIP of everything; deletion removes files and links.", status: "Works today" },
-  { title: "Collect", body: "Ask your own vendors for W-9s and certificates through an upload link and see who's current. Not in a plan yet.", status: "Works today" },
-  { title: "Accounts for real documents", body: "Pending our security review and the production database.", status: "Awaiting setup" },
-  { title: "Upload your own files", body: "PDF, PNG or JPEG, up to 4 MB each, once real accounts open.", status: "Awaiting setup" },
-  { title: "Email reminders and signing codes", body: "Pending an email provider; the sample shows them inside the app meanwhile.", status: "Awaiting setup" },
-  { title: "Payments", body: "Checkout, billing portal and webhooks, checked against a simulated Stripe; the Stripe sandbox run is pending. No real charges.", status: "Awaiting setup" },
-  { title: "“What are they asking for?”", body: "Paste a request and see which documents it asks for and which you have. Built; opt-in per request, switched on after our security review.", status: "Awaiting setup" },
-  { title: "Dates read off certificates", body: "Expiry dates filled in from an uploaded certificate, with your OK. Opt-in AI.", status: "Planned" },
-];
+/** What works today, what waits on setup and what's planned, worded for whether real documents and live payments are open (Security MUST-4). */
+function capabilities(docs: boolean, live: boolean): { title: string; body: string; status: Status }[] {
+  return [
+    { title: "Documents, versions and history", body: "Search, archive and see every version; every change and download recorded.", status: "Works today" },
+    { title: "W-9 and NDA from your facts", body: "Official IRS form and Common Paper's standard NDA, filled and saved.", status: "Works today" },
+    { title: "Passport links", body: "Expiry up to 90 days, access log, turn off any time.", status: "Works today" },
+    { title: "Deadlines and calendar file", body: "Lapsed, due soon and later, with an .ics download.", status: "Works today" },
+    docs
+      ? { title: "Signature requests", body: "Consent, a one-time code and a certificate page on the signed copy. In the sample today; for your own documents once ShipShape sends email.", status: "Awaiting setup" }
+      : { title: "Signature requests", body: "Consent, a one-time code and a certificate page on the signed copy.", status: "Works today" },
+    { title: "Export and account deletion", body: "One ZIP of everything; deletion removes files and links.", status: "Works today" },
+    { title: "Collect", body: "Ask your own vendors for W-9s and certificates through an upload link and see who's current. Not in a plan yet.", status: "Works today" },
+    docs
+      ? { title: "Accounts for real documents", body: "Your own account and workspace for your real paperwork.", status: "Works today" }
+      : { title: "Accounts for real documents", body: "Pending our security review and the production database.", status: "Awaiting setup" },
+    docs
+      ? { title: "Upload your own files", body: "PDF, PNG or JPEG files, up to 4 MB each.", status: "Works today" }
+      : { title: "Upload your own files", body: "PDF, PNG or JPEG, up to 4 MB each, once real accounts open.", status: "Awaiting setup" },
+    { title: "Email reminders and signing codes", body: "Pending an email provider; the sample shows them inside the app meanwhile.", status: "Awaiting setup" },
+    live
+      ? { title: "Payments", body: "Pro is paid monthly through Stripe; cancel any time from Settings.", status: "Works today" }
+      : { title: "Payments", body: "Checkout, billing portal and webhooks, checked against a simulated Stripe; the Stripe sandbox run is pending. No real charges.", status: "Awaiting setup" },
+    { title: "“What are they asking for?”", body: "Paste a request and see which documents it asks for and which you have. Built; opt-in per request, switched on after our security review.", status: "Awaiting setup" },
+    { title: "Dates read off certificates", body: "Expiry dates filled in from an uploaded certificate, with your OK. Opt-in AI.", status: "Planned" },
+  ];
+}
 
 function SamplePassport() {
   const rows: [string, string, "ok" | "warn"][] = [
@@ -95,6 +107,8 @@ function SamplePassport() {
 export default function Home() {
   // Absolute URLs need the site's address (SHIPSHAPE_APP_URL); local runs without it skip the structured data.
   const site = appUrl();
+  const docs = realDocsEnabled();
+  const live = paymentsLive();
   return (
     <>
       {site && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(homeJsonLd(site, PITCH)) }} />}
@@ -117,7 +131,11 @@ export default function Home() {
                 How it works
               </Link>
             </div>
-            <p className="text-base text-ink-3 sm:text-sm">Preview: a sample business with made-up documents. Real accounts open after our security review.</p>
+            <p className="text-base text-ink-3 sm:text-sm">
+              {docs
+                ? "Sign in to keep your own documents, or try a sample business with made-up ones."
+                : "Preview: a sample business with made-up documents. Real accounts open after our security review."}
+            </p>
           </div>
           <SamplePassport />
         </section>
@@ -156,7 +174,7 @@ export default function Home() {
             <p className="eyebrow">Where things stand</p>
             <h2 className="mt-2 font-serif text-3xl font-semibold tracking-tight sm:text-4xl">What works today, and what doesn&apos;t yet.</h2>
             <ul className="mt-8 grid gap-3 md:grid-cols-2">
-              {CAPABILITIES.map((c) => (
+              {capabilities(docs, live).map((c) => (
                 <li key={c.title} className={`rounded-2xl border border-line p-4 ${c.status === "Planned" ? "bg-canvas" : ""}`}>
                   <div className="flex items-start justify-between gap-3">
                     <h3 className="font-semibold">{c.title}</h3>
@@ -196,18 +214,24 @@ export default function Home() {
             <div className="max-w-xl space-y-3">
               <h2 className="font-serif text-3xl font-semibold tracking-tight sm:text-4xl">Free to start. ${PLANS.pro.price} a month for Pro.</h2>
               <p className="text-ink-2">
-                Free keeps {PLANS.free.documents} active documents and {PLANS.free.passports} open link. Pro removes the limits and adds email
-                reminders and signature requests.{" "}
+                Free keeps {PLANS.free.documents} active documents and {PLANS.free.passports} open link. Pro removes the limits and adds
+                deadline reminders on your Deadlines page.{" "}
                 <Link href="/pricing" className="underline">
                   See pricing
                 </Link>
                 .
               </p>
             </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Hear when real accounts open</p>
-              <WaitlistForm />
-            </div>
+            {docs ? (
+              <Link href="/signin" className="btn-accent">
+                Sign in or create an account
+              </Link>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Hear when real accounts open</p>
+                <WaitlistForm />
+              </div>
+            )}
           </div>
         </section>
       </main>

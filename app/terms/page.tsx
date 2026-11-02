@@ -3,20 +3,24 @@ import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 import { TERMS_VERSION } from "@/lib/legal";
 import { PLANS } from "@/lib/plans";
+import { paymentsLive } from "@/lib/server/billing-config";
+import { contactEmail } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
-  title: "Terms (draft)",
-  description: "The terms for using ShipShape: software, not a law firm; your documents stay yours; plans, payments and refunds. A draft pending lawyer review.",
+  title: "Terms",
+  description: "The terms for using ShipShape: software, not a law firm; your documents stay yours; plans, payments and refunds.",
   alternates: { canonical: "/terms" },
 };
 
 export default function TermsPage() {
   const { free, pro } = PLANS;
+  const live = paymentsLive();
+  const contact = contactEmail();
   return (
     <LegalPage title="Terms of service" version={TERMS_VERSION}>
       <p>
         These terms cover your use of ShipShape, an app for storing, filling, sharing and signing business paperwork. By creating a
-        workspace you agree to them. The business that operates ShipShape will be named here before ShipShape accepts real payments.
+        workspace you agree to them. ShipShape is operated by Unvibe.
       </p>
 
       <h2>ShipShape is software, not a law firm</h2>
@@ -57,7 +61,7 @@ export default function TermsPage() {
       </ul>
 
       <h2>Plans and payments</h2>
-      <p>During the preview, payments run in Stripe&apos;s test mode: no real money moves.</p>
+      {!live && <p>During the preview, payments run in Stripe&apos;s test mode: no real money moves.</p>}
       <ul>
         <li>
           <strong>{free.name}</strong> costs nothing and includes {free.documents} active documents and {free.passports} passport link
@@ -65,13 +69,20 @@ export default function TermsPage() {
         </li>
         <li>
           <strong>{pro.name}</strong> costs ${pro.price} a month, billed monthly by Stripe until you cancel. It removes those limits and
-          adds email reminders and signature requests.
+          adds deadline reminders 90, 30 and 7 days ahead, shown on your Deadlines page. ShipShape doesn&apos;t send email yet, so
+          reminders aren&apos;t emailed and signature requests aren&apos;t available for your own workspace.
         </li>
         <li>You can cancel any time from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free.</li>
         <li>If a payment fails, Pro stays on for 7 days from the first failed attempt while the payment is retried, then moves to Free.</li>
         <li>
-          Your first {pro.name} payment can be refunded in full if you ask within 14 days of it. The address to ask will be listed here
-          before real accounts open (during the preview no real money moves).
+          If you ask within 14 days of your first {pro.name} payment, we refund it in full.{" "}
+          {contact ? (
+            <>
+              Email <a href={`mailto:${contact}`}>{contact}</a>.
+            </>
+          ) : (
+            "The address to ask will be listed here before real accounts open (during the preview no real money moves)."
+          )}
         </li>
         <li>After that, you can cancel any time, but payments already made aren&apos;t refunded, in whole or in part.</li>
         <li>If you get a full refund, or dispute a charge, Pro ends straight away.</li>
@@ -94,7 +105,7 @@ export default function TermsPage() {
 
       <h2>The service</h2>
       <ul>
-        <li>ShipShape is in preview and may change, pause or have mistakes. Keep your own copies of important documents.</li>
+        <li>ShipShape may change, pause or get things wrong. Keep your own copies of important documents.</li>
         <li>We may suspend an account that breaks these terms or puts other people at risk, and we&apos;ll tell you why where we can.</li>
         <li>
           To the extent the law allows, ShipShape is provided as is, and our liability is limited to what you paid us in the 12 months
@@ -105,8 +116,7 @@ export default function TermsPage() {
 
       <h2>Changes</h2>
       <p>
-        When these terms change, the version number above changes. This is a draft: the final terms will say how you&apos;re told about
-        changes.
+        When these terms change, the version number above changes, and the next time you sign in we ask you to agree to the new version.
       </p>
     </LegalPage>
   );

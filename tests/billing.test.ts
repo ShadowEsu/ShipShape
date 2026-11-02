@@ -4,8 +4,18 @@ import path from "node:path";
 import { PDFDocument } from "pdf-lib";
 import Stripe from "stripe";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { GET as healthGet } from "@/app/api/health/route";
 import { deleteAccount } from "@/lib/server/account";
-import { billingView, handleStripeWebhook, openPortal, setStripeForTests, startCheckout, type StripePort, type SubscriptionState } from "@/lib/server/billing";
+import {
+  billingView,
+  handleStripeWebhook,
+  openPortal,
+  setStripeForTests,
+  startCheckout,
+  StripeCallFailed,
+  type StripePort,
+  type SubscriptionState,
+} from "@/lib/server/billing";
 import { billingConfig } from "@/lib/server/billing-config";
 import { asUser } from "@/lib/server/db";
 import { setArchived, uploadDocument } from "@/lib/server/documents";
@@ -17,7 +27,7 @@ import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
-/** The live-key tests run under final terms; every other test under the real (draft) TERMS_VERSION. */
+/** The live-key tests run under final terms (goLive); every other test under the real TERMS_VERSION. */
 const FINAL_TERMS = "2026-12-01";
 const legal = vi.hoisted(() => ({ version: "", real: "" }));
 vi.mock("@/lib/legal", async (importOriginal) => {
@@ -35,8 +45,19 @@ vi.mock("@/lib/legal", async (importOriginal) => {
 /** Stripe billing in test mode (stripe-billing-readiness checks A-H), against a fake Stripe. */
 
 const KEY = `sk_test_${"a".repeat(24)}`;
+const LIVE = `rk_live_${"a".repeat(24)}`;
 const WHSEC = "whsec_testsecret123";
 const PRO = "price_Pro1";
+
+/** Everything Vercel's Production needs before it takes real money (Security L3). */
+function goLive() {
+  legal.version = FINAL_TERMS;
+  vi.stubEnv("VERCEL_ENV", "production");
+  vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", "1");
+  vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+  vi.stubEnv("SHIPSHAPE_APP_URL", "https://shipshape.example.com");
+  vi.stubEnv("STRIPE_SECRET_KEY", LIVE);
+}
 
 class FakeStripe implements StripePort {
   subs = new Map<string, SubscriptionState>();
@@ -45,7 +66,7 @@ class FakeStripe implements StripePort {
   customersCreated = 0;
   retrieves = 0;
   failNextRetrieve = false;
-  price = { active: true, unit_amount: 1500, currency: "usd", recurring: { interval: "month" } };
+  price: Awaited<ReturnType<StripePort["retrievePrice"]>> = { active: true, unit_amount: 1500, currency: "usd", recurring: { interval: "month", interval_count: 1 } };
 
   async createCustomer() {
     this.customersCreated++;
@@ -187,7 +208,9 @@ beforeEach(() => {
   fake = new FakeStripe();
   setStripeForTests(fake);
   vi.stubEnv("BILLING_ENABLED", "1");
-  vi.stubEnv("BILLING_LIVE_KEYS_OK", undefined);
+  vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", undefined);
+  vi.stubEnv("VERCEL_ENV", undefined);
+  vi.stubEnv("SHIPSHAPE_REAL_DOCS", undefined);
   vi.stubEnv("STRIPE_SECRET_KEY", KEY);
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", WHSEC);
   vi.stubEnv("STRIPE_PRICE_PRO", PRO);
@@ -207,68 +230,122 @@ describe("keys and mode", () => {
     vi.stubEnv("BILLING_ENABLED", "true");
     expect(billingConfig()).toBeNull();
     vi.stubEnv("BILLING_ENABLED", "1");
-    expect(billingConfig()).toEqual({ secretKey: KEY, webhookSecret: WHSEC, proPrice: PRO, appUrl: "http://127.0.0.1:3917", live: false });
+    expect(billingConfig()).toEqual({ secretKey: KEY, webhookSecret: WHSEC, proPrice: PRO, appUrl: "http://127.0.0.1:3917", live: false, automaticTax: false, checkoutPaused: false });
   });
 
-  it("runs only with a Stripe test key; without BILLING_LIVE_KEYS_OK a live key switches billing off", () => {
+  it("outside Vercel's Production takes only a test key: a live key switches billing off there, flag or not", () => {
     expect(billingConfig()).not.toBeNull();
-    vi.stubEnv("STRIPE_SECRET_KEY", `sk_live_${"a".repeat(24)}`);
-    expect(billingConfig()).toBeNull();
-    vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
-    expect(billingConfig()).toBeNull();
-    vi.stubEnv("STRIPE_SECRET_KEY", ` ${KEY}`);
+    for (const env of [undefined, "preview", "development"]) {
+      vi.stubEnv("VERCEL_ENV", env);
+      for (const key of [`sk_live_${"a".repeat(24)}`, LIVE, ` ${KEY}`, `${KEY}\n`]) {
+        vi.stubEnv("STRIPE_SECRET_KEY", key);
+        vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", "1");
+        legal.version = FINAL_TERMS;
+        expect(billingConfig()).toBeNull();
+      }
+      vi.stubEnv("STRIPE_SECRET_KEY", KEY);
+      expect(billingConfig()).toMatchObject({ secretKey: KEY, live: false });
+    }
+  });
+
+  it("Vercel's Production takes real money only with an rk_live_ key, the flag exactly 1, final terms, real documents and https (Security L3)", () => {
+    goLive();
+    expect(billingConfig()).toEqual({ secretKey: LIVE, webhookSecret: WHSEC, proPrice: PRO, appUrl: "https://shipshape.example.com", live: true, automaticTax: false, checkoutPaused: false });
+    const refused: [string, string | undefined][] = [
+      ["SHIPSHAPE_CHECKOUT_LIVE", undefined],
+      ["SHIPSHAPE_CHECKOUT_LIVE", "true"],
+      ["SHIPSHAPE_CHECKOUT_LIVE", " 1"],
+      ["SHIPSHAPE_CHECKOUT_LIVE", "1\n"],
+      ["STRIPE_SECRET_KEY", `sk_live_${"a".repeat(24)}`],
+      ["STRIPE_SECRET_KEY", `RK_LIVE_${"a".repeat(24)}`],
+      ["STRIPE_SECRET_KEY", ` ${LIVE}`],
+      ["STRIPE_SECRET_KEY", `${LIVE}\n`],
+      ["STRIPE_SECRET_KEY", `${LIVE} `],
+      ["STRIPE_SECRET_KEY", `pk_live_${"a".repeat(24)}`],
+      ["SHIPSHAPE_REAL_DOCS", undefined],
+      ["SHIPSHAPE_APP_URL", "http://shipshape.example.com"],
+      ["VERCEL_ENV", "preview"],
+      ["BILLING_ENABLED", undefined],
+    ];
+    for (const [name, value] of refused) {
+      goLive();
+      vi.stubEnv(name, value);
+      expect([name, value, billingConfig()]).toEqual([name, value, null]);
+    }
+    goLive();
+    legal.version = legal.real;
     expect(billingConfig()).toBeNull();
   });
 
-  it("takes a live key only with BILLING_LIVE_KEYS_OK and BILLING_ENABLED both 1", () => {
-    legal.version = FINAL_TERMS;
-    const live = `sk_live_${"a".repeat(24)}`;
-    vi.stubEnv("STRIPE_SECRET_KEY", live);
-    expect(billingConfig()).toBeNull();
-    vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
-    expect(billingConfig()).toMatchObject({ secretKey: live, live: true });
-    vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
-    expect(billingConfig()).toMatchObject({ live: true });
+  it("Vercel's Production refuses a test key, real documents or not, so a test card can't buy Pro in the production database", () => {
+    goLive();
     vi.stubEnv("STRIPE_SECRET_KEY", KEY);
-    expect(billingConfig()).toMatchObject({ secretKey: KEY, live: false });
-    vi.stubEnv("STRIPE_SECRET_KEY", live);
-    vi.stubEnv("BILLING_ENABLED", undefined);
     expect(billingConfig()).toBeNull();
-    vi.stubEnv("BILLING_ENABLED", "1");
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", undefined);
+    expect(billingConfig()).toBeNull();
+    vi.stubEnv("STRIPE_SECRET_KEY", `rk_test_${"a".repeat(24)}`);
     expect(billingConfig()).toBeNull();
   });
 
-  it("refuses a live key while the terms are a draft, since the draft terms and pricing say no real money moves (W13-5)", async () => {
-    expect(legal.real).toMatch(/-draft$/);
+  it("refuses a live key while the terms are a draft, since draft terms say no real money moves (W13-5)", async () => {
     const ctx = await realWorkspace();
-    vi.stubEnv("STRIPE_SECRET_KEY", `sk_live_${"a".repeat(24)}`);
-    vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
+    goLive();
+    legal.version = "2026-12-01-draft";
     expect(billingConfig()).toBeNull();
     expect(await billingView(ctx)).toMatchObject({ available: false, live: false });
     legal.version = FINAL_TERMS;
     expect(billingConfig()).toMatchObject({ live: true });
     expect(await billingView(ctx)).toMatchObject({ available: true, live: true });
+  });
+
+  it("the terms in force aren't a draft, so a live key can be admitted with them", () => {
+    expect(legal.real).not.toMatch(/-draft$/);
+    goLive();
+    legal.version = legal.real;
+    expect(billingConfig()).toMatchObject({ live: true });
   });
 
   it("tells members whether payments take real money: live only for an admitted live key", async () => {
     legal.version = FINAL_TERMS;
     const ctx = await realWorkspace();
     expect(await billingView(ctx)).toMatchObject({ available: true, live: false });
-    vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
+    goLive();
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", undefined);
     expect(await billingView(ctx)).toMatchObject({ available: false, live: false });
-    vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", "1");
     expect(await billingView(ctx)).toMatchObject({ available: true, live: true });
     vi.stubEnv("BILLING_ENABLED", undefined);
     expect(await billingView(ctx)).toMatchObject({ available: false, live: false });
   });
 
-  it("is off in production once real documents are on, so a test card can't buy real Pro", () => {
+  it("is off in a production build outside Vercel's Production once real documents are on, so a test card can't buy real Pro", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(billingConfig()).not.toBeNull();
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     expect(billingConfig()).toBeNull();
+    vi.stubEnv("VERCEL_ENV", "preview");
+    expect(billingConfig()).toBeNull();
+  });
+
+  it("health names the billing mode and whether a webhook secret is set, never a key (Security L4)", async () => {
+    const mode = async () => {
+      const res = await healthGet();
+      const text = await res.text();
+      expect(text).not.toMatch(/sk_|rk_|whsec_|price_/);
+      const body = JSON.parse(text);
+      return [body.billing, body.checkout, body.webhookConfigured];
+    };
+    expect(await mode()).toEqual(["test", "open", true]);
+    goLive();
+    expect(await mode()).toEqual(["live", "open", true]);
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "true");
+    expect(await mode()).toEqual(["live", "open", true]);
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
+    expect(await mode()).toEqual(["live", "paused", true]);
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", undefined);
+    expect(await mode()).toEqual(["off", "off", true]);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", undefined);
+    expect(await mode()).toEqual(["off", "off", false]);
   });
 });
 
@@ -298,9 +375,7 @@ describe("webhook authenticity and idempotency", () => {
   });
 
   it("with a live key admitted, takes live-mode events and refuses test-mode ones", async () => {
-    legal.version = FINAL_TERMS;
-    vi.stubEnv("STRIPE_SECRET_KEY", `sk_live_${"a".repeat(24)}`);
-    vi.stubEnv("BILLING_LIVE_KEYS_OK", "1");
+    goLive();
     expect(await send("product.created", { object: "product" }, { livemode: true })).toEqual({ status: 200, message: "ignored" });
     expect(await send("invoice.paid", { object: "invoice", customer: "cus_X" }, { id: "evt_Test1" })).toEqual({ status: 400, message: "test events refused" });
     expect(await db.root((tx) => tx.query("select 1 from app.stripe_events where id = 'evt_Test1'"))).toEqual([]);
@@ -352,6 +427,70 @@ describe("checkout", () => {
     expect(fake.customersCreated).toBe(0);
   });
 
+  it("adds Stripe Tax to the checkout only with STRIPE_AUTOMATIC_TAX exactly 1, saving the buyer's address to the customer", async () => {
+    const ctx = await realWorkspace();
+    await startCheckout(ctx, true);
+    expect(fake.checkouts.at(-1)).not.toHaveProperty("automatic_tax");
+    expect(fake.checkouts.at(-1)).not.toHaveProperty("customer_update");
+    vi.stubEnv("STRIPE_AUTOMATIC_TAX", "true");
+    await startCheckout(await realWorkspace(), true);
+    expect(fake.checkouts.at(-1)).not.toHaveProperty("automatic_tax");
+    vi.stubEnv("STRIPE_AUTOMATIC_TAX", "1");
+    await startCheckout(await realWorkspace(), true);
+    expect(fake.checkouts.at(-1)).toMatchObject({ automatic_tax: { enabled: true }, customer_update: { address: "auto" } });
+  });
+
+  it("a failed Stripe call leaves billing as its type, code and status only, never Stripe's message (it can name the key)", async () => {
+    const ctx = await realWorkspace();
+    const leak = "Invalid API Key provided: sk_test_****************abcd";
+    fake.createCheckout = async () => {
+      throw new Stripe.errors.StripeAuthenticationError({ message: leak, statusCode: 401 });
+    };
+    const failure = await startCheckout(ctx, true).catch((e: unknown) => e);
+    expect(failure).toBeInstanceOf(StripeCallFailed);
+    expect(failure).toMatchObject({ name: "StripeAuthenticationError", message: "Stripe StripeAuthenticationError (HTTP 401)" });
+    expect(String(failure)).not.toContain("sk_test_");
+    fake.createCheckout = async () => {
+      throw new Error(leak);
+    };
+    const other = await startCheckout(ctx, true).catch((e: unknown) => e);
+    expect(other).toMatchObject({ name: "StripeCallFailed", message: "Stripe call failed" });
+  });
+
+  it("every Stripe call on the checkout and portal paths fails as type and status only (Security SHOULD-2)", async () => {
+    const boom = async (): Promise<never> => {
+      throw new Stripe.errors.StripeAuthenticationError({ message: "Invalid API Key provided: sk_test_****abcd", statusCode: 401 });
+    };
+    for (const m of ["retrievePrice", "createCustomer", "createCheckout"] as const) {
+      fake = new FakeStripe();
+      setStripeForTests(fake);
+      fake[m] = boom;
+      const e = await startCheckout(await realWorkspace(), true).catch((x: unknown) => x);
+      expect([m, String(e)]).toEqual([m, "StripeAuthenticationError: Stripe StripeAuthenticationError (HTTP 401)"]);
+    }
+    const ctx = await realWorkspace();
+    fake = new FakeStripe();
+    setStripeForTests(fake);
+    await startCheckout(ctx, true);
+    fake.createPortal = boom;
+    expect(String(await openPortal(ctx).catch((x: unknown) => x))).toBe("StripeAuthenticationError: Stripe StripeAuthenticationError (HTTP 401)");
+  });
+
+  it("paused (SHIPSHAPE_CHECKOUT_PAUSED exactly 1): no new checkout and no Stripe call, while the portal and the webhook keep working", async () => {
+    const { ctx, customer } = await payingWorkspace();
+    const fresh = await realWorkspace();
+    const made = fake.checkouts.length;
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "true");
+    await startCheckout(fresh, true);
+    expect(fake.checkouts).toHaveLength(made + 1);
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
+    const before = fake.customersCreated;
+    await expect(startCheckout(await realWorkspace(), true)).rejects.toThrow("New Pro subscriptions are paused for now. Nothing was charged.");
+    expect([fake.checkouts.length, fake.customersCreated]).toEqual([made + 1, before]);
+    expect(await openPortal(ctx)).toMatch(/^https:\/\/billing\.stripe\.com\//);
+    expect(await send("customer.subscription.deleted", { ...subscription("sub_Paused1", customer), status: "canceled" })).toEqual({ status: 200, message: "ok" });
+  });
+
   it("refuses checkout and the billing portal while payments are switched off", async () => {
     const ctx = await realWorkspace();
     vi.stubEnv("STRIPE_SECRET_KEY", "");
@@ -360,10 +499,19 @@ describe("checkout", () => {
     expect(fake.customersCreated).toBe(0);
   });
 
-  it("refuses checkout when the Stripe price is in another currency than the site's", async () => {
-    const ctx = await realWorkspace();
-    fake.price = { ...fake.price, currency: "eur" };
-    await expect(startCheckout(ctx, true)).rejects.toThrow("Payments are paused while we fix a price mismatch. Nothing was charged; try again later.");
+  it("refuses checkout when the Stripe price is in another currency, archived, not monthly, or not every single month (Security SHOULD-1)", async () => {
+    const good = fake.price;
+    const bad: Partial<typeof good>[] = [
+      { currency: "eur" },
+      { active: false },
+      { recurring: { interval: "year", interval_count: 1 } },
+      { recurring: { interval: "month", interval_count: 3 } },
+      { recurring: null },
+    ];
+    for (const b of bad) {
+      fake.price = { ...good, ...b };
+      await expect(startCheckout(await realWorkspace(), true)).rejects.toThrow("Payments are paused while we fix a price mismatch. Nothing was charged; try again later.");
+    }
     expect(fake.checkouts).toEqual([]);
   });
 

@@ -8,7 +8,7 @@ import { SubscriptionStillRunning, UserError } from "./errors";
 import type { Ctx } from "./profile";
 
 /**
- * Stripe billing, TEST MODE unless BILLING_LIVE_KEYS_OK admits a live key (fleet rule: no live keys until an attorney names the seller).
+ * Stripe billing: test mode everywhere but Vercel's Production, which takes only a live key admitted by SHIPSHAPE_CHECKOUT_LIVE (billing-config.ts).
  *
  * Access comes only from verified webhooks, after re-reading the subscription from Stripe, so event
  * order, duplicates and stale events can't grant or keep Pro. The checkout redirect grants nothing.
@@ -31,7 +31,7 @@ export interface StripePort {
   createCustomer(params: Stripe.CustomerCreateParams, idempotencyKey: string): Promise<{ id: string }>;
   createCheckout(params: Stripe.Checkout.SessionCreateParams): Promise<{ url: string | null }>;
   createPortal(params: Stripe.BillingPortal.SessionCreateParams): Promise<{ url: string }>;
-  retrievePrice(id: string): Promise<{ active: boolean; unit_amount: number | null; currency: string; recurring: { interval: string } | null }>;
+  retrievePrice(id: string): Promise<{ active: boolean; unit_amount: number | null; currency: string; recurring: { interval: string; interval_count: number } | null }>;
   retrieveSubscription(id: string): Promise<SubscriptionState>;
   cancelSubscription(id: string): Promise<unknown>;
   /** Every subscription the customer has in Stripe, ended ones included. */
@@ -51,12 +51,51 @@ export function setStripeForTests(port: StripePort | null) {
 }
 
 /**
+ * What a failed Stripe call becomes before it leaves this file: Stripe's own message can name the key (masked) or the
+ * request, and an error that reaches Next is logged whole, so only its type, code and HTTP status go on (check K).
+ */
+export class StripeCallFailed extends Error {
+  constructor(e: unknown) {
+    const s = e instanceof Stripe.errors.StripeError ? e : null;
+    super(s ? `Stripe ${s.type}${s.code ? ` ${s.code}` : ""}${s.statusCode ? ` (HTTP ${s.statusCode})` : ""}` : "Stripe call failed");
+    this.name = s ? s.type : "StripeCallFailed";
+  }
+}
+
+async function guard<R>(call: () => Promise<R>): Promise<R> {
+  try {
+    return await call();
+  } catch (e) {
+    throw new StripeCallFailed(e);
+  }
+}
+
+function guarded(p: StripePort): StripePort {
+  return {
+    createCustomer: (params, key) => guard(() => p.createCustomer(params, key)),
+    createCheckout: (params) => guard(() => p.createCheckout(params)),
+    createPortal: (params) => guard(() => p.createPortal(params)),
+    retrievePrice: (id) => guard(() => p.retrievePrice(id)),
+    retrieveSubscription: (id) => guard(() => p.retrieveSubscription(id)),
+    cancelSubscription: (id) => guard(() => p.cancelSubscription(id)),
+    listSubscriptions: (customer) => guard(() => p.listSubscriptions(customer)),
+    listOpenCheckouts: (customer) => guard(() => p.listOpenCheckouts(customer)),
+    expireCheckout: (id) => guard(() => p.expireCheckout(id)),
+    chargeOwner: (id) => guard(() => p.chargeOwner(id)),
+    refundInvoice: (id) => guard(() => p.refundInvoice(id)),
+  };
+}
+
+/**
  * `until` (ms since epoch): the daily run's deadline. Each call it makes then waits at most what is
  * left of the run (never over 15 s) with no retry, so a slow Stripe can't carry the run past the
  * cron function's limit (W11-16); the deletion fails and waits for the next run.
  */
 function stripePort(cfg: BillingConfig, until?: number): StripePort {
-  if (testPort) return testPort;
+  return guarded(testPort ?? sdkPort(cfg, until));
+}
+
+function sdkPort(cfg: BillingConfig, until?: number): StripePort {
   // Some calls run inside a database transaction whose idle timeout is 60 s (lib/server/db.ts): one
   // attempt and one retry of 15 s each, plus backoff, finish well before Postgres closes the session.
   const s = new Stripe(cfg.secretKey, { apiVersion: STRIPE_API_VERSION, maxNetworkRetries: 1, timeout: 15_000 });
@@ -108,8 +147,12 @@ export interface BillingView {
   subscribed: boolean;
   /** Payments are switched on in this environment. */
   available: boolean;
-  /** Payments take real money: a live key, admitted with BILLING_LIVE_KEYS_OK. False while payments are off. */
+  /** Payments take real money: Production's live key, admitted with SHIPSHAPE_CHECKOUT_LIVE. False while payments are off. */
   live: boolean;
+  /** Stripe Tax adds sales tax at checkout (STRIPE_AUTOMATIC_TAX), so the agreement box says so (Security SHOULD-3). */
+  salesTax: boolean;
+  /** New subscriptions are paused (SHIPSHAPE_CHECKOUT_PAUSED), so Settings offers no checkout; Manage billing still opens. */
+  paused: boolean;
 }
 
 export async function billingView(ctx: Ctx): Promise<BillingView> {
@@ -129,6 +172,8 @@ export async function billingView(ctx: Ctx): Promise<BillingView> {
       subscribed: row ? LIVE_STATUSES.includes(row.status) : false,
       available: cfg !== null,
       live: cfg?.live ?? false,
+      salesTax: cfg?.automaticTax ?? false,
+      paused: cfg?.checkoutPaused ?? false,
     };
   });
 }
@@ -148,11 +193,14 @@ export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> 
   // The tick first, so an unticked box can only ever get its own refusal (app/app/settings/actions.ts marks the box by that).
   if (!agreed) throw new UserError("Check the box to agree to the Terms, including billing and refunds.");
   const cfg = canPay(ctx);
+  // Paused: no new subscriptions, and no Stripe call at all; existing ones keep their webhook, portal and deletion.
+  if (cfg.checkoutPaused) throw new UserError("New Pro subscriptions are paused for now. Nothing was charged.");
   const stripe = stripePort(cfg);
 
   // The price shown on the site must be the price charged.
   const price = await stripe.retrievePrice(cfg.proPrice);
-  if (!price.active || price.unit_amount !== PLANS.pro.price * 100 || price.currency !== "usd" || price.recurring?.interval !== "month") {
+  const monthly = price.recurring?.interval === "month" && price.recurring.interval_count === 1;
+  if (!price.active || price.unit_amount !== PLANS.pro.price * 100 || price.currency !== "usd" || !monthly) {
     console.error("billing: the Stripe Pro price doesn't match lib/plans.ts; checkout refused");
     throw new UserError("Payments are paused while we fix a price mismatch. Nothing was charged; try again later.");
   }
@@ -187,6 +235,9 @@ export async function startCheckout(ctx: Ctx, agreed: boolean): Promise<string> 
     success_url: `${cfg.appUrl}/app/settings?billing=success`,
     cancel_url: `${cfg.appUrl}/app/settings?billing=cancelled`,
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+    // Stripe Tax, once Preston has turned it on in the Dashboard (STRIPE_AUTOMATIC_TAX=1): the tax comes from the
+    // billing address the buyer enters, which Checkout saves to the existing customer (docs.stripe.com/payments/checkout/taxes).
+    ...(cfg.automaticTax ? { automatic_tax: { enabled: true }, customer_update: { address: "auto" } } : {}),
   });
   if (!session.url) throw new Error("Stripe returned a checkout session without a URL");
   return session.url;
@@ -323,7 +374,7 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
     return { status: 400, message: "bad signature" };
   }
   // An event in the other mode than the key is refused before it touches anything: live-mode events only once
-  // BILLING_LIVE_KEYS_OK admitted a live key (Security B5), test-mode events never with a live key.
+  // SHIPSHAPE_CHECKOUT_LIVE admitted a live key (Security B5), test-mode events never with a live key.
   if (event.livemode !== cfg.live) return { status: 400, message: event.livemode ? "live events refused" : "test events refused" };
   if (!HANDLED.has(event.type)) return { status: 200, message: "ignored" };
 

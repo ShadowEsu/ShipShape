@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/site";
 import { AI_RECIPIENT, AI_TRAINING_SOURCE } from "@/lib/ai";
 import { PLANS } from "@/lib/plans";
+import { realDocsEnabled } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
   title: "FAQ",
@@ -10,7 +11,8 @@ export const metadata: Metadata = {
   alternates: { canonical: "/faq" },
 };
 
-const FAQ: { q: string; a: React.ReactNode }[] = [
+/** Worded for whether real accounts are open: the preview answers go once they are (Security MUST-4). */
+const faq = (docs: boolean): { q: string; a: React.ReactNode }[] => [
   {
     q: "What is ShipShape?",
     a: "An app that keeps a business's everyday paperwork in one place: W-9s, insurance certificates, licenses, permits and agreements. It fills new forms from facts you've confirmed, shares a packet of documents with one link, tracks expiry dates, and collects signatures.",
@@ -21,7 +23,9 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Which documents can it fill today?",
-    a: "The IRS Form W-9 (the official PDF, filled field by field) and the cover page of Common Paper's Mutual NDA, version 1.0, with its standard terms unchanged. Once real accounts open, you can also upload your own PDF, PNG or JPEG files (up to 4 MB each).",
+    a: docs
+      ? "The IRS Form W-9 (the official PDF, filled field by field) and the cover page of Common Paper's Mutual NDA, version 1.0, with its standard terms unchanged. You can also upload your own PDF, PNG or JPEG files (up to 4 MB each)."
+      : "The IRS Form W-9 (the official PDF, filled field by field) and the cover page of Common Paper's Mutual NDA, version 1.0, with its standard terms unchanged. Once real accounts open, you can also upload your own PDF, PNG or JPEG files (up to 4 MB each).",
   },
   {
     q: "Where do the templates come from?",
@@ -73,7 +77,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: (
       <>
         Free covers {PLANS.free.documents} active documents and {PLANS.free.passports} open passport link. Pro is ${PLANS.pro.price} a
-        month with no limits, plus email reminders and signature requests (by email, once ShipShape can send email). See{" "}
+        month with no limits, plus deadline reminders on your Deadlines page. ShipShape doesn&apos;t send email yet. See{" "}
         <Link href="/pricing" className="underline">
           pricing
         </Link>
@@ -81,10 +85,14 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
       </>
     ),
   },
-  {
-    q: "When can I use it for real documents?",
-    a: "After our security review and once the production database is in place. Until then you can try it in a sample workspace with a made-up business (uploading your own files and editing its facts open with real accounts), and join the waitlist on the home page to hear when accounts open.",
-  },
+  ...(docs
+    ? []
+    : [
+        {
+          q: "When can I use it for real documents?",
+          a: "After our security review and once the production database is in place. Until then you can try it in a sample workspace with a made-up business (uploading your own files and editing its facts open with real accounts), and join the waitlist on the home page to hear when accounts open.",
+        },
+      ]),
 ];
 
 export default function FaqPage() {
@@ -95,7 +103,7 @@ export default function FaqPage() {
         <p className="eyebrow">FAQ</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Questions, answered plainly.</h1>
         <div className="mt-10 divide-y divide-line border-y border-line">
-          {FAQ.map(({ q, a }) => (
+          {faq(realDocsEnabled()).map(({ q, a }) => (
             <details key={q} className="group py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium">
                 {q}
