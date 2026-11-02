@@ -42,7 +42,8 @@ export function HomeV2(props: {
           What do you need to get done?
         </h1>
         <AiBox tools={tools} aiOn={aiOn} />
-        <ul aria-label="Suggestions" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-auto md:max-w-[760px] md:flex-wrap md:justify-center md:px-0">
+        {/* 20px at the end, so the last chip scrolls fully into view (Design 14:40). */}
+        <ul aria-label="Suggestions" className="-mx-4 flex gap-2 overflow-x-auto ps-4 pe-5 pb-1 md:mx-auto md:max-w-[760px] md:flex-wrap md:justify-center md:px-0">
           {chips.map((c) => (
             <li key={c.label} className="shrink-0">
               <Link href={c.href} className="press inline-flex min-h-11 items-center rounded-full border border-line bg-paper px-4 text-sm text-ink-2 transition-colors duration-[180ms] hover:bg-tile">

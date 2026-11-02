@@ -87,7 +87,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
               {archived && <input type="hidden" name="archived" value="1" />}
               <button className="btn-ghost hidden sm:inline-flex">Search</button>
             </form>
-            <ul aria-label="Kind" className="-mx-4 -mt-2 flex gap-2 overflow-x-auto px-4 pb-1 sm:hidden">
+            <ul aria-label="Kind" className="-mx-4 -mt-2 flex gap-2 overflow-x-auto ps-4 pe-5 pb-1 sm:hidden">
               {[["", "All"], ...Object.entries(DOC_KINDS)].map(([k, label]) => {
                 const on = (sp.kind ?? "") === k;
                 return (

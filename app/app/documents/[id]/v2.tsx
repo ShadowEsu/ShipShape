@@ -124,7 +124,8 @@ export function DocumentV2(p: {
       </div>
 
       {active ? (
-        <Link href={`/app/passport?docs=${doc.id}`} className="btn press w-full">
+        // Full width is the phone rule; from 768px it's an auto-width pill at the left, above the actions (Design 14:40).
+        <Link href={`/app/passport?docs=${doc.id}`} className="btn press w-full md:w-auto md:min-w-[200px]">
           Share in a link
         </Link>
       ) : (
