@@ -44,7 +44,8 @@ function Status({ state, savedText }: { state: FormState; savedText: string }) {
     );
   if (state.saved)
     return (
-      <p role="status" className="text-sm text-ok">
+      // saved-line: the redesigned app fades it in; it stays (Design spec §6.5: a fading message is lost to a screen reader).
+      <p role="status" className="saved-line text-sm text-ok">
         {state.savedText ?? savedText}
       </p>
     );
@@ -302,10 +303,11 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
           </select>
         </FieldRow>
         <FieldRow name="issuer" label="Issued by" state={state}>
-          <input id="issuer" name="issuer" maxLength={200} defaultValue={v.issuer ?? ""} className="row-field" placeholder={ISSUER_HINT[kind]} {...invalid(state, "issuer")} />
+          {/* An empty row says it can be filled (Design): the kind's issuer where one is obvious, "Add" otherwise. */}
+          <input id="issuer" name="issuer" maxLength={200} defaultValue={v.issuer ?? ""} className="row-field" placeholder={ISSUER_HINT[kind] ?? "Add"} {...invalid(state, "issuer")} />
         </FieldRow>
         <FieldRow name="counterparty" label="Other party" state={state}>
-          <input id="counterparty" name="counterparty" maxLength={200} defaultValue={v.counterparty ?? ""} className="row-field" {...invalid(state, "counterparty")} />
+          <input id="counterparty" name="counterparty" maxLength={200} defaultValue={v.counterparty ?? ""} className="row-field" placeholder="Add" {...invalid(state, "counterparty")} />
         </FieldRow>
         <FieldRow name="issued_on" label="Issued" state={state}>
           <input id="issued_on" name="issued_on" type="date" defaultValue={v.issued_on ?? ""} className="row-field" {...invalid(state, "issued_on")} />
@@ -471,6 +473,7 @@ export function SignRequestForm({ id, days, demo, rows = false }: { id: string; 
       maxLength={120}
       autoComplete="off"
       defaultValue={state.values?.signer_name}
+      placeholder={rows ? "Add" : undefined}
       className={rows ? "row-field scroll-mt-24" : "input"}
       {...invalid(state, "signer_name")}
     />
@@ -484,6 +487,7 @@ export function SignRequestForm({ id, days, demo, rows = false }: { id: string; 
       maxLength={200}
       autoComplete="off"
       defaultValue={state.values?.signer_email}
+      placeholder={rows ? "name@company.com" : undefined}
       className={rows ? "row-field" : "input"}
       {...invalid(state, "signer_email")}
     />

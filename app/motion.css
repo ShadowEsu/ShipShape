@@ -49,6 +49,24 @@
     transform: translateY(100%);
   }
 }
+@keyframes v2-chip-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes v2-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+/* Paths drawn with pathLength 1: the dash covers the whole stroke and slides in from its start. */
+@keyframes v2-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
 
 /* Staggered reveals: each child rises 6px into place, 40ms apart; the first 8 are staggered, the rest arrive with the 8th. */
 .ui-v2 .stagger > * {
@@ -59,6 +77,37 @@
 /* An inline result or success notice arriving under what caused it. */
 .ui-v2 .arrive {
   animation: v2-drop-in var(--dur-base) var(--ease-out) both;
+}
+/* A success notice (§6.5): it arrives like an inline result, and its check draws its stroke. */
+.ui-v2 .notice-ok {
+  animation: v2-drop-in var(--dur-base) var(--ease-out) both;
+}
+.ui-v2 .notice-icon path {
+  stroke-dasharray: 1;
+  animation: v2-draw 300ms var(--ease-out) 120ms both;
+}
+/* "Saved" fades in, then stays. */
+.ui-v2 .saved-line {
+  animation: v2-fade-in var(--dur-base) var(--ease-out) both;
+}
+/* "Expires soon" pulses once when it first comes on screen: app/app/motion-v2.tsx (Web Animations, off under reduced motion). */
+
+/* A chip's state change (§6.3): the old label leaves up 4px, the new one rises in from 4px below, 180ms. Each snapshot
+   keeps its own size (no stretching) while the group moves between the two widths. */
+::view-transition-group(.v2-chip) {
+  animation-duration: var(--dur-fast);
+  animation-timing-function: var(--ease-inout);
+}
+::view-transition-old(.v2-chip),
+::view-transition-new(.v2-chip) {
+  width: auto;
+  height: 100%;
+}
+::view-transition-old(.v2-chip) {
+  animation: v2-chip-out var(--dur-fast) var(--ease-inout) both;
+}
+::view-transition-new(.v2-chip) {
+  animation: v2-chip-in var(--dur-fast) var(--ease-inout) both;
 }
 
 /* Press: 0.97 while held, released on the spring. Hover and focus never move anything. */
@@ -135,6 +184,23 @@
   }
   .ui-v2 dialog.sheet[open],
   .ui-v2 dialog.sheet[open]::backdrop {
+    animation: v2-fade-in 120ms linear both;
+  }
+  .ui-v2 .notice-ok,
+  .ui-v2 .saved-line {
+    animation: v2-fade-in 120ms linear both;
+  }
+  /* The check is there, drawn. */
+  .ui-v2 .notice-icon path {
+    animation: none;
+  }
+  ::view-transition-group(.v2-chip) {
+    animation: none;
+  }
+  ::view-transition-old(.v2-chip) {
+    animation: v2-fade-out 120ms linear both;
+  }
+  ::view-transition-new(.v2-chip) {
     animation: v2-fade-in 120ms linear both;
   }
 }
