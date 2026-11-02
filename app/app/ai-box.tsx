@@ -114,6 +114,9 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
                 type="checkbox"
                 name="consent"
                 value="yes"
+                // Per check, as /app/ask: the server sends the tick back only with a refusal about something else (W10-7),
+                // never after a completed check, so React's reset after each check leaves the box unticked (Security SHOULD-V2a).
+                defaultChecked={check.consent}
                 aria-required="true"
                 aria-invalid={consentError ? true : undefined}
                 aria-describedby={`${ids}-source${consentError ? ` ${ids}-consent-error` : ""}`}

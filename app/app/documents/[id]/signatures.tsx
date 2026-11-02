@@ -1,0 +1,49 @@
+import { ConfirmForm } from "@/components/confirm-form";
+import type { SignatureRequestRow } from "@/lib/server/esign";
+import { dayOf, timeOf } from "@/lib/today";
+import { withdrawSignature } from "../actions";
+import { REQUEST_STATUS } from "./shared";
+
+/** A document's signing requests: who, its state, the file sent, and Withdraw while it can still be signed. Both looks use it. */
+export function SignatureRequests({ docId, requests, zone, now }: { docId: string; requests: SignatureRequestRow[]; zone: string; now: number }) {
+  return (
+    <ul className="divide-y divide-line text-sm">
+      {requests.map((r) => {
+        const lapsed = r.status === "pending" && Date.parse(r.expires_at) <= now;
+        return (
+          <li key={r.id} className="space-y-1 py-2">
+            <p className="flex justify-between gap-2">
+              <span className="min-w-0 truncate font-medium">{r.signer_name}</span>
+              <span className="shrink-0 text-xs text-ink-2">{lapsed ? "Expired" : REQUEST_STATUS[r.status]}</span>
+            </p>
+            <p className="truncate text-xs text-ink-3">
+              {r.signer_email} · version {r.version}
+              {r.status === "signed" && r.signed_at && <> · signed {timeOf(r.signed_at, zone)}</>}
+              {r.status === "pending" && !lapsed && <> · open until {dayOf(r.expires_at, zone)}</>}
+            </p>
+            {(r.has_review_file || (r.status === "pending" && !lapsed)) && (
+              <div className="flex flex-wrap gap-x-4">
+                {r.has_review_file && (
+                  <a href={`/app/documents/${docId}/file?request=${r.id}`} data-stays className="inline-flex min-h-6 items-center text-xs text-ink-2 underline">
+                    File sent for signing
+                  </a>
+                )}
+                {r.status === "pending" && !lapsed && (
+                  <ConfirmForm
+                    compact
+                    action={withdrawSignature}
+                    fields={{ id: docId, request: r.id }}
+                    trigger="Withdraw"
+                    question={`Withdraw this request? ${r.signer_name} won't be able to sign. You can make a new link any time.`}
+                    confirm="Withdraw the request"
+                    pendingLabel="Withdrawing…"
+                  />
+                )}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

@@ -19,7 +19,9 @@ export type IconName =
   | "chevron"
   | "account"
   | "close"
-  | "search";
+  | "search"
+  | "open"
+  | "download";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   home: <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z" />,
@@ -109,6 +111,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="m15.5 15.5 4 4" />
     </>
   ),
+  open: <path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
+  download: <path d="M12 4v11M7 10.5 12 15.5l5-5M5 19.5h14" />,
 };
 
 export function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { MAX_UPLOAD_BYTES, UPLOAD_TOO_BIG } from "@/lib/upload-limit";
 import { addDocument, addVersion, askToSign, saveDetails, type FormState, type SignFormState } from "./actions";
@@ -186,6 +187,173 @@ export function DetailsForm({ id, values }: { id: string; values: DetailValues }
   );
 }
 
+/** Whether any field differs from what the form was drawn with: a field's default is the saved value. */
+function changed(form: HTMLFormElement): boolean {
+  return Array.from(form.elements).some((el) =>
+    el instanceof HTMLInputElement
+      ? el.type !== "hidden" && el.value !== el.defaultValue
+      : el instanceof HTMLSelectElement && Array.from(el.options).some((o) => o.selected !== o.defaultSelected),
+  );
+}
+
+/**
+ * Asks "Discard changes?" before a link in the app leaves the page while `on`; a reload or closing the tab gets the
+ * browser's own question. Links that don't leave the page (a #fragment here, a file that downloads, a new tab) pass.
+ */
+function useLeaveGuard(on: boolean): [string | null, React.RefObject<HTMLDialogElement | null>] {
+  const [leaving, setLeaving] = useState<string | null>(null);
+  const ask = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!on) return;
+    const unload = (e: BeforeUnloadEvent) => e.preventDefault();
+    // Capture on the document runs before Next's Link handler on the React root, so stopping it here stops the navigation.
+    const click = (e: MouseEvent) => {
+      const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (!(a instanceof HTMLAnchorElement) || a.target || a.hasAttribute("download") || a.hasAttribute("data-stays")) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const to = new URL(a.href);
+      if (to.origin !== window.location.origin || (to.pathname === window.location.pathname && to.search === window.location.search)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaving(to.pathname + to.search + to.hash);
+      ask.current?.showModal();
+    };
+    window.addEventListener("beforeunload", unload);
+    document.addEventListener("click", click, true);
+    return () => {
+      window.removeEventListener("beforeunload", unload);
+      document.removeEventListener("click", click, true);
+    };
+  }, [on]);
+  return [leaving, ask];
+}
+
+/** A grouped-list row: the label, the field (children), and the field's error under it. `htmlFor` when the field's id isn't its name. */
+function FieldRow({ name, htmlFor, label, state, children }: { name: string; htmlFor?: string; label: string; state: FieldState; children: React.ReactNode }) {
+  return (
+    <li>
+      <div className="field-row">
+        <label htmlFor={htmlFor ?? name}>{label}</label>
+        {children}
+      </div>
+      {state.field === name && (
+        <div className="px-4 pb-2 text-right">
+          <FieldError state={state} name={name} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Who issues a document of each kind, as the Issued by field's hint (Design): none where nobody obvious does. */
+const ISSUER_HINT: Record<string, string> = {
+  nda: "The other company",
+  agreement: "The other company",
+  coi: "Insurer",
+  permit: "Agency or city",
+  license: "Agency or city",
+};
+
+/**
+ * The redesigned document page's details (SHIPSHAPE_UI=v2, Design 02 Nov): a grouped list, a label and its field
+ * per row, posting to the same `saveDetails` as DetailsForm. Save shows only once something differs from what's
+ * saved (on the phone it holds above the tab bar); "Saved" stays until the next change; leaving with changes asks.
+ */
+export function DetailsListForm({ id, values }: { id: string; values: DetailValues }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(saveDetails, {});
+  const form = useRef<HTMLFormElement>(null);
+  const [dirty, setDirty] = useState(false);
+  // The kind chosen in the form, for the Issued by hint.
+  const [kind, setKind] = useState(values.kind);
+  const router = useRouter();
+  useFocusField(state, state.field);
+  // A result came back and React put the fields back to their defaults (the saved values, or the ones sent back with an error).
+  useEffect(() => {
+    setDirty(form.current ? changed(form.current) : false);
+  }, [state]);
+  // A refused save hasn't saved what was sent, even though the fields now show it as their defaults.
+  const unsaved = dirty || Boolean(state.error);
+  const [leaving, ask] = useLeaveGuard(unsaved);
+  const v = state.values ?? values;
+  return (
+    <form
+      ref={form}
+      action={action}
+      onInput={(e) => {
+        setDirty(changed(e.currentTarget));
+        if (e.target instanceof HTMLSelectElement && e.target.name === "kind") setKind(e.target.value);
+      }}
+      className="space-y-3"
+      noValidate
+    >
+      <input type="hidden" name="id" value={id} />
+      <ul className="group-list plain">
+        <FieldRow name="title" label="Title" state={state}>
+          <input id="title" name="title" required maxLength={200} defaultValue={v.title} className="row-field" {...invalid(state, "title")} />
+        </FieldRow>
+        <FieldRow name="kind" label="Kind" state={state}>
+          {/* Keyed: React applies a select's defaultValue only when it mounts, and resets the form to that after each action. */}
+          <select key={v.kind} id="kind" name="kind" defaultValue={v.kind} className="row-field" {...invalid(state, "kind")}>
+            {KINDS.map(([k, l]) => (
+              <option key={k} value={k}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </FieldRow>
+        <FieldRow name="issuer" label="Issued by" state={state}>
+          <input id="issuer" name="issuer" maxLength={200} defaultValue={v.issuer ?? ""} className="row-field" placeholder={ISSUER_HINT[kind]} {...invalid(state, "issuer")} />
+        </FieldRow>
+        <FieldRow name="counterparty" label="Other party" state={state}>
+          <input id="counterparty" name="counterparty" maxLength={200} defaultValue={v.counterparty ?? ""} className="row-field" {...invalid(state, "counterparty")} />
+        </FieldRow>
+        <FieldRow name="issued_on" label="Issued" state={state}>
+          <input id="issued_on" name="issued_on" type="date" defaultValue={v.issued_on ?? ""} className="row-field" {...invalid(state, "issued_on")} />
+        </FieldRow>
+        <FieldRow name="expires_on" label="Expires" state={state}>
+          {/* scroll-mt: Home's "Update its dates" lands on #expires_on; keep the rows above it in view. */}
+          <input id="expires_on" name="expires_on" type="date" defaultValue={v.expires_on ?? ""} className="row-field scroll-mt-24" {...invalid(state, "expires_on")} />
+        </FieldRow>
+        <FieldRow name="renews_on" label="Renewal notice" state={state}>
+          <input id="renews_on" name="renews_on" type="date" defaultValue={v.renews_on ?? ""} className="row-field" {...invalid(state, "renews_on")} />
+        </FieldRow>
+      </ul>
+      {(state.error || !dirty) && <Status state={state} savedText="Saved. Reminders follow the new dates." />}
+      {(unsaved || pending) && (
+        // Above the phone's tab bar (51px + its bottom inset, at least 20px), with 8px between.
+        // save-dock: while it shows, the page scrolls fields clear of it (globals.css).
+        <div className="save-dock sticky bottom-[calc(59px+max(env(safe-area-inset-bottom),20px))] z-10 md:static">
+          <button className="btn press w-full" disabled={pending}>
+            {pending ? "Saving…" : "Save details"}
+          </button>
+        </div>
+      )}
+      <dialog ref={ask} aria-labelledby="discard-title" className="m-auto w-[min(92vw,360px)] rounded-2xl bg-paper p-5 text-ink backdrop:bg-black/30">
+        <h2 id="discard-title" className="text-lg font-semibold">
+          Discard changes?
+        </h2>
+        <p className="mt-1 text-sm text-ink-2">The changes to this document's details aren't saved yet.</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" autoFocus className="btn-ghost" onClick={() => ask.current?.close()}>
+            Keep editing
+          </button>
+          <button
+            type="button"
+            className="btn-danger"
+            onClick={() => {
+              setDirty(false);
+              ask.current?.close();
+              if (leaving) router.push(leaving);
+            }}
+          >
+            Discard
+          </button>
+        </div>
+      </dialog>
+    </form>
+  );
+}
+
 export function NewDocumentForm() {
   const [result, action, pending] = useActionState<FormState, FormData>(addDocument, {});
   const [state, onSubmit] = useFileGate(result);
@@ -260,7 +428,8 @@ export function VersionForm({ id, warning }: { id: string; warning?: string }) {
 /** The sign form's input ids by input name, for focus. */
 const SIGN_IDS = { signer_name: "signer-name", signer_email: "signer-email", days: "sign-days" };
 
-export function SignRequestForm({ id, days, demo }: { id: string; days: readonly number[]; demo: boolean }) {
+/** `rows`: the redesigned page's grouped list (Design, 02 Nov), the same fields and action as the boxed form. */
+export function SignRequestForm({ id, days, demo, rows = false }: { id: string; days: readonly number[]; demo: boolean; rows?: boolean }) {
   const [state, action, pending] = useActionState<SignFormState, FormData>(askToSign, {});
   const [url, setUrl] = useState<string | null>(null);
   const created = state.created;
@@ -293,36 +462,81 @@ export function SignRequestForm({ id, days, demo }: { id: string; days: readonly
     );
   }
 
+  const name = (
+    // scroll-mt: "Ask to sign" lands here (rows) and keeps the row above in view under the phone's header.
+    <input
+      id="signer-name"
+      name="signer_name"
+      required
+      maxLength={120}
+      autoComplete="off"
+      defaultValue={state.values?.signer_name}
+      className={rows ? "row-field scroll-mt-24" : "input"}
+      {...invalid(state, "signer_name")}
+    />
+  );
+  const email = (
+    <input
+      id="signer-email"
+      name="signer_email"
+      type="email"
+      required
+      maxLength={200}
+      autoComplete="off"
+      defaultValue={state.values?.signer_email}
+      className={rows ? "row-field" : "input"}
+      {...invalid(state, "signer_email")}
+    />
+  );
+  const open = (
+    <select key={state.values?.days} id="sign-days" name="days" defaultValue={state.values?.days ?? days[1]} className={rows ? "row-field" : "input"} {...invalid(state, "days")}>
+      {days.map((d) => (
+        <option key={d} value={d}>
+          {d} days
+        </option>
+      ))}
+    </select>
+  );
   return (
     <form action={action} className="space-y-3" noValidate>
       <input type="hidden" name="id" value={id} />
-      <div>
-        <label htmlFor="signer-name" className="label">
-          Signer&apos;s name
-        </label>
-        <input id="signer-name" name="signer_name" required maxLength={120} autoComplete="off" defaultValue={state.values?.signer_name} className="input" {...invalid(state, "signer_name")} />
-        <FieldError state={state} name="signer_name" />
-      </div>
-      <div>
-        <label htmlFor="signer-email" className="label">
-          Signer&apos;s email
-        </label>
-        <input id="signer-email" name="signer_email" type="email" required maxLength={200} autoComplete="off" defaultValue={state.values?.signer_email} className="input" {...invalid(state, "signer_email")} />
-        <FieldError state={state} name="signer_email" />
-      </div>
-      <div>
-        <label htmlFor="sign-days" className="label">
-          Open for
-        </label>
-        <select key={state.values?.days} id="sign-days" name="days" defaultValue={state.values?.days ?? days[1]} className="input" {...invalid(state, "days")}>
-          {days.map((d) => (
-            <option key={d} value={d}>
-              {d} days
-            </option>
-          ))}
-        </select>
-        <FieldError state={state} name="days" />
-      </div>
+      {rows ? (
+        <ul className="group-list plain">
+          <FieldRow name="signer_name" htmlFor="signer-name" label="Signer's name" state={state}>
+            {name}
+          </FieldRow>
+          <FieldRow name="signer_email" htmlFor="signer-email" label="Signer's email" state={state}>
+            {email}
+          </FieldRow>
+          <FieldRow name="days" htmlFor="sign-days" label="Open for" state={state}>
+            {open}
+          </FieldRow>
+        </ul>
+      ) : (
+        <>
+          <div>
+            <label htmlFor="signer-name" className="label">
+              Signer&apos;s name
+            </label>
+            {name}
+            <FieldError state={state} name="signer_name" />
+          </div>
+          <div>
+            <label htmlFor="signer-email" className="label">
+              Signer&apos;s email
+            </label>
+            {email}
+            <FieldError state={state} name="signer_email" />
+          </div>
+          <div>
+            <label htmlFor="sign-days" className="label">
+              Open for
+            </label>
+            {open}
+            <FieldError state={state} name="days" />
+          </div>
+        </>
+      )}
       {state.error && !state.field && (
         <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
           {state.error}

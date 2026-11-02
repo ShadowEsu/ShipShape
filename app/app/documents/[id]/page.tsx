@@ -6,105 +6,21 @@ import { Notice, ValidityChip } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
-import { PLANS } from "@/lib/plans";
-import { FACT_LABELS } from "@/lib/profile-fields";
 import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, getDocument } from "@/lib/server/documents";
-import { esignAvailable, listSignatureRequests, SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
-import { realDocsEnabled } from "@/lib/server/flags";
+import { esignAvailable, listSignatureRequests, SIGN_DAYS } from "@/lib/server/esign";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { openLinksWith } from "@/lib/server/passport";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
-import { dayOf, fmtDay, timeOf } from "@/lib/today";
-import type { TemplateInfo } from "@/lib/templates/types";
-import { archive, withdrawSignature } from "../actions";
+import { fmtDay, timeOf } from "@/lib/today";
+import { ERRORS, fieldSources, historyLabel, size } from "./shared";
+import { SignatureRequests } from "./signatures";
+import { DocumentV2 } from "./v2";
+import { archive } from "../actions";
 import { DetailsForm, SignRequestForm, VersionForm } from "../forms";
 import { archiveLinksWarning, archiveQuestion, versionWarning } from "../messages";
 
 export const metadata: Metadata = { title: "Document" };
-
-const ACTIONS: Record<string, string> = {
-  "document.created": "Added to documents",
-  "document.version_added": "Version added",
-  "document.updated": "Details changed",
-  "document.archived": "Archived",
-  "document.restored": "Restored",
-  "document.acknowledged": "Reviewed and acknowledged",
-  "document.viewed": "Opened",
-  "document.downloaded": "Downloaded",
-  "document.signed_version_added": "Signed copy added",
-  "esign.requested": "Signature requested",
-  "esign.opened": "Signer opened the link",
-  "esign.code_sent": "Signing code sent",
-  "esign.signed": "Signed",
-  "esign.revoked": "Signature request withdrawn",
-  "esign.review_downloaded": "File sent for signing downloaded",
-};
-
-/**
- * An outsider's row says who or which when the row knows it (`about_name`, 0038): the signer's name, the passport
- * link's label. Without it (the link or request is gone), the plain label.
- */
-function historyLabel(action: string, about: string | null): string {
-  switch (action) {
-    case "document.link_viewed":
-      return about ? `Viewed through a passport link: ${about}` : "Viewed through a passport link";
-    case "document.link_downloaded":
-      return about ? `Downloaded through a passport link: ${about}` : "Downloaded through a passport link";
-    case "esign.file_downloaded":
-      return `${about ?? "Signer"} downloaded the file to sign`;
-    case "esign.signed_copy_downloaded":
-      return `${about ?? "Signer"} downloaded the signed copy`;
-    default:
-      return ACTIONS[action] ?? action;
-  }
-}
-
-/** What went wrong in a form posted from this page (see backToDocument in ../actions.ts), and the one thing that fixes it. */
-const ERRORS: Record<string, { text: string; fix?: { href: string; label: string } }> = {
-  limit: {
-    text: `The Free plan holds ${PLANS.free.documents} active documents, so this one stays archived. Archive another one, then restore this one.`,
-    fix: { href: "/app/documents", label: "Choose one to archive" },
-  },
-  // Nothing to fix: the request's status below is already up to date.
-  closed: { text: "That signing request was already signed or withdrawn, so there was nothing to withdraw. Its status is under Signatures." },
-};
-
-const REQUEST_STATUS: Record<SignatureRequestRow["status"], string> = {
-  pending: "Waiting",
-  signed: "Signed",
-  declined: "Declined",
-  revoked: "Withdrawn",
-};
-
-const SOURCE: Record<string, string> = {
-  facts: "Business facts",
-  facts_edited: "Business facts, edited",
-  typed: "Typed",
-  typed_not_saved: "Typed, not saved",
-  typed_saved: "Typed, saved to Business facts",
-};
-
-// A non-breaking space keeps "1 KB" on one line at 390 wide (Design).
-const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}\u00A0MB` : `${Math.max(1, Math.round(n / 1024))}\u00A0KB`);
-
-/**
- * Each filled field with the label the form showed, in the form's order: the stored record's keys
- * come back from jsonb sorted by length, and a key like `tin_kind` means nothing on its own.
- */
-function fieldSources(fields: Record<string, string>, template: TemplateInfo | undefined) {
-  const defs = template?.fields ?? [];
-  const rank = (key: string) => {
-    const i = defs.findIndex((f) => f.key === key);
-    return i === -1 ? defs.length : i;
-  };
-  return Object.entries(fields)
-    .sort(([a], [b]) => rank(a) - rank(b))
-    .map(([key, src]) => ({
-      key,
-      label: defs.find((f) => f.key === key)?.label ?? FACT_LABELS[key] ?? key.replaceAll("_", " "),
-      source: SOURCE[src] ?? src,
-    }));
-}
 
 export default async function DocumentPage({
   params,
@@ -132,14 +48,8 @@ export default async function DocumentPage({
   const openLinks = doc.status === "active" ? await openLinksWith(ctx, doc.id) : 0;
   const linksWarning = openLinks > 0 ? archiveLinksWarning(openLinks) : null;
 
-  return (
-    <div className="space-y-6">
-      <HashLanding />
-      <nav className="text-sm">
-        <Link href="/app/documents" className="inline-flex min-h-6 items-center text-ink-2 hover:underline">
-          ← Documents
-        </Link>
-      </nav>
+  const notices = (
+    <>
       {formError && (
         <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
           {formError.text}
@@ -176,6 +86,38 @@ export default async function DocumentPage({
           </Notice>
         </div>
       )}
+    </>
+  );
+
+  if (uiV2())
+    return (
+      <DocumentV2
+        doc={doc}
+        versions={versions}
+        audit={audit}
+        moreAudit={moreAudit}
+        template={template}
+        requests={requests}
+        zone={zone}
+        now={now}
+        canUpload={canUpload}
+        demo={ctx.demo}
+        esignOn={esignAvailable(ctx)}
+        openSigners={openSigners}
+        linksWarning={linksWarning}
+        notices={notices}
+      />
+    );
+
+  return (
+    <div className="space-y-6">
+      <HashLanding />
+      <nav className="text-sm">
+        <Link href="/app/documents" className="inline-flex min-h-6 items-center text-ink-2 hover:underline">
+          ← Documents
+        </Link>
+      </nav>
+      {notices}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="min-w-0 space-y-6">
           <article className="rounded-2xl border border-line bg-paper p-6 shadow-sm sm:p-8">
@@ -266,46 +208,7 @@ export default async function DocumentPage({
           {latest && doc.status === "active" && (
             <section className="card space-y-3">
               <h2 className="font-semibold">Signatures</h2>
-              {requests.length > 0 && (
-                <ul className="divide-y divide-line text-sm">
-                  {requests.map((r) => {
-                    const lapsed = r.status === "pending" && Date.parse(r.expires_at) <= now;
-                    return (
-                      <li key={r.id} className="space-y-1 py-2">
-                        <p className="flex justify-between gap-2">
-                          <span className="min-w-0 truncate font-medium">{r.signer_name}</span>
-                          <span className="shrink-0 text-xs text-ink-2">{lapsed ? "Expired" : REQUEST_STATUS[r.status]}</span>
-                        </p>
-                        <p className="truncate text-xs text-ink-3">
-                          {r.signer_email} · version {r.version}
-                          {r.status === "signed" && r.signed_at && <> · signed {timeOf(r.signed_at, zone)}</>}
-                          {r.status === "pending" && !lapsed && <> · open until {dayOf(r.expires_at, zone)}</>}
-                        </p>
-                        {(r.has_review_file || (r.status === "pending" && !lapsed)) && (
-                          <div className="flex flex-wrap gap-x-4">
-                            {r.has_review_file && (
-                              <a href={`/app/documents/${doc.id}/file?request=${r.id}`} className="inline-flex min-h-6 items-center text-xs text-ink-2 underline">
-                                File sent for signing
-                              </a>
-                            )}
-                            {r.status === "pending" && !lapsed && (
-                              <ConfirmForm
-                                compact
-                                action={withdrawSignature}
-                                fields={{ id: doc.id, request: r.id }}
-                                trigger="Withdraw"
-                                question={`Withdraw this request? ${r.signer_name} won't be able to sign. You can make a new link any time.`}
-                                confirm="Withdraw the request"
-                                pendingLabel="Withdrawing…"
-                              />
-                            )}
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+              {requests.length > 0 && <SignatureRequests docId={doc.id} requests={requests} zone={zone} now={now} />}
               {esignAvailable(ctx) ? (
                 <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={ctx.demo} />
               ) : (

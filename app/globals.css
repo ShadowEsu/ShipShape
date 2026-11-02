@@ -155,6 +155,46 @@ body {
   .ui-v2 a.group-row:hover {
     @apply bg-tile;
   }
+  /* Rows without an icon (label + value, label + field): separators start at the text. */
+  .ui-v2 .group-list.plain > li + li::before {
+    @apply left-4;
+  }
+  /* A grouped-list row holding a label and its field: the field has no box of its own, the row is the box. */
+  .ui-v2 .field-row {
+    @apply flex min-h-13 items-center gap-3 px-4 py-1.5;
+  }
+  .ui-v2 .field-row > label {
+    @apply w-32 shrink-0 text-[15px] text-ink-2;
+  }
+  .ui-v2 .row-field {
+    @apply min-h-11 w-full min-w-0 flex-1 rounded-lg bg-transparent px-2 text-right text-base text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand;
+  }
+  /* A long value ends in an ellipsis while the field isn't being edited, instead of being cut mid-word. Not on the select: it ellipsizes a value that fits. */
+  .ui-v2 input.row-field {
+    @apply text-ellipsis;
+  }
+  /* Chrome lays a date's parts out from the left of its box whatever the alignment, so the box itself sits at the right. */
+  .ui-v2 .row-field[type="date"] {
+    @apply ml-auto w-auto flex-none;
+  }
+  .ui-v2 .row-field[aria-invalid="true"] {
+    @apply ring-2 ring-bad;
+  }
+
+  /* The document page's round actions: a 56px tile with the icon, the label under it. */
+  .ui-v2 .round-action {
+    @apply flex min-w-0 flex-1 flex-col items-center gap-1.5 text-[13px] text-ink-2;
+  }
+  .ui-v2 .round-icon {
+    @apply grid size-14 place-items-center rounded-2xl bg-tile text-ink transition-colors duration-[180ms];
+  }
+  .ui-v2 .round-action:hover .round-icon {
+    @apply bg-line;
+  }
+  /* A row in an action sheet or menu (the document page's More). */
+  .ui-v2 .menu-row {
+    @apply flex min-h-12 w-full items-center rounded-xl px-3 text-left text-[15px] text-ink transition-colors duration-[180ms] hover:bg-tile md:min-h-10;
+  }
 
   /* Tool tiles. Option A ("Tinted"): each tool its own soft tint; .mono (option B, "One accent") makes every icon ink on white. */
   .ui-v2 .tile {
@@ -218,6 +258,16 @@ body {
    skeleton it sat in view and the streamed page then pushed it down (CLS 0.02 at 1440). Appearing later shifts nothing. */
 .ui-v2 main:has(> [aria-busy="true"]) > .legal-line {
   display: none;
+}
+/* While a form's Save is docked above the phone's tab bar (the document's Details), a focused field or a row scrolled
+   to stops clear of it: the tab bar (51px + its inset, at least 20px), 8px, the 44px button and 16px more (Design). */
+@media (max-width: 767px) {
+  html:has(.ui-v2 .save-dock) {
+    scroll-padding-bottom: calc(51px + max(env(safe-area-inset-bottom), 20px) + 8px + 44px + 16px);
+  }
+  .ui-v2 main:has(.save-dock) {
+    padding-bottom: calc(8rem + 44px + 16px);
+  }
 }
 
 /* Option A's tints: a soft fill and an icon colour of at least 4.5:1 on it. */

@@ -98,6 +98,12 @@
 .ui-v2 dialog.sheet[open]::backdrop {
   animation: v2-fade-in var(--dur-base) var(--ease-out) both;
 }
+/* From md up a menu sheet sits under its button: it drops 4px into place and fades in, instead of sliding up. */
+@media (min-width: 768px) {
+  .ui-v2 dialog.sheet-menu[open] {
+    animation: v2-drop-in var(--dur-fast) var(--ease-out) both;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   /* Movement becomes a short fade or nothing; where things end up never changes. */

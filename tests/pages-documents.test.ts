@@ -811,6 +811,77 @@ describe("a document's page", () => {
     expect(entries(over)).toBe(50);
     expect(textOf(over)).toContain(`${note} Entries can't be edited or deleted through ShipShape, and each is linked to the one before it.`);
   });
+
+  describe("redesigned (SHIPSHAPE_UI=v2)", () => {
+    beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
+    /** The full-width primary and the round actions, as label + href. */
+    const primary = (html: string) => [...html.matchAll(/<a class="btn press w-full" href="([^"]*)">([^<]*)<\/a>/g)].map((m) => `${m[2]} ${m[1]}`);
+    const actions = (html: string) => {
+      const group = /<div role="group" aria-label="Actions"[^>]*>([\s\S]*?)<\/div><section/.exec(html)?.[1] ?? "";
+      return [...group.matchAll(/<(a|button)\b([^>]*class="round-action press"[^>]*)>([\s\S]*?)<\/\1>/g)].map((m) => textOf(m[3]));
+    };
+
+    it("leads with one primary, Share in a link, which ticks this document on the passport page; Details are one list with the saved dates", async () => {
+      const ctx = await signIn("doc-v2@example.com");
+      const id = await uploadDocument(ctx, { title: "Business license", kind: "license", expires_on: "2030-01-31" }, PDF);
+      const html = await documentPage(id, {});
+      expect(primary(html)).toEqual([`Share in a link /app/passport?docs=${id}`]);
+      // An upload downloads rather than opening, and a license isn't something that gets signed.
+      expect(actions(html)).toEqual(["Download", "More"]);
+      const expires = /<input [^>]*id="expires_on"[^>]*>/.exec(html)?.[0] ?? "";
+      expect(expires).toContain('type="date"');
+      expect(expires).toContain('value="2030-01-31"');
+      expect(html).not.toContain('id="signatures"');
+      // Who issues a license, as the Issued by field's hint.
+      expect(/<input [^>]*id="issuer"[^>]*>/.exec(html)?.[0]).toContain('placeholder="Agency or city"');
+      vi.stubEnv("SHIPSHAPE_UI", "");
+      expect(primary(await documentPage(id, {}))).toEqual([]);
+    });
+
+    it("offers Ask to sign only on the kinds that get signed; it lands on the signer's name, in the same grouped rows as Details", async () => {
+      const ctx = await signIn("doc-v2-nda@example.com");
+      const id = await uploadDocument(ctx, { title: "Mutual NDA", kind: "nda" }, PDF);
+      const html = await documentPage(id, {});
+      expect(actions(html)).toEqual(["Download", "Ask to sign", "More"]);
+      expect(html).toContain('href="#signer-name"');
+      const signatures = html.slice(html.indexOf('<section id="signatures"'));
+      const rows = /<ul class="group-list plain">([\s\S]*?)<\/ul>/.exec(signatures)?.[1] ?? "";
+      expect([...rows.matchAll(/<label for="([^"]*)">([^<]*)<\/label>/g)].map((m) => `${m[1]} ${textOf(m[2])}`)).toEqual([
+        "signer-name Signer's name",
+        "signer-email Signer's email",
+        "sign-days Open for",
+      ]);
+      expect(/<input [^>]*id="signer-name"[^>]*>/.exec(html)?.[0]).toContain('class="row-field');
+      expect(/<input [^>]*id="issuer"[^>]*>/.exec(html)?.[0]).toContain('placeholder="The other company"');
+      // Today's page keeps its boxed form.
+      vi.stubEnv("SHIPSHAPE_UI", "");
+      expect(/<input [^>]*id="signer-name"[^>]*>/.exec(await documentPage(id, {}))?.[0]).toContain('class="input"');
+    });
+
+    it("an archived document says so in place of the primary and offers Restore; nothing to share and no More", async () => {
+      const ctx = await signIn("doc-v2-archived@example.com");
+      const id = await uploadDocument(ctx, { title: "Old permit", kind: "permit" }, PDF);
+      await setArchived(ctx, id, true);
+      const html = await documentPage(id, {});
+      expect(primary(html)).toEqual([]);
+      expect(actions(html)).toEqual(["Download"]);
+      const restore = /<form[^>]*>([\s\S]*?)<\/form>/.exec(html.slice(html.indexOf(">Archived<") - 400))?.[1] ?? "";
+      expect(restore).toContain('name="archived" value="0"');
+      expect(textOf(restore)).toContain("Archived Restore");
+    });
+
+    it("History opens on the latest five entries and keeps the rest behind Show all N", async () => {
+      const ctx = await signIn("doc-v2-history@example.com");
+      const id = await uploadDocument(ctx, { title: "Lease", kind: "agreement" }, PDF);
+      // An upload writes two entries (added, version 1); five views make seven.
+      for (let i = 0; i < 5; i++) await asUser(ctx.userId, (tx) => tx.query("select app.audit_append($1, 'document.viewed', $2)", [ctx.orgId, id]));
+      const html = await documentPage(id, {});
+      const history = html.slice(html.indexOf("History (7)"));
+      const lists = [...history.matchAll(/<ol>([\s\S]*?)<\/ol>/g)].map((m) => (m[1].match(/<li\b/g) ?? []).length);
+      expect(lists).toEqual([5, 2]);
+      expect(textOf(history)).toMatch(/^History \(7\) .* Show all 7 /);
+    });
+  });
 });
 
 describe("error and not-found pages", () => {
