@@ -686,6 +686,22 @@ describe("a document's page", () => {
       "This document is archived. It keeps its history and was taken off your passport links; it isn't reminded about or open for signing. Restoring it won't put it back on any link.",
     );
   });
+
+  it("past 50 history entries, says it shows the latest 50 and that the export has every one; at 50, says nothing (W15-5)", async () => {
+    const ctx = await signIn("doc-long-history@example.com");
+    const id = await uploadDocument(ctx, { title: "Lease", kind: "agreement" }, PDF);
+    const note = "Showing the latest 50 entries. Your export has every one.";
+    const entries = (html: string) => (/<h2[^>]*>History<\/h2>\s*<ol[^>]*>([\s\S]*?)<\/ol>/.exec(html)?.[1].match(/<li\b/g) ?? []).length;
+    const view = () => asUser(ctx.userId, (tx) => tx.query("select app.audit_append($1, 'document.viewed', $2)", [ctx.orgId, id]));
+    for (let i = entries(await documentPage(id, {})); i < 50; i++) await view();
+    const full = await documentPage(id, {});
+    expect(entries(full)).toBe(50);
+    expect(textOf(full)).not.toContain(note);
+    await view();
+    const over = await documentPage(id, {});
+    expect(entries(over)).toBe(50);
+    expect(textOf(over)).toContain(`${note} Entries can't be edited or deleted through ShipShape, and each is linked to the one before it.`);
+  });
 });
 
 describe("error and not-found pages", () => {

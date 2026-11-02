@@ -58,9 +58,9 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     q: "Can I get my data out, or delete it?",
     a: (
       <>
-        Yes. Owners and admins can, from Settings: one ZIP file (up to 200 MB; for a bigger workspace, write to us) with every version
-        of every document and the full history, or delete your account and the
-        workspaces you own. Details are in the <Link href="/privacy" className="underline">privacy policy</Link>.
+        Yes. Owners and admins can download everything from Settings as one ZIP file (up to 200 MB; for a bigger workspace, write to
+        us) with every version of every document and the full history. Anyone can delete their account there, along with any
+        workspace where they&apos;re the only owner. Details are in the <Link href="/privacy" className="underline">privacy policy</Link>.
       </>
     ),
   },

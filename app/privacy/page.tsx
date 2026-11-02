@@ -64,7 +64,8 @@ export default function PrivacyPage() {
         <li>
           <strong>Waitlist:</strong> the email address you gave us, and whether you asked to hear about Collect, only to tell you when
           ShipShape opens or, if you asked, when Collect goes on sale. Deleting your account also removes the waitlist entry for your
-          account&apos;s email address. To come off the list any other time, write to us at the address below.
+          account&apos;s email address. To come off the list any other time, write to us at the address below. We don&apos;t check that an
+          address belongs to whoever typed it, so our first email asks you to confirm, and we delete addresses nobody confirms.
         </li>
         <li>
           <strong>Service records:</strong> each AI read you agreed to and what it cost; your sign-in provider&apos;s account ID; and

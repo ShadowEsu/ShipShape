@@ -140,7 +140,7 @@ describe("a vendor sending files", () => {
     expect(audit.actor).toBeNull();
   });
 
-  it("downloads to the workspace that asked for it, as an attachment under the file's name, and to nobody else", async () => {
+  it("downloads to the workspace that asked for it, as an attachment under the file's name, to nobody else, and each download goes in the history (W15-4)", async () => {
     withRealDocs();
     const ctx = await realWorkspace("owner-dl@example.com");
     const other = await realWorkspace("other-dl@example.com");
@@ -152,12 +152,23 @@ describe("a vendor sending files", () => {
     const got = verifyFileParams(new URL((await vendorFileUrl(ctx, file.id))!, "http://x").searchParams);
     expect(got).toMatchObject({ inline: false, filename: "W9 Lopez.pdf" });
     expect(sha256Hex(await blobStore().get(got!.objectPath))).toBe(sha256Hex(PDF));
+    const downloads = () =>
+      db.root((tx) =>
+        tx.query<{ actor: string | null; object_id: string }>(
+          "select actor, object_id from app.audit_log where org_id = $1 and action = 'collect.file_downloaded' order by seq",
+          [ctx.orgId],
+        ),
+      );
+    expect(await downloads()).toEqual([{ actor: ctx.userId, object_id: vendorId }]);
 
     expect(await vendorFileUrl(other, file.id)).toBeNull();
     // A member of both workspaces, working in the other one, gets nothing there either.
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [other.orgId, ctx.userId]));
     expect(await vendorFileUrl({ ...ctx, orgId: other.orgId, role: "member" }, file.id)).toBeNull();
     expect(await vendorFileUrl(ctx, "not-a-file-id")).toBeNull();
+    // A refused link records nothing; the chain still verifies with the download in it.
+    expect(await downloads()).toHaveLength(1);
+    expect(await asUser(ctx.userId, (tx) => tx.query("select app.audit_verify($1) as bad", [ctx.orgId]))).toEqual([{ bad: null }]);
   });
 
   it("downloads a vendor's file whatever its name: accents, apostrophes, ampersands and commas", async () => {

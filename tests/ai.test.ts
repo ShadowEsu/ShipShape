@@ -43,6 +43,33 @@ async function workspace(): Promise<Ctx> {
   return { userId, demo: false, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Elm Plumbing", role: "owner", today: isoToday() };
 }
 
+async function sampleWorkspace(): Promise<Ctx> {
+  const userId = await db.user(`ai-sample${++seq}@example.com`);
+  const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
+  return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner", today: isoToday() };
+}
+
+/** Spend already on the meter: `sample` and `org` say whose it was; today unless `daysAgo`. */
+const spent = (micros: number, opts: { sample?: boolean; org?: string | null; daysAgo?: number } = {}) =>
+  db.root((tx) =>
+    tx.query(
+      "insert into app.ai_calls (org_id, feature, model, reserved_micros, cost_micros, status, sample, created_at) values ($1, 'request_match', $2, $3, $3, 'done', $4, now() - make_interval(days => $5))",
+      [opts.org ?? null, AI_MODEL, micros, opts.sample ?? false, opts.daysAgo ?? 0],
+    ),
+  );
+const reserve = (micros: number, caps: { workspaceDay?: number } = {}) =>
+  asService((tx) =>
+    tx.query<{ id: string | null; refused: string | null }>("select id, refused from app.ai_reserve(null, 'request_match', $1, $2, $3, $4, $5, $6, $7)", [
+      AI_MODEL,
+      micros,
+      AI_CAPS.dayMicros,
+      AI_CAPS.totalMicros,
+      AI_CAPS.sampleDayMicros,
+      AI_CAPS.sampleTotalMicros,
+      caps.workspaceDay ?? AI_CAPS.workspaceDayMicros,
+    ]),
+  );
+
 async function addDoc(ctx: Ctx, title: string, kind: string, expiresInDays: number | null) {
   await db.root((tx) =>
     tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, $2, $3, current_date + $4::int)", [ctx.orgId, title, kind, expiresInDays]),
@@ -319,11 +346,57 @@ describe("spend meter", () => {
   });
 
   it("concurrent reservations never pass the cap", async () => {
-    const tries = Array.from({ length: 6 }, () =>
-      asService((tx) => tx.query<{ id: string | null }>("select app.ai_reserve(null, 'request_match', $1, 300000, 1000000, 10000000) as id", [AI_MODEL])),
-    );
+    // The day cap is $1: three of six 0.3-dollar reservations fit (the workspace cap is lifted to test only the shared one).
+    const tries = Array.from({ length: 6 }, () => reserve(300_000, { workspaceDay: AI_CAPS.dayMicros }));
     const ok = (await Promise.all(tries)).filter(([r]) => r.id !== null);
     expect(ok).toHaveLength(3);
+    const refused = (await meter()).length;
+    expect(refused).toBe(3);
+  });
+
+  it("a refusal returns no id and the reason beside it, never in the id column (Security S-1)", async () => {
+    await spent(AI_CAPS.totalMicros, { daysAgo: 3 });
+    expect(await reserve(100)).toEqual([{ id: null, refused: "total" }]);
+  });
+
+  it("samples share a pool of their own: once it's spent for the day a sample is refused without a call, while a real workspace still reads (W15-1)", async () => {
+    await spent(AI_CAPS.sampleDayMicros - 100, { sample: true });
+    const sample = await sampleWorkspace();
+    await expect(ask(sample)).rejects.toThrow("The sample's AI reading is used up for today. Everything else in the sample works as usual.");
+    expect(sent).toHaveLength(0);
+    await ask(await workspace());
+    expect(sent).toHaveLength(1);
+    // Yesterday's sample spend doesn't count today.
+    await db.root((tx) => tx.query("update app.ai_calls set created_at = now() - interval '1 day' where sample"));
+    await ask(sample);
+    expect(sent).toHaveLength(2);
+    expect((await db.root((tx) => tx.query<{ sample: boolean }>("select sample from app.ai_calls where org_id = $1", [sample.orgId]))).map((r) => r.sample)).toEqual([true]);
+  });
+
+  it("the samples' lifetime pool ends their reading for good, never real customers', and a purged sample's calls still count (W15-1)", async () => {
+    const sample = await sampleWorkspace();
+    await ask(sample);
+    // The sample is purged: its calls lose the workspace but stay samples' spend.
+    await db.root((tx) => tx.query("delete from app.organizations where id = $1", [sample.orgId]));
+    expect(await db.root((tx) => tx.query("select org_id, sample from app.ai_calls"))).toEqual([{ org_id: null, sample: true }]);
+    await spent(AI_CAPS.sampleTotalMicros - 100, { sample: true, daysAgo: 5 });
+    await expect(ask(await sampleWorkspace())).rejects.toThrow("ShipShape's AI reading is paused right now. Everything else works as usual.");
+    expect(sent).toHaveLength(1);
+    await ask(await workspace());
+    expect(sent).toHaveLength(2);
+  });
+
+  it("each real workspace has a day cap of its own: one that used it is refused without a call, another isn't (W15-1)", async () => {
+    const busy = await workspace();
+    await spent(AI_CAPS.workspaceDayMicros - 100, { org: busy.orgId });
+    await expect(ask(busy)).rejects.toThrow("Your workspace has used today's AI reading. Try again tomorrow; everything else works as usual.");
+    expect(sent).toHaveLength(0);
+    await ask(await workspace());
+    expect(sent).toHaveLength(1);
+    // The overall day cap still stands above every workspace's.
+    await spent(AI_CAPS.dayMicros);
+    await expect(ask(await workspace())).rejects.toThrow("ShipShape's AI has reached its spending limit for today. Try again tomorrow.");
+    expect(sent).toHaveLength(1);
   });
 
   it("a failed call keeps counting at its reserved worst case", async () => {
@@ -358,7 +431,7 @@ describe("spend meter", () => {
   it("only the server can touch the meter", async () => {
     const ctx = await workspace();
     await expect(asUser(ctx.userId, (tx) => tx.query("select * from app.ai_calls"))).rejects.toThrow();
-    await expect(asUser(ctx.userId, (tx) => tx.query("select app.ai_reserve(null, 'request_match', 'x', 1, 9, 9)"))).rejects.toThrow();
+    await expect(asUser(ctx.userId, (tx) => tx.query("select * from app.ai_reserve(null, 'request_match', 'x', 1, 9, 9, 9, 9, 9)"))).rejects.toThrow();
   });
 });
 
@@ -366,7 +439,7 @@ describe("limits and logs", () => {
   it("allows 10 reads per person per hour; the 11th says nothing was sent and when to try again", async () => {
     const ctx = await workspace();
     for (let i = 0; i < 10; i++) await ask(ctx);
-    await expect(ask(ctx)).rejects.toThrow("That's as many requests as ShipShape reads in an hour. Nothing was sent; try again in an hour.");
+    await expect(ask(ctx)).rejects.toThrow("That's the hourly limit for AI reading. Nothing was sent; try again in an hour.");
     expect(sent).toHaveLength(10);
   });
 

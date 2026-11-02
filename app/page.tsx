@@ -1,7 +1,27 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel, type Status } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { PLANS } from "@/lib/plans";
+
+/** What keeps the documents safe, one line each; `key` is stable because some lines carry markup. */
+const TRUST: { key: string; text: ReactNode }[] = [
+  { key: "tax-ids", text: "Tax IDs in your business facts are encrypted with a key kept outside the database and shown as the last 4 digits unless you ask." },
+  { key: "storage", text: "Files sit in private storage and open through links that expire after 5 minutes." },
+  { key: "walls", text: "Each workspace is walled off from every other in the database itself, checked with a second account in our tests." },
+  {
+    key: "history",
+    // "in-app" never breaks at its hyphen (Design, wave 15).
+    text: (
+      <>
+        Every change to a document, and every <span className="whitespace-nowrap">in-app</span> view, download, share and signature of it, lands in a history
+        where each entry is chained to the one before. Passport links keep their own list of opens.
+      </>
+    ),
+  },
+  { key: "no-ads", text: "No ads, no analytics trackers, and we don't train AI on your documents." },
+  { key: "export", text: "Owners and admins can export everything from Settings (one ZIP, up to 200 MB); anyone can delete their account there, any time." },
+];
 
 const WHO: { who: string; asks: string }[] = [
   { who: "Contractors", asks: "Every new general contractor or property manager wants your W-9, insurance certificate and license. Then the certificate again when it renews." },
@@ -151,19 +171,12 @@ export default function Home() {
             </p>
           </div>
           <ul className="space-y-3 text-base text-ink-2 sm:text-sm">
-            {[
-              "Tax IDs in your business facts are encrypted with a key kept outside the database and shown as the last 4 digits unless you ask.",
-              "Files sit in private storage and open through links that expire after 5 minutes.",
-              "Each workspace is walled off from every other in the database itself, checked with a second account in our tests.",
-              "Every change, view, share and signature lands in a history where each entry is chained to the one before.",
-              "No ads, no analytics trackers, and we don't train AI on your documents.",
-              "Owners and admins can export everything from Settings (one ZIP, up to 200 MB); anyone can delete their account there, any time.",
-            ].map((t) => (
-              <li key={t} className="flex gap-3">
+            {TRUST.map(({ key, text }) => (
+              <li key={key} className="flex gap-3">
                 <span aria-hidden="true" className="mt-0.5 text-ok">
                   ✓
                 </span>
-                <span>{t}</span>
+                <span>{text}</span>
               </li>
             ))}
           </ul>
