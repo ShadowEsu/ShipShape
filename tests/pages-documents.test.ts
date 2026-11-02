@@ -151,6 +151,7 @@ describe("documents list", () => {
   });
 
   it("on Pro, lists 50 documents at a time in the list's order, says which are shown, and pages with the filter kept; a page past the end shows the last", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier look's list markup
     const ctx = await signIn("docs-paged@example.com");
     await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_paged', 'active', 'pro')", [ctx.orgId]));
     // 51 licenses: the one that runs out soonest sorts first; the others have no date and sort by newest.
@@ -178,11 +179,31 @@ describe("documents list", () => {
     // One page needs no pager.
     expect(textOf(await documentsPage({ kind: "permit" }))).not.toContain("Showing");
   });
+
+  it("in the default look too: 50 at a time, says which are shown, pages with the filter kept, and a page past the end shows the last", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "");
+    const ctx = await signIn("docs-paged-v2@example.com");
+    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_paged2', 'active', 'pro')", [ctx.orgId]));
+    await uploadDocument(ctx, { title: "Soonest license", kind: "license", expires_on: "2030-01-01" }, PDF);
+    for (let i = 1; i <= DOCUMENTS_PAGE_SIZE; i++) await uploadDocument(ctx, { title: `License ${String(i).padStart(2, "0")}`, kind: "license" }, PDF);
+    const pager = (html: string) => actionsOf(html).filter((a) => a.label === "Next" || a.label === "Previous");
+    const first = await documentsPage({ kind: "license" });
+    expect(textOf(first)).toMatch(/Showing 1\s*–\s*50 of 51/);
+    expect(textOf(first).indexOf("Soonest license")).toBeLessThan(textOf(first).indexOf("License 50"));
+    expect(textOf(first)).not.toContain("License 01");
+    expect(pager(first)).toEqual([{ tag: "a", label: "Next", href: "/app/documents?kind=license&amp;page=2" }]);
+    const second = await documentsPage({ kind: "license", page: "9" });
+    expect(textOf(second)).toMatch(/Showing 51\s*–\s*51 of 51/);
+    expect(textOf(second)).toContain("License 01");
+    expect(pager(second)).toEqual([{ tag: "a", label: "Previous", href: "/app/documents?kind=license" }]);
+  });
 });
 
 const homePage = () => renderPage(AppHome, {});
 
-describe("home", () => {
+// The earlier Home (SHIPSHAPE_UI=v1): the setup list and its cards. The redesigned Home has its own describe below.
+describe("home, earlier look (SHIPSHAPE_UI=v1)", () => {
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v1"));
   it("on a first visit teaches what will appear, counts only real progress, and offers one action: the next step", async () => {
     await signIn("home-first@example.com");
     const html = await homePage();
@@ -507,9 +528,11 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect(textOf(html)).not.toMatch(/most urgent|more have lapsed|more need attention|See every date/);
   });
 
-  it("is off unless SHIPSHAPE_UI is v2: the current Home renders", async () => {
+  it("is the default: unset shows the redesigned Home, and only SHIPSHAPE_UI=v1 brings back the earlier one (ledger 416)", async () => {
     vi.stubEnv("SHIPSHAPE_UI", "");
-    await signIn("home-v2-off@example.com");
+    await signIn("home-v2-default@example.com");
+    expect(tiles(await homePage())).toHaveLength(10);
+    vi.stubEnv("SHIPSHAPE_UI", "v1");
     const html = await homePage();
     expect(tiles(html)).toEqual([]);
     expect(textOf(html)).toContain("0 of 6 done");
@@ -518,14 +541,15 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
 
 // Every state and word holds in both looks.
 describe.each([
-  ["current", ""],
-  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+  ["earlier (SHIPSHAPE_UI=v1)", "v1"],
+  ["redesigned (the default, SHIPSHAPE_UI unset)", ""],
 ])("business facts, %s", (_look, ui) => {
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
-  const mail = (name: string) => `${ui || "now"}-${name}@example.com`;
-  /** The page's primary actions: class "btn" today, "btn press …" (docked) in the redesigned app. */
+  const v2 = ui !== "v1";
+  const mail = (name: string) => `${ui || "v2"}-${name}@example.com`;
+  /** The page's primary actions: class "btn" in the earlier look, "btn press …" (docked) in the redesigned app. */
   const primary = (html: string) =>
-    ui ? [...html.matchAll(/<button class="btn press[^"]*"[^>]*>([^<]*)</g)].map((m) => ({ label: m[1], href: undefined })) : primaryActions(html);
+    v2 ? [...html.matchAll(/<button class="btn press[^"]*"[^>]*>([^<]*)</g)].map((m) => ({ label: m[1], href: undefined })) : primaryActions(html);
 
   it("with nothing confirmed says so, what the facts are for, and offers one action: save them", async () => {
     await signIn(mail("facts-empty"));
@@ -746,14 +770,14 @@ const emptyDates = (html: string) =>
   Object.fromEntries([...html.matchAll(/<span class="date-row"( data-empty="true")?><input [^>]*name="([a-z_]+)"/g)].map((m) => [m[2], Boolean(m[1])]));
 
 describe.each([
-  ["current", ""],
-  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+  ["earlier (SHIPSHAPE_UI=v1)", "v1"],
+  ["redesigned (the default, SHIPSHAPE_UI unset)", ""],
 ])("Add a document, %s", (_look, ui) => {
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
   const addPage = () => renderPage(NewDocumentPage, {});
 
   it("posts the file and its details under the names addDocument reads, Other preselected, with one button, Add to documents; a sample gets its notice and no form", async () => {
-    await signIn(`${ui || "now"}-add@example.com`);
+    await signIn(`${ui || "v2"}-add@example.com`);
     const html = await addPage();
     expect([...html.matchAll(/<(?:input|select)\b[^>]*\bname="([a-z_]+)"/g)].map((m) => m[1])).toEqual([
       "file",
@@ -883,6 +907,7 @@ describe("a document's page", () => {
   });
 
   it("while a signing request is open: the Add version field warns, archiving asks first (Archive and withdraw / Keep it), and a new version says what it withdrew (wave 8 #2, #7)", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier page's markup; the redesigned page's own test is under "redesigned"
     const ctx = await signIn("doc-open-request@example.com");
     const pdf = await PDFDocument.create();
     pdf.addPage([612, 792]);
@@ -927,6 +952,7 @@ describe("a document's page", () => {
   });
 
   it("on passport links that still work, Archive says first that it takes the document off them for good, in the confirm too; archived, the page says restoring won't put it back (W14-3)", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier page's markup; the redesigned page's own test is under "redesigned"
     const ctx = await signIn("doc-archive-links@example.com");
     const pdf = await PDFDocument.create();
     pdf.addPage([612, 792]);
@@ -960,6 +986,7 @@ describe("a document's page", () => {
   });
 
   it("past 50 history entries, says it shows the latest 50 and that the export has every one; at 50, says nothing (W15-5)", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier page's markup; the redesigned page's own test is under "redesigned"
     const ctx = await signIn("doc-long-history@example.com");
     const id = await uploadDocument(ctx, { title: "Lease", kind: "agreement" }, PDF);
     const note = "Showing the latest 50 entries. Your export has every one.";
@@ -984,6 +1011,32 @@ describe("a document's page", () => {
       return [...group.matchAll(/<(a|button)\b([^>]*class="round-action press"[^>]*)>([\s\S]*?)<\/\1>/g)].map((m) => textOf(m[3]));
     };
 
+    it("in the default look, says what Add a version and Archive would withdraw or take off links, and that the history shows the latest 50", async () => {
+      vi.stubEnv("SHIPSHAPE_UI", "");
+      const ctx = await signIn("doc-warnings-v2@example.com");
+      const pdf = await PDFDocument.create();
+      pdf.addPage([612, 792]);
+      const id = await uploadDocument(ctx, { title: "Mutual NDA", kind: "nda" }, await pdf.save());
+      await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_W2v2', 'active', 'pro')", [ctx.orgId]));
+      const plain = textOf(await documentPage(id, {}));
+      expect(plain).not.toMatch(/withdraws the open signing request|Archiving takes it off/);
+
+      await createPassport(ctx, { label: "Northwind", days: 7, documentIds: [id] });
+      await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
+      const html = await documentPage(id, {});
+      expect(textOf(/<p id="version-file-warning"[^>]*>([\s\S]*?)<\/p>/.exec(html)?.[1] ?? "")).toBe("Adding a version withdraws the open signing request for Jordan Lee.");
+      expect(html).toMatch(/<input[^>]*id="version-file"[^>]*aria-describedby="version-file-warning"/);
+      expect(textOf(html)).toContain(
+        "Archiving withdraws the open signing request for Jordan Lee. Restoring the document won't bring it back; you'd send it again. Archiving takes it off 1 passport link for good; restoring won't add it back. Archive and withdraw Keep it",
+      );
+
+      const note = "Showing the latest 50 entries. Your export has every one.";
+      expect(textOf(html)).not.toContain(note);
+      const view = () => asUser(ctx.userId, (tx) => tx.query("select app.audit_append($1, 'document.viewed', $2)", [ctx.orgId, id]));
+      for (let i = 0; i < 50; i++) await view();
+      expect(textOf(await documentPage(id, {}))).toContain(note);
+    });
+
     it("leads with one primary, Share in a link, which ticks this document on the passport page; Details are one list with the saved dates", async () => {
       const ctx = await signIn("doc-v2@example.com");
       const id = await uploadDocument(ctx, { title: "Business license", kind: "license", expires_on: "2030-01-31" }, PDF);
@@ -999,7 +1052,7 @@ describe("a document's page", () => {
       expect(html).not.toContain('id="signatures"');
       // Who issues a license, as the Issued by field's hint.
       expect(/<input [^>]*id="issuer"[^>]*>/.exec(html)?.[0]).toContain('placeholder="Agency or city"');
-      vi.stubEnv("SHIPSHAPE_UI", "");
+      vi.stubEnv("SHIPSHAPE_UI", "v1");
       expect(primary(await documentPage(id, {}))).toEqual([]);
     });
 
@@ -1020,7 +1073,7 @@ describe("a document's page", () => {
       expect(/<input [^>]*id="signer-email"[^>]*>/.exec(html)?.[0]).toContain('placeholder="name@company.com"');
       expect(/<input [^>]*id="issuer"[^>]*>/.exec(html)?.[0]).toContain('placeholder="The other company"');
       // Today's page keeps its boxed form.
-      vi.stubEnv("SHIPSHAPE_UI", "");
+      vi.stubEnv("SHIPSHAPE_UI", "v1");
       expect(/<input [^>]*id="signer-name"[^>]*>/.exec(await documentPage(id, {}))?.[0]).toContain('class="input"');
     });
 
@@ -1070,7 +1123,7 @@ describe("a document's page", () => {
       await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
       const label = (html: string) => /<span [^>]*>Waiting<\/span>/.exec(html)?.[0] ?? "";
       expect(label(await documentPage(id, {}))).toContain('vt-update="v2-chip"');
-      vi.stubEnv("SHIPSHAPE_UI", "");
+      vi.stubEnv("SHIPSHAPE_UI", "v1");
       expect(label(await documentPage(id, {}))).toBe('<span class="shrink-0 text-xs text-ink-2">Waiting</span>');
     });
 

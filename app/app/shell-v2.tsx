@@ -13,7 +13,7 @@ import { AccountSheet, SideNav, TabBar } from "./nav-v2";
 const TILE_STYLE: "mono" | "" = "mono";
 
 /**
- * The redesigned app's frame (SHIPSHAPE_UI=v2): a 256px sidebar of tools with Recent and the account row on desktop;
+ * The redesigned app's frame (the default look): a 256px sidebar of tools with Recent and the account row on desktop;
  * on the phone a 48px top bar, the page, and a tab bar with More. The shell itself never animates.
  */
 export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: boolean; children: React.ReactNode }) {

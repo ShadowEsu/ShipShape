@@ -5,7 +5,7 @@ import { dayOf, timeOf } from "@/lib/today";
 import { StampMoment } from "./stamp";
 
 /**
- * The signer's done page in the redesigned look (SHIPSHAPE_UI=v2; Design's `signed-390`, spec §4 and §6.4): the
+ * The signer's done page in the redesigned look (the default; Design's `signed-390`, spec §4 and §6.4): the
  * green stamp, "Signed", the document, the name they typed on a signature rule, when and how it was confirmed, what
  * happens next, and the one download. Every fact of today's done card stays (lib/server/esign.ts completeSigning
  * is what they describe): the sender has the same signed copy, what the certificate records, how long this link

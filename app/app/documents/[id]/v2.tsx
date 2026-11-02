@@ -60,7 +60,7 @@ function History({ audit, moreAudit, zone }: { audit: AuditRow[]; moreAudit: boo
 }
 
 /**
- * The redesigned document page (SHIPSHAPE_UI=v2; Design spec 2026-11-02, doc-390): the title, its state and version, the
+ * The redesigned document page (the default look; Design spec 2026-11-02, doc-390): the title, its state and version, the
  * first page's place, one primary (Share in a link), round actions, then Details and History; Signatures, Versions, where
  * each field came from and the Source follow. One 720px column at every width. Same data, actions and words as the old page.
  */

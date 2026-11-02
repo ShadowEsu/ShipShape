@@ -116,7 +116,7 @@ export default async function SigningPage({ params, searchParams }: { params: Pr
   );
 }
 
-/** Off, today's page exactly as it was; on, a boundary that fades the page to sign out when signing replaces it. */
+/** Under SHIPSHAPE_UI=v1, the earlier page exactly as it was; by default, a boundary that fades the page to sign out when signing replaces it. */
 function Leaves({ on, children }: { on: boolean; children: React.ReactNode }) {
   if (!on) return children;
   return (

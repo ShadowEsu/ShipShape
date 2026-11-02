@@ -184,6 +184,7 @@ describe("Passport", () => {
   });
 
   it("with a link: lists it instead of the example", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier page's markup; the redesigned page's own test is under "redesigned"
     const ctx = await signIn("passport-link@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
     await createPassport(ctx, { label: "Northwind onboarding", days: 30, documentIds: [doc] });
@@ -193,6 +194,7 @@ describe("Passport", () => {
   });
 
   it("a link past its planned end reads as ended, in neutral colours, not as an expired fault", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier page's markup; the redesigned page's own test is under "redesigned"
     const ctx = await signIn("passport-ended@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
     const { id } = await createPassport(ctx, { label: "Old link", days: 7, documentIds: [doc] });
@@ -360,12 +362,12 @@ describe("Passport", () => {
 
 // Every state and word holds in both looks: the redesigned pages are the same pages, re-laid.
 describe.each([
-  ["current", ""],
-  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+  ["earlier (SHIPSHAPE_UI=v1)", "v1"],
+  ["redesigned (the default, SHIPSHAPE_UI unset)", ""],
 ])("Collect, %s", (_look, ui) => {
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
   /** A sign-in address of this look's own: each test makes a new person. */
-  const mail = (name: string) => `${ui || "now"}-${name}@example.com`;
+  const mail = (name: string) => `${ui || "v2"}-${name}@example.com`;
 
   it("with no vendors: a ghosted example vendor, and a button to the form's first field", async () => {
     await signIn(mail("collect-empty"));
@@ -451,7 +453,7 @@ describe.each([
   });
 
   it("a made upload link ends calmly: for whom, how long, what happens next, and only Copy link", async () => {
-    const html = await renderPage(VendorLinkReady, { vendorName: "Rivera Electric", days: 30, url: "https://example.test/c/x#y", v2: ui === "v2" });
+    const html = await renderPage(VendorLinkReady, { vendorName: "Rivera Electric", days: 30, url: "https://example.test/c/x#y", v2: ui !== "v1" });
     expect(textOf(html)).toContain("Upload link for Rivera Electric is ready It works for 30 days.");
     expect(textOf(html)).toContain("The files they send land under Files received.");
     expect(actionsOf(html).map((a) => a.label)).toEqual(["Copy link"]);
@@ -512,6 +514,7 @@ describe("Deadlines", () => {
   });
 
   it("with nothing in the next 90 days: says so calmly, with the reminder that's really coming", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier page's markup; the redesigned page's own test is under "redesigned"
     const ctx = await signIn("deadlines-quiet@example.com");
     await addDoc(ctx, "Liability certificate", 120);
     const html = await renderPage(DeadlinesPage, none());
@@ -527,6 +530,7 @@ describe("Deadlines", () => {
   });
 
   it("dates a sent reminder in the owner's wall-clock time with the zone's name (Design, wave 8)", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v1"); // the earlier page's markup; the redesigned page's own test is under "redesigned"
     const ctx = await signIn("deadlines-sent-zone@example.com");
     await db.root((tx) =>
       tx.query("insert into app.outbox (org_id, to_email, subject, body, created_at) values ($1, 'me@example.com', 'Liability certificate expires in 7 days', 'x', '2026-11-01 03:30:00+00')", [ctx.orgId]),
@@ -643,8 +647,8 @@ describe("Deadlines", () => {
       expect(textOf(sent?.[2] ?? "")).toBe("Liability certificate expires in 7 days To me@example.com · Nov 1, 2026, 3:30 AM UTC Show the email Hide the email Renew it.");
     });
 
-    it("is off unless SHIPSHAPE_UI is v2: ?soon=1 changes nothing on the current page", async () => {
-      vi.stubEnv("SHIPSHAPE_UI", "");
+    it("SHIPSHAPE_UI=v1 brings back the earlier page: ?soon=1 changes nothing there", async () => {
+      vi.stubEnv("SHIPSHAPE_UI", "v1");
       const ctx = await signIn("deadlines-v2-off@example.com");
       await dated(ctx, "Later expiry", 31);
       const html = await page("1");
@@ -655,14 +659,14 @@ describe("Deadlines", () => {
 });
 
 describe.each([
-  ["current", ""],
-  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+  ["earlier (SHIPSHAPE_UI=v1)", "v1"],
+  ["redesigned (the default, SHIPSHAPE_UI unset)", ""],
 ])("What are they asking for?, %s", (_look, ui) => {
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
 
   it("with AI switched off: one line on what that means, and one way forward", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "");
-    await signIn(`${ui || "now"}-ask-off@example.com`);
+    await signIn(`${ui || "v2"}-ask-off@example.com`);
     const html = await renderPage(AskPage, {});
     expect(textOf(html)).toContain("Reading requests with AI is switched off right now, so check the request against your documents yourself");
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Open your documents", href: "/app/documents" }]);
@@ -671,7 +675,7 @@ describe.each([
   it("with AI on: the consent box claims only what Anthropic says, and names the source and when it was checked", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "1");
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
-    await signIn(`${ui || "now"}-ask-on@example.com`);
+    await signIn(`${ui || "v2"}-ask-on@example.com`);
     const html = await renderPage(AskPage, {});
     const text = textOf(html);
     expect(text).toContain("and nothing from your documents is sent. Anthropic says that by default it doesn't train on what its API receives.");
@@ -702,14 +706,15 @@ describe("What are they asking for?, redesigned only", () => {
 
 // As Collect: every state and word holds in both looks.
 describe.each([
-  ["current", ""],
-  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+  ["earlier (SHIPSHAPE_UI=v1)", "v1"],
+  ["redesigned (the default, SHIPSHAPE_UI unset)", ""],
 ])("Settings, %s", (_look, ui) => {
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
   /** A sign-in address of this look's own: each test makes a new person. */
-  const mail = (name: string) => `${ui || "now"}-${name}@example.com`;
-  // Two-step sign-in's status: a line today, a row (the method, then On) in the redesigned app.
-  const mfaOn = ui ? "Authenticator app On" : "On · authenticator app";
+  const mail = (name: string) => `${ui || "v2"}-${name}@example.com`;
+  const v2 = ui !== "v1";
+  // Two-step sign-in's status: a line in the earlier look, a row (the method, then On) in the redesigned app.
+  const mfaOn = v2 ? "Authenticator app On" : "On · authenticator app";
   const settings = (error?: string) => renderPage(SettingsPage, { searchParams: Promise.resolve(error ? { error } : {}) });
   const afterCheckout = () => renderPage(SettingsPage, { searchParams: Promise.resolve({ billing: "success" }) });
   const bill = (ctx: Ctx, status: string) =>
@@ -875,7 +880,7 @@ describe.each([
       const text = textOf(html);
       expect(text).toContain("Where you're signed in");
       // This browser's row: no button in the redesigned app, where the Sign out section below is the one way (Design 02 Nov).
-      expect(text).toMatch(ui ? /Safari on a Mac\s*·\s*this browser\s*Firefox on Linux/ : /Safari on a Mac\s*·\s*this browser\s*Sign out/);
+      expect(text).toMatch(v2 ? /Safari on a Mac\s*·\s*this browser\s*Firefox on Linux/ : /Safari on a Mac\s*·\s*this browser\s*Sign out/);
       expect(text).toMatch(/Firefox on Linux\s*·\s*last active less than an hour ago/);
       expect(text).toMatch(/Safari on an iPad\s*·\s*last active 3 hours ago/);
       expect(text).toMatch(/Chrome on an iPhone\s*·\s*last active 2 days ago/);
@@ -883,9 +888,9 @@ describe.each([
       expect(text).not.toMatch(/Firefox on Windows|Opera on Windows|Edge on Android/);
       // This browser first, then the most recently used; one Sign out for each other browser (and this one, today), naming its own session.
       const others = [recent, tablet, phone];
-      expect(actionsOf(html).map((a) => a.label)).toEqual(Array(ui ? 3 : 4).fill("Sign out"));
-      expect([...html.matchAll(/name="id" value="([^"]+)"/g)].map((m) => m[1])).toEqual(ui ? others : [ctx.sessionId, ...others]);
-      expect(html.includes('aria-label="Sign out Safari on a Mac (this browser)"')).toBe(!ui);
+      expect(actionsOf(html).map((a) => a.label)).toEqual(Array(v2 ? 3 : 4).fill("Sign out"));
+      expect([...html.matchAll(/name="id" value="([^"]+)"/g)].map((m) => m[1])).toEqual(v2 ? others : [ctx.sessionId, ...others]);
+      expect(html.includes('aria-label="Sign out Safari on a Mac (this browser)"')).toBe(!v2);
       expect(html).toContain('aria-label="Sign out Chrome on an iPhone"');
     });
 
@@ -913,8 +918,8 @@ describe.each([
       await finishSignIn(userId, { demo: true });
       const html = await settings();
       const text = textOf(card(html));
-      expect(text).toMatch(ui ? /Where you're signed in.*A browser\s*·\s*this browser$/ : /Where you're signed in.*A browser\s*·\s*this browser\s*Sign out/);
-      expect(html.includes('aria-label="Sign out a browser (this browser)"')).toBe(!ui);
+      expect(text).toMatch(v2 ? /Where you're signed in.*A browser\s*·\s*this browser$/ : /Where you're signed in.*A browser\s*·\s*this browser\s*Sign out/);
+      expect(html.includes('aria-label="Sign out a browser (this browser)"')).toBe(!v2);
     });
   });
 });

@@ -3,7 +3,7 @@ import { FACT_LABELS } from "@/lib/profile-fields";
 import type { SignatureRequestRow } from "@/lib/server/esign";
 import type { TemplateInfo } from "@/lib/templates/types";
 
-// The words the document page uses, in both looks (page.tsx today, v2.tsx behind SHIPSHAPE_UI=v2).
+// The words the document page uses, in both looks (v2.tsx by default, page.tsx's own under SHIPSHAPE_UI=v1).
 
 const ACTIONS: Record<string, string> = {
   "document.created": "Added to documents",
