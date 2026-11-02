@@ -168,7 +168,11 @@ body {
     @apply w-32 shrink-0 text-[15px] text-ink-2;
   }
   .ui-v2 .row-field {
-    @apply min-h-11 w-full min-w-0 flex-1 rounded-lg bg-transparent px-2 text-right text-base text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand;
+    @apply min-h-11 w-full min-w-0 flex-1 rounded-lg bg-transparent px-2 text-right text-base text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand;
+  }
+  /* The field's own edge under the pointer, so a row reads as editable (Design 02 Nov). Focus and an error keep their rings. */
+  .ui-v2 .row-field:enabled:not(:focus-visible, [aria-invalid="true"]):hover {
+    @apply ring-1 ring-field;
   }
   /* A long value ends in an ellipsis while the field isn't being edited, instead of being cut mid-word. Not on the select: it ellipsizes a value that fits. */
   .ui-v2 input.row-field {

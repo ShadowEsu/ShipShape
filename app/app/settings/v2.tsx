@@ -207,17 +207,20 @@ export function SettingsV2({
           <p className="text-sm text-ink-2">Each browser you&apos;re signed in on. Sign out of any you don&apos;t use or don&apos;t recognize.</p>
         </div>
         <ul className="group-list plain">
+          {/* This browser's row has no button: the Sign out section below does the same (Design 02 Nov). */}
           {sessions.map((s) => (
             <li key={s.id} className="group-row justify-between gap-3">
               <p className="min-w-0 text-[15px]">
                 {rowStart(s.family)} <span className="text-ink-2">· {s.current ? "this browser" : lastActive(s.idleSeconds)}</span>
               </p>
-              <form action={signOutSession} className="shrink-0">
-                <input type="hidden" name="id" value={s.id} />
-                <SubmitButton className="btn-ghost press" pendingLabel="Signing out…" label={`Sign out ${s.family}${s.current ? " (this browser)" : ""}`}>
-                  Sign out
-                </SubmitButton>
-              </form>
+              {!s.current && (
+                <form action={signOutSession} className="shrink-0">
+                  <input type="hidden" name="id" value={s.id} />
+                  <SubmitButton className="btn-ghost press" pendingLabel="Signing out…" label={`Sign out ${s.family}`}>
+                    Sign out
+                  </SubmitButton>
+                </form>
+              )}
             </li>
           ))}
         </ul>

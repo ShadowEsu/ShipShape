@@ -14,6 +14,7 @@ import MakePage from "@/app/app/make/page";
 import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { ErrorPanel } from "@/components/error-panel";
+import { PROFILE_FIELDS } from "@/lib/profile-fields";
 import { asService, asUser } from "@/lib/server/db";
 import { DOCUMENTS_PAGE_SIZE, fillTemplate, setArchived, uploadDocument } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
@@ -470,7 +471,7 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect([...recent.matchAll(/class="block truncate font-medium">([^<]*)</g)].map((m) => m[1])).toEqual(["Doc 5", "Doc 3", "Doc 2"]);
   });
 
-  it("past 20, Needs attention ends in one row, 'See all N in Deadlines', to Deadlines filtered to what needs attention; at 20, no such row", async () => {
+  it("past 20, Needs attention ends in one row, 'See all N in Deadlines', to Deadlines filtered to what needs attention, and nothing else counts what's hidden; at 20, no such row", async () => {
     const ctx = await signIn("home-v2-cap@example.com");
     await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeV2Cap', 'active', 'pro')", [ctx.orgId]));
     const seed = (from: number, to: number) =>
@@ -501,8 +502,8 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect(rows).toHaveLength(21);
     expect(textOf(rows[19])).toContain("Permit -1");
     expect(actionsOf(rows[20])).toEqual([{ tag: "a", label: "See all 22 in Deadlines", href: "/app/deadlines?soon=1" }]);
-    expect(textOf(html)).toContain("The 20 most urgent are listed; 2 more have lapsed.");
-    expect(textOf(html)).not.toContain("See every date");
+    // The row is the only word on what's hidden (Design 02 Nov): no "most urgent" footnote under it.
+    expect(textOf(html)).not.toMatch(/most urgent|more have lapsed|more need attention|See every date/);
   });
 
   it("is off unless SHIPSHAPE_UI is v2: the current Home renders", async () => {
@@ -563,12 +564,15 @@ describe.each([
 describe("business facts and Make, redesigned only", () => {
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
 
-  it("Facts: Save and confirm is there with nothing changed (confirming unchanged facts is what 'still true?' asks); a sample's rows are locked, with no Save", async () => {
+  it("Facts: Save and confirm is there with nothing changed (confirming unchanged facts is what 'still true?' asks), and every editable row hints Add; a sample's rows are locked, with no Save and no hint", async () => {
     await signIn("v2-facts-owner@example.com");
     const own = await renderPage(FactsPage, {});
     expect(own).toMatch(/<div class="save-dock[^"]*"><button class="btn press[^"]*">Save and confirm<\/button>/);
     expect(own).toMatch(/<fieldset class="min-w-0">/);
     expect(own).toMatch(/<input id="legal_name"[^>]*class="row-field"/);
+    // Empty rows read as places to type, not a static list (Design 02 Nov).
+    const hints = (html: string) => [...html.matchAll(/<input id="([a-z_0-9]+)"[^>]*class="row-field"[^>]*>/g)].map((m) => [m[1], /placeholder="([^"]*)"/.exec(m[0])?.[1]]);
+    expect(hints(own)).toEqual(PROFILE_FIELDS.map((f) => [f.key, "Add"]));
 
     const userId = await createLocalUser(null, true);
     const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
@@ -577,6 +581,7 @@ describe("business facts and Make, redesigned only", () => {
     const sample = await renderPage(FactsPage, {});
     expect(sample).toMatch(/<fieldset disabled="" class="min-w-0">/);
     expect(sample).not.toContain("Save and confirm</button>");
+    expect(hints(sample)).toEqual(PROFILE_FIELDS.map((f) => [f.key, undefined]));
     // The EIN is a row: the masked number, and the button that shows it.
     expect(textOf(sample)).toMatch(/Employer identification number \(EIN\) \S*\d{4} Show full EIN/);
   });

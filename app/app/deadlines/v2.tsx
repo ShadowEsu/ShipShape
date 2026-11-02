@@ -143,7 +143,7 @@ export function DeadlinesV2({
         <>
           {soon && (
             <p className="rounded-2xl bg-tile px-4 py-3 text-sm text-ink-2">
-              {shown.length === 0 ? "Nothing has lapsed or is due in the next 30 days." : "Showing what needs attention: what has lapsed and what's due in the next 30 days."}{" "}
+              {shown.length === 0 ? "Nothing has lapsed or is due in the next 30 days." : "Showing what has lapsed or is due in the next 30 days."}{" "}
               <Link href="/app/deadlines" className="text-ink underline">
                 Show every date
               </Link>

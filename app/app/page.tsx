@@ -63,7 +63,6 @@ export default async function AppHome() {
         today={ctx.today}
         docs={docs}
         groups={groups}
-        moreLine={docs.attentionTotal > ATTENTION_MAX ? `The ${ATTENTION_MAX} most urgent are listed; ${moreLine}.` : null}
         canUpload={canUpload}
         next={next ? { ...next, done, of: setup.length } : null}
         recent={recent}

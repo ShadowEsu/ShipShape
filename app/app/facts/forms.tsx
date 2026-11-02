@@ -174,6 +174,8 @@ export function FactsFormV2({ values, readOnly }: { values: Record<ProfileKey, s
                 maxLength={f.max}
                 autoComplete={f.autoComplete}
                 className="row-field"
+                // An empty row reads as a static list without it (Design 02 Nov); nothing to add where nobody can edit.
+                placeholder={readOnly ? undefined : "Add"}
                 aria-invalid={state.field === f.key || undefined}
                 aria-describedby={describedBy(state, f.key, Boolean(f.hint))}
               />,

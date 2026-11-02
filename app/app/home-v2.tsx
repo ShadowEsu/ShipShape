@@ -25,14 +25,15 @@ export function HomeV2(props: {
   today: string;
   docs: HomeSummary;
   groups: { label: string; rows: AttentionRow[] }[];
-  moreLine: string | null;
   canUpload: boolean;
   next: { href: string; title: string; body: string; done: number; of: number } | null;
   recent: DocRow[];
   tools: readonly Tool[];
   aiOn: boolean;
 }) {
-  const { today, docs, groups, moreLine, canUpload, next, recent, tools, aiOn } = props;
+  const { today, docs, groups, canUpload, next, recent, tools, aiOn } = props;
+  // Past Home's cap, the list ends in the way to the rest; nothing else counts what's hidden (Design 02 Nov: no footnote).
+  const capped = docs.attentionTotal > docs.attention.length;
   const chips = CHIPS.map((c) => (c.href === next?.href ? SPARE_CHIP : c));
   return (
     <div className="space-y-12">
@@ -125,7 +126,7 @@ export function HomeV2(props: {
                     })}
                     {/* Past the cap the list ends in the way to the rest, so what it says is true of what it shows (Design, INFO-V2d):
                         Deadlines with only what puts a document here, lapsed and due within 30 days. */}
-                    {moreLine && gi === groups.length - 1 && (
+                    {capped && gi === groups.length - 1 && (
                       <li style={{ "--i": g.rows.length }}>
                         <Link href="/app/deadlines?soon=1" className="group-row font-medium">
                           <span className="flex-1">See all {docs.attentionTotal} in Deadlines</span>
@@ -138,7 +139,6 @@ export function HomeV2(props: {
                   </ul>
                 </div>
               ))}
-              {moreLine && <p className="text-sm text-ink-2">{moreLine}</p>}
             </>
           )}
         </section>

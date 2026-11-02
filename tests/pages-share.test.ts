@@ -604,7 +604,7 @@ describe("Deadlines", () => {
       const soon = await page("1");
       expect(rows(soon)).toEqual(["Lapsed expiry expires", "Renewal today renewal notice", "Due expiry expires", "Renewal due renewal notice"]);
       expect([count(soon, "Lapsed"), count(soon, "Next 30 days"), count(soon, "Later")]).toEqual(["1", "3", undefined]);
-      expect(textOf(soon)).toContain("Showing what needs attention: what has lapsed and what's due in the next 30 days. Show every date");
+      expect(textOf(soon)).toContain("Showing what has lapsed or is due in the next 30 days. Show every date");
       expect(actionsOf(soon).find((a) => a.label === "Show every date")?.href).toBe("/app/deadlines");
 
       const every = await page();
@@ -834,7 +834,7 @@ describe.each([
       return id;
     };
 
-    it("lists this person's live sessions: this browser marked, the others with when they were last active, and one Sign out each", async () => {
+    it("lists this person's live sessions: this browser marked, the others with when they were last active, and a Sign out on each other browser's row (on this browser's too in today's look)", async () => {
       const someoneElse = await signIn(mail("settings-sessions-other"));
       await otherBrowser(someoneElse.userId, "Edge on Android", "1 hour");
       const ctx = await signIn(mail("settings-sessions"));
@@ -851,16 +851,18 @@ describe.each([
       const html = card(await settings());
       const text = textOf(html);
       expect(text).toContain("Where you're signed in");
-      expect(text).toMatch(/Safari on a Mac\s*·\s*this browser\s*Sign out/);
+      // This browser's row: no button in the redesigned app, where the Sign out section below is the one way (Design 02 Nov).
+      expect(text).toMatch(ui ? /Safari on a Mac\s*·\s*this browser\s*Firefox on Linux/ : /Safari on a Mac\s*·\s*this browser\s*Sign out/);
       expect(text).toMatch(/Firefox on Linux\s*·\s*last active less than an hour ago/);
       expect(text).toMatch(/Safari on an iPad\s*·\s*last active 3 hours ago/);
       expect(text).toMatch(/Chrome on an iPhone\s*·\s*last active 2 days ago/);
       expect(text.match(/this browser/g)).toHaveLength(1);
       expect(text).not.toMatch(/Firefox on Windows|Opera on Windows|Edge on Android/);
-      // This browser first, then the most recently used; one Sign out for each, naming its own session.
-      expect(actionsOf(html).map((a) => a.label)).toEqual(["Sign out", "Sign out", "Sign out", "Sign out"]);
-      expect([...html.matchAll(/name="id" value="([^"]+)"/g)].map((m) => m[1])).toEqual([ctx.sessionId, recent, tablet, phone]);
-      expect(html).toContain('aria-label="Sign out Safari on a Mac (this browser)"');
+      // This browser first, then the most recently used; one Sign out for each other browser (and this one, today), naming its own session.
+      const others = [recent, tablet, phone];
+      expect(actionsOf(html).map((a) => a.label)).toEqual(Array(ui ? 3 : 4).fill("Sign out"));
+      expect([...html.matchAll(/name="id" value="([^"]+)"/g)].map((m) => m[1])).toEqual(ui ? others : [ctx.sessionId, ...others]);
+      expect(html.includes('aria-label="Sign out Safari on a Mac (this browser)"')).toBe(!ui);
       expect(html).toContain('aria-label="Sign out Chrome on an iPhone"');
     });
 
@@ -888,8 +890,8 @@ describe.each([
       await finishSignIn(userId, { demo: true });
       const html = await settings();
       const text = textOf(card(html));
-      expect(text).toMatch(/Where you're signed in.*A browser\s*·\s*this browser\s*Sign out/);
-      expect(html).toContain('aria-label="Sign out a browser (this browser)"');
+      expect(text).toMatch(ui ? /Where you're signed in.*A browser\s*·\s*this browser$/ : /Where you're signed in.*A browser\s*·\s*this browser\s*Sign out/);
+      expect(html.includes('aria-label="Sign out a browser (this browser)"')).toBe(!ui);
     });
   });
 });
