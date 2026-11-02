@@ -49,24 +49,33 @@ async function sampleWorkspace(): Promise<Ctx> {
   return { userId, demo: true, authAt: Math.floor(Date.now() / 1000), orgId: org.id, name: "Harbor Plumbing (sample)", role: "owner", today: isoToday() };
 }
 
-/** Spend already on the meter: `sample` and `org` say whose it was; today unless `daysAgo`. */
-const spent = (micros: number, opts: { sample?: boolean; org?: string | null; daysAgo?: number } = {}) =>
+/**
+ * Spend already on the meter: `sample` and `org` say whose it was. When: today unless `daysAgo`; `at: "monthStart"` is
+ * the first moment of this UTC month (earlier than today on every day but the 1st), `at: "lastMonth"` the second before it.
+ */
+const spent = (micros: number, opts: { sample?: boolean; org?: string | null; daysAgo?: number; at?: "monthStart" | "lastMonth" } = {}) =>
   db.root((tx) =>
     tx.query(
-      "insert into app.ai_calls (org_id, feature, model, reserved_micros, cost_micros, status, sample, created_at) values ($1, 'request_match', $2, $3, $3, 'done', $4, now() - make_interval(days => $5))",
-      [opts.org ?? null, AI_MODEL, micros, opts.sample ?? false, opts.daysAgo ?? 0],
+      `insert into app.ai_calls (org_id, feature, model, reserved_micros, cost_micros, status, sample, created_at)
+       values ($1, 'request_match', $2, $3, $3, 'done', $4, case $6::text
+         when 'monthStart' then date_trunc('month', now(), 'UTC')
+         when 'lastMonth' then date_trunc('month', now(), 'UTC') - interval '1 second'
+         else now() - make_interval(days => $5) end)`,
+      [opts.org ?? null, AI_MODEL, micros, opts.sample ?? false, opts.daysAgo ?? 0, opts.at ?? null],
     ),
   );
-const reserve = (micros: number, caps: { workspaceDay?: number } = {}) =>
+/** Asks the meter directly; `org` is whose call it is (none: a real call outside any workspace). */
+const reserve = (micros: number, caps: { org?: string; day?: number; workspaceDay?: number } = {}) =>
   asService((tx) =>
-    tx.query<{ id: string | null; refused: string | null }>("select id, refused from app.ai_reserve(null, 'request_match', $1, $2, $3, $4, $5, $6, $7)", [
+    tx.query<{ id: string | null; refused: string | null }>("select id, refused from app.ai_reserve($8, 'request_match', $1, $2, $3, $4, $5, $6, $7)", [
       AI_MODEL,
       micros,
-      AI_CAPS.dayMicros,
-      AI_CAPS.totalMicros,
+      caps.day ?? AI_CAPS.dayMicros,
+      AI_CAPS.monthMicros,
       AI_CAPS.sampleDayMicros,
-      AI_CAPS.sampleTotalMicros,
+      AI_CAPS.sampleMonthMicros,
       caps.workspaceDay ?? AI_CAPS.workspaceDayMicros,
+      caps.org ?? null,
     ]),
   );
 
@@ -312,6 +321,8 @@ describe("what comes back", () => {
 
 describe("spend meter", () => {
   it("settles the real cost after a call", async () => {
+    // costMicros holds claude-opus-5-5's prices: a different model needs its own, so change both together (Security MUST-S1).
+    expect(AI_MODEL).toBe("claude-opus-5-5");
     await ask(await workspace());
     // claude-opus-5-5: 500 input tokens at 4 and 100 output at 20 micro-dollars each.
     expect(await meter()).toEqual([expect.objectContaining({ status: "done", cost_micros: "4000" })]);
@@ -332,16 +343,21 @@ describe("spend meter", () => {
     expect(reserved).toBe(seen * 4 + 1200 * 20);
   });
 
-  it("refuses before calling once the lifetime cap would be passed", async () => {
-    await db.root((tx) =>
-      tx.query("insert into app.ai_calls (feature, model, reserved_micros, cost_micros, status, created_at) values ('request_match', $1, $2, $2, 'done', now() - interval '3 days')", [
-        AI_MODEL,
-        AI_CAPS.totalMicros - 100,
-      ]),
+  it("ShipShape's AI budget is $8 a calendar month, with a day guard of a fifth of it (Preston, 2 Nov 01:1x)", () => {
+    expect(AI_CAPS.monthMicros).toBe(8_000_000);
+    expect(AI_CAPS.dayMicros).toBe(1_600_000);
+  });
+
+  it("refuses before calling once this month's cap would be passed, says it's back next month, and last month's spend doesn't count", async () => {
+    await spent(AI_CAPS.monthMicros, { at: "lastMonth" });
+    await ask(await workspace());
+    expect(sent).toHaveLength(1);
+    await spent(AI_CAPS.monthMicros - 5_000, { at: "monthStart" });
+    // The month's cap doesn't end tomorrow, so "tomorrow" would be the wrong thing to say (W10-6).
+    await expect(ask(await workspace())).rejects.toThrow(
+      "ShipShape's AI has reached its limit for this month. It's back at the start of next month; everything else works as usual.",
     );
-    // The lifetime cap never resets, so "tomorrow" would be the wrong fix (W10-6).
-    await expect(ask(await workspace())).rejects.toThrow("ShipShape's AI reading is paused right now. Everything else works as usual.");
-    expect(sent).toHaveLength(0);
+    expect(sent).toHaveLength(1);
   });
 
   it("refuses before calling once today's cap would be passed, and yesterday's spend doesn't count today", async () => {
@@ -361,17 +377,17 @@ describe("spend meter", () => {
   });
 
   it("concurrent reservations never pass the cap", async () => {
-    // The day cap is $1: three of six 0.3-dollar reservations fit (the workspace cap is lifted to test only the shared one).
-    const tries = Array.from({ length: 6 }, () => reserve(300_000, { workspaceDay: AI_CAPS.dayMicros }));
+    // Four of six reservations of a quarter of the day guard fit (the workspace cap is lifted to test only the shared one).
+    const tries = Array.from({ length: 6 }, () => reserve(AI_CAPS.dayMicros / 4, { workspaceDay: AI_CAPS.dayMicros }));
     const ok = (await Promise.all(tries)).filter(([r]) => r.id !== null);
-    expect(ok).toHaveLength(3);
+    expect(ok).toHaveLength(4);
     const refused = (await meter()).length;
-    expect(refused).toBe(3);
+    expect(refused).toBe(4);
   });
 
   it("a refusal returns no id and the reason beside it, never in the id column (Security S-1)", async () => {
-    await spent(AI_CAPS.totalMicros, { daysAgo: 3 });
-    expect(await reserve(100)).toEqual([{ id: null, refused: "total" }]);
+    await spent(AI_CAPS.monthMicros, { at: "monthStart" });
+    expect(await reserve(100)).toEqual([{ id: null, refused: "month" }]);
   });
 
   it("samples share a pool of their own: once it's spent for the day a sample is refused without a call, while a real workspace still reads (W15-1)", async () => {
@@ -388,17 +404,33 @@ describe("spend meter", () => {
     expect((await db.root((tx) => tx.query<{ sample: boolean }>("select sample from app.ai_calls where org_id = $1", [sample.orgId]))).map((r) => r.sample)).toEqual([true]);
   });
 
-  it("the samples' lifetime pool ends their reading for good, never real customers', and a purged sample's calls still count (W15-1)", async () => {
+  it("the samples' month pool ends their reading until next month, never real customers', and a purged sample's calls still count (W15-1)", async () => {
     const sample = await sampleWorkspace();
     await ask(sample);
     // The sample is purged: its calls lose the workspace but stay samples' spend.
     await db.root((tx) => tx.query("delete from app.organizations where id = $1", [sample.orgId]));
     expect(await db.root((tx) => tx.query("select org_id, sample from app.ai_calls"))).toEqual([{ org_id: null, sample: true }]);
-    await spent(AI_CAPS.sampleTotalMicros - 100, { sample: true, daysAgo: 5 });
-    await expect(ask(await sampleWorkspace())).rejects.toThrow("ShipShape's AI reading is paused right now. Everything else works as usual.");
-    expect(sent).toHaveLength(1);
-    await ask(await workspace());
+    await spent(AI_CAPS.sampleMonthMicros, { sample: true, at: "lastMonth" });
+    await ask(await sampleWorkspace());
     expect(sent).toHaveLength(2);
+    await spent(AI_CAPS.sampleMonthMicros - 5_000, { sample: true, at: "monthStart" });
+    await expect(ask(await sampleWorkspace())).rejects.toThrow("The sample's AI reading is used up for this month. Everything else in the sample works as usual.");
+    expect(sent).toHaveLength(2);
+    // A real reservation still goes through. The day guard is lifted here because on the 1st the month's first moment
+    // is today, and this test's made-up sample spend would fill the day guard too.
+    expect(await reserve(100, { day: AI_CAPS.monthMicros })).toEqual([{ id: expect.any(String), refused: null }]);
+  });
+
+  it("real customers' spend this month never fills the samples' month pool (W15-1)", async () => {
+    const sample = await sampleWorkspace();
+    await spent(AI_CAPS.sampleMonthMicros, { at: "monthStart" });
+    // The day guard is lifted for the same reason as above: on the 1st that spend is also today's.
+    expect(await reserve(100, { org: sample.orgId, day: AI_CAPS.monthMicros })).toEqual([{ id: expect.any(String), refused: null }]);
+  });
+
+  it("a sample can read the longest request in 3-byte characters: its worst case fits the samples' day pool (Security SHOULD-S2)", async () => {
+    await ask(await sampleWorkspace(), "請".repeat(6000));
+    expect(sent).toHaveLength(1);
   });
 
   it("each real workspace has a day cap of its own: one that used it is refused without a call, another isn't (W15-1)", async () => {
