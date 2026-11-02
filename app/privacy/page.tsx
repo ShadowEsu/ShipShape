@@ -6,8 +6,8 @@ import { TERMS_VERSION } from "@/lib/legal";
 import { contactEmail } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
-  title: "Privacy (draft)",
-  description: "What ShipShape keeps about you and your paperwork, why, who else handles it, and how to export or delete it. A draft pending lawyer review.",
+  title: "Privacy",
+  description: "What ShipShape keeps about you and your paperwork, why, who else handles it, and how to export or delete it.",
   alternates: { canonical: "/privacy" },
 };
 

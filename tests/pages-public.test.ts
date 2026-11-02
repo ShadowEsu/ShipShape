@@ -14,7 +14,9 @@ import { POST as signCode } from "@/app/s/[id]/code/route";
 import { GET as signFile } from "@/app/s/[id]/file/route";
 import { POST as signOpen } from "@/app/s/[id]/open/route";
 import PricingPage from "@/app/pricing/page";
+import PrivacyPage from "@/app/privacy/page";
 import SigningPage from "@/app/s/[id]/page";
+import TermsPage from "@/app/terms/page";
 import { POST as signPost } from "@/app/s/[id]/sign/route";
 import { SignButton } from "@/app/s/[id]/sign-form";
 import { plainTwin, signProblem } from "@/app/s/[id]/messages";
@@ -652,6 +654,30 @@ describe("pricing (/pricing)", () => {
     // "in all" never splits at a narrow width (Design, wave 15).
     expect(html).toContain("100 MB in\u00a0all");
     expect(text).toContain("For getting your papers in order: 10 active documents, 100 MB of files and 1 passport link open at a time.");
+  });
+
+  it("says test mode, with no real money, until payments are live; then names the seller and the refund address, and no page says test mode (Security L6)", async () => {
+    const pages = () => Promise.all([PricingPage, TermsPage, PrivacyPage].map(async (page) => textOf(await renderPage(page, {}))));
+    vi.stubEnv("CONTACT_EMAIL", "support@example.com");
+    const preview = await pages();
+    expect(preview.map((t) => /test mode/.test(t))).toEqual([true, true, true]);
+    expect(preview.join(" ")).not.toMatch(/Draft, pending lawyer review|\(draft\)/);
+    expect(preview[1]).toContain("ShipShape is in preview. Only sample workspaces with made-up documents are open.");
+    vi.stubEnv("BILLING_ENABLED", "1");
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", "1");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "https://shipshape.example.com");
+    vi.stubEnv("STRIPE_SECRET_KEY", `rk_live_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_live1");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Live1");
+    const [pricing, terms, privacy] = await pages();
+    for (const text of [pricing, terms, privacy]) expect(text).not.toMatch(/test mode|no real money|in preview/i);
+    expect(pricing).toContain("Your first Pro payment can be refunded in full if you ask within 14 days. Ask at support@example.com.");
+    expect(terms).toContain("ShipShape is operated by Unvibe.");
+    const termsHtml = await renderPage(TermsPage, {});
+    expect(termsHtml).toMatch(/within 14 days of it(<!-- -->)?, at <a href="mailto:support@example.com">support@example.com<\/a>\./);
+    vi.unstubAllEnvs();
   });
 });
 

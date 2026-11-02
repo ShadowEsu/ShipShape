@@ -48,6 +48,11 @@ export function billingConfig(): BillingConfig | null {
   return { secretKey, webhookSecret, proPrice, appUrl, live, automaticTax: process.env.STRIPE_AUTOMATIC_TAX === "1" };
 }
 
+/** Whether payments take real money here: the pages drop their test-mode lines then (Security L6). */
+export function paymentsLive(): boolean {
+  return billingConfig()?.live === true;
+}
+
 /** Whether a Stripe webhook signing secret is set (its form only), for the health check. */
 export function webhookConfigured(): boolean {
   return WEBHOOK_SECRET.test(process.env.STRIPE_WEBHOOK_SECRET ?? "");

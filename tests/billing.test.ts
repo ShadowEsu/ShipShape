@@ -27,7 +27,7 @@ import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
-/** The live-key tests run under final terms; every other test under the real (draft) TERMS_VERSION. */
+/** The live-key tests run under final terms (goLive); every other test under the real TERMS_VERSION. */
 const FINAL_TERMS = "2026-12-01";
 const legal = vi.hoisted(() => ({ version: "", real: "" }));
 vi.mock("@/lib/legal", async (importOriginal) => {
@@ -287,16 +287,22 @@ describe("keys and mode", () => {
     expect(billingConfig()).toBeNull();
   });
 
-  it("refuses a live key while the terms are a draft, since the draft terms and pricing say no real money moves (W13-5)", async () => {
-    expect(legal.real).toMatch(/-draft$/);
+  it("refuses a live key while the terms are a draft, since draft terms say no real money moves (W13-5)", async () => {
     const ctx = await realWorkspace();
     goLive();
-    legal.version = legal.real;
+    legal.version = "2026-12-01-draft";
     expect(billingConfig()).toBeNull();
     expect(await billingView(ctx)).toMatchObject({ available: false, live: false });
     legal.version = FINAL_TERMS;
     expect(billingConfig()).toMatchObject({ live: true });
     expect(await billingView(ctx)).toMatchObject({ available: true, live: true });
+  });
+
+  it("the terms in force aren't a draft, so a live key can be admitted with them", () => {
+    expect(legal.real).not.toMatch(/-draft$/);
+    goLive();
+    legal.version = legal.real;
+    expect(billingConfig()).toMatchObject({ live: true });
   });
 
   it("tells members whether payments take real money: live only for an admitted live key", async () => {
