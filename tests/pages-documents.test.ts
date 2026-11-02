@@ -791,9 +791,10 @@ describe("Add a document, redesigned only", () => {
     expect(html.match(/type="file"/g)).toHaveLength(1);
     const file = /<input [^>]*name="file"[^>]*>/.exec(html)?.[0] ?? "";
     expect(file).toContain('class="peer sr-only"');
-    expect(file).toContain('aria-labelledby="file-label"');
+    // Named "File Choose a file": the row's label and the visible button, so a spoken "Choose a file" finds it (WCAG 2.5.3).
+    expect(file).toContain('aria-labelledby="file-label file-action"');
     expect(html).toMatch(/<span id="file-label"[^>]*>File<\/span>/);
-    expect(html).toMatch(/<label for="file" class="btn-ghost press[^"]*">Choose a file<\/label>/);
+    expect(html).toMatch(/<label id="file-action" for="file" class="btn-ghost press[^"]*">Choose a file<\/label>/);
     const hint = (name: string) => /placeholder="([^"]*)"/.exec(new RegExp(`<input [^>]*name="${name}"[^>]*>`).exec(html)?.[0] ?? "")?.[1];
     expect(["title", "issuer", "counterparty"].map(hint)).toEqual(["Add", "Add", "Add"]);
     expect(emptyDates(html)).toEqual({ issued_on: true, expires_on: true, renews_on: true });

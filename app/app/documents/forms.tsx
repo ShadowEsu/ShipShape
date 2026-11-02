@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { changed, DiscardDialog, useLeaveGuard } from "@/components/leave-guard";
 import { MAX_UPLOAD_BYTES, UPLOAD_TOO_BIG } from "@/lib/upload-limit";
@@ -84,9 +84,11 @@ function useFocusField(state: FieldState, id: string | undefined) {
 /**
  * The server's too-big refusal, given in the browser before the post: Next's action body limit and
  * Vercel's request cap answer a larger post with a bare 413 before the action runs, which would land
- * on the error page. Returns the state to show (the refusal, until the next result comes back), the
- * submit handler that stops the post, and the form's change handler: choosing another file clears an
- * error about the file (the browser's refusal or the server's), which is about a file no longer chosen.
+ * on the error page. Returns the state to show, the submit handler that stops the post, and the form's
+ * change handler. Choosing another file clears an error about the file (the browser's refusal or the
+ * server's), which is about a file no longer chosen. Once the browser has refused, the server's last
+ * result stays answered until the next one comes back: bringing its error back would also pull focus
+ * off the file just chosen.
  */
 function useFileGate(state: FormState): [FormState, (e: FormEvent<HTMLFormElement>) => void, (e: FormEvent<HTMLFormElement>) => void] {
   const [refusals, setRefusals] = useState(0);
@@ -99,21 +101,19 @@ function useFileGate(state: FormState): [FormState, (e: FormEvent<HTMLFormElemen
     setPicked(false);
   }
   const shown = useMemo(() => {
-    if (refusals) return { error: UPLOAD_TOO_BIG, field: "file", values: state.values };
-    return picked && state.field === "file" ? { values: state.values } : state;
+    if (refusals && !picked) return { error: UPLOAD_TOO_BIG, field: "file", values: state.values };
+    return refusals || (picked && state.field === "file") ? { values: state.values } : state;
   }, [refusals, picked, state]);
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     const file = e.currentTarget.elements.namedItem("file");
     if (file instanceof HTMLInputElement && (file.files?.[0]?.size ?? 0) > MAX_UPLOAD_BYTES) {
       e.preventDefault();
       setRefusals((n) => n + 1);
+      setPicked(false);
     }
   };
   const onChange = (e: FormEvent<HTMLFormElement>) => {
-    if (e.target instanceof HTMLInputElement && e.target.type === "file") {
-      setRefusals(0);
-      setPicked(true);
-    }
+    if (e.target instanceof HTMLInputElement && e.target.type === "file") setPicked(true);
   };
   return [shown, onSubmit, onChange];
 }
@@ -223,7 +223,7 @@ function FieldRow({ name, htmlFor, label, state, children }: { name: string; htm
  * Runs `sync` once React has put a form back to its defaults (after each action it resets the form, which fires the
  * form's `reset` event before the fields change, and no input event at all).
  */
-function useAfterReset(field: React.RefObject<HTMLInputElement | null>, sync: (el: HTMLInputElement) => void) {
+function useAfterReset(field: RefObject<HTMLInputElement | null>, sync: (el: HTMLInputElement) => void) {
   const latest = useRef(sync);
   useEffect(() => {
     latest.current = sync;
@@ -253,6 +253,10 @@ function DateRowField({ name, defaultValue, state, className = "" }: { name: str
   const input = useRef<HTMLInputElement>(null);
   const [empty, setEmpty] = useState(defaultValue === "");
   useAfterReset(input, (el) => setEmpty(el.value === ""));
+  // A refresh after another action can bring a new saved date with no reset; an untouched field takes it on.
+  useEffect(() => {
+    if (input.current) setEmpty(input.current.value === "");
+  }, [defaultValue]);
   return (
     <span className="date-row" data-empty={empty || undefined}>
       <input
@@ -413,10 +417,14 @@ export function NewDocumentForm() {
   );
 }
 
+/** A chosen file's size, rounded up: a file just over the 4 MB limit never reads "4.0 MB" beside the refusal. */
+const chosenSize = (n: number) => (n > 1024 * 1024 ? `${(Math.ceil(n / 104857.6) / 10).toFixed(1)}\u00A0MB` : size(n));
+
 /**
  * The file as a grouped-list row (Design 02 Nov): "Choose a file", then the chosen file's name and size with "Change".
  * One control: the real file input, out of sight but focusable (its focus ring shows on the visible button), named by
- * the row's label; "Choose a file" and "Change" are labels for it, so a click on either opens the picker.
+ * the row's label and the visible button ("File Choose a file", "File Change", so a spoken "Choose a file" finds it);
+ * "Choose a file" and "Change" are labels for it, so a click on either opens the picker.
  */
 function FileRow({ state }: { state: FormState }) {
   const input = useRef<HTMLInputElement>(null);
@@ -445,7 +453,7 @@ function FileRow({ state }: { state: FormState }) {
             accept="application/pdf,image/png,image/jpeg"
             onChange={(e) => read(e.currentTarget)}
             className="peer sr-only"
-            aria-labelledby="file-label"
+            aria-labelledby="file-label file-action"
             aria-invalid={error || undefined}
             aria-describedby={error ? "file-hint file-error" : "file-hint"}
           />
@@ -454,14 +462,14 @@ function FileRow({ state }: { state: FormState }) {
               {/* A long name truncates; its size always shows. */}
               <span className="flex min-w-0 items-baseline gap-1">
                 <span className="min-w-0 truncate">{file.name}</span>
-                <span className="shrink-0 text-ink-3">· {size(file.size)}</span>
+                <span className="shrink-0 text-ink-3">· {chosenSize(file.size)}</span>
               </span>
-              <label htmlFor="file" className={`shrink-0 cursor-pointer rounded text-sm text-ink underline ${ring}`}>
+              <label id="file-action" htmlFor="file" className={`shrink-0 cursor-pointer rounded text-sm text-ink underline ${ring}`}>
                 Change
               </label>
             </>
           ) : (
-            <label htmlFor="file" className={`btn-ghost press cursor-pointer ${ring}`}>
+            <label id="file-action" htmlFor="file" className={`btn-ghost press cursor-pointer ${ring}`}>
               Choose a file
             </label>
           )}
