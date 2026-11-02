@@ -14,11 +14,54 @@ const STATE: Record<RequestItem["state"], { label: string; cls: string; icon: st
   unmatched: { label: "Check this one yourself", cls: "bg-canvas text-ink-2", icon: "?" },
 };
 
+/** The best current match of each item, once: what a passport link for this request would hold. */
+export const currentMatchIds = (items: readonly RequestItem[]) =>
+  [...new Set(items.flatMap((i) => (i.state === "ready" || i.state === "expiring" ? [i.matches[0].id] : [])))];
+
+/** One document the request asks for: its name and state, the words that asked for it, your matches, the fix if missing. */
+export function RequestItemBody({ item }: { item: RequestItem }) {
+  const s = STATE[item.state];
+  return (
+    <>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <span className="min-w-0 font-medium">{item.label}</span>
+        <span className={`shrink-0 self-start rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>
+          <span aria-hidden="true">{s.icon} </span>
+          {s.label}
+        </span>
+      </div>
+      {item.quote && (
+        <p className="text-sm text-ink-3">
+          &ldquo;{item.quote}&rdquo;
+          {item.traced === false && <span className="ml-2 rounded bg-warn-soft px-1.5 py-0.5 text-xs text-warn">Not found in the request</span>}
+        </p>
+      )}
+      {item.matches.length > 0 && (
+        <ul className="flex flex-wrap gap-2 text-sm">
+          {item.matches.map((m) => (
+            <li key={m.id}>
+              <Link href={`/app/documents/${m.id}`} className="underline">
+                {m.title}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {item.state === "missing" && (
+        <p className="text-sm">
+          <Link href={item.kind === "w9" ? "/app/make/irs-w9" : item.kind === "nda" ? "/app/make/common-paper-mnda" : "/app/documents/new"} className="underline">
+            {item.kind === "w9" || item.kind === "nda" ? "Make it now" : "Add it"}
+          </Link>
+        </p>
+      )}
+    </>
+  );
+}
+
 export function AskForm() {
   const [state, action, pending] = useActionState<AskState, FormData>(askAction, {});
   const items = state.items;
-  // The best current match of each item, once: what a passport link for this request would hold.
-  const linkIds = [...new Set((items ?? []).flatMap((i) => (i.state === "ready" || i.state === "expiring" ? [i.matches[0].id] : [])))];
+  const linkIds = currentMatchIds(items ?? []);
   const form = useRef<HTMLFormElement>(null);
   const textError = state.field === "text" ? state.error : undefined;
   const consentError = state.field === "consent" ? state.error : undefined;
@@ -107,44 +150,11 @@ export function AskForm() {
             </p>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
-              {items.map((item, n) => {
-                const s = STATE[item.state];
-                return (
-                  <li key={n} className="space-y-2 px-4 py-3">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                      <span className="min-w-0 font-medium">{item.label}</span>
-                      <span className={`shrink-0 self-start rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>
-                        <span aria-hidden="true">{s.icon} </span>
-                        {s.label}
-                      </span>
-                    </div>
-                    {item.quote && (
-                      <p className="text-sm text-ink-3">
-                        &ldquo;{item.quote}&rdquo;
-                        {item.traced === false && <span className="ml-2 rounded bg-warn-soft px-1.5 py-0.5 text-xs text-warn">Not found in the request</span>}
-                      </p>
-                    )}
-                    {item.matches.length > 0 && (
-                      <ul className="flex flex-wrap gap-2 text-sm">
-                        {item.matches.map((m) => (
-                          <li key={m.id}>
-                            <Link href={`/app/documents/${m.id}`} className="underline">
-                              {m.title}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {item.state === "missing" && (
-                      <p className="text-sm">
-                        <Link href={item.kind === "w9" ? "/app/make/irs-w9" : item.kind === "nda" ? "/app/make/common-paper-mnda" : "/app/documents/new"} className="underline">
-                          {item.kind === "w9" || item.kind === "nda" ? "Make it now" : "Add it"}
-                        </Link>
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
+              {items.map((item, n) => (
+                <li key={n} className="space-y-2 px-4 py-3">
+                  <RequestItemBody item={item} />
+                </li>
+              ))}
             </ul>
           )}
           {linkIds.length > 0 && (

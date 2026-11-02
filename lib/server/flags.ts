@@ -31,6 +31,14 @@ export function collectOpen(ws: { demo: boolean }): boolean {
   return ws.demo || (realDocsEnabled() && process.env.NODE_ENV !== "production");
 }
 
+/**
+ * The redesigned app (Design spec 2026-11-02: sidebar of tools, the AI box first, tiles, motion) while Preston picks
+ * from the stills: on only where SHIPSHAPE_UI=v2. Off, the app is exactly what it was. A look, never a gate.
+ */
+export function uiV2(): boolean {
+  return process.env.SHIPSHAPE_UI === "v2";
+}
+
 type Env = Record<string, string | undefined>;
 
 /** The address people write to: privacy requests and reporting a page (CONTACT_EMAIL). Null while unset or not an address. */

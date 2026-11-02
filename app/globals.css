@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./motion.css";
 
 /*
  * Design tokens. Neutral ink until a brand direction is chosen from Design's three options; the
@@ -27,6 +28,19 @@
   --serif: var(--font-newsreader), "Iowan Old Style", Georgia, serif;
   --sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  /* The redesigned app (SHIPSHAPE_UI=v2, Design spec 2026-11-02 §2): tiles and wells, the sidebar, inset separators, the one accent. */
+  --tile: #f6f6f4;
+  --side: #f3f3f0;
+  --sep: #e9e9e5;
+  --brand: #1d6a4e;
+}
+
+/* Inside the redesigned app the one accent is the brand green: the active item, the send button, the focus ring. */
+.ui-v2 {
+  --accent: var(--brand);
+  --accent-ink: #ffffff;
+  --accent-soft: #e8f3ee;
+  --line: #e6e6e2;
 }
 
 @theme inline {
@@ -49,6 +63,10 @@
   --font-serif: var(--serif);
   --font-sans: var(--sans);
   --font-mono: var(--mono);
+  --color-tile: var(--tile);
+  --color-side: var(--side);
+  --color-sep: var(--sep);
+  --color-brand: var(--brand);
 }
 
 html {
@@ -100,3 +118,76 @@ body {
     @apply font-mono text-xs font-medium tracking-widest text-ink-3 uppercase;
   }
 }
+
+/* The redesigned app's controls (Design spec 2026-11-02 §2): 44px pills everywhere, an SF-like scale on Geist. */
+@layer components {
+  .ui-v2 .btn,
+  .ui-v2 .btn-accent,
+  .ui-v2 .btn-ghost,
+  .ui-v2 .btn-danger {
+    @apply min-h-11 text-[15px];
+  }
+  /* The phone's one big button: full width, 50px, radius 14. */
+  .ui-v2 .btn-block {
+    @apply min-h-[50px] w-full rounded-[14px] text-[17px] sm:min-h-11 sm:w-auto sm:rounded-full sm:text-[15px];
+  }
+  .ui-v2 .large-title {
+    @apply font-serif text-[32px] leading-9 font-semibold tracking-tight text-ink sm:text-[44px] sm:leading-[48px];
+  }
+  .ui-v2 .section-title {
+    @apply text-[17px] leading-6 font-semibold text-ink;
+  }
+
+  /* Grouped inset list: 16px corners, 60px rows, separators inset past the 32px icon. */
+  .ui-v2 .group-list {
+    @apply overflow-hidden rounded-2xl border border-line bg-paper;
+  }
+  .ui-v2 .group-list > li {
+    @apply relative;
+  }
+  .ui-v2 .group-list > li + li::before {
+    content: "";
+    @apply absolute top-0 right-0 left-[60px] border-t border-sep;
+  }
+  .ui-v2 .group-row {
+    @apply flex min-h-15 items-center gap-3 px-4 py-2.5 transition-colors duration-[180ms];
+  }
+  .ui-v2 a.group-row:hover {
+    @apply bg-tile;
+  }
+
+  /* Tool tiles. Option A ("Tinted"): each tool its own soft tint; .mono (option B, "One accent") makes every icon ink on white. */
+  .ui-v2 .tile {
+    @apply flex h-full flex-col gap-3 rounded-2xl border border-transparent bg-tile p-4 text-left transition-[transform,box-shadow] duration-[180ms];
+  }
+  .ui-v2 a.tile:hover {
+    @apply -translate-y-px shadow-[0_6px_20px_-12px_rgb(0_0_0/0.25)];
+  }
+  .ui-v2 .tile-icon {
+    @apply grid size-9 place-items-center rounded-xl;
+    background: var(--tint, var(--paper));
+    color: var(--tint-ink, var(--ink));
+  }
+  .ui-v2.mono .tile {
+    @apply border-line bg-paper;
+  }
+  .ui-v2.mono .tile-icon {
+    --tint: var(--tile);
+    --tint-ink: var(--ink);
+  }
+  .ui-v2 .tag {
+    @apply inline-flex w-fit items-center rounded-full bg-paper px-2 py-0.5 text-xs text-ink-2 ring-1 ring-line;
+  }
+}
+
+/* Option A's tints: a soft fill and an icon colour of at least 4.5:1 on it. */
+.ui-v2 [data-tool="documents"] { --tint: #eaf1fd; --tint-ink: #1f5fbf; }
+.ui-v2 [data-tool="add"] { --tint: #ebf0f3; --tint-ink: #3f5f73; }
+.ui-v2 [data-tool="make"] { --tint: #f1ecfd; --tint-ink: #6b3fc8; }
+.ui-v2 [data-tool="check"] { --tint: #e6f5f3; --tint-ink: #0f766e; }
+.ui-v2 [data-tool="passport"] { --tint: #e8f3ee; --tint-ink: #1d6a4e; }
+.ui-v2 [data-tool="sign"] { --tint: #fdf3e2; --tint-ink: #8f5400; }
+.ui-v2 [data-tool="collect"] { --tint: #fcebef; --tint-ink: #b4234f; }
+.ui-v2 [data-tool="deadlines"] { --tint: #f8f1df; --tint-ink: #7f5a00; }
+.ui-v2 [data-tool="facts"] { --tint: #edf0f4; --tint-ink: #44546a; }
+.ui-v2 [data-tool="settings"] { --tint: #f0f0ee; --tint-ink: #4a4a4a; }
