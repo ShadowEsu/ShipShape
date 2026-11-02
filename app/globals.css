@@ -180,6 +180,37 @@ body {
   }
 }
 
+/*
+ * Every page in the redesigned app, through the hooks the shared components carry. Unlayered on purpose: these win
+ * over the utilities the components were written with, so the current look stays exactly as it is outside .ui-v2.
+ */
+.ui-v2 .page-title {
+  font-size: 32px;
+  line-height: 36px;
+}
+@media (min-width: 640px) {
+  .ui-v2 .page-title {
+    font-size: 44px;
+    line-height: 48px;
+  }
+}
+/* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text. */
+.ui-v2 .page-eyebrow {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ui-v2 .input {
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 16px;
+}
+.ui-v2 .card {
+  border-radius: 16px;
+}
+
 /* Option A's tints: a soft fill and an icon colour of at least 4.5:1 on it. */
 .ui-v2 [data-tool="documents"] { --tint: #eaf1fd; --tint-ink: #1f5fbf; }
 .ui-v2 [data-tool="add"] { --tint: #ebf0f3; --tint-ink: #3f5f73; }

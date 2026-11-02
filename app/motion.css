@@ -77,6 +77,15 @@
 ::view-transition-new(.v2-page) {
   animation: v2-page-in var(--dur-base) var(--ease-out) both;
 }
+/* A document's title travels from its row to the page's title (and back): position and size together, 240ms. */
+::view-transition-group(.v2-morph) {
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(.v2-morph),
+::view-transition-new(.v2-morph) {
+  height: 100%;
+}
 /* Nothing on screen takes clicks while a snapshot animates (the Next.js guide's advice). */
 ::view-transition {
   pointer-events: none;
@@ -106,6 +115,16 @@
     animation: v2-fade-out 120ms linear both;
   }
   ::view-transition-new(.v2-page) {
+    animation: v2-fade-in 120ms linear both;
+  }
+  /* The title doesn't travel: the group snaps to the new place while the two snapshots crossfade. */
+  ::view-transition-group(.v2-morph) {
+    animation: none;
+  }
+  ::view-transition-old(.v2-morph) {
+    animation: v2-fade-out 120ms linear both;
+  }
+  ::view-transition-new(.v2-morph) {
     animation: v2-fade-in 120ms linear both;
   }
   .ui-v2 dialog.sheet[open],

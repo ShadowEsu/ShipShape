@@ -147,11 +147,14 @@ export function HomeV2(props: {
                     <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-tile text-ink-2">
                       <Icon name="documents" />
                     </span>
+                    {/* The chip sits on the second line: beside the title it cut half-column titles to "Contractor license (sam…". */}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{d.title}</span>
-                      <span className="block text-[13px] text-ink-3">{DOC_KINDS[d.kind]}</span>
+                      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-3">
+                        {DOC_KINDS[d.kind]}
+                        <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                      </span>
                     </span>
-                    <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
                     <span className="text-ink-3">
                       <Icon name="chevron" size={16} />
                     </span>

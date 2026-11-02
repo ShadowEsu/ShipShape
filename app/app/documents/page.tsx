@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ViewTransition } from "react";
 import { EmptyState, PageHeader, ValidityChip } from "@/components/app-ui";
+import { Icon } from "@/components/icons";
 import { DOC_KINDS, DOCUMENTS_PAGE_SIZE, pageDocuments } from "@/lib/server/documents";
-import { realDocsEnabled } from "@/lib/server/flags";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Documents" };
@@ -105,6 +107,32 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             )}
           </EmptyState>
         )
+      ) : uiV2() ? (
+        // Grouped inset rows (Design spec 2026-11-02 §4); the title morphs into the document page's title (§6.1).
+        <ul className="group-list stagger">
+          {docs.map((d, n) => (
+            <li key={d.id} style={{ "--i": n }}>
+              <Link href={`/app/documents/${d.id}`} className="group-row">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-tile text-ink-2">
+                  <Icon name="documents" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <ViewTransition name={`doc-${d.id}`} share="v2-morph" default="none">
+                    <span className="block truncate font-medium">{d.title}</span>
+                  </ViewTransition>
+                  <span className="block truncate text-[13px] text-ink-3">
+                    {DOC_KINDS[d.kind]}
+                    {(d.issuer || d.counterparty) && ` · ${d.issuer ?? d.counterparty}`}
+                  </span>
+                </span>
+                <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                <span className="hidden text-ink-3 sm:block">
+                  <Icon name="chevron" size={16} />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
           {docs.map((d) => (
