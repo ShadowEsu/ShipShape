@@ -24,6 +24,7 @@ import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { templateById } from "@/lib/templates/catalog";
+import { fmtDay } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { fillBucket } from "./support/rate";
 import { actionsOf, renderPage, textOf } from "./support/render";
@@ -665,6 +666,22 @@ describe("a document's page", () => {
     expect(textOf(await documentPage(id, { added: "1" }))).toContain(
       "Added to your documents as version 1. Every view and download goes into its history. Next: add its expiry date under Details, so Home can warn you before it lapses.",
     );
+  });
+
+  it("after adding one with an expiry date, says where it stands on Home: later, already inside the 30 days, or lapsed (Design)", async () => {
+    const ctx = await signIn("doc-added-dates@example.com");
+    const day = (n: number) => new Date(Date.parse(ctx.today) + n * 86_400_000).toISOString().slice(0, 10);
+    const head = "Added to your documents as version 1. Every view and download goes into its history.";
+    // The notice's last sentence, which ends at the first full stop after the head (dates carry none).
+    const said = async (expires_on: string) => {
+      const id = await uploadDocument(ctx, { title: "Business license", kind: "license", expires_on }, PDF);
+      const text = textOf(await documentPage(id, { added: "1" }));
+      const start = text.indexOf(head);
+      return start < 0 ? text : text.slice(start, text.indexOf(".", start + head.length + 1) + 1);
+    };
+    expect(await said(day(90))).toBe(`${head} Next: it shows under Needs attention on Home 30 days before it expires on ${fmtDay(day(90))}.`);
+    expect(await said(day(10))).toBe(`${head} It expires on ${fmtDay(day(10))}, so it's already under Needs attention on Home.`);
+    expect(await said(day(-10))).toBe(`${head} It expired on ${fmtDay(day(-10))}, so it's under Needs attention on Home.`);
   });
 
   it("lists a passport visitor's download in History, labelled as such (wave 8 #3)", async () => {
