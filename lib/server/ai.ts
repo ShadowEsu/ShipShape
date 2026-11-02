@@ -44,9 +44,13 @@ export const AI_CAPS = {
   workspaceDayMicros: AI_MONTH_MICROS / 20,
 } as const;
 
-/** What a refused reservation tells the person, by the cap that refused it (`app.ai_reserve`): a month's cap doesn't end tomorrow (W10-6). */
+/**
+ * What a refused reservation tells the person, by the cap that refused it (`app.ai_reserve`, which checks the month's
+ * caps first, so the month line wins when both are hit). A month's cap doesn't end tomorrow (W10-6), and it resets at
+ * 00:00 UTC on the 1st, the afternoon before in the US, so it says "the start of next month" (Design 11-02 00:37).
+ */
 const CAP_REFUSED: Record<string, string> = {
-  month: "ShipShape's AI has reached its limit for this month. It's back at the start of next month; everything else works as usual.",
+  month: "ShipShape's AI reading is used up for this month. It's back at the start of next month; everything else works as usual.",
   sample_month: "The sample's AI reading is used up for this month. Everything else in the sample works as usual.",
   day: "ShipShape's AI has reached its spending limit for today. Try again tomorrow.",
   sample_day: "The sample's AI reading is used up for today. Everything else in the sample works as usual.",

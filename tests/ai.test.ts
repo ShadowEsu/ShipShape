@@ -355,9 +355,15 @@ describe("spend meter", () => {
     await spent(AI_CAPS.monthMicros - 5_000, { at: "monthStart" });
     // The month's cap doesn't end tomorrow, so "tomorrow" would be the wrong thing to say (W10-6).
     await expect(ask(await workspace())).rejects.toThrow(
-      "ShipShape's AI has reached its limit for this month. It's back at the start of next month; everything else works as usual.",
+      "ShipShape's AI reading is used up for this month. It's back at the start of next month; everything else works as usual.",
     );
     expect(sent).toHaveLength(1);
+  });
+
+  it("when today's guard and the month's cap are both passed, the month line wins (Design 11-02)", async () => {
+    await spent(AI_CAPS.monthMicros);
+    await expect(ask(await workspace())).rejects.toThrow("ShipShape's AI reading is used up for this month.");
+    expect(sent).toHaveLength(0);
   });
 
   it("refuses before calling once today's cap would be passed, and yesterday's spend doesn't count today", async () => {
