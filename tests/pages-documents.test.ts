@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { PDFDocument } from "pdf-lib";
 import DocumentPage from "@/app/app/documents/[id]/page";
 import { addDocument, addVersion, saveDetails } from "@/app/app/documents/actions";
+import NewDocumentPage from "@/app/app/documents/new/page";
 import DocumentsPage from "@/app/app/documents/page";
 import { saveFacts, saveTaxId } from "@/app/app/facts/actions";
 import FactsPage from "@/app/app/facts/page";
@@ -740,6 +741,67 @@ describe("document forms", () => {
   });
 });
 
+/** Each date row's field name, and whether it's flagged empty (so it says "Add" instead of mm/dd/yyyy). */
+const emptyDates = (html: string) =>
+  Object.fromEntries([...html.matchAll(/<span class="date-row"( data-empty="true")?><input [^>]*name="([a-z_]+)"/g)].map((m) => [m[2], Boolean(m[1])]));
+
+describe.each([
+  ["current", ""],
+  ["redesigned (SHIPSHAPE_UI=v2)", "v2"],
+])("Add a document, %s", (_look, ui) => {
+  beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
+  const addPage = () => renderPage(NewDocumentPage, {});
+
+  it("posts the file and its details under the names addDocument reads, Other preselected, with one button, Add to documents; a sample gets its notice and no form", async () => {
+    await signIn(`${ui || "now"}-add@example.com`);
+    const html = await addPage();
+    expect([...html.matchAll(/<(?:input|select)\b[^>]*\bname="([a-z_]+)"/g)].map((m) => m[1])).toEqual([
+      "file",
+      "title",
+      "kind",
+      "issuer",
+      "counterparty",
+      "issued_on",
+      "expires_on",
+      "renews_on",
+    ]);
+    expect(/<input [^>]*name="file"[^>]*>/.exec(html)?.[0]).toContain('accept="application/pdf,image/png,image/jpeg"');
+    expect(html).toMatch(/<option value="other" selected="">Other<\/option>/);
+    expect([...html.matchAll(/<button\b[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["Add to documents"]);
+    expect(textOf(html)).toContain("PDF, PNG or JPEG, up to 4 MB.");
+    expect(textOf(html)).toContain("Files are stored privately for your workspace.");
+
+    const userId = await createLocalUser(null, true);
+    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    await finishSignIn(userId, { demo: true });
+    const sample = await addPage();
+    expect(textOf(sample)).toContain("This is a sample workspace, so it can't take real files.");
+    expect(sample).not.toContain('name="file"');
+  });
+});
+
+describe("Add a document, redesigned only", () => {
+  it("one file control, named by its row and opened by Choose a file; every empty row says Add, the dates too; Add to documents docked on the phone", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v2");
+    await signIn("v2-add-look@example.com");
+    const html = await renderPage(NewDocumentPage, {});
+    expect(html).toMatch(/^<div class="mx-auto max-w-\[720px\] space-y-6">/);
+    expect(html).not.toContain('class="card"');
+    expect(html.match(/type="file"/g)).toHaveLength(1);
+    const file = /<input [^>]*name="file"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(file).toContain('class="peer sr-only"');
+    expect(file).toContain('aria-labelledby="file-label"');
+    expect(html).toMatch(/<span id="file-label"[^>]*>File<\/span>/);
+    expect(html).toMatch(/<label for="file" class="btn-ghost press[^"]*">Choose a file<\/label>/);
+    const hint = (name: string) => /placeholder="([^"]*)"/.exec(new RegExp(`<input [^>]*name="${name}"[^>]*>`).exec(html)?.[0] ?? "")?.[1];
+    expect(["title", "issuer", "counterparty"].map(hint)).toEqual(["Add", "Add", "Add"]);
+    expect(emptyDates(html)).toEqual({ issued_on: true, expires_on: true, renews_on: true });
+    expect(html.match(/<span aria-hidden="true" class="date-add">Add<\/span>/g)).toHaveLength(3);
+    expect(html).toMatch(/<div class="save-dock sticky[^"]*"><button class="btn press w-full md:w-auto">Add to documents<\/button>/);
+  });
+});
+
 describe("a document's page", () => {
   const documentPage = (id: string, searchParams: { error?: string; added?: string }) => renderPage(DocumentPage, { params: Promise.resolve({ id }), searchParams: Promise.resolve(searchParams) });
 
@@ -931,6 +993,8 @@ describe("a document's page", () => {
       const expires = /<input [^>]*id="expires_on"[^>]*>/.exec(html)?.[0] ?? "";
       expect(expires).toContain('type="date"');
       expect(expires).toContain('value="2030-01-31"');
+      // An empty date says "Add" (the row is flagged empty); a saved one shows its date.
+      expect(emptyDates(html)).toEqual({ issued_on: true, expires_on: false, renews_on: true });
       expect(html).not.toContain('id="signatures"');
       // Who issues a license, as the Issued by field's hint.
       expect(/<input [^>]*id="issuer"[^>]*>/.exec(html)?.[0]).toContain('placeholder="Agency or city"');

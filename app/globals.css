@@ -170,9 +170,12 @@ body {
   .ui-v2 .row-field {
     @apply min-h-11 w-full min-w-0 flex-1 rounded-lg bg-transparent px-2 text-right text-base text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand;
   }
-  /* The field's own edge under the pointer, so a row reads as editable (Design 02 Nov). Focus and an error keep their rings. */
-  .ui-v2 .row-field:enabled:not(:focus-visible, [aria-invalid="true"]):hover {
-    @apply ring-1 ring-field;
+  /* The field's own edge under the pointer, so a row reads as editable (Design 02 Nov). Focus and an error keep their rings.
+     Only where there is a pointer that hovers (as Tailwind's hover:): a tap on a phone would leave it stuck on. */
+  @media (hover: hover) {
+    .ui-v2 .row-field:enabled:not(:focus-visible, [aria-invalid="true"]):hover {
+      @apply ring-1 ring-field;
+    }
   }
   /* A long value ends in an ellipsis while the field isn't being edited, instead of being cut mid-word. Not on the select: it ellipsizes a value that fits. */
   .ui-v2 input.row-field {
@@ -182,7 +185,32 @@ body {
   .ui-v2 .row-field[type="date"] {
     @apply ml-auto w-auto flex-none;
   }
+  /* An empty date row says "Add" where the browser would show mm/dd/yyyy (Design 02 Nov). The date's text and its
+     calendar button go transparent, not away, so the row keeps its width and a click on "Add" still opens the picker;
+     with focus the browser's own segments come back. data-empty is kept by DateRowField (no selector sees an empty date). */
+  .ui-v2 .date-row {
+    @apply relative ml-auto flex;
+  }
+  .ui-v2 .date-add {
+    @apply pointer-events-none absolute inset-y-0 right-2 hidden items-center text-base text-ink-3;
+  }
+  .ui-v2 .date-row[data-empty]:not(:focus-within) > .date-add {
+    @apply flex;
+  }
+  .ui-v2 .date-row[data-empty] > input:not(:focus) {
+    color: transparent;
+  }
+  .ui-v2 .date-row[data-empty] > input:not(:focus)::-webkit-calendar-picker-indicator {
+    opacity: 0;
+  }
   .ui-v2 .row-field[aria-invalid="true"] {
+    @apply ring-2 ring-bad;
+  }
+  /* Check a request's text (Design 02 Nov): a --tile well, no border, the brand ring on focus. */
+  .ui-v2 .request-well {
+    @apply block w-full resize-y rounded-2xl bg-tile px-4 py-3 text-base text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand;
+  }
+  .ui-v2 .request-well[aria-invalid="true"] {
     @apply ring-2 ring-bad;
   }
 
