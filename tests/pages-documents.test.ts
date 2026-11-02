@@ -24,6 +24,7 @@ import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { templateById } from "@/lib/templates/catalog";
+import { fmtDay } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { fillBucket } from "./support/rate";
 import { actionsOf, renderPage, textOf } from "./support/render";
@@ -667,6 +668,22 @@ describe("a document's page", () => {
     );
   });
 
+  it("after adding one with an expiry date, says where it stands on Home: later, already inside the 30 days, or lapsed (Design)", async () => {
+    const ctx = await signIn("doc-added-dates@example.com");
+    const day = (n: number) => new Date(Date.parse(ctx.today) + n * 86_400_000).toISOString().slice(0, 10);
+    const head = "Added to your documents as version 1. Every view and download goes into its history.";
+    // The notice's last sentence, which ends at the first full stop after the head (dates carry none).
+    const said = async (expires_on: string) => {
+      const id = await uploadDocument(ctx, { title: "Business license", kind: "license", expires_on }, PDF);
+      const text = textOf(await documentPage(id, { added: "1" }));
+      const start = text.indexOf(head);
+      return start < 0 ? text : text.slice(start, text.indexOf(".", start + head.length + 1) + 1);
+    };
+    expect(await said(day(90))).toBe(`${head} Next: it shows under Needs attention on Home 30 days before it expires on ${fmtDay(day(90))}.`);
+    expect(await said(day(10))).toBe(`${head} It expires on ${fmtDay(day(10))}, so it's already under Needs attention on Home.`);
+    expect(await said(day(-10))).toBe(`${head} It expired on ${fmtDay(day(-10))}, so it's under Needs attention on Home.`);
+  });
+
   it("lists a passport visitor's download in History, labelled as such (wave 8 #3)", async () => {
     const ctx = await signIn("doc-history-link@example.com");
     const id = await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
@@ -852,6 +869,7 @@ describe("a document's page", () => {
         "sign-days Open for",
       ]);
       expect(/<input [^>]*id="signer-name"[^>]*>/.exec(html)?.[0]).toContain('class="row-field');
+      expect(/<input [^>]*id="signer-email"[^>]*>/.exec(html)?.[0]).toContain('placeholder="name@company.com"');
       expect(/<input [^>]*id="issuer"[^>]*>/.exec(html)?.[0]).toContain('placeholder="The other company"');
       // Today's page keeps its boxed form.
       vi.stubEnv("SHIPSHAPE_UI", "");
@@ -880,6 +898,30 @@ describe("a document's page", () => {
       const lists = [...history.matchAll(/<ol>([\s\S]*?)<\/ol>/g)].map((m) => (m[1].match(/<li\b/g) ?? []).length);
       expect(lists).toEqual([5, 2]);
       expect(textOf(history)).toMatch(/^History \(7\) .* Show all 7 /);
+    });
+
+    it("marks the state chip for the in-place crossfade, and only Expires soon for its one pulse", async () => {
+      const ctx = await signIn("doc-v2-motion@example.com");
+      const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+      const expiring = await uploadDocument(ctx, { title: "Liability certificate", kind: "coi", expires_on: soon }, PDF);
+      const current = await uploadDocument(ctx, { title: "Contractor license", kind: "license", expires_on: "2030-01-31" }, PDF);
+      const chip = (html: string) => /<span [^>]*vt-update="v2-chip"[^>]*>/.exec(html)?.[0] ?? "";
+      expect(chip(await documentPage(expiring, {}))).toContain("data-pulse");
+      const ok = chip(await documentPage(current, {}));
+      expect(ok).toContain("bg-ok-soft");
+      expect(ok).not.toContain("data-pulse");
+    });
+
+    it("a success notice carries the check it draws; empty rows say they can be filled", async () => {
+      const ctx = await signIn("doc-v2-notice@example.com");
+      const id = await uploadDocument(ctx, { title: "Site photo", kind: "other" }, PDF);
+      const html = await documentPage(id, { added: "1" });
+      const notice = /<div class="notice-ok[^"]*">([\s\S]*?)<\/div><\/div>/.exec(html)?.[1] ?? "";
+      expect(notice).toMatch(/^<svg class="notice-icon"[^>]*aria-hidden="true"/);
+      expect(textOf(notice)).toMatch(/^Added to your documents as version 1\./);
+      const hint = (field: string) => /placeholder="([^"]*)"/.exec(new RegExp(`<input [^>]*id="${field}"[^>]*>`).exec(html)?.[0] ?? "")?.[1];
+      // Nobody obvious issues an "other" document, so its Issued by just says it can be filled.
+      expect([hint("issuer"), hint("counterparty")]).toEqual(["Add", "Add"]);
     });
   });
 });

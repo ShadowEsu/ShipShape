@@ -100,7 +100,10 @@ export function DocumentV2(p: {
           <h1 className="font-serif text-[28px] leading-tight font-semibold tracking-tight md:text-4xl">{doc.title}</h1>
         </ViewTransition>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-2">
-          <ValidityChip validity={doc.validity} expiresOn={doc.expires_on} />
+          {/* A changed state (new dates saved, a new version) crossfades in place, the old label out and up, the new one in (§6.3). */}
+          <ViewTransition update="v2-chip" default="none">
+            <ValidityChip validity={doc.validity} expiresOn={doc.expires_on} />
+          </ViewTransition>
           {latest && <span>Version {latest.version}</span>}
         </div>
       </header>

@@ -22,12 +22,15 @@ const VALIDITY: Record<Validity, { label: string; cls: string; icon: string } | 
   none: null,
 };
 
-/** Status always pairs a colour with an icon and a word. */
+/**
+ * Status always pairs a colour with an icon and a word. `data-pulse` marks "Expires soon": the redesigned app pulses it
+ * once when it first comes on screen (app/app/motion-v2.tsx); nothing else reads it.
+ */
 export function ValidityChip({ validity, expiresOn }: { validity: Validity; expiresOn: string | null }) {
   const v = VALIDITY[validity];
   if (!v) return <span className="text-xs text-ink-3">No expiry date</span>;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${v.cls}`}>
+    <span data-pulse={validity === "expiring" ? "" : undefined} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${v.cls}`}>
       <span aria-hidden="true">{v.icon}</span>
       {v.label}
       {expiresOn && <span className="font-normal">· {fmtDay(expiresOn)}</span>}
@@ -96,9 +99,22 @@ export function EmptyState({
   );
 }
 
+/**
+ * A tone's coloured box. An "ok" notice carries a check that only the redesigned app shows: there it arrives and draws
+ * its stroke (app/motion.css, Design spec §6.5); the current look stays exactly as it is.
+ */
 export function Notice({ tone = "warn", children }: { tone?: "warn" | "bad" | "ok" | "info"; children: React.ReactNode }) {
   const cls = { warn: "bg-warn-soft text-warn", bad: "bg-bad-soft text-bad", ok: "bg-ok-soft text-ok", info: "bg-accent-soft text-ink" }[tone];
-  return <div className={`rounded-xl px-4 py-3 text-sm ${cls}`}>{children}</div>;
+  if (tone !== "ok") return <div className={`notice-${tone} rounded-xl px-4 py-3 text-sm ${cls}`}>{children}</div>;
+  // The text in its own box, so the check sits beside all of it, whatever inline parts it has.
+  return (
+    <div className={`notice-ok rounded-xl px-4 py-3 text-sm ${cls}`}>
+      <svg className="notice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+        <path d="M5 12.5l4.5 4.5L19 7.5" pathLength={1} />
+      </svg>
+      <div>{children}</div>
+    </div>
+  );
 }
 
 /**

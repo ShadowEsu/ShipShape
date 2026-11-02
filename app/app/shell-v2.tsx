@@ -3,6 +3,7 @@ import { Logo, NotLegalAdvice } from "@/components/ui";
 import { recentDocuments } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
 import { signOut } from "../signin/actions";
+import { PulseOnView } from "./motion-v2";
 import { AccountSheet, SideNav, TabBar } from "./nav-v2";
 
 /**
@@ -85,6 +86,7 @@ export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: b
         </main>
       </div>
       <TabBar />
+      <PulseOnView />
     </div>
   );
 }

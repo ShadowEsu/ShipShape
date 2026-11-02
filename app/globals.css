@@ -254,6 +254,19 @@ body {
 .ui-v2 .card {
   border-radius: 16px;
 }
+/* An "ok" Notice's check (components/app-ui.tsx) shows only in the redesigned app, beside the text. */
+.notice-icon {
+  display: none;
+}
+.ui-v2 .notice-ok {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ui-v2 .notice-icon {
+  display: block;
+  flex: none;
+}
 /* While a page's loading skeleton fills <main>, the "not a law firm" line stays out of the layout: under the shorter
    skeleton it sat in view and the streamed page then pushed it down (CLS 0.02 at 1440). Appearing later shifts nothing. */
 .ui-v2 main:has(> [aria-busy="true"]) > .legal-line {

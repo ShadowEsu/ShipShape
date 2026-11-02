@@ -80,9 +80,14 @@ export default async function DocumentPage({
         <div role="status">
           <Notice tone="ok">
             Added to your documents as version 1. Every view and download goes into its history.{" "}
-            {doc.expires_on
-              ? `Next: it shows under Needs attention on Home 30 days before it expires on ${fmtDay(doc.expires_on)}.`
-              : "Next: add its expiry date under Details, so Home can warn you before it lapses."}
+            {/* Where it stands on Home's Needs attention today (Design, 02 Nov): already there inside the 30 days or lapsed. */}
+            {!doc.expires_on
+              ? "Next: add its expiry date under Details, so Home can warn you before it lapses."
+              : doc.validity === "expired"
+                ? `It expired on ${fmtDay(doc.expires_on)}, so it's under Needs attention on Home.`
+                : doc.validity === "expiring"
+                  ? `It expires on ${fmtDay(doc.expires_on)}, so it's already under Needs attention on Home.`
+                  : `Next: it shows under Needs attention on Home 30 days before it expires on ${fmtDay(doc.expires_on)}.`}
           </Notice>
         </div>
       )}
