@@ -1004,8 +1004,8 @@ describe("a document's page", () => {
 
   describe("redesigned (SHIPSHAPE_UI=v2)", () => {
     beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
-    /** The full-width primary and the round actions, as label + href. */
-    const primary = (html: string) => [...html.matchAll(/<a class="btn press w-full" href="([^"]*)">([^<]*)<\/a>/g)].map((m) => `${m[2]} ${m[1]}`);
+    /** The primary (a `btn press` link; its width utilities are layout, not the contract) and the round actions, as label + href. */
+    const primary = (html: string) => [...html.matchAll(/<a class="btn press(?: [^"]*)?" href="([^"]*)">([^<]*)<\/a>/g)].map((m) => `${m[2]} ${m[1]}`);
     const actions = (html: string) => {
       const group = /<div role="group" aria-label="Actions"[^>]*>([\s\S]*?)<\/div><section/.exec(html)?.[1] ?? "";
       return [...group.matchAll(/<(a|button)\b([^>]*class="round-action press"[^>]*)>([\s\S]*?)<\/\1>/g)].map((m) => textOf(m[3]));

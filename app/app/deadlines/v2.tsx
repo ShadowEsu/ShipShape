@@ -117,7 +117,7 @@ export function DeadlinesV2({
     <div className="space-y-8">
       <PageHeader eyebrow="Deadlines" title="What's coming up">
         {all.some((d) => d.days_left >= 0) && (
-          <a href="/app/deadlines/calendar.ics" className="btn press">
+          <a href="/app/deadlines/calendar.ics" className="btn btn-block press">
             Add to my calendar
           </a>
         )}
