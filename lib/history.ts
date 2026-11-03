@@ -35,6 +35,9 @@ const ACTIONS: Record<string, string> = {
   "collect.file_downloaded": "Vendor's file downloaded",
   "collect.file_deleted": "Vendor's file deleted",
   "ai.request_read": "Request read by AI",
+  "contact.added": "Added to People",
+  "contact.updated": "Person's details changed",
+  "contact.deleted": "Removed from People",
 };
 
 /**

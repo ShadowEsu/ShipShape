@@ -124,10 +124,13 @@ describe("the sample's activity (seeded through the real functions)", () => {
     const links = sent.filter((r): r is SentLink => r.kind === "link");
     const signatures = sent.filter((r): r is SentSignature => r.kind === "signature");
     expect(links.map((l) => [l.label, l.documents, l.opens, l.downloads])).toEqual([[SAMPLE_ACTIVITY.link, 3, 3, 2]]);
-    expect(signatures.map((s) => [s.signerName, s.status]).sort()).toEqual([
-      [SAMPLE_ACTIVITY.waiting.name, "pending"],
-      [SAMPLE_ACTIVITY.signed.name, "signed"],
-    ]);
+    expect(new Map(signatures.map((s) => [s.signerName, s.status]))).toEqual(
+      new Map([
+        [SAMPLE_ACTIVITY.waiting.name, "pending"],
+        [SAMPLE_ACTIVITY.signed.name, "signed"],
+      ]),
+    );
+    expect(signatures).toHaveLength(2);
     expect([...links.map((l) => l.label), ...signatures.map((s) => s.signerName), ...signatures.map((s) => s.title)].every((t) => t.endsWith("(sample)"))).toBe(true);
 
     const [copy] = await listSignedCopies(owner);
@@ -215,6 +218,16 @@ describe("History", () => {
     as(admin);
     const adminPage = await renderPage(HistoryPage, params({}));
     expect(actionsOf(adminPage).map((a) => a.label)).toEqual(expect.arrayContaining(["Export", "Account"]));
+  });
+
+  it("names a kept person on their People rows, and only while they're kept (0046 keeps the name out of the audit row)", async () => {
+    const [priya] = await db.root((tx) => tx.query<{ id: string }>("select id from app.contacts where org_id = $1 and name = 'Priya Shah (sample)'", [owner.orgId]));
+    const added = () => listHistory(owner, { tab: "account", mine: false, days: 30 }).then(({ rows }) => rows.filter((r) => r.what.startsWith("Added to People")));
+    expect((await added()).find((r) => r.href === `/app/people/${priya.id}`)?.what).toBe("Added to People · Priya Shah (sample)");
+    await db.root((tx) => tx.query("delete from app.contacts where id = $1", [priya.id]));
+    const after = await added();
+    expect(after.some((r) => r.what.includes("Priya"))).toBe(false);
+    expect(after.filter((r) => r.href === null).map((r) => r.what)).toEqual(["Added to People"]);
   });
 
   it("'You' shows only what the viewer did", async () => {

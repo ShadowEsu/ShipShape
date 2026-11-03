@@ -133,17 +133,20 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await seedSamplePeople(tx, ctx);
 }
 
-/** The sample's people and their networks: names say (sample), emails are .example, networks are documentation addresses (RFC 5737). */
+/**
+ * The sample's people and their networks: names say (sample), emails are .example, networks are documentation addresses
+ * (RFC 5737). Jordan Lee is one of the sample's People; Sam Ortiz isn't yet, so the request shows "Keep in People".
+ */
 export const SAMPLE_ACTIVITY = {
   link: "Northwind Builders onboarding (sample)",
   visitors: ["198.51.100.7", "198.51.100.23"],
   signed: { name: "Jordan Lee (sample)", email: "jordan.lee@northwind.example", ip: "192.0.2.10" },
-  waiting: { name: "Dana Kim (sample)", email: "dana.kim@northwind.example" },
+  waiting: { name: "Sam Ortiz (sample)", email: "sam.ortiz@northwind.example" },
 } as const;
 
 /**
  * The sample's activity (calm v2), once its workspace is committed: a passport link two people at Northwind opened (one came back) and
- * downloaded from, the NDA signed by Jordan Lee, and a request Dana Kim hasn't signed yet, so Sent, Signed copies,
+ * downloaded from, the NDA signed by Jordan Lee, and a request Sam Ortiz hasn't signed yet, so Sent, Signed copies,
  * History and Waiting have something real in them. Made through the same functions a workspace and its visitors use;
  * only the signing code is read from the outbox, which a sample's owner can read (0039). Each part is on its own:
  * one that fails (the PDF builder busy) is left out and logged, and the sample opens without it.
