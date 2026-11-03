@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
-import { historyLabel, historyWho, type HistoryTab } from "@/lib/history";
+import type { IconName } from "@/components/icons";
+import { historyIcon, historyLabel, historyWho, type HistoryTab } from "@/lib/history";
 import { csvCell } from "./csv";
 import { asUser } from "./db";
 import type { Ctx } from "./profile";
@@ -221,6 +222,8 @@ export interface HistoryRow {
   seq: string;
   at: string;
   tab: Exclude<HistoryTab, "all">;
+  /** The sidebar item's icon for what the row is about. */
+  icon: IconName;
   /** The sentence: what happened, and to what. */
   what: string;
   who: string;
@@ -294,6 +297,7 @@ function historyRow(r: HistoryRaw): HistoryRow {
     seq: r.seq,
     at: r.at,
     tab: r.tab,
+    icon: historyIcon(r.action, r.tab),
     what: object ? `${label} · ${object}` : label,
     who: historyWho(r.action, r.actor),
     href: r.doc_id ? `/app/documents/${r.doc_id}` : r.link_id ? `/app/passport/${r.link_id}` : r.person_id ? `/app/people/${r.person_id}` : null,

@@ -414,9 +414,11 @@ body {
     content: "";
     @apply size-1.5 rounded-full bg-ink-3;
   }
-  /* The row whose detail is open beside the list (Sent). */
-  .ui-v2 .hair-row[aria-current="true"] {
-    @apply bg-tile;
+  /* The row whose detail is open beside the list (Sent). Below lg the detail isn't beside it, so no fill (Design #25 S3). */
+  @media (width >= 64rem) {
+    .ui-v2 .hair-row[aria-current="true"] {
+      @apply bg-tile;
+    }
   }
   /* Tabs that are links: grey words on a hairline, the current one ink with a 2px ink underline (Design calm v2). */
   .ui-v2 .tab-row {
@@ -595,6 +597,10 @@ body {
 /* ...but one that only repeats the title ("Documents" over "Documents") goes. */
 .ui-v2 .page-eyebrow-repeat {
   display: none;
+}
+/* A title on its own and the page's button sit centred on one line (Design #25 S4: at 390 the button rode higher). */
+.ui-v2 .page-header:not(:has(.page-eyebrow:not(.page-eyebrow-repeat))) {
+  align-items: center;
 }
 .ui-v2 .input {
   min-height: 44px;

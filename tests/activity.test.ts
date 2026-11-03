@@ -1,12 +1,16 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as exportHistory } from "@/app/app/history/export/route";
 import HistoryPage from "@/app/app/history/page";
 import { turnOff } from "@/app/app/passport/actions";
 import SentPage from "@/app/app/sent/page";
 import SignedPage from "@/app/app/signed/page";
+import { Icon, type IconName } from "@/components/icons";
+import { historyIcon, historyLabel } from "@/lib/history";
 import {
   listHistory,
   listSent,
@@ -248,6 +252,35 @@ describe("History", () => {
     const after = await added();
     expect(after.some((r) => r.what.includes("Priya"))).toBe(false);
     expect(after.filter((r) => r.href === null).map((r) => r.what)).toEqual(["Added to People"]);
+  });
+
+  it("gives each row the icon of the sidebar item it belongs to: People, Collect, Business facts; Settings only for the workspace's own", async () => {
+    const rows = (await listHistory(owner, { tab: "all", mine: false, days: 30 })).rows;
+    const iconsOf = (start: string) => [...new Set(rows.filter((r) => r.what.startsWith(start)).map((r) => r.icon))];
+    expect(iconsOf("Added to People")).toEqual(["people"]);
+    expect(iconsOf("Vendor added")).toEqual(["collect"]);
+    expect(iconsOf("Collect link made")).toEqual(["collect"]);
+    expect(iconsOf("A vendor sent a document")).toEqual(["collect"]);
+    expect(iconsOf("Business facts changed")).toEqual(["facts"]);
+    expect(iconsOf("Workspace created")).toEqual(["settings"]);
+    const byTab = (tab: string) => [...new Set(rows.filter((r) => r.tab === tab).map((r) => r.icon))];
+    expect([byTab("documents"), byTab("links"), byTab("signatures")]).toEqual([["documents"], ["passport"], ["sign"]]);
+    // And the page draws each row's own icon.
+    as(owner);
+    const html = await renderPage(HistoryPage, params({}));
+    const rowOf = (start: string) => html.split('<li class="history-row">').find((r) => textOf(r).includes(start)) ?? "";
+    const svg = (name: IconName) => renderToStaticMarkup(createElement(Icon, { name, size: 17 }));
+    expect([rowOf("Added to People").includes(svg("people")), rowOf("Vendor added").includes(svg("collect")), rowOf("Workspace created").includes(svg("settings"))]).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(historyIcon("ai.request_read", "account")).toBe("check");
+    expect([historyLabel("vendor.archived", null), historyLabel("vendor.restored", null), historyLabel("esign.declined", null)]).toEqual([
+      "Vendor archived",
+      "Vendor restored",
+      "Signer declined",
+    ]);
   });
 
   it("'You' shows only what the viewer did", async () => {

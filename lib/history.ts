@@ -1,3 +1,5 @@
+import type { IconName } from "@/components/icons";
+
 // The words for audit log rows, wherever they're shown: a document's own History (both looks) and the History page.
 
 const ACTIONS: Record<string, string> = {
@@ -15,6 +17,7 @@ const ACTIONS: Record<string, string> = {
   "esign.opened": "Signer opened the link",
   "esign.code_sent": "Signing code sent",
   "esign.signed": "Signed",
+  "esign.declined": "Signer declined",
   "esign.revoked": "Signature request withdrawn",
   "esign.review_downloaded": "File sent for signing downloaded",
   "passport.created": "Passport link made",
@@ -28,6 +31,8 @@ const ACTIONS: Record<string, string> = {
   "profile.tax_id_revealed": "Tax ID shown",
   "vendor.added": "Vendor added",
   "vendor.updated": "Vendor changed",
+  "vendor.archived": "Vendor archived",
+  "vendor.restored": "Vendor restored",
   "collect.link_created": "Collect link made",
   "collect.link_updated": "Collect link changed",
   "collect.link_revoked": "Collect link turned off",
@@ -71,6 +76,21 @@ export type HistoryTab = (typeof HISTORY_TABS)[number][0];
 
 /** Reads a `?tab=` value. */
 export const historyTab = (v: unknown): HistoryTab => HISTORY_TABS.find(([t]) => t === v)?.[0] ?? "all";
+
+/**
+ * A History row's icon: the sidebar item its event belongs to (Design #25 MUST-1), so a People, vendor or Business
+ * facts row doesn't wear Settings' sliders; those are for the workspace's own rows.
+ */
+export function historyIcon(action: string, tab: Exclude<HistoryTab, "all">): IconName {
+  if (tab === "documents") return "documents";
+  if (tab === "links") return "passport";
+  if (tab === "signatures") return "sign";
+  if (action.startsWith("contact.")) return "people";
+  if (action.startsWith("vendor.") || action.startsWith("collect.")) return "collect";
+  if (action.startsWith("profile.")) return "facts";
+  if (action.startsWith("ai.")) return "check";
+  return "settings";
+}
 
 /**
  * Who did it, in words, never an id (Security S6): you, someone else in the workspace, or the outsider the row is

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Notice, PageHeader } from "@/components/app-ui";
-import { Icon, type IconName } from "@/components/icons";
+import { Icon } from "@/components/icons";
 import { HISTORY_TABS, historyTab, type HistoryTab } from "@/lib/history";
 import { ACTIVITY_DAYS, daysParam, HISTORY_DAYS_DEFAULT, HISTORY_SHOWN, listHistory, readsAllHistory, type ActivityDays, type HistoryRow } from "@/lib/server/activity";
 import { uiV2 } from "@/lib/server/flags";
@@ -11,8 +11,6 @@ import { clockOf, dayOf } from "@/lib/today";
 import { FilterMenu, TabLinks } from "../filters";
 
 export const metadata: Metadata = { title: "History" };
-
-const ICON: Record<Exclude<HistoryTab, "all">, IconName> = { documents: "documents", links: "passport", signatures: "sign", account: "settings" };
 
 const ERRORS: Record<string, { text: string; fix?: { href: string; label: string } }> = {
   reauth: { text: "For your security, sign in again before you export.", fix: { href: "/signin?next=history", label: "Sign in again" } },
@@ -109,7 +107,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
                       {clockOf(r.at, zone)}
                     </time>
                     <span className="row-icon" aria-hidden="true">
-                      <Icon name={ICON[r.tab]} size={17} />
+                      <Icon name={r.icon} size={17} />
                     </span>
                     <span className="history-what">
                       {r.href ? (
