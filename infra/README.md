@@ -54,7 +54,7 @@ No secret is printed:
 
 To undo it, see "Rollback" below.
 
-**Every later production deploy: migrations first, then the code** (Security MUST-ST1, 2026-11-02). When a release adds a migration, run `npm run migrate` against production (as the master, as in step 6) and see it applied before the new code takes traffic. The code may read what the migration adds: from `0044` on, the signing page reads `esign_open`'s `signed_name`. Code from before `0044` still runs on the migrated database (it selects its own columns), but code from `0044` on fails on an older one, and every `/s/` link breaks in both looks. A future migration that the running code can't survive needs its own order, agreed with Security before the release.
+**Every later production deploy: migrations first, then the code** (Security MUST-ST1, 2026-11-02). When a release adds a migration, run `npm run migrate` against production (as the master, as in step 6) and see it applied before the new code takes traffic. The code may read what the migration adds: from `0044` on, the signing page reads `esign_open`'s `signed_name`. Code from before `0044` still runs on the migrated database (it selects its own columns), but code from `0044` on fails on an older one, and every `/s/` link breaks in both looks. From `0045` on, the redesigned document and passport link pages, `/app/saved` and the sample workspace's setup read `app.saved_items`: on a database without it they fail too. A future migration that the running code can't survive needs its own order, agreed with Security before the release.
 
 | File | Creates |
 | --- | --- |
