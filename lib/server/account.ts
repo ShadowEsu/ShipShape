@@ -3,6 +3,7 @@ import type { AllowedMime } from "./files";
 import { cancelSubscriptionsBeforeDeletion } from "./billing";
 import { deleteSignIn } from "./cognito";
 import { asService, asUser, pgErrorCode } from "./db";
+import { csvCell } from "./csv";
 import { downloadName } from "./documents";
 import { UserError } from "./errors";
 import { loadProfile, NeedsRecentSignIn, type Ctx } from "./profile";
@@ -120,12 +121,19 @@ interface ExportAgreement {
   at: string;
 }
 
-const csvCell = (v: string | null) => (v === null ? "" : /[",\n]/.test(v) ? `"${v.replaceAll('"', '""')}"` : v);
+interface ExportContact {
+  name: string;
+  email: string | null;
+  company: string | null;
+  source: string;
+  created_at: string;
+}
+
 
 /**
  * Everything in the workspace as a ZIP: every version of every document, their details, the
  * business facts (tax ID only as its last 4 digits), the full history, the passport links with their
- * access log and the signature requests (never a token or code hash, W9-9), and the exporting
+ * access log and the signature requests (never a token or code hash, W9-9), the people kept in People, and the exporting
  * person's own sessions (browser and system name and times, Design row 34) and agreements. Owners
  * and admins only, after a recent sign-in; the export itself is recorded in the history.
  */
@@ -133,7 +141,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
   if (ctx.role === "member") throw new UserError("Only owners and admins can export the workspace.");
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to export.");
 
-  const { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements } = await asUser(ctx.userId, async (tx) => {
+  const { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements, contacts } = await asUser(ctx.userId, async (tx) => {
     const docs = await tx.query<ExportDoc>(
       "select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on, d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.created_at::text as created_at from app.documents d where d.org_id = $1 order by d.created_at, d.id",
       [ctx.orgId],
@@ -179,7 +187,12 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
       "select item, policy_version, object_id, at::text as at from app.consents where user_id = $1 order by at, id",
       [ctx.userId],
     );
-    return { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements };
+    // People (0046): the workspace's contacts, as every member sees them on People.
+    const contacts = await tx.query<ExportContact>(
+      "select name, email, company, source, created_at::text as created_at from app.contacts where org_id = $1 order by lower(name), id",
+      [ctx.orgId],
+    );
+    return { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements, contacts };
   });
 
   const passports: (ExportLink & { documents: string[]; access: Omit<ExportLinkAccess, "link_id">[] })[] = links.map((l) => ({ ...l, documents: [], access: [] }));
@@ -253,6 +266,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     "passports.json   your passport links: who each is for, when it was made, expires or was revoked, its documents, and every open, view and download with the visitor's keyed network fingerprint (a short code, not their address)",
     "signatures.json  your signature requests: the document and version, the signer's name and email, the status, when it was made, expires and was signed, the name they typed, when and to which version of the consent they agreed, and the reviewed file's SHA-256 fingerprint",
     "agreements.json  what you agreed to (such as the Terms and Privacy Policy), which version, and when",
+    "contacts.csv     the people your workspace keeps in People: name, email, company, where each came from (typed, signer or sample) and when it was added",
     "",
     "Check a file against its fingerprint with: shasum -a 256 <file>",
     ...(missing.length ? ["", "NOT INCLUDED: the stored copy of these files could not be found. Their details and fingerprints are still listed.", ...missing.map((m) => `  ${m}`)] : []),
@@ -279,6 +293,12 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
         { name: "passports.json", data: enc.encode(JSON.stringify(passports, null, 2)) },
         { name: "signatures.json", data: enc.encode(JSON.stringify(signatures, null, 2)) },
         { name: "agreements.json", data: enc.encode(JSON.stringify(agreements, null, 2)) },
+        {
+          name: "contacts.csv",
+          data: enc.encode(
+            ["name,email,company,source,created_at", ...contacts.map((c) => [c.name, c.email, c.company, c.source, c.created_at].map(csvCell).join(","))].join("\n"),
+          ),
+        },
         ...files,
       ],
       now,
