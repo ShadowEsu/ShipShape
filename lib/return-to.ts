@@ -7,13 +7,14 @@ export const RETURN_TO = {
   export: { path: "/app/settings#export", where: "Settings" },
   delete: { path: "/app/settings#delete", where: "Settings" },
   ein: { path: "/app/facts#ein", where: "Business facts" },
+  history: { path: "/app/history", where: "History" },
 } as const;
 
 export type ReturnTo = keyof typeof RETURN_TO;
 
 /** The allow-listed choice named by a form field or query value, else null. */
 export function returnTo(raw: unknown): ReturnTo | null {
-  return raw === "export" || raw === "delete" || raw === "ein" ? raw : null;
+  return raw === "export" || raw === "delete" || raw === "ein" || raw === "history" ? raw : null;
 }
 
 /** The landing page after a sign-in: the chosen section, or Home. */

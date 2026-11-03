@@ -589,7 +589,7 @@ describe("the app's frame, redesigned", () => {
 
   it("groups the pages that exist, and dots Deadlines only while a document has lapsed", async () => {
     const ctx = await signIn("shell-v2@example.com");
-    const rows = ["Home", "Work", "Documents", "Saved", "Templates", "Track", "Deadlines", "Passport", "Business", "Business facts", "Collect", "People", "Settings"];
+    const rows = ["Home", "Work", "Documents", "Saved", "Signed copies", "Sent", "Templates", "Track", "History", "Deadlines", "Passport", "Business", "Business facts", "Collect", "People", "Settings"];
     const html = await shell(ctx);
     expect(textOf(html.slice(html.indexOf('<nav aria-label="App"'), html.indexOf("</nav>")))).toBe(rows.join(" "));
     expect(sidebar(html)).not.toContain("Deadlines ● , something has lapsed");

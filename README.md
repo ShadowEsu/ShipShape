@@ -16,7 +16,7 @@ The app runs as a preview: sample workspaces with a made-up business and documen
 
 | | |
 | --- | --- |
-| **Works today** (sample workspace) | Vault, versions and history; W-9 and NDA fill; passport links; deadlines and calendar file; signature requests; export and account deletion; Collect (ask your own vendors for W-9s and certificates through upload links and see who's current; in the sample its links send made-up files, and it isn't in a plan yet). Plan limits are enforced by the server for real workspaces; the sample has every Pro feature. |
+| **Works today** (sample workspace) | Vault, versions and history; W-9 and NDA fill; passport links; deadlines and calendar file; signature requests; Saved; Sent (each passport link and signature request, and where it went: opens counted, never named), Signed copies and the workspace's History (owners and admins see all of it and export it as CSV; members see their documents' rows); export and account deletion; Collect (ask your own vendors for W-9s and certificates through upload links and see who's current; in the sample its links send made-up files, and it isn't in a plan yet). The sample starts with made-up activity, made through the same code a real workspace uses: a passport link opened from two documentation-only network addresses, an NDA signed by a "(sample)" signer, and a request still waiting. Plan limits are enforced by the server for real workspaces; the sample has every Pro feature. |
 | **Awaiting setup** | Accounts for real documents (security review, production database and storage); uploading your own files (PDF, PNG or JPEG up to 4 MB, with real accounts); outgoing email for reminders and signing codes (the sample's outbox shows them meanwhile); payments (checkout, portal and webhooks are checked against a simulated Stripe; the Stripe sandbox run is pending, and there are no live payments); "What are they asking for?" (paste a request, see which documents it asks for and which you have; built, opt-in AI per request, switched on after the AI security review) |
 | **Planned** | Reading dates off certificates (opt-in AI) |
 
@@ -62,7 +62,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 | Path | What it is |
 | --- | --- |
 | `app/page.tsx`, `app/pricing`, `app/faq`, `app/status`, `app/terms`, `app/privacy` | Public site |
-| `app/app/*` | The product: home, documents, make (fill), read a request, facts, passport, collect, deadlines, settings |
+| `app/app/*` | The product: home, documents, saved, sent, signed copies, history, make (fill), read a request, facts, passport, collect, deadlines, settings |
 | `app/p/[id]`, `app/s/[id]`, `app/c/[id]` | Public passport, signing and vendor upload pages |
 | `app/api/*` | Health, waitlist, signed file downloads, reminder cron, Stripe webhook |
 | `lib/server/` | Everything that touches data: documents, fill, passport, collect, deadlines, e-sign, AI, account, billing, sessions, storage |

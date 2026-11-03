@@ -26,7 +26,8 @@ export type IconName =
   | "page"
   | "menu"
   | "bookmark"
-  | "people";
+  | "people"
+  | "history";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   home: <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z" />,
@@ -132,6 +133,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="9.5" cy="8.5" r="3.25" />
       <path d="M3.75 19.5c.7-3.1 3-5 5.75-5s5.05 1.9 5.75 5" />
       <path d="M15.5 5.5a3.25 3.25 0 0 1 0 6M17.25 14.75c1.5.7 2.6 2.4 3 4.75" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
+      <path d="M4.5 4.5v3.5H8M12 8v4.25l2.75 1.75" />
     </>
   ),
 };

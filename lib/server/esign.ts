@@ -49,6 +49,16 @@ export async function requestSignature(ctx: Ctx, input: unknown, ip: string): Pr
   if ((await rateLimited("esign-send", ctx.userId, ESIGN_TRIES_PER_HOUR, 3600)) || (await rateLimited("esign-net", ip, 2 * ESIGN_TRIES_PER_HOUR, 3600))) {
     throw new UserError(ESIGN_BUSY);
   }
+  return createSignatureRequest(ctx, p);
+}
+
+/**
+ * The request itself, past requestSignature's limits, which are for people asking: also the sample's seeding, which
+ * asks twice for each new sample and must not spend the visitor's network allowance (lib/server/sample.ts).
+ */
+export async function createSignatureRequest(ctx: Ctx, input: unknown): Promise<{ id: string; token: string }> {
+  if (!esignAvailable(ctx)) throw new GateClosed("Signing by email opens once ShipShape can send email.");
+  const p = NewRequest.parse(input);
   const { token, hash } = newToken();
   const id = randomUUID();
   const toSignPath = `${ctx.orgId}/${id}/v1.pdf`;
