@@ -446,6 +446,10 @@ body {
 .ui-v2 .validity-chip[data-validity="expired"]::before {
   background: var(--bad);
 }
+/* "Check this one yourself" on a checked request: no state to colour. */
+.ui-v2 .validity-chip[data-validity="none"]::before {
+  background: var(--ink-3);
+}
 .ui-v2 .validity-chip > .validity-icon {
   display: none;
 }
@@ -540,11 +544,6 @@ body {
 .ui-v2 .notice-icon {
   display: block;
   flex: none;
-}
-/* While a page's loading skeleton fills <main>, the "not a law firm" line stays out of the layout: under the shorter
-   skeleton it sat in view and the streamed page then pushed it down (CLS 0.02 at 1440). Appearing later shifts nothing. */
-.ui-v2 main:has(> [aria-busy="true"]) > .legal-line {
-  display: none;
 }
 /* While a form's Save is docked at the bottom of the phone's screen (the document's Details), a focused field or a row
    scrolled to stops clear of it: its 8px gap over the home indicator, the 44px button and 16px more (Design). */

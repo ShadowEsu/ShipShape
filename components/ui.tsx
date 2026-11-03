@@ -13,12 +13,14 @@ export function Logo({ href = "/" }: { href?: string }) {
   );
 }
 
+/** The line every place that touches law carries, word for word (Security R12; MUST-L1 to L3, 3 Nov). */
+export const NOT_A_LAW_FIRM = "ShipShape is document software, not a law firm, and doesn't give legal advice.";
+
 /** Shown wherever the product touches law (Security R12, legal-risk-playbook). */
 export function NotLegalAdvice({ className = "" }: { className?: string }) {
   return (
     <p className={`text-xs leading-5 text-ink-3 ${className}`}>
-      ShipShape is document software, not a law firm, and doesn&apos;t give legal advice. You decide which documents to use and
-      what they say. For legal questions, talk to a lawyer.
+      {`${NOT_A_LAW_FIRM} You decide which documents to use and what they say. For legal questions, talk to a lawyer.`}
     </p>
   );
 }
