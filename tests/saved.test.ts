@@ -240,6 +240,8 @@ describe("saves are personal (row level security)", () => {
     // A save in the first member's name.
     await expectDenied(asUser(m.userId, (tx) => tx.query("insert into app.saved_items (org_id, user_id, kind, object_id) values ($1, $2, 'document', $3)", [a.orgId, a.userId, other])));
     await asUser(m.userId, (tx) => tx.query("delete from app.saved_items where org_id = $1", [a.orgId]));
+    // Without a WHERE only the delete policy decides (the select policy applies once a WHERE reads a column).
+    await asUser(m.userId, (tx) => tx.query("delete from app.saved_items"));
     expect(await rowsFor(doc)).toEqual([{ user_id: a.userId }]);
 
     // Any member may save for themselves; each still sees only their own.
