@@ -316,7 +316,7 @@ body {
     @apply text-center text-2xl leading-8 font-normal tracking-[-0.015em] text-balance text-ink sm:text-[28px] sm:leading-9;
   }
   .ui-v2 .prompt {
-    @apply mt-6 flex min-h-14 w-full items-start gap-3 rounded-2xl border border-[var(--line-2)] bg-paper py-[9px] pr-[9px] pl-3.5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors duration-[180ms] focus-within:border-field;
+    @apply mt-6 flex min-h-14 w-full items-start gap-3 rounded-2xl border border-[var(--line-2)] bg-paper py-[9px] pr-[9px] pl-3.5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors duration-[180ms];
   }
   .ui-v2 .prompt-orb {
     @apply mt-[6px] size-[26px] shrink-0 rounded-full;
@@ -430,6 +430,18 @@ body {
    even after a keyboard Sign, which would draw one around the heading mid-moment (Design, 02 Nov). Tab goes on to Download. */
 .ui-v2 .stamp-title:focus-visible {
   outline: none;
+}
+/* Home's box and the search field show focus on what holds them (the box's border, the search row's rule), not as a
+   second ring drawn inside: the field fills its box, so the ring would sit on the box's own edge. */
+.ui-v2 .prompt-field:focus-visible,
+.ui-v2 #search-field:focus-visible {
+  outline: none;
+}
+.ui-v2 .prompt:focus-within {
+  border-color: var(--ink);
+}
+.ui-v2 #search-dialog form:focus-within {
+  border-bottom-color: var(--ink);
 }
 /* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text. */
 .ui-v2 .page-eyebrow {
