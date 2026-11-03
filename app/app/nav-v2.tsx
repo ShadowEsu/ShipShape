@@ -2,55 +2,85 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Icon, type IconName } from "@/components/icons";
+import { Logo } from "@/components/ui";
+import { SearchDialog, type SearchTool } from "./search-v2";
 
 type Item = readonly [href: string, label: string, icon: IconName];
 
-// The sidebar's tools (Design spec 2026-11-02 §4); Make, Check a request and Settings open from Home and the account row.
-const SIDE: readonly Item[] = [
-  ["/app", "Home", "home"],
-  ["/app/documents", "Documents", "documents"],
-  ["/app/passport", "Passport", "passport"],
-  ["/app/deadlines", "Deadlines", "deadlines"],
-  ["/app/collect", "Collect", "collect"],
-  ["/app/facts", "Business facts", "facts"],
+/**
+ * The sidebar (Design calm v2, look A): Home, then flat rows under small grey group labels, then Settings. Only pages
+ * that exist are listed; Saved, Signed copies, Sent, History and People join their groups in the PRs that build them.
+ */
+const GROUPS: readonly { label: string | null; items: readonly Item[] }[] = [
+  { label: null, items: [["/app", "Home", "home"]] },
+  {
+    label: "Work",
+    items: [
+      ["/app/documents", "Documents", "documents"],
+      ["/app/make", "Templates", "page"],
+    ],
+  },
+  {
+    label: "Track",
+    items: [
+      ["/app/deadlines", "Deadlines", "deadlines"],
+      ["/app/passport", "Passport", "passport"],
+    ],
+  },
+  {
+    label: "Business",
+    items: [
+      ["/app/facts", "Business facts", "facts"],
+      ["/app/collect", "Collect", "collect"],
+    ],
+  },
+  { label: null, items: [["/app/settings", "Settings", "settings"]] },
 ];
-// The phone's tab bar, then what its More sheet holds.
-const TABS: readonly Item[] = SIDE.slice(0, 4);
-const MORE: readonly Item[] = [
-  ["/app/collect", "Collect", "collect"],
-  ["/app/facts", "Business facts", "facts"],
-  ["/app/make", "Make a document", "make"],
-  ["/app/ask", "Check a request", "check"],
-  ["/app/settings", "Settings", "settings"],
+
+// The top bar's title: the sidebar's name for the page, or the tool's own name for pages outside the sidebar.
+const TITLES: readonly (readonly [href: string, title: string])[] = [
+  ...GROUPS.flatMap((g) => g.items.map(([href, label]): readonly [string, string] => [href, label])),
+  ["/app/ask", "Check a request"],
 ];
 
 const isActive = (path: string, href: string) => (href === "/app" ? path === "/app" : path === href || path.startsWith(`${href}/`));
 
-/** The desktop sidebar's tool list. The active item carries the brand tint; nothing moves on hover. */
-export function SideNav() {
+function titleFor(path: string): string {
+  return TITLES.find(([href]) => isActive(path, href))?.[1] ?? "ShipShape";
+}
+
+/** The sidebar's rows. The active row has the faint fill and the accent icon; nothing moves on hover. */
+export function SideNav({ lapsed }: { lapsed: boolean }) {
   const path = usePathname();
   return (
-    <nav aria-label="App" className="mt-6 space-y-0.5">
-      {SIDE.map(([href, label, icon]) => {
-        const active = isActive(path, href);
-        return (
-          <Link
-            key={href}
-            href={href}
-            aria-current={active ? "page" : undefined}
-            className={`flex min-h-10 items-center gap-3 rounded-xl px-3 text-[15px] transition-colors duration-[180ms] ${
-              active ? "bg-paper font-semibold text-ink shadow-[0_1px_2px_rgb(0_0_0/0.06)]" : "text-ink-2 hover:bg-paper/70"
-            }`}
-          >
-            <span className={active ? "text-brand" : "text-ink-3"}>
-              <Icon name={icon} />
-            </span>
-            {label}
-          </Link>
-        );
-      })}
+    <nav aria-label="App" className="side-nav">
+      {GROUPS.map((g, n) => (
+        <div key={g.label ?? `g${n}`} className={n === GROUPS.length - 1 ? "mt-4" : undefined}>
+          {g.label && <p className="side-label">{g.label}</p>}
+          <ul>
+            {g.items.map(([href, label, icon]) => {
+              const active = isActive(path, href);
+              const dot = lapsed && href === "/app/deadlines";
+              return (
+                <li key={href}>
+                  <Link href={href} aria-current={active ? "page" : undefined} className="side-row">
+                    <Icon name={icon} size={18} className="side-icon" />
+                    {label}
+                    {dot && (
+                      <>
+                        <span className="side-dot" aria-hidden="true" />
+                        <span className="sr-only">, something has lapsed</span>
+                      </>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
     </nav>
   );
 }
@@ -144,97 +174,145 @@ export function ActionSheet({ id, title, label, className, children }: { id: str
   );
 }
 
-function SheetLinks({ items }: { items: readonly Item[] }) {
-  const path = usePathname();
-  return (
-    <ul className="group-list">
-      {items.map(([href, label, icon]) => (
-        <li key={href}>
-          <Link href={href} aria-current={isActive(path, href) ? "page" : undefined} className="group-row">
-            <span className="grid size-8 place-items-center rounded-lg bg-tile text-ink-2">
-              <Icon name={icon} />
-            </span>
-            <span className="flex-1 text-base">{label}</span>
-            <span className="text-ink-3">
-              <Icon name="chevron" size={16} />
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
+const ROLE: Record<"owner" | "admin" | "member", string> = { owner: "Owner", admin: "Admin", member: "Member" };
+
+/** Two letters for the workspace's tile: its first two words' initials, "(sample)" left out ("Harbor Plumbing (sample)" → HP). */
+export function initialsOf(workspace: string): string {
+  const words = workspace
+    .replace(/\(sample\)/i, "")
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter((w) => w.length > 0);
+  const letters = words.length > 1 ? `${words[0][0]}${words[1][0]}` : (words[0] ?? "?").slice(0, 2);
+  return letters.toUpperCase();
 }
 
-/** The phone's tab bar: four tools and More (a sheet with the rest). Fixed to the bottom, above the home indicator. */
-export function TabBar() {
-  const path = usePathname();
-  const more = useRef<HTMLDialogElement>(null);
-  const inMore = MORE.some(([href]) => isActive(path, href));
-  const tab = (active: boolean) => `flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] ${active ? "font-semibold text-brand" : "text-ink-3"}`;
+/**
+ * The workspace row and its sheet: the workspace (never a person's name: ShipShape stores none), its role, Settings,
+ * and what the server passes in (sign out). It sits at the sidebar's foot, and at the foot of the phone's menu.
+ */
+export function AccountSheet({ id, workspace, role, children }: { id: string; workspace: string; role: "owner" | "admin" | "member"; children: React.ReactNode }) {
+  const sheet = useRef<HTMLDialogElement>(null);
   return (
     <>
-      <nav
-        aria-label="App"
-        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-paper/85 px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),20px)] backdrop-blur-xl md:hidden"
-      >
-        {TABS.map(([href, label, icon]) => {
-          const active = isActive(path, href);
-          return (
-            <Link key={href} href={href} aria-current={active ? "page" : undefined} className={`press ${tab(active)}`}>
-              <Icon name={icon} size={24} />
-              {label}
+      <button type="button" aria-haspopup="dialog" aria-controls={id} onClick={() => sheet.current?.showModal()} className="account-row">
+        <span className="account-tile" aria-hidden="true">
+          {initialsOf(workspace)}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-[13px] leading-[17px] font-medium text-ink" title={workspace}>
+            {workspace}
+          </span>
+          <span className="block text-xs leading-4 text-ink-3">{ROLE[role]}</span>
+        </span>
+      </button>
+      <Sheet id={id} title="Account" open={sheet}>
+        <p className="mb-3 truncate text-sm text-ink-3">{workspace}</p>
+        <ul className="group-list">
+          <li>
+            <Link href="/app/settings" className="group-row">
+              <span className="row-icon">
+                <Icon name="settings" size={18} />
+              </span>
+              <span className="flex-1 text-base">Settings</span>
+              <span className="text-ink-3">
+                <Icon name="chevron" size={16} />
+              </span>
             </Link>
-          );
-        })}
-        <button type="button" aria-haspopup="dialog" aria-controls="more-sheet" onClick={() => more.current?.showModal()} className={`press ${tab(inMore)}`}>
-          <Icon name="more" size={24} />
-          More
-        </button>
-      </nav>
-      <Sheet id="more-sheet" title="More" open={more}>
-        <SheetLinks items={MORE} />
+          </li>
+        </ul>
+        <div className="mt-3">{children}</div>
       </Sheet>
     </>
   );
 }
 
+/** The phone's menu: the sidebar as a panel from the left, with the workspace row at its foot. */
+function NavDrawer({ open, lapsed, account }: { open: React.RefObject<HTMLDialogElement | null>; lapsed: boolean; account: React.ReactNode }) {
+  const path = usePathname();
+  useEffect(() => {
+    open.current?.close();
+  }, [path, open]);
+  return (
+    <dialog
+      ref={open}
+      id="nav-drawer"
+      aria-label="Menu"
+      className="drawer fixed inset-y-0 right-auto left-0 m-0 h-dvh max-h-none w-[300px] max-w-[85vw] flex-col bg-side p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 open:flex"
+      onClick={(e) => {
+        if (e.target === e.currentTarget || (e.target instanceof Element && e.target.closest("a[href]"))) e.currentTarget.close();
+      }}
+    >
+      <div className="flex items-center justify-between py-1 pr-1 pl-4">
+        <Logo href="/app" />
+        <button type="button" onClick={() => open.current?.close()} className="grid size-11 place-items-center rounded-full text-ink-2" aria-label="Close">
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5">
+        <SideNav lapsed={lapsed} />
+      </div>
+      <div className="border-t border-line px-2.5 py-2">{account}</div>
+    </dialog>
+  );
+}
+
+// The platform doesn't change while the page is open, so there's nothing to subscribe to.
+const noSubscription = () => () => {};
+const isApple = () => /Mac|iPhone|iPad/.test(navigator.userAgent);
+
 /**
- * The account button and its sheet: the workspace, Settings, and what the server passes in (sign out). On the phone it's
- * the icon at the top right; in the sidebar it's the workspace row at the foot, and the sheet opens above it.
+ * The slim bar over every page: the page's name on the left, search in the middle (⌘K or Ctrl K from anywhere), Help
+ * and Feedback on the right. On the phone: the menu, the logo, and search.
  */
-export function AccountSheet({ id, workspace, row, children }: { id: string; workspace: string; row?: boolean; children: React.ReactNode }) {
-  const sheet = useRef<HTMLDialogElement>(null);
-  const show = () => sheet.current?.showModal();
+export function TopBar({ tools, contact, lapsed, account }: { tools: readonly SearchTool[]; contact: string | null; lapsed: boolean; account: React.ReactNode }) {
+  const path = usePathname();
+  const search = useRef<HTMLDialogElement>(null);
+  const drawer = useRef<HTMLDialogElement>(null);
+  // Null on the server and in the first render, so the shortcut's label never differs between the two.
+  const apple = useSyncExternalStore(noSubscription, isApple, () => null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (!search.current?.open) search.current?.showModal();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const openSearch = () => search.current?.showModal();
   return (
     <>
-      {row ? (
-        <button
-          type="button"
-          aria-haspopup="dialog"
-          aria-controls={id}
-          onClick={show}
-          className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left transition-colors duration-[180ms] hover:bg-paper/70"
-        >
-          <span className="text-ink-3">
-            <Icon name="account" />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium text-ink" title={workspace}>
-              {workspace}
-            </span>
-            <span className="block text-xs text-ink-3">Settings</span>
-          </span>
+      <header className="top-bar">
+        <button type="button" aria-haspopup="dialog" aria-controls="nav-drawer" onClick={() => drawer.current?.showModal()} className="top-icon md:hidden" aria-label="Menu">
+          <Icon name="menu" />
         </button>
-      ) : (
-        <button type="button" aria-haspopup="dialog" aria-controls={id} onClick={show} className="press grid size-11 place-items-center rounded-full text-ink-2" aria-label="Account">
-          <Icon name="account" size={24} />
+        <p className="hidden truncate text-sm font-medium text-ink md:block">{titleFor(path)}</p>
+        <div className="flex justify-center md:hidden">
+          <Logo href="/app" />
+        </div>
+        <button type="button" aria-haspopup="dialog" aria-controls="search-dialog" onClick={openSearch} className="search-button hidden md:flex">
+          <Icon name="search" size={16} />
+          <span className="truncate">Search documents and tools</span>
+          {apple !== null && <kbd className="search-kbd">{apple ? "⌘K" : "Ctrl K"}</kbd>}
         </button>
-      )}
-      <Sheet id={id} title="Account" open={sheet}>
-        <p className="mb-3 truncate text-sm text-ink-3">{workspace}</p>
-        <SheetLinks items={[["/app/settings", "Settings", "settings"]]} />
-        <div className="mt-3">{children}</div>
-      </Sheet>
+        <div className="flex items-center justify-end gap-1">
+          <Link href="/faq" className="top-link hidden md:inline-flex">
+            Help
+          </Link>
+          {contact && (
+            <a href={`mailto:${contact}?subject=${encodeURIComponent("ShipShape feedback")}`} className="top-link hidden md:inline-flex">
+              Feedback
+            </a>
+          )}
+          <button type="button" aria-haspopup="dialog" aria-controls="search-dialog" onClick={openSearch} className="top-icon md:hidden" aria-label="Search">
+            <Icon name="search" />
+          </button>
+        </div>
+      </header>
+      <SearchDialog open={search} tools={tools} />
+      <NavDrawer open={drawer} lapsed={lapsed} account={account} />
     </>
   );
 }

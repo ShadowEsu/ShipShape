@@ -14,6 +14,8 @@ import { fill } from "@/app/app/make/actions";
 import MakePage from "@/app/app/make/page";
 import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
+import { searchAction } from "@/app/app/search-actions";
+import { ShellV2 } from "@/app/app/shell-v2";
 import { ErrorPanel } from "@/components/error-panel";
 import { PROFILE_FIELDS } from "@/lib/profile-fields";
 import { asService, asUser } from "@/lib/server/db";
@@ -85,6 +87,15 @@ afterEach(() => {
 /** Signs a new person in to a new (Free) workspace of their own, the way the sign-in page does. */
 async function signIn(email: string) {
   await finishSignIn(await createLocalUser(email, false), { demo: false });
+  return requireWorkspace();
+}
+
+/** Signs in to a seeded sample workspace, as "Try the sample workspace" does. */
+async function signInSample() {
+  const userId = await createLocalUser(null, true);
+  const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
+  await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+  await finishSignIn(userId, { demo: true });
   return requireWorkspace();
 }
 
@@ -394,79 +405,62 @@ describe("home, earlier look (SHIPSHAPE_UI=v1)", () => {
 });
 
 describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
-  /** Home's tool tiles in order: where each goes and the closed gate it names, if any. */
-  const tiles = (html: string) =>
-    [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)]
-      .filter((m) => /\bclass="tile press"/.test(m[1]))
-      .map((m) => ({
-        href: /\bhref="([^"]*)"/.exec(m[1])?.[1],
-        name: /font-semibold text-ink">([^<]*)</.exec(m[2])?.[1],
-        tag: /class="tag[^"]*">([^<]*)</.exec(m[2])?.[1] ?? null,
-      }));
-  const tagOf = (html: string, name: string) => tiles(html).find((t) => t.name === name)?.tag;
+  /** Home's tools in order: where each goes, its one-word name, and whether it's closed and why (its tooltip and accessible name). */
+  const tools = (html: string) =>
+    [...html.matchAll(/<a ([^>]*\bclass="tool press[^"]*"[^>]*)>([\s\S]*?)<\/a>/g)].map((m) => {
+      const closed = /\bclass="tool press closed"/.test(m[1]);
+      const [name, why] = textOf(m[2]).split(/\s*:\s*/);
+      return { href: /\bhref="([^"]*)"/.exec(m[1])?.[1], name, closed, why: why ?? null, title: /\btitle="([^"]*)"/.exec(m[1])?.[1] };
+    });
+  const closedOnes = (html: string) => tools(html).filter((t) => t.closed).map((t) => `${t.name}: ${t.why} (${t.title})`);
+  /** One of Home's sections, from its title to the next section. */
+  const section = (html: string, id: string) => {
+    const from = html.indexOf(`id="${id}"`);
+    const end = html.indexOf("</section>", from);
+    return html.slice(from, end);
+  };
+  const rowTitles = (html: string) => [...html.matchAll(/class="block truncate text-sm font-medium text-ink">([^<]*)</g)].map((m) => m[1]);
 
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
 
-  it("asks the question first and lists all ten tools, each opening its own page, gated ones saying why (AI off)", async () => {
+  it("asks the question first, then one row of all ten tools by their one-word names, each opening its own page; a closed one says why (AI off)", async () => {
     await signIn("home-v2@example.com");
     const html = await homePage();
     expect(textOf(html)).toMatch(/^What do you need to get done\?/);
-    expect(tiles(html)).toEqual([
-      { href: "/app/documents", name: "Documents", tag: null },
-      { href: "/app/documents/new", name: "Add a document", tag: null },
-      { href: "/app/make", name: "Make a document", tag: null },
-      { href: "/app/ask", name: "Check a request", tag: "AI is off right now" },
-      { href: "/app/passport", name: "Passport", tag: null },
-      { href: "/app/documents", name: "Ask to sign", tag: null },
-      { href: "/app/collect", name: "Collect", tag: null },
-      { href: "/app/deadlines", name: "Deadlines", tag: null },
-      { href: "/app/facts", name: "Business facts", tag: null },
-      { href: "/app/settings", name: "Settings", tag: null },
+    expect(tools(html).map(({ href, name, closed }) => ({ href, name, closed }))).toEqual([
+      { href: "/app/documents", name: "Documents", closed: false },
+      { href: "/app/documents/new", name: "Add", closed: false },
+      { href: "/app/make", name: "Make", closed: false },
+      { href: "/app/ask", name: "Check", closed: true },
+      { href: "/app/passport", name: "Passport", closed: false },
+      { href: "/app/documents", name: "Sign", closed: false },
+      { href: "/app/collect", name: "Collect", closed: false },
+      { href: "/app/deadlines", name: "Deadlines", closed: false },
+      { href: "/app/facts", name: "Facts", closed: false },
+      { href: "/app/settings", name: "Settings", closed: false },
     ]);
+    expect(closedOnes(html)).toEqual(["Check: AI is off right now (AI is off right now)"]);
   });
 
-  it("before the security review, a real workspace's tiles say what isn't open yet", async () => {
+  it("before the security review, a real workspace's closed tools say what isn't open yet; Facts, view only, still opens", async () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
     await signIn("home-v2-gated@example.com");
     const html = await homePage();
-    expect(tagOf(html, "Add a document")).toBe("Opens after our security review");
-    expect(tagOf(html, "Make a document")).toBe("Opens after our security review");
-    expect(tagOf(html, "Business facts")).toBe("View only");
-    expect(tagOf(html, "Collect")).toBe("Not open yet");
+    expect(closedOnes(html)).toEqual([
+      "Add: Opens after our security review (Opens after our security review)",
+      "Make: Opens after our security review (Opens after our security review)",
+      "Check: AI is off right now (AI is off right now)",
+      "Collect: Not open yet (Not open yet)",
+    ]);
+    // The page each one opens says the same.
+    expect(textOf(await renderPage(MakePage, {}))).toContain("Making real documents opens after our security review.");
   });
 
-  /** Signs in to a seeded sample workspace, as "Try the sample workspace" does. */
-  const signInSample = async () => {
-    const userId = await createLocalUser(null, true);
-    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
-    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
-    await finishSignIn(userId, { demo: true });
-  };
-  /** Home's suggestion chips, in order. */
-  const chips = (html: string) => {
-    const list = /<ul aria-label="Suggestions"[^>]*>([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? "";
-    return [...list.matchAll(/<a [^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g)].map((m) => `${m[2]} ${m[1]}`);
-  };
-
-  it("in a sample, adding a document is the one tool that says it isn't in the sample", async () => {
+  it("in a sample, adding a document is the one closed tool", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "1");
     vi.stubEnv("ANTHROPIC_API_KEY", "unused");
     await signInSample();
-    const tagged = tiles(await homePage()).filter((t) => t.tag !== null);
-    expect(tagged).toEqual([
-      { href: "/app/documents/new", name: "Add a document", tag: "Not in the sample" },
-      { href: "/app/facts", name: "Business facts", tag: "View only" },
-    ]);
-  });
-
-  it("never offers the Next step again as a chip right under it: Collect W-9s takes its place", async () => {
-    await signInSample();
-    const sample = await homePage();
-    expect(textOf(sample)).toContain("Next: Share a passport link");
-    expect(chips(sample)).toEqual(["Check a request /app/ask", "Collect W-9s /app/collect", "Make a W-9 /app/make/irs-w9", "Ask someone to sign /app/documents"]);
-    // A new workspace's next step is something else, so the passport chip stays.
-    await signIn("home-v2-chips@example.com");
-    expect(chips(await homePage())).toContain("Share a passport link /app/passport");
+    expect(closedOnes(await homePage())).toEqual(["Add: Not in the sample (Not in the sample)"]);
   });
 
   it("the documents list leads with an action that works: Make in a sample (adding isn't in it), Add where files can be added", async () => {
@@ -480,62 +474,137 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect(html).toMatch(/<a class="btn-ghost" href="\/app\/make">Make a document<\/a>/);
   });
 
-  it("Recent lists the three newest active documents, newest first", async () => {
+  it("Recent lists the five newest active documents, newest first, each with its kind, issuer and state", async () => {
     const ctx = await signIn("home-v2-recent@example.com");
     await db.root((tx) =>
       tx.query(
-        "insert into app.documents (org_id, title, kind, status, created_at) select $1, 'Doc ' || n, 'other', case when n = 4 then 'archived' else 'active' end, now() - make_interval(mins => 10 - n) from generate_series(1, 5) n",
-        [ctx.orgId],
+        "insert into app.documents (org_id, title, kind, issuer, expires_on, status, created_at) select $1, 'Doc ' || n, 'permit', 'City (test)', $2::date - 1, case when n = 6 then 'archived' else 'active' end, now() - make_interval(mins => 10 - n) from generate_series(1, 7) n",
+        [ctx.orgId, ctx.today],
       ),
     );
-    const html = await homePage();
-    const recent = html.slice(html.indexOf('id="recent-title"'));
-    expect([...recent.matchAll(/class="block truncate font-medium">([^<]*)</g)].map((m) => m[1])).toEqual(["Doc 5", "Doc 3", "Doc 2"]);
+    const recent = section(await homePage(), "recent-title");
+    expect(rowTitles(recent)).toEqual(["Doc 7", "Doc 5", "Doc 4", "Doc 3", "Doc 2"]);
+    expect(textOf(recent)).toContain("Permit · City (test)");
+    expect(recent).toContain('data-validity="expired"');
+    expect(actionsOf(recent)[0]).toEqual({ tag: "a", label: "View all", href: "/app/documents" });
   });
 
-  it("past 20, Needs attention ends in one row, 'See all N in Deadlines', to Deadlines filtered to what needs attention, and nothing else counts what's hidden; at 20, no such row", async () => {
-    const ctx = await signIn("home-v2-cap@example.com");
-    await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_HomeV2Cap', 'active', 'pro')", [ctx.orgId]));
-    const seed = (from: number, to: number) =>
-      db.root((tx) =>
-        tx.query("insert into app.documents (org_id, title, kind, expires_on) select $1, 'Permit ' || lpad(n::text, 2, '0'), 'permit', $2::date + n from generate_series($3::int, $4::int) n", [
-          ctx.orgId,
-          ctx.today,
-          from,
-          to,
-        ]),
-      );
-    /** The attention section's rows, last one last. */
-    const attention = (html: string) => {
-      const section = html.slice(html.indexOf('id="attention-title"'), html.indexOf('id="recent-title"'));
-      return [...section.matchAll(/<li [^>]*>([\s\S]*?)<\/li>/g)].map((m) => m[1]);
-    };
-    // 19 due soon and one lapsed: two groups, 20 rows.
-    await seed(1, 19);
-    await seed(-1, -1);
-    const twenty = await homePage();
-    expect(attention(twenty)).toHaveLength(20);
-    expect(textOf(twenty)).not.toContain("See all");
+  it("Waiting on others: the open signature requests on active documents, then the vendors who owe a document, and only this workspace's (S1, S4, S5)", async () => {
+    const ctx = await signInSample();
+    const nda = await db.root(async (tx) => {
+      const [d] = await tx.query<{ id: string; title: string }>("select id, title from app.documents where org_id = $1 and kind = 'nda'", [ctx.orgId]);
+      return d;
+    });
+    await requestSignature(ctx, { documentId: nda.id, signerName: "Dana Kim (sample)", signerEmail: "dana@bayside.example", days: 7 }, "192.0.2.10");
+    // A request on a document that's then archived is withdrawn, and doesn't come back here.
+    const gone = await db.root(async (tx) => {
+      const [d] = await tx.query<{ id: string }>("select id from app.documents where org_id = $1 and kind = 'w9'", [ctx.orgId]);
+      return d.id;
+    });
+    await requestSignature(ctx, { documentId: gone, signerName: "Sam Ortiz (sample)", signerEmail: "sam@northwind.example", days: 7 }, "192.0.2.10");
+    await setArchived(ctx, gone, true);
+    // Even a request still open on an archived document stays out (S5), not only the withdrawn ones.
+    const permit = await db.root(async (tx) => {
+      const [d] = await tx.query<{ id: string }>("select id from app.documents where org_id = $1 and kind = 'permit'", [ctx.orgId]);
+      return d.id;
+    });
+    await requestSignature(ctx, { documentId: permit, signerName: "Lee Park (sample)", signerEmail: "lee@city.example", days: 7 }, "192.0.2.10");
+    await db.root((tx) => tx.query("update app.documents set status = 'archived' where id = $1", [permit]));
 
-    // Two more lapsed: the most urgent 20 are the 19 and the latest lapse; the row ends the last group, after it.
-    await seed(-3, -2);
-    const html = await homePage();
-    const rows = attention(html);
-    expect(rows).toHaveLength(21);
-    expect(textOf(rows[19])).toContain("Permit -1");
-    expect(actionsOf(rows[20])).toEqual([{ tag: "a", label: "See all 22 in Deadlines", href: "/app/deadlines?soon=1" }]);
-    // The row is the only word on what's hidden (Design 02 Nov): no "most urgent" footnote under it.
-    expect(textOf(html)).not.toMatch(/most urgent|more have lapsed|more need attention|See every date/);
+    const waiting = section(await homePage(), "waiting-title");
+    expect(rowTitles(waiting)).toEqual([nda.title, "Bayside Drywall (sample)", "Rivera Electric (sample)"]);
+    const text = textOf(waiting);
+    expect(text).toContain(`Dana Kim (sample) · sent ${fmtDay(ctx.today)} Not signed yet`);
+    // The owner-entered name only: the signer's email stays on the document's page.
+    expect(text).not.toContain("dana@bayside.example");
+    expect(text).not.toMatch(/Sam Ortiz|Lee Park/);
+    expect(text).toContain("Collect · W-9 missing, Insurance certificate lapsed Waiting");
+    expect(text).toContain("Collect · License missing Waiting");
+    expect(text).not.toContain("Summit Supply");
+
+    // Someone in another workspace sees none of it, and their own empty state; so do they after joining this one too,
+    // while they're in their own (a person in two workspaces sees each one's on its own Home).
+    const other = await signIn("home-v2-other@example.com");
+    const otherHome = () => homePage().then((html) => textOf(section(html, "waiting-title")));
+    expect(await otherHome()).not.toMatch(/Dana Kim|Bayside|Rivera/);
+    expect(await otherHome()).toContain("Signature requests nobody has signed yet, and vendors who still owe you a document, show up here.");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, other.userId]));
+    expect(await otherHome()).not.toMatch(/Dana Kim|Bayside|Rivera/);
+  });
+
+  it("search finds this workspace's active documents by their words, never an archived one or another workspace's (S1, S5, S6)", async () => {
+    const ctx = await signIn("search-v2@example.com");
+    await db.root((tx) =>
+      tx.query("insert into app.documents (org_id, title, kind, issuer, status) values ($1, 'Harbor lease', 'agreement', 'Pier 9 (test)', 'active'), ($1, 'Harbor permit', 'permit', null, 'archived')", [ctx.orgId]),
+    );
+    const other = await signIn("search-v2-other@example.com");
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind) values ($1, 'Harbor insurance', 'coi')", [other.orgId]));
+    expect(await searchAction("harbor")).toEqual([{ id: expect.any(String), title: "Harbor insurance", line: "Insurance certificate" }]);
+    // In both workspaces, a search still finds only the one they're in.
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, other.userId]));
+    expect(await searchAction("harbor")).toEqual([{ id: expect.any(String), title: "Harbor insurance", line: "Insurance certificate" }]);
+    await finishSignIn(ctx.userId, { demo: false });
+    expect(await searchAction("harbor")).toEqual([{ id: expect.any(String), title: "Harbor lease", line: "Agreement · Pier 9 (test)" }]);
+    expect(await searchAction("")).toEqual([]);
+    expect(await searchAction({ q: "harbor" })).toEqual([]);
   });
 
   it("is the default: unset shows the redesigned Home, and only SHIPSHAPE_UI=v1 brings back the earlier one (ledger 416)", async () => {
     vi.stubEnv("SHIPSHAPE_UI", "");
     await signIn("home-v2-default@example.com");
-    expect(tiles(await homePage())).toHaveLength(10);
+    expect(tools(await homePage())).toHaveLength(10);
     vi.stubEnv("SHIPSHAPE_UI", "v1");
     const html = await homePage();
-    expect(tiles(html)).toEqual([]);
+    expect(tools(html)).toEqual([]);
     expect(textOf(html)).toContain("0 of 6 done");
+  });
+});
+
+describe("the app's frame, redesigned", () => {
+  const shell = (ws: Ctx, deleting = false) => renderPage(ShellV2, { ws, deleting, children: null });
+  /** The sidebar's rows, with a ● where the lapsed dot is. */
+  const sidebar = (html: string) => {
+    const aside = html.slice(html.indexOf('<aside aria-label="Workspace"'), html.indexOf("</aside>"));
+    return [...aside.matchAll(/<a [^>]*class="side-row"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => textOf(m[1].replace(/<span class="side-dot"[^>]*><\/span>/, " ● ")));
+  };
+
+  it("groups the pages that exist, and dots Deadlines only while a document has lapsed", async () => {
+    const ctx = await signIn("shell-v2@example.com");
+    const rows = ["Home", "Work", "Documents", "Templates", "Track", "Deadlines", "Passport", "Business", "Business facts", "Collect", "Settings"];
+    const html = await shell(ctx);
+    expect(textOf(html.slice(html.indexOf('<nav aria-label="App"'), html.indexOf("</nav>")))).toBe(rows.join(" "));
+    expect(sidebar(html)).not.toContain("Deadlines ● , something has lapsed");
+    // Expiring today is still current today ("Expires soon"), so no dot until the day after.
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Last day', 'permit', $2::date)", [ctx.orgId, ctx.today]));
+    expect(sidebar(await shell(ctx))).not.toContain("Deadlines ● , something has lapsed");
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Old permit', 'permit', $2::date - 1)", [ctx.orgId, ctx.today]));
+    expect(sidebar(await shell(ctx))).toContain("Deadlines ● , something has lapsed");
+    // Archived, it no longer counts.
+    await db.root((tx) => tx.query("update app.documents set status = 'archived' where org_id = $1", [ctx.orgId]));
+    expect(sidebar(await shell(ctx))).toContain("Deadlines");
+    expect(sidebar(await shell(ctx))).not.toContain("Deadlines ● , something has lapsed");
+  });
+
+  it("a sample carries Security's strip word for word, and the account row is the workspace and its role, never a person", async () => {
+    const ctx = await signInSample();
+    const html = await shell(ctx);
+    expect(textOf(html)).toContain(
+      "Sample workspace: everything here is made up, and it never takes real files. Don't type real tax numbers or personal details here.",
+    );
+    const row = /<button [^>]*class="account-row"[^>]*>([\s\S]*?)<\/button>/.exec(html)?.[1] ?? "";
+    expect(textOf(row)).toBe("HP Harbor Plumbing (sample) Owner");
+    expect(textOf(await shell(await signIn("shell-v2-real@example.com")))).not.toContain("Sample workspace");
+  });
+
+  it("Feedback writes to the contact address, and isn't there while none is set; Help opens the FAQ", async () => {
+    const ctx = await signIn("shell-v2-feedback@example.com");
+    expect(actionsOf(await shell(ctx)).filter((a) => a.label === "Feedback")).toEqual([]);
+    vi.stubEnv("CONTACT_EMAIL", "hello@shipshape.example");
+    const html = await shell(ctx);
+    expect(actionsOf(html).filter((a) => a.label === "Feedback" || a.label === "Help")).toEqual([
+      { tag: "a", label: "Help", href: "/faq" },
+      { tag: "a", label: "Feedback", href: "mailto:hello@shipshape.example?subject=ShipShape%20feedback" },
+    ]);
   });
 });
 

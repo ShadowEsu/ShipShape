@@ -195,8 +195,8 @@ export function FactsFormV2({ values, readOnly }: { values: Record<ProfileKey, s
         </p>
       )}
       {!readOnly && (
-        // Above the phone's tab bar (51px + its bottom inset, at least 20px), with 8px between, as on a document's Details.
-        <div className="save-dock sticky bottom-[calc(59px+max(env(safe-area-inset-bottom),20px))] z-10 md:static">
+        // Docked at the foot of the phone's screen, 8px over the home indicator, as on a document's Details.
+        <div className="save-dock sticky bottom-[calc(8px+env(safe-area-inset-bottom))] z-10 md:static">
           <button className="btn press w-full md:w-auto" disabled={pending}>
             {pending ? "Saving…" : "Save and confirm"}
           </button>

@@ -169,14 +169,37 @@ export async function firstDocument(ctx: Ctx): Promise<{ id: string; title: stri
   return row ?? null;
 }
 
-/** How many documents Home and the sidebar show as recently added. */
-export const RECENT_MAX = 3;
+/** How many documents Home's Recent shows (Design calm v2: five rows). */
+export const RECENT_MAX = 5;
 // d.id last: the sample workspace's documents share one created_at (one transaction).
 const RECENT_SQL = DOC_SELECT + ` where d.org_id = $2 and d.status = 'active' order by d.created_at desc, d.id limit $3`;
 
-/** The workspace's newest active documents, newest first: "Recent" on Home and in the sidebar. */
+/** The workspace's newest active documents, newest first: Home's Recent. */
 export async function recentDocuments(ctx: Ctx): Promise<DocRow[]> {
   return asUser(ctx.userId, (tx) => tx.query<DocRow>(RECENT_SQL, [ctx.today, ctx.orgId, RECENT_MAX]));
+}
+
+// Lapsed as the lists say it ("Expired"): the expiry date is before the viewer's day.
+const LAPSED_SQL = `select count(*)::int as n from app.documents d where d.org_id = $2 and d.status = 'active' and d.expires_on < $1::date`;
+
+/** How many active documents have lapsed on the viewer's day: the sidebar's dot on Deadlines while it isn't 0. */
+export async function lapsedCount(ctx: Ctx): Promise<number> {
+  const [row] = await asUser(ctx.userId, (tx) => tx.query<{ n: number }>(LAPSED_SQL, [ctx.today, ctx.orgId]));
+  return row?.n ?? 0;
+}
+
+/** How many documents the search box (⌘K) lists for what's typed. */
+export const SEARCH_MAX = 6;
+const SEARCH_SQL = LIST_SQL + " limit $6";
+
+/**
+ * Active documents matching the search box's words, with the documents list's own match and order (Documents?q= finds
+ * the same ones, first page first). Archived documents never show (Security S5). No words, no rows.
+ */
+export async function searchDocuments(ctx: Ctx, q: string): Promise<DocRow[]> {
+  const params = listParams(ctx, { q });
+  if (params[4] === "") return [];
+  return asUser(ctx.userId, (tx) => tx.query<DocRow>(SEARCH_SQL, [...params, SEARCH_MAX]));
 }
 
 // Ordered as passport_open lists a link's documents (0003), so the preview shows them as the link will (W14-10).

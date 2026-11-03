@@ -361,9 +361,9 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
       </ul>
       {(state.error || !dirty) && <Status state={state} savedText="Saved. Reminders follow the new dates." />}
       {(unsaved || pending) && (
-        // Above the phone's tab bar (51px + its bottom inset, at least 20px), with 8px between.
+        // Docked at the foot of the phone's screen, 8px over the home indicator.
         // save-dock: while it shows, the page scrolls fields clear of it (globals.css).
-        <div className="save-dock sticky bottom-[calc(59px+max(env(safe-area-inset-bottom),20px))] z-10 md:static">
+        <div className="save-dock sticky bottom-[calc(8px+env(safe-area-inset-bottom))] z-10 md:static">
           <button className="btn press w-full" disabled={pending}>
             {pending ? "Saving…" : "Save details"}
           </button>
@@ -507,8 +507,8 @@ export function NewDocumentFormV2() {
         <DetailRows v={state.values ?? {}} state={state} kind={kind} />
       </ul>
       <Status state={state} savedText="" />
-      {/* Above the phone's tab bar, as Business facts' Save and confirm. */}
-      <div className="save-dock sticky bottom-[calc(59px+max(env(safe-area-inset-bottom),20px))] z-10 md:static">
+      {/* Docked at the foot of the phone's screen, as Business facts' Save and confirm. */}
+      <div className="save-dock sticky bottom-[calc(8px+env(safe-area-inset-bottom))] z-10 md:static">
         <button className="btn press w-full md:w-auto" disabled={pending}>
           {pending ? "Uploading…" : "Add to documents"}
         </button>

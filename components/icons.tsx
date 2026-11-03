@@ -23,7 +23,8 @@ export type IconName =
   | "open"
   | "download"
   | "tick"
-  | "page";
+  | "page"
+  | "menu";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   home: <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z" />,
@@ -122,6 +123,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M14.5 3.5V8H19M9.5 13h6M9.5 16.5h4" />
     </>
   ),
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
 };
 
 export function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {

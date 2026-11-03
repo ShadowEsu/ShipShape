@@ -2,15 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/app-ui";
 import { LINK_OUTS, TEMPLATES } from "@/lib/templates/catalog";
-import { uiV2 } from "@/lib/server/flags";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { MakeV2 } from "./v2";
 
 export const metadata: Metadata = { title: "Make a document" };
 
 export default async function MakePage() {
-  await requireWorkspace();
-  if (uiV2()) return <MakeV2 />;
+  const ctx = await requireWorkspace();
+  // The same gate as Home's Make (lib/server/tools.ts) and each template's form: a real workspace before the security review.
+  if (uiV2()) return <MakeV2 closed={!ctx.demo && !realDocsEnabled()} />;
   return (
     <div className="space-y-8">
       <PageHeader eyebrow="Make" title="Make a document" />

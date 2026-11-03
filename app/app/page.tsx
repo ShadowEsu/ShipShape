@@ -4,10 +4,12 @@ import { attentionLine } from "@/lib/attention";
 import { aiEnabled } from "@/lib/server/ai";
 import { ATTENTION_MAX, DOC_KINDS, homeSummary, recentDocuments } from "@/lib/server/documents";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
+import { waitingOnOthers } from "@/lib/server/home";
 import { listPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
-import { DEFAULT_WORKSPACE_NAME, requireWorkspace } from "@/lib/server/session";
+import { DEFAULT_WORKSPACE_NAME, requireWorkspace, viewerZone } from "@/lib/server/session";
 import { appTools } from "@/lib/server/tools";
+import { dayOf } from "@/lib/today";
 import { HomeV2 } from "./home-v2";
 
 const TASKS = [
@@ -18,8 +20,18 @@ const TASKS = [
 
 export default async function AppHome() {
   const ctx = await requireWorkspace();
-  const v2 = uiV2();
-  const [docs, profile, links, recent] = await Promise.all([homeSummary(ctx), loadProfile(ctx), listPassports(ctx), v2 ? recentDocuments(ctx) : []]);
+  if (uiV2()) {
+    const [recent, waiting, zone] = await Promise.all([recentDocuments(ctx), waitingOnOthers(ctx), viewerZone()]);
+    return (
+      <HomeV2
+        recent={recent}
+        waiting={{ signatures: waiting.signatures.map((s) => ({ ...s, sentOn: dayOf(s.sentAt, zone) })), vendors: waiting.vendors }}
+        tools={appTools(ctx)}
+        aiOn={aiEnabled()}
+      />
+    );
+  }
+  const [docs, profile, links] = await Promise.all([homeSummary(ctx), loadProfile(ctx), listPassports(ctx)]);
   const { attention, current, first } = docs;
   const canUpload = !ctx.demo && realDocsEnabled();
   // The list comes most-urgent first: what can still be renewed, then what has lapsed. Shown as two labelled
@@ -56,21 +68,6 @@ export default async function AppHome() {
   ];
   const done = setup.filter((s) => s.done).length;
   const next = setup.find((s) => !s.done);
-
-  if (v2) {
-    return (
-      <HomeV2
-        today={ctx.today}
-        docs={docs}
-        groups={groups}
-        canUpload={canUpload}
-        next={next ? { ...next, done, of: setup.length } : null}
-        recent={recent}
-        tools={appTools(ctx)}
-        aiOn={aiEnabled()}
-      />
-    );
-  }
 
   return (
     <div className="space-y-10">

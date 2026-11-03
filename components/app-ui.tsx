@@ -30,8 +30,14 @@ export function ValidityChip({ validity, expiresOn }: { validity: Validity; expi
   const v = VALIDITY[validity];
   if (!v) return <span className="text-xs text-ink-3">No expiry date</span>;
   return (
-    <span data-pulse={validity === "expiring" ? "" : undefined} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${v.cls}`}>
-      <span aria-hidden="true">{v.icon}</span>
+    <span
+      data-pulse={validity === "expiring" ? "" : undefined}
+      data-validity={validity}
+      className={`validity-chip inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${v.cls}`}
+    >
+      <span aria-hidden="true" className="validity-icon">
+        {v.icon}
+      </span>
       {v.label}
       {expiresOn && <span className="font-normal">· {fmtDay(expiresOn)}</span>}
     </span>
