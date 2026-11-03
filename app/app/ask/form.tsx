@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { NOT_A_LAW_FIRM } from "@/components/ui";
 import { AI_REQUEST_CONSENT_TEXT, AI_REQUEST_MAX_CHARS, AI_TRAINING_SOURCE } from "@/lib/ai";
 import { askAction, type AskState } from "./actions";
 import { RequestAnswer } from "./answer";
@@ -92,6 +93,8 @@ export function AskForm({ v2 = false }: { v2?: boolean }) {
           </a>
           , checked {AI_TRAINING_SOURCE.checked}.
         </p>
+        {/* Beside the tick that sends the request, as on Home's box (Security MUST-L1, L5). */}
+        <p className="text-[13px] leading-[19px] text-ink-2">{NOT_A_LAW_FIRM}</p>
         {consentError && (
           <p id="consent-error" className="text-sm text-bad">
             {consentError}

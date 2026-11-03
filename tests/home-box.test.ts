@@ -3,6 +3,7 @@ import { prerender } from "react-dom/static";
 import { describe, expect, it } from "vitest";
 import { AiBoxView } from "@/app/app/ai-box";
 import { RequestAnswer } from "@/app/app/ask/answer";
+import { AskForm } from "@/app/app/ask/form";
 import { NOT_A_LAW_FIRM } from "@/components/ui";
 import type { RequestItem } from "@/lib/server/ai";
 
@@ -68,5 +69,14 @@ describe("Home's box and the legal line", () => {
     const none = await html(createElement(RequestAnswer, { items: [], titleId: "t" }));
     expect(none).toContain("The request doesn&#x27;t ask for any documents");
     expect(none).not.toContain("in a link");
+  });
+
+  it("Check a request's tick carries the line as visible text, in both looks (L5)", async () => {
+    for (const v2 of [true, false]) {
+      const form = visible(await html(createElement(AskForm, { v2 })));
+      const tick = form.indexOf('name="consent"');
+      expect(tick).toBeGreaterThan(-1);
+      expect(form.indexOf(LINE, tick)).toBeGreaterThan(tick);
+    }
   });
 });
