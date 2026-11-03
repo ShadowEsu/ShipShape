@@ -46,21 +46,18 @@ export function PersonForm({ v2, person }: { v2: boolean; person?: { id: string;
     <form ref={form} action={action} className="space-y-4" noValidate>
       {person && <input type="hidden" name="id" value={person.id} />}
       {v2 ? (
-        <div>
-          <ul className="group-list plain">
-            {fields.map((f) => (
-              <li key={f} className="field-row">
+        // Each field's error sits under its own row, inside the group, as the document forms' FieldRow does (Design #24 S2).
+        <ul className="group-list plain">
+          {fields.map((f) => (
+            <li key={f}>
+              <div className="field-row">
                 <label htmlFor={`${prefix}-${f}`}>{LABELS[f]}</label>
                 {input(f)}
-              </li>
-            ))}
-          </ul>
-          {fields.map((f) => (
-            <div key={f} className="px-1">
-              {error(f)}
-            </div>
+              </div>
+              {errors[f] && <div className="px-4 pb-2 text-right">{error(f)}</div>}
+            </li>
           ))}
-        </div>
+        </ul>
       ) : (
         fields.map((f) => (
           <div key={f}>

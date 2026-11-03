@@ -59,7 +59,8 @@ export default function PrivacyPage() {
         </li>
         <li id="people">
           <strong>People:</strong> a workspace can keep a list of people it works with: a name, and an email and company if a member
-          adds them. Every member of the workspace sees the list. An entry is deleted when a member deletes it, or with the workspace.
+          adds them. Every member of the workspace sees the list, and it&apos;s included in the workspace export. An entry is deleted when a
+          member deletes it, or with the workspace.
         </li>
         <li>
           <strong>Billing (Pro):</strong> Stripe&apos;s customer and subscription IDs and your plan&apos;s status. Card details go to

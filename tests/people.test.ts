@@ -423,7 +423,7 @@ describe("signature request counts", () => {
     const got = await getPerson(ctx, id);
     expect(got?.requests.map((r) => [r.id, r.documentId, r.title])).toEqual([[counted, active, "Mutual NDA"]]);
     await finishSignIn(ctx.userId, { demo: false });
-    expect(textOf(await renderPage(PeoplePage, { searchParams: Promise.resolve({}) }))).toContain("Jordan Lee jordan@northwind.example · Signature requests: 1");
+    expect(textOf(await renderPage(PeoplePage, { searchParams: Promise.resolve({}) }))).toContain("Jordan Lee jordan@northwind.example · 1 signature request");
     const person = await renderPage(PersonPage, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
     const links = actionsOf(person).filter((a) => a.href?.endsWith("#signatures"));
     expect(links.map((a) => a.href)).toEqual([`/app/documents/${active}#signatures`]);
@@ -431,6 +431,7 @@ describe("signature request counts", () => {
     // Restored, the archived document's request counts again.
     await db.root((tx) => tx.query("update app.documents set status = 'active' where id = $1", [archived]));
     expect((await listPeople(ctx))[0].requests).toBe(2);
+    expect(textOf(await renderPage(PeoplePage, { searchParams: Promise.resolve({}) }))).toContain("Jordan Lee jordan@northwind.example · 2 signature requests");
   });
 });
 
@@ -512,18 +513,19 @@ describe("pages and forms", () => {
     }
   });
 
-  it("lists people A to Z as hairline rows: name, then company · email · Signature requests: N", async () => {
+  it("lists people A to Z as hairline rows: name, then company · email, and a request count only when there are requests", async () => {
     const ctx = await signIn("people-page-list@example.com");
     const jordan = await addPerson(ctx, { name: "Jordan Lee", email: "jordan@northwind.example", company: "Northwind Builders" });
     const dana = await addPerson(ctx, { name: "dana Kim" });
     const html = await peoplePage();
     expect(html).toContain('<ul class="hair-list">');
     expect(actionsOf(html).filter((a) => a.href?.startsWith("/app/people/"))).toEqual([
-      { tag: "a", label: "dana Kim Signature requests: 0", href: `/app/people/${dana}` },
-      { tag: "a", label: "Jordan Lee Northwind Builders · jordan@northwind.example · Signature requests: 0", href: `/app/people/${jordan}` },
+      { tag: "a", label: "dana Kim", href: `/app/people/${dana}` },
+      { tag: "a", label: "Jordan Lee Northwind Builders · jordan@northwind.example", href: `/app/people/${jordan}` },
     ]);
     vi.stubEnv("SHIPSHAPE_UI", "v1");
-    expect(textOf(await peoplePage())).toContain("Jordan Lee Northwind Builders · jordan@northwind.example · Signature requests: 0");
+    expect(textOf(await peoplePage())).toContain("Jordan Lee Northwind Builders · jordan@northwind.example");
+    expect(textOf(await peoplePage())).not.toContain("signature request");
   });
 
   it("Add a person adds through the form and opens their page; a bad email is named at its field; a full workspace says so", async () => {
@@ -552,7 +554,7 @@ describe("pages and forms", () => {
     const html = await personPage(id);
     const text = textOf(html);
     expect(text).toContain("Jordan Lee Northwind Builders · jordan@northwind.example");
-    expect(text).toContain("Signature requests: 0 No signature requests to this email yet.");
+    expect(text).toContain("Signature requests No signature requests to this email yet.");
     // Ask to sign: the active documents that get signed, each to its page with the person's id, never their email.
     const asks = actionsOf(html).filter((a) => a.href?.includes("person="));
     expect(asks).toEqual([{ tag: "a", label: "Mutual NDA", href: `/app/documents/${nda}?person=${id}#signer-name` }]);

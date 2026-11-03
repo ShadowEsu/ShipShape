@@ -14,9 +14,13 @@ export const metadata: Metadata = { title: "People" };
 /** What People says after a "Keep in People" it couldn't do (actions.ts). */
 const ERRORS: Record<string, string> = { keep: KEEP_GONE, full: PEOPLE_FULL, busy: PEOPLE_BUSY };
 
-/** A person's line under their name: company, email, and their signature requests. */
+/**
+ * A person's line under their name: company, email, and their signature requests when there are any ("1 signature
+ * request", "3 signature requests"), its spaces non-breaking so the count never wraps away from its words (Design #24 MUST-2).
+ */
 function personLine(p: Person): string {
-  return [p.company, p.email, `Signature requests: ${p.requests}`].filter(Boolean).join(" · ");
+  const requests = p.requests > 0 ? `${p.requests}\u00a0signature\u00a0${p.requests === 1 ? "request" : "requests"}` : null;
+  return [p.company, p.email, requests].filter(Boolean).join(" · ");
 }
 
 /** The people this workspace keeps (spec-people-2026-11-03 §5), A to Z, and the form to add one. */

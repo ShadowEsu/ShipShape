@@ -54,16 +54,17 @@ export default async function PersonPage({ params, searchParams }: { params: Pro
 
       <section aria-labelledby="requests-title" className="space-y-2">
         <h2 id="requests-title" className={section}>
-          Signature requests: {person.requests}
+          Signature requests
         </h2>
         {requests.length > 0 ? (
           <ul className={list}>
             {requests.map((r) => (
               <li key={r.id}>
                 <Link href={`/app/documents/${r.documentId}#signatures`} className="group-row">
+                  {/* Titles and lines wrap rather than cut, at any width (Design #24 MUST-1). */}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{r.title}</span>
-                    <span className="block truncate text-[13px] text-ink-3">
+                    <span className="block font-medium">{r.title}</span>
+                    <span className="block text-[13px] text-ink-3">
                       {REQUEST_STATUS[r.status]} · asked {dayOf(r.createdAt, zone)}
                       {r.signedAt && ` · signed ${dayOf(r.signedAt, zone)}`}
                     </span>
@@ -100,13 +101,13 @@ export default async function PersonPage({ params, searchParams }: { params: Pro
           </p>
         ) : (
           <>
-            <p className="text-sm text-ink-2">Pick a document. Its signature request opens with {person.name}&apos;s name and email filled in.</p>
+            <p className="text-sm text-ink-2">Pick a document. Its signature request opens with this person&apos;s name and email filled in.</p>
             <ul className={list}>
               {docs.map((d) => (
                 <li key={d.id}>
                   {/* The person's id, never their email, goes in the address; the document page reads them under row level security. */}
                   <Link href={`/app/documents/${d.id}?person=${person.id}#signer-name`} className="group-row">
-                    <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                    <span className="min-w-0 flex-1">{d.title}</span>
                     <span className="text-ink-3">
                       <Icon name="chevron" size={16} />
                     </span>
