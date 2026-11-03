@@ -1249,7 +1249,7 @@ describe("a document's page", () => {
       expect(ok).not.toContain("data-pulse");
     });
 
-    it("a signature request's state crossfades in place like a chip; the current look keeps a plain label", async () => {
+    it("a signature request's state is the app's dot chip and crossfades in place; the current look keeps a plain label", async () => {
       const ctx = await signIn("doc-v2-sign-label@example.com");
       const pdf = await PDFDocument.create();
       pdf.addPage([612, 792]);
@@ -1258,7 +1258,8 @@ describe("a document's page", () => {
       await db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, 'cus_V2sign', 'active', 'pro')", [ctx.orgId]));
       await requestSignature(ctx, { documentId: id, signerName: "Jordan Lee", signerEmail: "jordan@northwind.example", days: 7 }, "192.0.2.10");
       const label = (html: string) => /<span [^>]*>Waiting<\/span>/.exec(html)?.[0] ?? "";
-      expect(label(await documentPage(id, {}))).toContain('vt-update="v2-chip"');
+      // Waiting is grey, as on Sent (Design #27 INFO).
+      expect(label(await documentPage(id, {}))).toMatch(/^<span class="dot-chip"[^>]*vt-update="v2-chip"/);
       vi.stubEnv("SHIPSHAPE_UI", "v1");
       expect(label(await documentPage(id, {}))).toBe('<span class="shrink-0 text-xs text-ink-2">Waiting</span>');
     });
