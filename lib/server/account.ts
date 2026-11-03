@@ -129,7 +129,6 @@ interface ExportContact {
   created_at: string;
 }
 
-
 /**
  * Everything in the workspace as a ZIP: every version of every document, their details, the
  * business facts (tax ID only as its last 4 digits), the full history, the passport links with their
