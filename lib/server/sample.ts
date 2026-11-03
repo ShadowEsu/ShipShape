@@ -9,6 +9,7 @@ import { encryptField } from "./crypto";
 import type { Tx } from "./db";
 import { insertDocument } from "./documents";
 import { fillRecord, prefill, render } from "./fill";
+import { seedSamplePeople } from "./people";
 import type { Ctx } from "./profile";
 import { saveInTx } from "./saved";
 
@@ -125,4 +126,6 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await saveInTx(tx, ctx, "document", w9);
   if (certificate) await saveInTx(tx, ctx, "document", certificate);
   await seedSampleVendors(tx, ctx, day);
+  // People (0046): three made-up contacts, so People has someone in it.
+  await seedSamplePeople(tx, ctx);
 }

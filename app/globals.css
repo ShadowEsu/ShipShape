@@ -483,6 +483,10 @@ body {
 .ui-v2 #search-field:focus-visible {
   outline: none;
 }
+/* The search dialog has its own ✕ (Close); the browser's blue clear button beside it would be a second one (Design #24 MUST-3). */
+.ui-v2 #search-field::-webkit-search-cancel-button {
+  appearance: none;
+}
 .ui-v2 .prompt:focus-within {
   border-color: var(--ink);
 }

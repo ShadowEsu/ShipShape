@@ -557,7 +557,20 @@ export function VersionForm({ id, warning }: { id: string; warning?: string }) {
 const SIGN_IDS = { signer_name: "signer-name", signer_email: "signer-email", days: "sign-days" };
 
 /** `rows`: the redesigned page's grouped list (Design, 02 Nov), the same fields and action as the boxed form. */
-export function SignRequestForm({ id, days, demo, rows = false }: { id: string; days: readonly number[]; demo: boolean; rows?: boolean }) {
+/** `signer`: a person from People ("Ask to sign" on their page), read by the server under row level security, filled in to start with. */
+export function SignRequestForm({
+  id,
+  days,
+  demo,
+  rows = false,
+  signer,
+}: {
+  id: string;
+  days: readonly number[];
+  demo: boolean;
+  rows?: boolean;
+  signer?: { name: string; email: string } | null;
+}) {
   const [state, action, pending] = useActionState<SignFormState, FormData>(askToSign, {});
   const [url, setUrl] = useState<string | null>(null);
   const created = state.created;
@@ -598,7 +611,7 @@ export function SignRequestForm({ id, days, demo, rows = false }: { id: string; 
       required
       maxLength={120}
       autoComplete="off"
-      defaultValue={state.values?.signer_name}
+      defaultValue={state.values?.signer_name ?? signer?.name}
       placeholder={rows ? "Add" : undefined}
       className={rows ? "row-field scroll-mt-24" : "input"}
       {...invalid(state, "signer_name")}
@@ -612,7 +625,7 @@ export function SignRequestForm({ id, days, demo, rows = false }: { id: string; 
       required
       maxLength={200}
       autoComplete="off"
-      defaultValue={state.values?.signer_email}
+      defaultValue={state.values?.signer_email ?? signer?.email}
       placeholder={rows ? "name@company.com" : undefined}
       className={rows ? "row-field" : "input"}
       {...invalid(state, "signer_email")}

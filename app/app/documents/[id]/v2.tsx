@@ -17,8 +17,8 @@ import { archiveQuestion, versionWarning } from "../messages";
 import { fieldSources, historyLabel, size } from "./shared";
 import { SignatureRequests } from "./signatures";
 
-/** The kinds that get signed: only these offer "Ask to sign" (Design, 02 Nov). */
-const SIGNED_KINDS: ReadonlySet<DocKind> = new Set<DocKind>(["nda", "agreement"]);
+/** The kinds that get signed: only these offer "Ask to sign" (Design, 02 Nov), here and on a person's page in People. */
+export const SIGNED_KINDS: ReadonlySet<DocKind> = new Set<DocKind>(["nda", "agreement"]);
 
 /** History shows this many entries, then "Show all". */
 export const HISTORY_FIRST = 5;
@@ -82,6 +82,10 @@ export function DocumentV2(p: {
   notices: React.ReactNode;
   /** Whether this person saved it (Saved, 0045): the toggle shows while it's active. */
   saved: boolean;
+  /** A person from People to fill the request form with ("Ask to sign" on their page), read under row level security. */
+  signer: { name: string; email: string } | null;
+  /** The signers' addresses already in People (lowercased): "In People" beside them, "Keep in People" beside the others. */
+  kept: ReadonlySet<string>;
 }) {
   const { doc, versions, template, zone } = p;
   const latest = versions[0];
@@ -239,10 +243,10 @@ export function DocumentV2(p: {
           <h2 id="signatures-title" className="section-title">
             Signatures
           </h2>
-          {p.requests.length > 0 && <SignatureRequests docId={doc.id} requests={p.requests} zone={zone} now={p.now} v2 />}
+          {p.requests.length > 0 && <SignatureRequests docId={doc.id} requests={p.requests} zone={zone} now={p.now} v2 kept={p.kept} />}
           {signable &&
             (p.esignOn ? (
-              <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={p.demo} rows />
+              <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={p.demo} rows signer={p.signer} />
             ) : (
               <p className="text-xs text-ink-3">Signing by email opens once ShipShape can send email.</p>
             ))}

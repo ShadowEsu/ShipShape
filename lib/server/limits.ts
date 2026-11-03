@@ -30,3 +30,13 @@ export const FILES_FULL_PRO = " Pro has no total file limit.";
 export const ESIGN_BUSY = `That's ${ESIGN_TRIES_PER_HOUR} signature requests tried in the last hour, the most ShipShape allows. Nothing was sent; try again in an hour.`;
 
 export const SAMPLE_SIGNIN_BUSY = "Too many samples started from this network. Wait up to an hour, then try again, or sign in with your account.";
+
+/** People (0046): a workspace keeps at most this many contacts; 0046's before-insert trigger holds the same number (Security P4). */
+export const PEOPLE_MAX = 500;
+
+export const PEOPLE_FULL = `People holds up to ${PEOPLE_MAX} people in a workspace, and this one is full. Nothing was added; delete someone you no longer need to make room.`;
+
+/** People one person may add in an hour (typed or kept from a signer). */
+export const PEOPLE_PER_HOUR = 60;
+
+export const PEOPLE_BUSY = "That's the hourly limit for adding people. Nothing was added; try again in an hour.";

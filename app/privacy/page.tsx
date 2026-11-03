@@ -57,6 +57,11 @@ export default function PrivacyPage() {
           Vendor files are never sent to AI. They stay until the workspace deletes them (owners and admins can delete any file) or
           the workspace is deleted.
         </li>
+        <li id="people">
+          <strong>People:</strong> a workspace can keep a list of people it works with: a name, and an email and company if a member
+          adds them. Every member of the workspace sees the list, and it&apos;s included in the workspace export. An entry is deleted when a
+          member deletes it, or with the workspace.
+        </li>
         <li>
           <strong>Billing (Pro):</strong> Stripe&apos;s customer and subscription IDs and your plan&apos;s status. Card details go to
           Stripe and never reach ShipShape.

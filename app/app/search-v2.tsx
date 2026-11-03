@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Icon, type IconName } from "@/components/icons";
-import { searchAction, type SearchHit } from "./search-actions";
+import { searchAction, searchPeopleAction, type SearchHit } from "./search-actions";
 
 /** A tool as the search box lists it: Home's tools, with the closed gate's words when there is one. */
 export interface SearchTool {
@@ -18,15 +18,15 @@ export interface SearchTool {
 const PAUSE_MS = 150;
 
 /**
- * ⌘K: one field that finds a tool by its name (in the browser) and the workspace's documents by their words (the
- * server, under row level security). Up and Down move between the results, Enter opens the first, Escape closes.
+ * ⌘K: one field that finds a tool by its name (in the browser), and the workspace's documents by their words and its
+ * people by name or company (the server, under row level security). Up and Down move between the results, Enter opens the first, Escape closes.
  * The full list is one link away: Documents with the same words.
  */
 export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialogElement | null>; tools: readonly SearchTool[] }) {
   const router = useRouter();
   const path = usePathname();
   const [q, setQ] = useState("");
-  const [hits, setHits] = useState<{ q: string; rows: SearchHit[] }>({ q: "", rows: [] });
+  const [hits, setHits] = useState<{ q: string; rows: SearchHit[]; people: SearchHit[] }>({ q: "", rows: [], people: [] });
   const [pending, startTransition] = useTransition();
   const asked = useRef("");
   const list = useRef<HTMLDivElement>(null);
@@ -41,9 +41,9 @@ export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialog
     const t = setTimeout(() => {
       asked.current = words;
       startTransition(async () => {
-        const rows = await searchAction(words);
+        const [rows, people] = await Promise.all([searchAction(words), searchPeopleAction(words)]);
         // Only the latest question's answer is shown; an earlier, slower one is dropped.
-        if (asked.current === words) setHits({ q: words, rows });
+        if (asked.current === words) setHits({ q: words, rows, people });
       });
     }, PAUSE_MS);
     return () => clearTimeout(t);
@@ -52,8 +52,9 @@ export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialog
   const lower = words.toLowerCase();
   const toolHits = words === "" ? tools : tools.filter((t) => t.name.toLowerCase().includes(lower));
   const docs = hits.q === words ? hits.rows : [];
+  const people = hits.q === words ? hits.people : [];
   const waiting = words !== "" && (pending || hits.q !== words);
-  const status = words === "" ? "" : waiting ? "Searching…" : `${toolHits.length + docs.length} found`;
+  const status = words === "" ? "" : waiting ? "Searching…" : `${toolHits.length + docs.length + people.length} found`;
 
   // Arrow keys walk the result links in order, from the field into the list and back.
   const move = (e: React.KeyboardEvent) => {
@@ -96,9 +97,9 @@ export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialog
           value={q}
           onChange={(e) => setQ(e.target.value)}
           maxLength={100}
-          aria-label="Search documents and tools"
+          aria-label="Search documents, people and tools"
           aria-describedby="search-status"
-          placeholder="Search documents and tools"
+          placeholder="Search documents, people and tools"
           className="min-h-13 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3"
         />
         <button type="button" onClick={() => open.current?.close()} className="grid size-11 shrink-0 place-items-center text-ink-3" aria-label="Close">
@@ -159,6 +160,28 @@ export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialog
               </span>
               <span className="min-w-0 flex-1 truncate">See every match in Documents</span>
             </Link>
+          </section>
+        )}
+        {people.length > 0 && (
+          <section aria-labelledby="search-people" className="mt-1">
+            <h2 id="search-people" className="px-2 pt-1 pb-1.5 text-xs text-ink-3">
+              People
+            </h2>
+            <ul>
+              {people.map((p) => (
+                <li key={p.id}>
+                  <Link href={`/app/people/${p.id}`} data-hit="" className="search-row">
+                    <span className="row-icon">
+                      <Icon name="people" size={18} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{p.title}</span>
+                      {p.line && <span className="block truncate text-xs text-ink-3">{p.line}</span>}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
       </div>

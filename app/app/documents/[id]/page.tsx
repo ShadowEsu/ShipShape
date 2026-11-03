@@ -10,6 +10,7 @@ import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, getDocument } from "@/lib/server/doc
 import { esignAvailable, listSignatureRequests, SIGN_DAYS } from "@/lib/server/esign";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { openLinksWith } from "@/lib/server/passport";
+import { keptEmails, signerFor } from "@/lib/server/people";
 import { isSaved } from "@/lib/server/saved";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
@@ -28,12 +29,12 @@ export default async function DocumentPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; made?: string; added?: string }>;
+  searchParams: Promise<{ error?: string; made?: string; added?: string; person?: string; kept?: string }>;
 }) {
   const ctx = await requireWorkspace();
   const zone = await viewerZone();
   const { id } = await params;
-  const { error, made, added } = await searchParams;
+  const { error, made, added, person, kept } = await searchParams;
   const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
   const got = await getDocument(ctx, id);
   if (!got) notFound();
@@ -48,6 +49,9 @@ export default async function DocumentPage({
   // Links that still work and hold it: archiving takes it off them for good (0041), and the page says so before the click.
   const openLinks = doc.status === "active" ? await openLinksWith(ctx, doc.id) : 0;
   const linksWarning = openLinks > 0 ? archiveLinksWarning(openLinks) : null;
+  // "Ask to sign" from a person's page (People): the address carries their id only; their name and email are read here,
+  // under row level security, to fill the request form.
+  const signer = person && doc.status === "active" && esignAvailable(ctx) ? await signerFor(ctx, person) : null;
 
   const notices = (
     <>
@@ -75,6 +79,11 @@ export default async function DocumentPage({
                 ? "ask the other party to sign it under Signatures."
                 : "download it and send it to the other party to sign."}
           </Notice>
+        </div>
+      )}
+      {kept === "already" && (
+        <div role="status">
+          <Notice>That email was already in People. Nothing was added.</Notice>
         </div>
       )}
       {added && !made && (
@@ -113,6 +122,8 @@ export default async function DocumentPage({
         linksWarning={linksWarning}
         notices={notices}
         saved={doc.status === "active" && (await isSaved(ctx, "document", doc.id))}
+        signer={signer}
+        kept={await keptEmails(ctx, requests.map((r) => r.signer_email))}
       />
     );
 
@@ -217,7 +228,7 @@ export default async function DocumentPage({
               <h2 className="font-semibold">Signatures</h2>
               {requests.length > 0 && <SignatureRequests docId={doc.id} requests={requests} zone={zone} now={now} />}
               {esignAvailable(ctx) ? (
-                <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={ctx.demo} />
+                <SignRequestForm id={doc.id} days={SIGN_DAYS} demo={ctx.demo} signer={signer} />
               ) : (
                 <p className="text-xs text-ink-3">Signing by email opens once ShipShape can send email.</p>
               )}
