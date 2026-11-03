@@ -96,6 +96,8 @@ beforeAll(async () => {
   for (const [u, item] of [[a, "terms_privacy"], [b, "terms_privacy"]]) {
     await asUser(u, (tx) => tx.query("insert into app.consents (user_id, item, policy_version) values ($1, $2, 'v1')", [u, item]));
   }
+  // People (0046): a contact A keeps, after the setup's history rows above.
+  await asUser(a, (tx) => tx.query("insert into app.contacts (org_id, name, email, source, created_by) values ($1, 'Sam Signer', 'sam@example.com', 'typed', $2)", [orgA, a]));
 });
 
 // Every table in schema app, with the column that ties a row to a workspace (null: not tenant data).
@@ -131,6 +133,7 @@ const TABLES: Record<string, string | null> = {
   session_revocations: null, // each person's own row only: when they last signed out everywhere, checked below
   sessions: null, // each person's own rows only: the browsers they're signed in on, checked below
   saved_items: "org_id", // and each person's own only: checked in saved.test.ts
+  contacts: "org_id", // People (0046): who may change which, the cap and the checks are in people.test.ts
 };
 
 describe("row level security", () => {
