@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { ConfirmForm } from "@/components/confirm-form";
 import type { SentLinkDetail, SentSignatureDetail } from "@/lib/server/activity";
 import { dayOf, timeOf } from "@/lib/today";
+import { turnOff } from "../passport/actions";
 import { linkStatus } from "../passport/link-status";
 
 /** One step of "Where it went": what happened and when; not `done` for what hasn't happened (yet). */
@@ -53,9 +55,15 @@ function signatureSteps(d: SentSignatureDetail, zone: string): Step[] {
   return steps;
 }
 
-/** The chosen row's detail: what it holds, its timeline, and where to act on it (the link's or the document's page). */
+/**
+ * The chosen row's detail: what it holds, its timeline, and where to act on it. A working link can be turned off here
+ * (asking once first, as on its own page), and it comes back here showing it's off. There's no Copy link: ShipShape keeps
+ * only the link's hash, so its address was shown once, when it was made.
+ */
 export function SentDetail({ detail, zone }: { detail: SentLinkDetail | SentSignatureDetail; zone: string }) {
-  const isLink = detail.row.kind === "link";
+  const row = detail.row;
+  const isLink = row.kind === "link";
+  const working = row.kind === "link" && linkStatus({ revoked_at: row.revokedAt, expires_at: row.expiresAt }, zone).working;
   const steps = "opened" in detail ? linkSteps(detail, zone) : signatureSteps(detail, zone);
   return (
     <div className="sent-detail space-y-5">
@@ -95,9 +103,21 @@ export function SentDetail({ detail, zone }: { detail: SentLinkDetail | SentSign
           ))}
         </ol>
       </div>
-      <Link href={detail.row.kind === "link" ? `/app/passport/${detail.row.id}` : `/app/documents/${detail.row.documentId}`} className="btn-ghost press">
-        {isLink ? "Open the link's page" : "Open the document"}
-      </Link>
+      <div className="flex flex-wrap items-center gap-3">
+        <Link href={row.kind === "link" ? `/app/passport/${row.id}` : `/app/documents/${row.documentId}`} className="btn-ghost press">
+          {isLink ? "Open the link's page" : "Open the document"}
+        </Link>
+        {working && row.kind === "link" && (
+          <ConfirmForm
+            action={turnOff}
+            fields={{ id: row.id, back: "sent" }}
+            trigger="Turn off this link"
+            question={`Turn off this link? ${row.label} won't be able to open it again. You can make a new link any time.`}
+            confirm="Turn off the link"
+            pendingLabel="Turning off…"
+          />
+        )}
+      </div>
     </div>
   );
 }

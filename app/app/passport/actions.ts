@@ -55,17 +55,21 @@ export async function makePassport(_prev: PassportFormState, data: FormData): Pr
 export async function turnOff(data: FormData) {
   const ctx = await requireWorkspace();
   const id = String(data.get("id") ?? "");
-  // Back to the link's page; ?error=off makes it say the link was already off (ERRORS in [id]/page.tsx),
-  // and the plain address drops a message from an earlier attempt.
-  const page = z.uuid().safeParse(id).success ? `/app/passport/${id}` : "/app/passport";
+  const valid = z.uuid().safeParse(id).success;
+  // Back to where it was turned off: the link's page, or (`back=sent`) its detail on Sent, which shows its new state.
+  // On the link's page ?error=off says it was already off (ERRORS in [id]/page.tsx); the plain address drops a message
+  // from an earlier attempt.
+  const fromSent = valid && data.get("back") === "sent";
+  const page = !valid ? "/app/passport" : fromSent ? `/app/sent?open=link-${id}` : `/app/passport/${id}`;
   try {
     await revokePassport(ctx, id);
   } catch (e) {
     // Already off: a second click, or turned off in another tab.
-    if (e instanceof UserError) redirect(`${page}?error=off`, RedirectType.replace);
+    if (e instanceof UserError) redirect(fromSent ? page : `${page}?error=off`, RedirectType.replace);
     throw e;
   }
   revalidatePath("/app/passport");
   revalidatePath(`/app/passport/${id}`);
+  revalidatePath("/app/sent");
   redirect(page, RedirectType.replace);
 }

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as exportHistory } from "@/app/app/history/export/route";
 import HistoryPage from "@/app/app/history/page";
+import { turnOff } from "@/app/app/passport/actions";
 import SentPage from "@/app/app/sent/page";
 import SignedPage from "@/app/app/signed/page";
 import {
@@ -171,6 +172,25 @@ describe("Sent", () => {
     expect(everything).not.toContain("pat.private@");
     as(owner);
     expect(textOf(await renderPage(SignedPage, {}))).toContain("Signed by Pat Example (sample)");
+  });
+
+  it("turns a working link off from its detail and comes back to it, now Turned off; a second try lands there too", async () => {
+    as(owner);
+    const [link] = (await listSent(owner, null)).filter((r) => r.kind === "link");
+    const detailOf = async () => renderPage(SentPage, params({ open: `link-${link.id}` }));
+    expect(actionsOf(await detailOf()).map((a) => a.label)).toContain("Turn off this link");
+    const form = new FormData();
+    form.set("id", link.id);
+    form.set("back", "sent");
+    // Exact messages: toThrow(string) matches a substring, which a trailing ?error=off would still pass.
+    await expect(turnOff(form)).rejects.toMatchObject({ message: `redirect /app/sent?open=link-${link.id}` });
+    const after = await detailOf();
+    expect(actionsOf(after).map((a) => a.label)).not.toContain("Turn off this link");
+    expect(textOf(after)).toContain("Turned off");
+    await expect(turnOff(form)).rejects.toMatchObject({ message: `redirect /app/sent?open=link-${link.id}` });
+    // From the link's own page (no back), the already-off words, as before.
+    form.delete("back");
+    await expect(turnOff(form)).rejects.toMatchObject({ message: `redirect /app/passport/${link.id}?error=off` });
   });
 
   it("shows nothing of another workspace: lists, details, History and its export (S1)", async () => {
