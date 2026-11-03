@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { type Ref, useActionState, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
+import { NOT_A_LAW_FIRM } from "@/components/ui";
 import { AI_REQUEST_CONSENT_TEXT, AI_REQUEST_MAX_CHARS, AI_TRAINING_SOURCE } from "@/lib/ai";
 import { looksLikeRequest, routeFor, type Destination } from "@/lib/home-route";
 import type { Tool } from "@/lib/server/tools";
 import { askAction, type AskState } from "./ask/actions";
-import { currentMatchIds, RequestItemBody } from "./ask/form";
+import { RequestAnswer } from "./ask/answer";
 
 // The two documents Make fills, as the box offers them when they're named.
 const TEMPLATES = {
@@ -17,10 +18,14 @@ const TEMPLATES = {
 
 type Answer = { kind: "tool"; tool: Tool; name: string; line: string; href: string } | { kind: "none" } | { kind: "ai-off" } | { kind: "check" };
 
+/** What the box does with this text: check it as a request (AI on, and it reads like one), say AI is off, or find a tool. */
+const modeOf = (text: string, aiOn: boolean) => (looksLikeRequest(text) ? (aiOn ? "check" : "ai-off") : "find");
+
 /**
  * Home's box (Design spec 2026-11-02 §3; BOSS 01:2x): it finds the right tool, or checks a pasted request against the
  * vault with the existing "What are they asking for?" reading. Nothing else: no advice, no thread. Each answer replaces
- * the last. Finding a tool happens in the browser from the words; only checking a request sends text, after its box is ticked.
+ * the last. Finding a tool happens in the browser from the words; only checking a request sends text, after its box is
+ * ticked. This holds the state; AiBoxView draws it.
  */
 export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }) {
   const [text, setText] = useState("");
@@ -30,10 +35,6 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
   const [check, runCheck, pending] = useActionState<AskState, FormData>(askAction, {});
   const [slow, setSlow] = useState(false);
   const result = useRef<HTMLElement>(null);
-  const ids = useId();
-  const isRequest = looksLikeRequest(text);
-  const checking = aiOn && isRequest;
-  const filled = text.trim().length > 0;
 
   // While a check runs (about 2 s), the button says what's happening, in two stages.
   useEffect(() => {
@@ -44,7 +45,6 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
       setSlow(false);
     };
   }, [pending]);
-  const stage = slow ? "Matching your documents…" : "Reading the request…";
   // A new answer (or a refused check) takes focus, so it's read out and the keyboard lands on its action.
   useEffect(() => {
     result.current?.focus();
@@ -59,25 +59,72 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
 
   const submit = (form: FormData) => {
     setRound((r) => r + 1);
-    if (checking) {
+    const mode = modeOf(text, aiOn);
+    if (mode === "check") {
       setAnswer({ kind: "check" });
       runCheck(form);
       return;
     }
-    if (isRequest) return setAnswer({ kind: "ai-off" });
+    if (mode === "ai-off") return setAnswer({ kind: "ai-off" });
     const d = routeFor(text);
     setAnswer(d ? toolFor(d) : { kind: "none" });
   };
 
+  return (
+    <AiBoxView
+      text={text}
+      aiOn={aiOn}
+      onText={setText}
+      onSubmit={submit}
+      answer={answer}
+      check={check}
+      pending={pending}
+      stage={slow ? "Matching your documents…" : "Reading the request…"}
+      round={round}
+      resultRef={result}
+    />
+  );
+}
+
+/**
+ * The box as drawn from its state. It decides from the text alone whether this is a check, and a check always shows
+ * the consent tick with the not-a-law-firm line (Security MUST-L1), so no caller can show one without the other.
+ */
+export function AiBoxView({
+  text,
+  aiOn,
+  onText = () => {},
+  onSubmit = () => {},
+  answer = null,
+  check = {},
+  pending = false,
+  stage = "",
+  round = 0,
+  resultRef,
+}: {
+  text: string;
+  aiOn: boolean;
+  onText?: (text: string) => void;
+  onSubmit?: (form: FormData) => void;
+  answer?: Answer | null;
+  check?: AskState;
+  pending?: boolean;
+  stage?: string;
+  round?: number;
+  resultRef?: Ref<HTMLElement>;
+}) {
+  const ids = useId();
+  const mode = modeOf(text, aiOn);
+  const checking = mode === "check";
+  const filled = text.trim().length > 0;
   const textError = answer?.kind === "check" && check.field === "text" ? check.error : undefined;
   const consentError = answer?.kind === "check" && check.field === "consent" ? check.error : undefined;
   const items = answer?.kind === "check" && !pending ? check.items : undefined;
   const refused = answer?.kind === "check" && !pending && !check.field ? check.error : undefined;
-  const linkIds = currentMatchIds(items ?? []);
 
   return (
     <div className="mx-auto w-full max-w-[640px] space-y-3">
-      <form action={submit}>
+      <form action={onSubmit}>
         {/* One line that grows with what's typed (field-sizing), with no mic: the box finds a tool or checks a request. */}
         <div className="prompt">
           <span className="prompt-orb" aria-hidden="true" />
@@ -85,10 +132,10 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
             name="text"
             rows={1}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onText(e.target.value)}
             maxLength={AI_REQUEST_MAX_CHARS}
             aria-labelledby="home-title"
-            aria-describedby={`${ids}-hint${textError ? ` ${ids}-text-error` : ""}`}
+            aria-describedby={textError ? `${ids}-text-error` : undefined}
             aria-invalid={textError ? true : undefined}
             placeholder="Paste what a customer asked for, or say what you need to do."
             className="prompt-field"
@@ -102,49 +149,16 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
           </button>
         </div>
         <span className="sr-only" aria-live="polite">
-          {checking ? "Check a request" : !aiOn && isRequest ? "AI is off; pick a tool below" : "Finds the right tool"}
+          {checking ? "Check a request" : mode === "ai-off" ? "AI is off; pick a tool below" : "Finds the right tool"}
         </span>
         {textError && (
           <p id={`${ids}-text-error`} className="mt-2 px-2 text-sm text-bad">
             {textError}
           </p>
         )}
-        {!aiOn && isRequest && <p className="mt-2 px-2 text-[13px] text-ink-2">AI is off right now, so it can&apos;t check a request. Pick a tool below.</p>}
-        {checking && (
-          <div className="mt-3.5 space-y-1.5 px-1">
-            <label className="flex items-start gap-3 text-[13px] leading-[19px] text-ink-2">
-              <input
-                type="checkbox"
-                name="consent"
-                value="yes"
-                // Per check, as /app/ask: the server sends the tick back only with a refusal about something else (W10-7),
-                // never after a completed check, so React's reset after each check leaves the box unticked (Security SHOULD-V2a).
-                defaultChecked={check.consent}
-                aria-required="true"
-                aria-invalid={consentError ? true : undefined}
-                aria-describedby={`${ids}-source${consentError ? ` ${ids}-consent-error` : ""}`}
-                className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
-              />
-              <span>{AI_REQUEST_CONSENT_TEXT}</span>
-            </label>
-            <p id={`${ids}-source`} className="pl-7 text-xs text-ink-3">
-              Source:{" "}
-              <a href={AI_TRAINING_SOURCE.href} target="_blank" rel="noopener noreferrer" className="underline">
-                {AI_TRAINING_SOURCE.label}
-              </a>
-              , checked {AI_TRAINING_SOURCE.checked}.
-            </p>
-            {consentError && (
-              <p id={`${ids}-consent-error`} className="pl-7 text-sm text-bad">
-                {consentError}
-              </p>
-            )}
-          </div>
-        )}
+        {mode === "ai-off" && <p className="mt-2 px-2 text-[13px] text-ink-2">AI is off right now, so it can&apos;t check a request. Pick a tool below.</p>}
+        {checking && <RequestConsent id={ids} defaultChecked={check.consent} error={consentError} />}
       </form>
-      <p id={`${ids}-hint`} className="text-center text-[13px] leading-[18px] text-ink-3">
-        It finds the right tool, or checks a request against your documents. It doesn&apos;t give legal advice.
-      </p>
       {pending && answer?.kind === "check" && (
         <p role="status" className="text-center text-sm text-ink-2">
           {stage}
@@ -152,7 +166,7 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
       )}
 
       {answer && !pending && !textError && !consentError && (
-        <section key={round} ref={result} tabIndex={-1} aria-label="Answer" className="arrive card space-y-4 outline-none">
+        <section key={round} ref={resultRef} tabIndex={-1} aria-label="Answer" className="arrive card space-y-4 outline-none">
           {answer.kind === "tool" && (
             <div className="flex flex-wrap items-center gap-4">
               <span className="row-icon">
@@ -191,37 +205,48 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
               {refused}
             </p>
           )}
-          {items && (
-            <>
-              <h2 className="section-title">
-                {items.length === 0 ? "The request doesn't ask for any documents" : `The request asks for ${items.length} ${items.length === 1 ? "document" : "documents"}`}
-              </h2>
-              {items.length === 0 ? (
-                <p className="text-sm text-ink-2">
-                  The AI didn&apos;t find any documents asked for in that text. If it should have, paste just the part that lists them and check it again.
-                </p>
-              ) : (
-                <ul className="group-list">
-                  {items.map((item, n) => (
-                    <li key={n} className="space-y-2 px-4 py-3">
-                      <RequestItemBody item={item} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="text-xs text-ink-3">Read by AI. Check the important ones.</p>
-              {linkIds.length > 0 && (
-                <div className="space-y-2">
-                  <Link href={`/app/passport?docs=${linkIds.join(",")}`} className="btn btn-block press">
-                    {linkIds.length === 1 ? "Share the current one in a link" : `Share the ${linkIds.length} current ones in a link`}
-                  </Link>
-                  <p className="text-xs text-ink-3">Nothing is sent until you make the link.</p>
-                </div>
-              )}
-            </>
-          )}
+          {items && <RequestAnswer items={items} titleId={`${ids}-answer-title`} />}
         </section>
       )}
+    </div>
+  );
+}
+
+/**
+ * The tick that lets one check send the request to the model, with where that claim comes from and the
+ * not-a-law-firm line beside it, at the same size (Security MUST-L1, 3 Nov). Shown only while the box will check.
+ */
+function RequestConsent({ id, defaultChecked, error }: { id: string; defaultChecked?: boolean; error?: string }) {
+  return (
+    <div className="mt-3.5 space-y-1.5 px-1">
+      <label className="flex items-start gap-3 text-[13px] leading-[19px] text-ink-2">
+        <input
+          type="checkbox"
+          name="consent"
+          value="yes"
+          // Per check, as /app/ask: the server sends the tick back only with a refusal about something else (W10-7),
+          // never after a completed check, so React's reset after each check leaves the box unticked (Security SHOULD-V2a).
+          defaultChecked={defaultChecked}
+          aria-required="true"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={`${id}-source${error ? ` ${id}-consent-error` : ""}`}
+          className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
+        />
+        <span>{AI_REQUEST_CONSENT_TEXT}</span>
+      </label>
+      <p id={`${id}-source`} className="pl-7 text-xs text-ink-3">
+        Source:{" "}
+        <a href={AI_TRAINING_SOURCE.href} target="_blank" rel="noopener noreferrer" className="underline">
+          {AI_TRAINING_SOURCE.label}
+        </a>
+        , checked {AI_TRAINING_SOURCE.checked}.
+      </p>
+      {error && (
+        <p id={`${id}-consent-error`} className="pl-7 text-sm text-bad">
+          {error}
+        </p>
+      )}
+      <p className="pl-7 text-[13px] leading-[19px] text-ink-2">{NOT_A_LAW_FIRM}</p>
     </div>
   );
 }
