@@ -1,16 +1,33 @@
 import { ViewTransition } from "react";
 import { ConfirmForm } from "@/components/confirm-form";
+import { SubmitButton } from "@/components/submit-button";
 import type { SignatureRequestRow } from "@/lib/server/esign";
 import { dayOf, timeOf } from "@/lib/today";
+import { keepSignerAction } from "../../people/actions";
 import { withdrawSignature } from "../actions";
 import { REQUEST_STATUS } from "./shared";
 
 /**
  * A document's signing requests: who, its state, the file sent, and Withdraw while it can still be signed. Both looks
  * use it; redesigned (`v2`), a state that changes in place (Waiting → Withdrawn, or Signed on a refresh) crossfades as
- * the chips do (Design spec 2026-11-02 §6.4 owner side, §6.3).
+ * the chips do (Design spec 2026-11-02 §6.4 owner side, §6.3). With `kept` (the redesigned page), each signer has "Keep in
+ * People", which posts the request's id only (Security P2), or "In People" once their address is there.
  */
-export function SignatureRequests({ docId, requests, zone, now, v2 = false }: { docId: string; requests: SignatureRequestRow[]; zone: string; now: number; v2?: boolean }) {
+export function SignatureRequests({
+  docId,
+  requests,
+  zone,
+  now,
+  v2 = false,
+  kept,
+}: {
+  docId: string;
+  requests: SignatureRequestRow[];
+  zone: string;
+  now: number;
+  v2?: boolean;
+  kept?: ReadonlySet<string>;
+}) {
   return (
     <ul className="divide-y divide-line text-sm">
       {requests.map((r) => {
@@ -32,7 +49,7 @@ export function SignatureRequests({ docId, requests, zone, now, v2 = false }: { 
               {r.status === "signed" && r.signed_at && <> · signed {timeOf(r.signed_at, zone)}</>}
               {r.status === "pending" && !lapsed && <> · open until {dayOf(r.expires_at, zone)}</>}
             </p>
-            {(r.has_review_file || (r.status === "pending" && !lapsed)) && (
+            {(kept || r.has_review_file || (r.status === "pending" && !lapsed)) && (
               <div className="flex flex-wrap gap-x-4">
                 {r.has_review_file && (
                   <a href={`/app/documents/${docId}/file?request=${r.id}`} data-stays className="inline-flex min-h-6 items-center text-xs text-ink-2 underline">
@@ -50,6 +67,17 @@ export function SignatureRequests({ docId, requests, zone, now, v2 = false }: { 
                     pendingLabel="Withdrawing…"
                   />
                 )}
+                {kept &&
+                  (kept.has(r.signer_email.toLowerCase()) ? (
+                    <span className="inline-flex min-h-6 items-center text-xs text-ink-3">In People</span>
+                  ) : (
+                    <form action={keepSignerAction}>
+                      <input type="hidden" name="request" value={r.id} />
+                      <SubmitButton className="inline-flex min-h-6 items-center text-xs text-ink-2 underline" pendingLabel="Keeping…">
+                        Keep in People
+                      </SubmitButton>
+                    </form>
+                  ))}
               </div>
             )}
           </li>

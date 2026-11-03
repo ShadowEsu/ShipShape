@@ -11,7 +11,7 @@ type Item = readonly [href: string, label: string, icon: IconName];
 
 /**
  * The sidebar (Design calm v2, look A): Home, then flat rows under small grey group labels, then Settings. Only pages
- * that exist are listed; Saved, Signed copies, Sent, History and People join their groups in the PRs that build them.
+ * that exist are listed; Signed copies, Sent and History join their groups in the PRs that build them.
  */
 const GROUPS: readonly { label: string | null; items: readonly Item[] }[] = [
   { label: null, items: [["/app", "Home", "home"]] },
@@ -35,6 +35,7 @@ const GROUPS: readonly { label: string | null; items: readonly Item[] }[] = [
     items: [
       ["/app/facts", "Business facts", "facts"],
       ["/app/collect", "Collect", "collect"],
+      ["/app/people", "People", "people"],
     ],
   },
   { label: null, items: [["/app/settings", "Settings", "settings"]] },
@@ -295,7 +296,7 @@ export function TopBar({ tools, contact, lapsed, account }: { tools: readonly Se
         </div>
         <button type="button" aria-haspopup="dialog" aria-controls="search-dialog" onClick={openSearch} className="search-button hidden md:flex">
           <Icon name="search" size={16} />
-          <span className="truncate">Search documents and tools</span>
+          <span className="truncate">Search documents, people and tools</span>
           {apple !== null && <kbd className="search-kbd">{apple ? "⌘K" : "Ctrl K"}</kbd>}
         </button>
         <div className="flex items-center justify-end gap-1">
