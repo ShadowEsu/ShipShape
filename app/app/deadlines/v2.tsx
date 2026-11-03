@@ -4,12 +4,14 @@ import { Icon } from "@/components/icons";
 import type { Deadline, OutboxMessage } from "@/lib/server/deadlines";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { fmtDay, timeOf } from "@/lib/today";
+import { HairRow, StateChip } from "../hair-row";
 import { when } from "./when";
 
+/** Each group's dot, and the word an expiry date gets in it (a renewal notice is "Renewal notice" in every group). */
 const TONE = {
-  bad: { chip: "bg-bad-soft text-bad", icon: "!" },
-  warn: { chip: "bg-warn-soft text-warn", icon: "◷" },
-  ok: { chip: "bg-ok-soft text-ok", icon: "✓" },
+  bad: { dot: "expired", expires: "Expired" },
+  warn: { dot: "expiring", expires: "Expires soon" },
+  ok: { dot: "ok", expires: "Current" },
 } as const;
 
 /**
@@ -30,31 +32,21 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
         {title}
         <span className="text-[15px] font-normal text-ink-3">{items.length}</span>
       </h2>
-      <ul className="group-list stagger">
-        {items.map((d, n) => (
-          <li key={`${d.document_id}-${d.date_kind}`} style={{ "--i": n }}>
-            {/* As on Documents: on the phone the chip wraps under the text, lined up with it; from sm up it sits beside it. */}
-            <Link href={`/app/documents/${d.document_id}`} className="group-row flex-wrap gap-y-1.5 sm:flex-nowrap">
-              <span className="row-icon">
-                <Icon name="documents" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{d.title}</span>
-                <span className="block truncate text-[13px] text-ink-3">
-                  {DOC_KINDS[d.kind]} · {d.date_kind === "expires" ? "expires" : "renewal notice"} {fmtDay(d.due_on)}
-                </span>
-              </span>
-              <span className="ml-11 basis-full sm:ml-0 sm:basis-auto">
-                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${t.chip}`}>
-                  <span aria-hidden="true">{t.icon}</span>
-                  {when(d)}
-                </span>
-              </span>
-              <span className="hidden text-ink-3 sm:block">
-                <Icon name="chevron" size={16} />
-              </span>
-            </Link>
-          </li>
+      {/* Home's wrapping rows: the title is never cut, and on the phone the chip goes under it (Design #26 MUST-1). */}
+      <ul className="hair-list">
+        {items.map((d) => (
+          <HairRow
+            key={`${d.document_id}-${d.date_kind}`}
+            href={`/app/documents/${d.document_id}`}
+            icon="documents"
+            title={d.title}
+            line={`${DOC_KINDS[d.kind]} · ${d.date_kind === "expires" ? "expires" : "renewal notice"} ${fmtDay(d.due_on)}`}
+            chip={
+              <StateChip tone={t.dot}>
+                {d.date_kind === "expires" ? t.expires : "Renewal notice"} · {when(d)}
+              </StateChip>
+            }
+          />
         ))}
       </ul>
     </section>
@@ -65,8 +57,9 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
 function Sent({ m, zone }: { m: OutboxMessage; zone: string }) {
   return (
     <details className="group">
-      <summary className="flex min-h-15 cursor-pointer list-none items-center gap-3 px-4 py-2.5 [&::-webkit-details-marker]:hidden">
-        <span className="min-w-0 flex-1">
+      {/* On the phone "Show the email" goes under the meta line, so the subject keeps the row's width (Design #26 S2). */}
+      <summary className="flex min-h-15 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 flex-1 basis-full sm:basis-0">
           <span className="block font-medium">{m.subject}</span>
           <span className="block text-[13px] text-ink-3">
             To {m.to_email} ·{" "}

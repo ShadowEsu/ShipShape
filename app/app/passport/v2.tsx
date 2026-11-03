@@ -1,39 +1,27 @@
-import Link from "next/link";
 import { PageHeader } from "@/components/app-ui";
-import { Icon } from "@/components/icons";
 import type { PassportRow } from "@/lib/server/passport";
 import { PASSPORT_DAYS } from "@/lib/server/passport";
 import { dayOf } from "@/lib/today";
+import { HairRow, StateChip } from "../hair-row";
 import type { PickableDoc } from "./forms";
 import { NewLinkV2 } from "./forms-v2";
 import { linkStatus } from "./link-status";
 
+/** Your links as Sent lists them: wrapping hairline rows, the state as a dot and a word (Design #26 MUST-2). */
 function YourLinks({ links, zone }: { links: PassportRow[]; zone: string }) {
   // Working links first, newest first within each (the list's own order); the stable sort keeps it.
   const rows = links.map((l) => ({ l, s: linkStatus(l, zone) })).sort((a, b) => Number(b.s.working) - Number(a.s.working));
   return (
-    <ul className="group-list plain stagger">
-      {rows.map(({ l, s }, n) => (
-        <li key={l.id} style={{ "--i": n }}>
-          {/* On the phone the chip wraps under the text; from sm up it sits beside it. */}
-          <Link href={`/app/passport/${l.id}`} className="group-row flex-wrap gap-y-1.5 sm:flex-nowrap">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium">{l.label}</span>
-              <span className="block truncate text-[13px] text-ink-3">
-                {l.documents} {l.documents === 1 ? "document" : "documents"} · opened {l.opens} {l.opens === 1 ? "time" : "times"} · until {dayOf(l.expires_at, zone)}
-              </span>
-            </span>
-            <span className="basis-full sm:basis-auto">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>
-                <span aria-hidden="true">{s.icon}</span>
-                {s.label}
-              </span>
-            </span>
-            <span className="hidden text-ink-3 sm:block">
-              <Icon name="chevron" size={16} />
-            </span>
-          </Link>
-        </li>
+    <ul className="hair-list">
+      {rows.map(({ l, s }) => (
+        <HairRow
+          key={l.id}
+          href={`/app/passport/${l.id}`}
+          icon="passport"
+          title={l.label}
+          line={`${l.documents} ${l.documents === 1 ? "document" : "documents"} · opened ${l.opens} ${l.opens === 1 ? "time" : "times"} · until ${dayOf(l.expires_at, zone)}`}
+          chip={<StateChip tone={s.working ? "ok" : "none"}>{s.label}</StateChip>}
+        />
       ))}
     </ul>
   );

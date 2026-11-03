@@ -153,6 +153,7 @@ describe("documents list", () => {
   });
 
   it("with nothing archived says what archiving does and offers one action: back to current documents", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "");
     const ctx = await signIn("docs-archived@example.com");
     await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
     const html = await documentsPage({ archived: "1" });
@@ -160,7 +161,16 @@ describe("documents list", () => {
     expect(text).toContain("No archived documents");
     expect(text).toContain("Documents you archive will be listed here");
     expect(primaryActions(html)).toEqual([{ label: "Go to current documents", href: "/app/documents" }]);
-    expect(actionsOf(html).filter((a) => a.href === "/app/documents")).toHaveLength(1);
+    // The tabs stay, Archived current, so the page says where you are (Design #26 S1); no kind or order menus for nothing.
+    const tabs = /<nav aria-label="Current or archived"[^>]*>(.*?)<\/nav>/s.exec(html)?.[1] ?? "";
+    expect([...tabs.matchAll(/<a[^>]*aria-current="page"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["Archived"]);
+    expect(html).not.toContain('aria-label="Kind:');
+
+    // The earlier look: the empty state's one action is the only way back.
+    vi.stubEnv("SHIPSHAPE_UI", "v1");
+    const v1 = await documentsPage({ archived: "1" });
+    expect(actionsOf(v1).filter((a) => a.href === "/app/documents")).toHaveLength(1);
+    expect(v1).not.toContain("Current or archived");
   });
 
   it("on Pro, lists 50 documents at a time in the list's order, says which are shown, and pages with the filter kept; a page past the end shows the last", async () => {

@@ -174,8 +174,8 @@ function NewPassportFormV2({ onDone, ...props }: PassportFormProps & { onDone: (
                       <Icon name="documents" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{d.title}</span>
-                      <span className="block truncate text-[13px] text-ink-3">
+                      <span className="block font-medium">{d.title}</span>
+                      <span className="block text-[13px] text-ink-3">
                         {d.kindLabel}
                         {d.note && ` · ${d.note}`}
                       </span>

@@ -37,7 +37,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
   const empty = docs.length === 0 && !filtered;
   // The way to archived documents only shows once there are some.
   const hasArchived = archived || !empty || (await pageDocuments(ctx, { archived: true })).total > 0;
-  // Archived-empty already offers the way back as its one action.
+  // The earlier look's archived-empty already offers the way back as its one action. The redesigned app keeps its tabs
+  // there, Archived current, so the page says where you are (Design #26 S1).
   const toArchived = hasArchived && !(archived && empty);
   const kindLabel = Object.entries(DOC_KINDS).find(([k]) => k === sp.kind)?.[1] ?? null;
   const v2 = uiV2();
@@ -79,19 +80,15 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
               </Link>
             </p>
           )}
-          {(toArchived || !empty) && (
+          {hasArchived && (
             <div className="flex flex-wrap items-end justify-between gap-3">
-              {toArchived ? (
-                <TabLinks
-                  label="Current or archived"
-                  tabs={[
-                    { href: pageHref({ ...sp, archived: undefined }, 1), text: "All", current: !archived },
-                    { href: pageHref({ ...sp, archived: "1" }, 1), text: "Archived", current: archived },
-                  ]}
-                />
-              ) : (
-                <span />
-              )}
+              <TabLinks
+                label="Current or archived"
+                tabs={[
+                  { href: pageHref({ ...sp, archived: undefined }, 1), text: "All", current: !archived },
+                  { href: pageHref({ ...sp, archived: "1" }, 1), text: "Archived", current: archived },
+                ]}
+              />
               {!empty && (
                 <div className="flex gap-2">
                   <FilterMenu

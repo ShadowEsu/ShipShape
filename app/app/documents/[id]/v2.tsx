@@ -10,6 +10,7 @@ import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, type AuditRow, type DocKind, type Do
 import { SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { timeOf } from "@/lib/today";
 import type { TemplateInfo } from "@/lib/templates/types";
+import { StateChip } from "../../hair-row";
 import { ActionSheet } from "../../nav-v2";
 import { SaveToggle } from "../../saved/save-toggle";
 import { archive } from "../actions";
@@ -263,7 +264,11 @@ export function DocumentV2(p: {
             <li key={v.version} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
               <span className="min-w-0">
                 Version {v.version} · {timeOf(v.created_at, zone)} · {size(v.size_bytes)}
-                {v.origin === "signed" && <span className="ml-2 rounded-full bg-ok-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-ok">Signed copy</span>}
+                {v.origin === "signed" && (
+                  <span className="ml-2">
+                    <StateChip tone="ok">Signed copy</StateChip>
+                  </span>
+                )}
                 <span className="ml-2 font-mono text-xs text-ink-3" title={`SHA-256 ${v.sha256}`}>
                   {v.sha256.slice(0, 12)}
                 </span>

@@ -34,7 +34,7 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
           {SUMMARY.map((s) => (
             <div key={s.state} className="tile gap-1">
               <dt className="text-[13px] text-ink-2">{s.title}</dt>
-              <dd className="flex items-center gap-2">
+              <dd className="flex flex-wrap items-center gap-2">
                 <span className="text-[28px] leading-8 font-medium tabular-nums">{counts[s.state]}</span>
                 <CollectChip state={s.state} />
               </dd>
@@ -66,7 +66,7 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
                 <Link href={`/app/collect/${v.id}`} className="group-row">
                   <span className="min-w-0 flex-1 space-y-1.5">
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className="truncate font-medium">{v.name}</span>
+                      <span className="min-w-0 font-medium">{v.name}</span>
                       <span className="shrink-0 text-[13px] text-ink-3">
                         {v.openLinks} open {v.openLinks === 1 ? "link" : "links"}
                       </span>
@@ -97,7 +97,7 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
               {archived.map((v) => (
                 <li key={v.id}>
                   <Link href={`/app/collect/${v.id}`} className="group-row">
-                    <span className="min-w-0 flex-1 truncate">{v.name}</span>
+                    <span className="min-w-0 flex-1">{v.name}</span>
                     <span className="text-ink-3">
                       <Icon name="chevron" size={16} />
                     </span>

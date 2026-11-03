@@ -307,7 +307,7 @@ describe("Passport", () => {
     /** Your links' rows, in order. */
     const linkRows = (html: string) => {
       const list = html.slice(html.indexOf('id="links-title"'));
-      return [...list.slice(0, list.indexOf("</ul>")).matchAll(/<span class="block truncate font-medium">([^<]*)</g)].map((m) => m[1]);
+      return [...list.slice(0, list.indexOf("</ul>")).matchAll(/<span class="hair-title">([^<]*)</g)].map((m) => m[1]);
     };
 
     it("one column: with no links the form comes first and what Your links will hold under it; once there are links they lead, working ones on top", async () => {
@@ -481,7 +481,7 @@ describe("Collect, redesigned only", () => {
     expect(text).toContain("Ace Electric 0 open links ○ W-9: missing");
     // Counts, then the vendors, then the form.
     expect(text.indexOf("Something lapsed")).toBeLessThan(text.indexOf("Ace Electric"));
-    expect(text.indexOf("Ace Electric")).toBeLessThan(text.indexOf("Add a vendor Vendor or subcontractor"));
+    expect(text.indexOf("Ace Electric")).toBeLessThan(text.indexOf("Add a vendor Vendor"));
 
     expect(html).toMatch(/<input id="vendor-name" required="" maxLength="120"[^>]*class="row-field" name="name"/);
     expect(html).toMatch(/<input id="vendor-email" type="email"[^>]*aria-describedby="vendor-email-note"[^>]*name="email"/);
@@ -587,7 +587,7 @@ describe("Deadlines", () => {
       );
     /** The dated rows, in order: "<title> expires|renewal notice". */
     const rows = (html: string) =>
-      [...html.matchAll(/<li [^>]*>([\s\S]*?)<\/li>/g)]
+      [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)]
         .map((m) => textOf(m[1]))
         .filter((t) => t.includes("Permit ·"))
         .map((t) => /^(.*?) Permit · (expires|renewal notice)/.exec(t)?.slice(1).join(" "));
@@ -623,6 +623,28 @@ describe("Deadlines", () => {
       ]);
       expect([count(every, "Lapsed"), count(every, "Next 30 days"), count(every, "Later")]).toEqual(["2", "3", "2"]);
       expect(textOf(every)).not.toContain("Show every date");
+    });
+
+    it("each date's chip is the state as a dot and a word, then how far off it is (Design #26 MUST-2)", async () => {
+      const ctx = await signIn("deadlines-v2-chips@example.com");
+      await dated(ctx, "Lapsed expiry", -5);
+      await dated(ctx, "Due expiry", 30);
+      await dated(ctx, "Later expiry", 31);
+      await dated(ctx, "Renewal today", null, 0);
+      const html = await page();
+      /** A row's chip: its dot colour, then its words. */
+      const chip = (title: string) => {
+        const row = [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map((m) => m[1]).find((r) => textOf(r).startsWith(`${title} `)) ?? "";
+        const c = /<span class="hair-chip">([\s\S]*?)<\/span><span class="hair-chev">/.exec(row)?.[1] ?? "";
+        return `${/data-validity="(\w+)"/.exec(c)?.[1]} ${textOf(c)}`;
+      };
+      expect(["Lapsed expiry", "Renewal today", "Due expiry", "Later expiry"].map(chip)).toEqual([
+        "expired Expired · 5 days ago",
+        "expiring Renewal notice · today",
+        "expiring Expires soon · in 30 days",
+        "ok Current · in 31 days",
+      ]);
+      expect(html).not.toMatch(/bg-(ok|warn|bad)-soft/);
     });
 
     it("?soon=1 with nothing due says so and keeps the way back; the calendar stays the one primary", async () => {

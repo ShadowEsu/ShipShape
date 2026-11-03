@@ -413,7 +413,11 @@ function Field({
         {f.required && <span className="text-ink-3"> (required)</span>}
       </span>
       {chip && initial !== "" && (
-        <span className={`rounded-full px-2 py-0.5 font-mono text-[11px] ${chip.stale ? "bg-warn-soft text-warn" : "bg-canvas text-ink-3"}`}>
+        // The redesigned app shows it as the hairline dot chip: amber when the fact needs a look, grey otherwise (Design #26 MUST-2).
+        <span
+          data-validity={chip.stale && !edited ? "expiring" : "none"}
+          className={`validity-chip inline-flex items-center rounded-full px-2 py-0.5 font-mono text-[11px] ${chip.stale ? "bg-warn-soft text-warn" : "bg-canvas text-ink-3"}`}
+        >
           {edited ? "Edited · was from Business facts" : chip.stale ? "Business facts · still true?" : `From Business facts${chip.confirmedAt ? ` · confirmed ${chip.confirmedAt}` : ""}`}
         </span>
       )}

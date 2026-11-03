@@ -532,6 +532,10 @@ body {
   background: var(--paper);
   color: var(--ink-2);
   font-weight: 400;
+  /* Collect's "Missing" pill rings itself in the earlier look, and Check's "Not found" flag is a square tag there; here
+     the hairline pill is the one outline. */
+  border-radius: 9999px;
+  box-shadow: none;
 }
 .ui-v2 .validity-chip::before {
   content: "";
