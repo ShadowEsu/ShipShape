@@ -203,6 +203,20 @@ Cost per day if it's left up (us-east-1 on-demand, from aws-plan's cost table pl
 | The key, bucket, pool and log group (database deleted by hand) | $0.03 for the key, plus pennies for any stored files and logs; a pool with no active users is free |
 | Nothing | $0 |
 
+### Undoing a migration
+
+Applied migrations never change. A migration with a down file in `supabase/rollback/` (`NNNN_name.down.sql`; the runner reads only `supabase/migrations/`) is undone as the owner, then forgotten by deleting its row from `meta.migrations` (where `lib/server/migrations.ts` records each applied file, by file name), in one transaction. As the master user, in `psql`:
+
+```sql
+begin;
+set local role shipshape_owner;
+\i supabase/rollback/0045_saved_items.down.sql
+delete from meta.migrations where name = '0045_saved_items.sql';
+commit;
+```
+
+The next `npm run migrate` applies it again. Undo only the newest applied migration this way: an older one would then sort before an applied one, and the run refuses that unless `--allow-late` names it. `tests/saved.test.ts` proves down then up for 0045 on PGlite.
+
 ## Not in these templates (operator or the account owner, at M6)
 
 | Item | Why it isn't here | Source |

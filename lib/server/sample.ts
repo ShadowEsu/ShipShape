@@ -10,6 +10,7 @@ import type { Tx } from "./db";
 import { insertDocument } from "./documents";
 import { fillRecord, prefill, render } from "./fill";
 import type { Ctx } from "./profile";
+import { saveInTx } from "./saved";
 
 /**
  * The sample workspace: a fictional plumbing business with made-up documents. Its EIN starts with
@@ -34,13 +35,13 @@ const SAMPLE_FACTS: Record<ProfileKey, string> = {
   signer_title: "Managing member",
 };
 
-async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides: Record<string, string>) {
+async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides: Record<string, string>): Promise<string> {
   const start = prefill(t, facts, ctx.today);
   const values = { ...start, ...overrides };
   const out = await render(t, values, facts, ctx.today, true);
   // Titles built from a sample party's name already end in "(sample)".
   const title = out.title.endsWith("(sample)") ? out.title : `${out.title} (sample)`;
-  await insertDocument(
+  return insertDocument(
     tx,
     ctx,
     { title, kind: t.kind, counterparty: out.counterparty, issued_on: out.issuedOn, expires_on: out.expiresOn, template_id: t.id },
@@ -65,7 +66,7 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await tx.query("select app.confirm_facts($1, $2)", [orgId, [...Object.keys(f).filter((k) => f[k as ProfileKey]), "ein"]]);
 
   const facts: Facts = { values: f, ein: SAMPLE_EIN, einLast4: SAMPLE_EIN.slice(-4) };
-  await filled(tx, ctx, templateById("irs-w9")!, facts, { requester: "Northwind Builders (sample)", sign: "on" });
+  const w9 = await filled(tx, ctx, templateById("irs-w9")!, facts, { requester: "Northwind Builders (sample)", sign: "on" });
   await filled(tx, ctx, templateById("common-paper-mnda")!, facts, {
     effective_date: day(-40),
     mnda_term: "years",
@@ -109,14 +110,19 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       rows: [["Business", "Harbor Plumbing"], ["Account", "SAMPLE-BL-0000"], ["Valid through", day(-12)]],
     },
   ];
+  let certificate: string | undefined;
   for (const c of certificates) {
-    await insertDocument(
+    const id = await insertDocument(
       tx,
       ctx,
       { title: `${c.title} (sample)`, kind: c.kind, issuer: c.issuer, issued_on: day(c.issued), expires_on: day(c.expires) },
       { bytes: await samplePdf(c.title, c.rows, c.note), mime: "application/pdf" },
       "sample",
     );
+    if (c.kind === "coi") certificate = id;
   }
+  // Saved (0045): the sample owner starts with the W-9 and the insurance certificate saved, so Saved has something in it.
+  await saveInTx(tx, ctx, "document", w9);
+  if (certificate) await saveInTx(tx, ctx, "document", certificate);
   await seedSampleVendors(tx, ctx, day);
 }

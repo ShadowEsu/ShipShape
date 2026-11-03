@@ -60,6 +60,8 @@ beforeAll(async () => {
        from (select gen_random_uuid() as id) r`,
       [orgA, docA, "c".repeat(64), a, "d".repeat(64)],
     );
+    // Saved (0045): A bookmarks their own document.
+    await tx.query("insert into app.saved_items (org_id, user_id, kind, object_id) values ($1, $2, 'document', $3)", [orgA, a, docA]);
     return l.id;
   });
   await asAnon((tx) => tx.query("select * from app.passport_open($1, $2, $3)", [linkA, linkHash, "0".repeat(16)]));
@@ -128,6 +130,7 @@ const TABLES: Record<string, string | null> = {
   storage_prefix_cleanup: null, // server only: deleted workspaces whose leftover files the daily run sweeps, checked below
   session_revocations: null, // each person's own row only: when they last signed out everywhere, checked below
   sessions: null, // each person's own rows only: the browsers they're signed in on, checked below
+  saved_items: "org_id", // and each person's own only: checked in saved.test.ts
 };
 
 describe("row level security", () => {

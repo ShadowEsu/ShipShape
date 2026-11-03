@@ -6,6 +6,7 @@ import { ConfirmForm } from "@/components/confirm-form";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { uiV2 } from "@/lib/server/flags";
 import { getPassport, PASSPORT_ACCESS_SHOWN } from "@/lib/server/passport";
+import { isSaved } from "@/lib/server/saved";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf, timeOf } from "@/lib/today";
 import { turnOff } from "../actions";
@@ -27,7 +28,7 @@ export default async function PassportDetail({ params, searchParams }: { params:
   const formError = error && Object.hasOwn(ERRORS, error) ? ERRORS[error] : undefined;
   const p = await getPassport(ctx, id);
   if (!p) notFound();
-  if (uiV2()) return <PassportLinkV2 p={p} zone={zone} formError={formError} />;
+  if (uiV2()) return <PassportLinkV2 p={p} zone={zone} formError={formError} saved={await isSaved(ctx, "link", p.link.id)} />;
   const revokedAt = p.link.revoked_at;
   const off = revokedAt !== null;
   const expired = new Date(p.link.expires_at).getTime() < Date.now();
