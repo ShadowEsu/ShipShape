@@ -358,8 +358,37 @@ body {
   .ui-v2 .hair-list > li + li {
     @apply border-t border-line;
   }
+  /* Phone: icon | title and meta (wrapping), then the chip under them. From sm up: icon | text | chip | chevron, one line each. */
   .ui-v2 .hair-row {
-    @apply flex min-h-[58px] items-center gap-3 px-3.5 py-2.5 transition-colors duration-[180ms] hover:bg-[#fafaf8];
+    @apply grid min-h-[58px] grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 transition-colors duration-[180ms] hover:bg-[#fafaf8] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto];
+    grid-template-areas: "icon text" "icon chip";
+  }
+  .ui-v2 .hair-icon {
+    grid-area: icon;
+    @apply self-start sm:self-center;
+  }
+  .ui-v2 .hair-text {
+    grid-area: text;
+    @apply min-w-0;
+  }
+  .ui-v2 .hair-title {
+    @apply line-clamp-2 text-sm font-medium text-ink sm:line-clamp-none sm:truncate;
+  }
+  .ui-v2 .hair-meta {
+    @apply block text-[12.5px] leading-[18px] text-ink-3 sm:truncate;
+  }
+  .ui-v2 .hair-chip {
+    grid-area: chip;
+    @apply justify-self-start;
+  }
+  .ui-v2 .hair-chev {
+    grid-area: chev;
+    @apply hidden text-ink-3 sm:block;
+  }
+  @media (min-width: 640px) {
+    .ui-v2 .hair-row {
+      grid-template-areas: "icon text chip chev";
+    }
   }
   .ui-v2 .quiet-empty {
     @apply rounded-[14px] border border-line px-4 py-4 text-sm text-ink-3;
@@ -442,6 +471,11 @@ body {
 }
 .ui-v2 #search-dialog form:focus-within {
   border-bottom-color: var(--ink);
+}
+/* The search result the arrow keys are on shows as the faint fill, as a list's active row, not a ring (Design S1, 3 Nov). */
+.ui-v2 #search-dialog .search-row:focus-visible {
+  outline: none;
+  background: var(--tile);
 }
 /* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text. */
 .ui-v2 .page-eyebrow {

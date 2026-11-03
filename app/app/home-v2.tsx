@@ -109,19 +109,23 @@ function SectionHead({ id, title, all }: { id: string; title: string; all: strin
   );
 }
 
+/**
+ * A hairline row. From sm up: icon, title over meta, the chip, the chevron. On the phone the title and meta wrap and the
+ * chip goes under them (Design MUST-1, 3 Nov: a dated chip beside the title cut it to "Certificate …").
+ */
 function Row({ href, icon, title, line, chip }: { href: string; icon: IconName; title: string; line: string; chip: React.ReactNode }) {
   return (
     <li>
       <Link href={href} className="hair-row">
-        <span className="row-icon">
+        <span className="hair-icon row-icon">
           <Icon name={icon} size={17} />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-ink">{title}</span>
-          <span className="block truncate text-[12.5px] leading-[18px] text-ink-3">{line}</span>
+        <span className="hair-text">
+          <span className="hair-title">{title}</span>
+          <span className="hair-meta">{line}</span>
         </span>
-        <span className="shrink-0">{chip}</span>
-        <span className="hidden shrink-0 text-ink-3 sm:block">
+        <span className="hair-chip">{chip}</span>
+        <span className="hair-chev">
           <Icon name="chevron" size={16} />
         </span>
       </Link>

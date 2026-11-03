@@ -419,7 +419,7 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     const end = html.indexOf("</section>", from);
     return html.slice(from, end);
   };
-  const rowTitles = (html: string) => [...html.matchAll(/class="block truncate text-sm font-medium text-ink">([^<]*)</g)].map((m) => m[1]);
+  const rowTitles = (html: string) => [...html.matchAll(/class="hair-title">([^<]*)</g)].map((m) => m[1]);
 
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
 
@@ -518,7 +518,7 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     // The owner-entered name only: the signer's email stays on the document's page.
     expect(text).not.toContain("dana@bayside.example");
     expect(text).not.toMatch(/Sam Ortiz|Lee Park/);
-    expect(text).toContain("Collect · W-9 missing, Insurance certificate lapsed Waiting");
+    expect(text).toContain("Collect · W-9 missing, insurance certificate lapsed Waiting");
     expect(text).toContain("Collect · License missing Waiting");
     expect(text).not.toContain("Summit Supply");
 

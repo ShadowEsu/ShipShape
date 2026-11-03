@@ -17,7 +17,7 @@ export interface WaitingSignature {
 export interface WaitingVendor {
   id: string;
   name: string;
-  /** What's outstanding, in the order it was asked for: "License missing", "Insurance certificate lapsed". */
+  /** What's outstanding, in the order it was asked for, as one sentence: "W-9 missing", "insurance certificate lapsed". */
   outstanding: string[];
 }
 
@@ -53,7 +53,9 @@ export async function waitingOnOthers(ctx: Ctx): Promise<Waiting> {
   if (collectOpen(ctx)) {
     for (const v of await listVendors(ctx)) {
       const outstanding = v.items.flatMap((i) => (i.state === "missing" ? [`${i.label} missing`] : i.state === "expired" ? [`${i.label} lapsed`] : []));
-      if (outstanding.length > 0) vendors.push({ id: v.id, name: v.name, outstanding });
+      // Read as one sentence: "W-9 missing, insurance certificate lapsed". A name that starts with an acronym (W-9, NDA) keeps it.
+      const sentence = outstanding.map((s, n) => (n > 0 && /^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s));
+      if (sentence.length > 0) vendors.push({ id: v.id, name: v.name, outstanding: sentence });
       if (vendors.length === WAITING_MAX) break;
     }
   }
