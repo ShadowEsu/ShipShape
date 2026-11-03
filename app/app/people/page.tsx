@@ -43,6 +43,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
       )}
       {people.length === 0 ? (
         <EmptyState
+          icon="people"
           title="Nobody here yet"
           body="Add a person below with their name, and an email and company if you like. On a document's page you can also tap Keep in People beside a signer."
         />

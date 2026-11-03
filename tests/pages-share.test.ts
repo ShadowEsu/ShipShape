@@ -690,7 +690,7 @@ describe.each([
 });
 
 describe("What are they asking for?, redesigned only", () => {
-  it("reads in the 720 column: the request in a tile well, the consent as a row, and Read the request still green (it sends text to the model)", async () => {
+  it("reads in the 720 column: the request in a hairline well, the consent as a row with the tick first (as Home), and Read the request green until an answer shows", async () => {
     vi.stubEnv("SHIPSHAPE_UI", "v2");
     vi.stubEnv("SHIPSHAPE_AI", "1");
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
@@ -699,7 +699,7 @@ describe("What are they asking for?, redesigned only", () => {
     expect(html).toMatch(/^<div class="mx-auto max-w-\[720px\] space-y-6">/);
     expect(html).not.toMatch(/<form[^>]*class="card/);
     expect(/<textarea[^>]*>/.exec(html)?.[0]).toContain('class="request-well"');
-    expect(html).toMatch(/<label class="group-row[^"]*">[^<]*<span[^>]*>Send the text above to Anthropic&#x27;s Claude[^<]*<\/span><input[^>]*name="consent"/);
+    expect(html).toMatch(/<label class="group-row[^"]*"><input[^>]*name="consent"[^>]*\/><span[^>]*>Send the text above to Anthropic&#x27;s Claude[^<]*<\/span>/);
     expect(html).toMatch(/<button class="btn-accent press">Read the request<\/button>/);
   });
 });

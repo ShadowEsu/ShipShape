@@ -25,7 +25,7 @@ export function WhoCanOpen({ label, documents, taxId, v2 = false }: { label: str
   return (
     <section
       aria-labelledby="who-can-open"
-      className={v2 ? "space-y-2 rounded-2xl bg-tile px-4 py-3.5 text-sm text-ink-2" : "space-y-2 rounded-lg border border-line bg-canvas px-3 py-3 text-sm text-ink-2"}
+      className={v2 ? "space-y-2 rounded-2xl border border-line px-4 py-3.5 text-sm text-ink-2" : "space-y-2 rounded-lg border border-line bg-canvas px-3 py-3 text-sm text-ink-2"}
     >
       <h3 id="who-can-open" className="font-medium text-ink">
         Who can open it

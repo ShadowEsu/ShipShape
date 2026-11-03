@@ -610,6 +610,31 @@ body {
 .ui-v2 .card {
   border-radius: 16px;
 }
+/* Empty states (Design, PR 5): open space instead of a card, the title in the app's sans, and the page's icon in a
+   hairline square. The earlier look never shows the icon. */
+.empty-icon {
+  display: none;
+}
+.ui-v2 .empty-icon {
+  display: grid;
+}
+.ui-v2 .empty-state {
+  border: 0;
+  background: none;
+  padding: 32px 0;
+}
+.ui-v2 .empty-title {
+  font-family: var(--sans);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.ui-v2 .empty-example-label {
+  font-family: var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+}
 /* Make's fill form (app/app/make/[template]/fill-form.tsx): each section a titled grouped list, its title above the
    group and each field a row inside it, separated past the row's padding as in .group-list. */
 .ui-v2 .fill-section {

@@ -247,13 +247,17 @@ export const HISTORY_DAYS_DEFAULT: ActivityDays = 30;
 // signatures, links (made, or visited), the documents themselves, and everything else (the workspace, its facts,
 // vendors, People). A vendor's upload is the vendor's, whoever's session stored it (the sample's setup stores its made-up
 // uploads as its owner). A People row names the person while they're kept; the audit row itself holds only their id
-// (0046), so once deleted they're unnamed. One more row than shown, so the page knows there are more.
+// (0046), so once deleted they're unnamed. A vendor or Collect row names the vendor the same way (its object is the
+// vendor's id: 0015's trigger, collect.file_downloaded in lib/server/collect.ts), so the rows can be told apart (Design
+// #25 S1). One more row than shown, so the page knows there are more.
 const HISTORY_SQL = `
-  select h.seq, h.at, h.action, h.actor, h.doc_title, h.doc_id, h.link_id, h.link_label, h.person_id, h.person_name, h.about_name, h.tab
+  select h.seq, h.at, h.action, h.actor, h.doc_title, h.doc_id, h.link_id, h.link_label, h.person_id, h.person_name, h.vendor_id, h.vendor_name,
+         h.about_name, h.tab
   from (
     select a.seq as n, a.seq::text as seq, a.at::text as at, a.action,
            case when a.actor is null or a.action = 'collect.received' then null when a.actor = $2 then 'me' else 'member' end as actor,
            d.title as doc_title, d.id as doc_id, l.id as link_id, l.label as link_label, c.id as person_id, c.name as person_name,
+           v.id as vendor_id, v.name as vendor_name,
            coalesce(r.signer_name, al.label) as about_name,
            case when starts_with(a.action, 'esign.') or a.action = 'document.signed_version_added' then 'signatures'
                 when starts_with(a.action, 'passport.') or starts_with(a.action, 'document.link_') then 'links'
@@ -263,6 +267,7 @@ const HISTORY_SQL = `
     left join app.documents d on d.id = a.object_id and d.org_id = a.org_id and d.status = 'active'
     left join app.share_links l on l.id = a.object_id and l.org_id = a.org_id
     left join app.contacts c on c.id = a.object_id and c.org_id = a.org_id and starts_with(a.action, 'contact.')
+    left join app.vendors v on v.id = a.object_id and v.org_id = a.org_id and (starts_with(a.action, 'vendor.') or starts_with(a.action, 'collect.'))
     left join app.signature_requests r on r.id = a.about and r.org_id = a.org_id
     left join app.share_links al on al.id = a.about and al.org_id = a.org_id
     where a.org_id = $1 and a.at >= now() - make_interval(days => $3)
@@ -283,6 +288,8 @@ interface HistoryRaw {
   link_label: string | null;
   person_id: string | null;
   person_name: string | null;
+  vendor_id: string | null;
+  vendor_name: string | null;
   about_name: string | null;
   tab: Exclude<HistoryTab, "all">;
 }
@@ -292,7 +299,7 @@ const DOCUMENT_ROW = /^(document|esign)\./;
 
 function historyRow(r: HistoryRaw): HistoryRow {
   const label = historyLabel(r.action, r.about_name);
-  const object = r.doc_title ?? r.link_label ?? r.person_name ?? (DOCUMENT_ROW.test(r.action) ? "a document" : null);
+  const object = r.doc_title ?? r.link_label ?? r.person_name ?? r.vendor_name ?? (DOCUMENT_ROW.test(r.action) ? "a document" : null);
   return {
     seq: r.seq,
     at: r.at,
@@ -300,7 +307,15 @@ function historyRow(r: HistoryRaw): HistoryRow {
     icon: historyIcon(r.action, r.tab),
     what: object ? `${label} · ${object}` : label,
     who: historyWho(r.action, r.actor),
-    href: r.doc_id ? `/app/documents/${r.doc_id}` : r.link_id ? `/app/passport/${r.link_id}` : r.person_id ? `/app/people/${r.person_id}` : null,
+    href: r.doc_id
+      ? `/app/documents/${r.doc_id}`
+      : r.link_id
+        ? `/app/passport/${r.link_id}`
+        : r.person_id
+          ? `/app/people/${r.person_id}`
+          : r.vendor_id
+            ? `/app/collect/${r.vendor_id}`
+            : null,
   };
 }
 

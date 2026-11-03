@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fmtDay, type Validity } from "@/lib/today";
+import { Icon, type IconName } from "./icons";
 
 /** A page's title and its actions. The redesigned app (`.ui-v2`) restyles it through the page-* classes (app/globals.css). */
 export function PageHeader({ eyebrow, title, children }: { eyebrow?: string; title: string; children?: React.ReactNode }) {
@@ -60,28 +61,36 @@ export function RenewalChip({ renewsOn }: { renewsOn: string }) {
 /**
  * What an empty page shows: what will appear here, optionally a ghosted example list of it (hidden
  * from screen readers: the body already says what will appear), the one action that fills it, and
- * any secondary link (children).
+ * any secondary link (children). The redesigned app (`.ui-v2`) drops the card for open space, sets the
+ * title in the app's sans and shows `icon` (the page's sidebar icon) in a hairline square (Design, PR 5).
  */
 export function EmptyState({
   title,
   body,
   example,
   action,
+  icon,
   children,
 }: {
   title: string;
   body: string;
   example?: string[];
   action?: { href: string; label: string };
+  icon?: IconName;
   children?: React.ReactNode;
 }) {
   return (
-    <div className="card flex flex-col items-start gap-3 py-10 text-left">
-      <p className="font-serif text-2xl font-semibold">{title}</p>
+    <div className="empty-state card flex flex-col items-start gap-3 py-10 text-left">
+      {icon && (
+        <span aria-hidden="true" className="empty-icon row-icon">
+          <Icon name={icon} size={17} />
+        </span>
+      )}
+      <p className="empty-title font-serif text-2xl font-semibold">{title}</p>
       <p className="max-w-prose text-sm text-ink-2">{body}</p>
       {example && (
         <div aria-hidden="true" className="w-full max-w-prose select-none">
-          <p className="mb-1 font-mono text-xs tracking-wide text-ink-3 uppercase">Example</p>
+          <p className="empty-example-label mb-1 font-mono text-xs tracking-wide text-ink-3 uppercase">Example</p>
           <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line text-sm text-ink-3">
             {example.map((row) => (
               <li key={row} className="px-4 py-2">

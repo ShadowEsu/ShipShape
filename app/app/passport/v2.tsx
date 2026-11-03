@@ -65,7 +65,7 @@ export function PassportV2({
         Your links
       </h2>
       {links.length === 0 ? (
-        <p className="rounded-2xl bg-tile px-4 py-4 text-sm text-ink-2">
+        <p className="rounded-2xl border border-line px-4 py-4 text-sm text-ink-2">
           No links yet. Each link you make shows here with who it&apos;s for, how often it was opened and the day it stops working, for example:
           “Northwind Builders onboarding · 2 documents · opened 3 times · until Dec 1, 2026”.
         </p>

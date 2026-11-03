@@ -23,7 +23,7 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
           land here, kept apart from your own documents, and you see who is missing something or about to lapse.
         </p>
         {demo && (
-          <p className="max-w-2xl rounded-2xl bg-tile px-4 py-3 text-sm text-ink-2">
+          <p className="max-w-2xl rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">
             Sample workspace: these vendors are made up, and upload links here send made-up sample files instead of taking real ones.
           </p>
         )}
@@ -35,7 +35,7 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
             <div key={s.state} className="tile gap-1">
               <dt className="text-[13px] text-ink-2">{s.title}</dt>
               <dd className="flex items-center gap-2">
-                <span className="font-serif text-[28px] leading-8 font-semibold tabular-nums">{counts[s.state]}</span>
+                <span className="text-[28px] leading-8 font-medium tabular-nums">{counts[s.state]}</span>
                 <CollectChip state={s.state} />
               </dd>
             </div>
@@ -49,6 +49,7 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
         </h2>
         {vendors.length === 0 ? (
           <EmptyState
+            icon="collect"
             title={archived.length > 0 ? "No active vendors" : "No vendors yet"}
             body="Each vendor you add shows here with what you asked them for and where it stands."
             example={["Ace Electric · W-9 ✓ · Insurance missing"]}

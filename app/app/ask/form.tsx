@@ -7,9 +7,10 @@ import { askAction, type AskState } from "./actions";
 import { RequestAnswer } from "./answer";
 
 /**
- * `v2`: the redesigned app (Design 02 Nov, PR 8): the request in a --tile well and the consent as a checkbox row, no card;
- * "Read the request" stays green (--brand marks the one action that sends text to the model). Same action, words and
- * consent behaviour in both looks.
+ * `v2`: the redesigned app (Design 02 Nov, PR 8): the request in a hairline well and the consent as a checkbox row with
+ * the tick on the left, as on Home (Design #23 S2), no card. "Read the request" is the page's one primary until an
+ * answer shows; then the answer's own action leads and reading again is secondary (Design #23 S1). Same action, words
+ * and consent behaviour in both looks.
  */
 export function AskForm({ v2 = false }: { v2?: boolean }) {
   const [state, action, pending] = useActionState<AskState, FormData>(askAction, {});
@@ -57,7 +58,6 @@ export function AskForm({ v2 = false }: { v2?: boolean }) {
           <ul className="group-list plain">
             <li>
               <label className="group-row cursor-pointer items-start gap-3 hover:bg-tile">
-                <span className="min-w-0 flex-1 text-[15px]">{AI_REQUEST_CONSENT_TEXT}</span>
                 <input
                   type="checkbox"
                   name="consent"
@@ -68,6 +68,7 @@ export function AskForm({ v2 = false }: { v2?: boolean }) {
                   aria-describedby={consentError ? "consent-error consent-source" : "consent-source"}
                   className="mt-0.5 size-5 shrink-0 accent-[var(--accent)]"
                 />
+                <span className="min-w-0 flex-1 text-[15px]">{AI_REQUEST_CONSENT_TEXT}</span>
               </label>
             </li>
           </ul>
@@ -105,7 +106,7 @@ export function AskForm({ v2 = false }: { v2?: boolean }) {
             {formError}
           </p>
         )}
-        <button className={v2 ? "btn-accent press" : "btn-accent"} disabled={pending}>
+        <button className={!v2 ? "btn-accent" : items ? "btn-ghost press" : "btn-accent press"} disabled={pending}>
           {pending ? "Reading…" : "Read the request"}
         </button>
       </form>

@@ -274,8 +274,11 @@ export async function keepSigner(ctx: Ctx, requestId: unknown): Promise<KeepResu
   const id = PersonId.safeParse(requestId);
   if (!id.success) throw new UserError(KEEP_GONE);
   const signer = await asUser(ctx.userId, async (tx) => {
+    // Only a request on an active document, as the page offers Keep in People (Security #24 INFO 1, S5's rule).
     const [row] = await tx.query<{ signer_name: string; signer_email: string; document_id: string }>(
-      "select signer_name, signer_email, document_id from app.signature_requests where id = $1 and org_id = $2",
+      `select r.signer_name, r.signer_email, r.document_id from app.signature_requests r
+       join app.documents d on d.id = r.document_id and d.org_id = r.org_id and d.status = 'active'
+       where r.id = $1 and r.org_id = $2`,
       [id.data, ctx.orgId],
     );
     if (!row) return null;

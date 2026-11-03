@@ -12,7 +12,7 @@ import { linkStatus, size } from "./shared";
 /** An empty section's well: what lands here, and when. */
 function Well({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-2xl bg-tile px-4 py-4">
+    <div className="rounded-2xl border border-line px-4 py-4">
       <p className="font-medium">{title}</p>
       <p className="mt-1 text-sm text-ink-2">{body}</p>
     </div>

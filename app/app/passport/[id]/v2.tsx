@@ -56,13 +56,13 @@ export function PassportLinkV2({ p, zone, formError, saved }: { p: PassportDetai
         </h2>
         {/* A link is made with at least one document; it ends up with none only when they were all archived (0041). */}
         {p.documents.length === 0 ? (
-          <p className="rounded-2xl bg-tile px-4 py-3 text-sm text-ink-2">None left. Archived documents come off for good.</p>
+          <p className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">None left. Archived documents come off for good.</p>
         ) : (
           <ul className="group-list">
             {p.documents.map((d) => (
               <li key={d.id}>
                 <Link href={`/app/documents/${d.id}`} className="group-row">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-tile text-ink-2">
+                  <span className="row-icon">
                     <Icon name="documents" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -84,7 +84,7 @@ export function PassportLinkV2({ p, zone, formError, saved }: { p: PassportDetai
           When it was opened
         </h2>
         {p.access.length === 0 ? (
-          <p className="rounded-2xl bg-tile px-4 py-3 text-sm text-ink-2">Nobody has opened this link yet.</p>
+          <p className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">Nobody has opened this link yet.</p>
         ) : (
           <ol className="group-list plain">
             {p.access.map((a, i) => (

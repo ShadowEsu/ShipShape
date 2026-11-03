@@ -105,7 +105,7 @@ export function DocumentV2(p: {
       <header>
         {/* The documents list's row title morphs into this one (Design spec 2026-11-02 §6.1). */}
         <ViewTransition name={`doc-${doc.id}`} share="v2-morph" default="none">
-          <h1 className="font-serif text-[28px] leading-tight font-semibold tracking-tight md:text-4xl">{doc.title}</h1>
+          <h1 className="page-title">{doc.title}</h1>
         </ViewTransition>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-2">
           {/* A changed state (new dates saved, a new version) crossfades in place, the old label out and up, the new one in (§6.3). */}
@@ -128,10 +128,10 @@ export function DocumentV2(p: {
         history entry (Security, 20261102-1109). The 3:4 page sits in a fixed crop, so a preview can take its place without
         moving anything.
       */}
-      <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl bg-tile px-8 pt-6 md:h-64">
-        <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md bg-paper p-5 shadow-[0_1px_3px_rgb(0_0_0/0.08)]">
+      <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl border border-line px-8 pt-6 md:h-64">
+        <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md border border-b-0 border-[var(--line-2)] bg-paper p-5">
           <p className="eyebrow">{DOC_KINDS[doc.kind]}</p>
-          <p className="mt-2 line-clamp-3 font-serif text-lg leading-snug font-semibold">{doc.title}</p>
+          <p className="mt-2 line-clamp-3 text-lg leading-snug font-medium">{doc.title}</p>
           {latest && <p className="mt-3 font-mono text-xs text-ink-3">{FILE_TYPE[latest.mime]}</p>}
         </div>
       </div>

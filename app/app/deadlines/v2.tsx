@@ -35,7 +35,7 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
           <li key={`${d.document_id}-${d.date_kind}`} style={{ "--i": n }}>
             {/* As on Documents: on the phone the chip wraps under the text, lined up with it; from sm up it sits beside it. */}
             <Link href={`/app/documents/${d.document_id}`} className="group-row flex-wrap gap-y-1.5 sm:flex-nowrap">
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-tile text-ink-2">
+              <span className="row-icon">
                 <Icon name="documents" />
               </span>
               <span className="min-w-0 flex-1">
@@ -81,7 +81,7 @@ function Sent({ m, zone }: { m: OutboxMessage; zone: string }) {
           </span>
         </span>
       </summary>
-      <p className="mx-4 mb-3 rounded-xl bg-tile px-3 py-2.5 text-sm whitespace-pre-line text-ink-2">{m.body}</p>
+      <p className="mx-4 mb-3 rounded-xl border border-line px-3 py-2.5 text-sm whitespace-pre-line text-ink-2">{m.body}</p>
     </details>
   );
 }
@@ -131,6 +131,7 @@ export function DeadlinesV2({
 
       {all.length === 0 ? (
         <EmptyState
+          icon="deadlines"
           title="No dates yet"
           body="Expiry and renewal dates from your certificates, licenses and agreements show here, soonest first, for example: “General liability certificate · expires Mar 1, 2027 · in 121 days”. Add a date to a document to see it here."
           action={
@@ -142,7 +143,7 @@ export function DeadlinesV2({
       ) : (
         <>
           {soon && (
-            <p className="rounded-2xl bg-tile px-4 py-3 text-sm text-ink-2">
+            <p className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">
               {shown.length === 0 ? "Nothing has lapsed or is due in the next 30 days." : "Showing what has lapsed or is due in the next 30 days."}{" "}
               <Link href="/app/deadlines" className="text-ink underline">
                 Show every date
@@ -150,7 +151,7 @@ export function DeadlinesV2({
             </p>
           )}
           {quiet && !soon && (
-            <p role="status" className="rounded-2xl bg-tile px-4 py-3 text-sm text-ink-2">
+            <p role="status" className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">
               Nothing expires in the next 90 days.{" "}
               {reminders ? "We'll remind owners and admins 90, 30 and 7 days before." : "Add these dates to your calendar and set reminders there for 30 and 7 days before."}
             </p>
@@ -164,7 +165,7 @@ export function DeadlinesV2({
       <section className="space-y-2">
         <h2 className="section-title">Reminders sent</h2>
         {member ? (
-          <p className="rounded-2xl bg-tile px-4 py-3 text-sm text-ink-2">Reminders go to owners and admins, and only they can see what was sent.</p>
+          <p className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">Reminders go to owners and admins, and only they can see what was sent.</p>
         ) : (
           <p className="text-sm text-ink-3">
             {demo
@@ -173,7 +174,7 @@ export function DeadlinesV2({
           </p>
         )}
         {member ? null : outbox.length === 0 ? (
-          <p className="rounded-2xl bg-tile px-4 py-3 text-sm text-ink-2">
+          <p className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">
             {reminders ? "Nothing yet. The first reminder lands here 90 days before a date." : "Nothing here: on the Free plan ShipShape doesn't send reminders."}
           </p>
         ) : (
