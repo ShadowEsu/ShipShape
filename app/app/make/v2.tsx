@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PageHeader } from "@/components/app-ui";
+import { Notice, PageHeader } from "@/components/app-ui";
 import { Icon } from "@/components/icons";
 import { LINK_OUTS, TEMPLATES } from "@/lib/templates/catalog";
 
@@ -8,7 +8,7 @@ import { LINK_OUTS, TEMPLATES } from "@/lib/templates/catalog";
  * its form; the SAFE row leaves for ycombinator.com in a new tab and says so (Design, 02 Nov). Same words as the current
  * page.
  */
-export function MakeV2() {
+export function MakeV2({ closed }: { closed: boolean }) {
   return (
     <div className="space-y-8">
       <div className="space-y-4">
@@ -17,6 +17,8 @@ export function MakeV2() {
           Pick the document you need. ShipShape fills it from your business facts and shows where every value came from. You review
           every field. We only use official forms and openly licensed templates, and we never write or change their terms.
         </p>
+        {/* Home's Make opens this page; while making real documents is closed, it says why (as each template's form does). */}
+        {closed && <Notice>Making real documents opens after our security review.</Notice>}
       </div>
       <ul className="group-list stagger">
         {TEMPLATES.map((t, n) => (

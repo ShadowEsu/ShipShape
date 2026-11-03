@@ -49,6 +49,11 @@
     transform: translateY(100%);
   }
 }
+@keyframes v2-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
 @keyframes v2-chip-out {
   to {
     opacity: 0;
@@ -147,7 +152,7 @@
   pointer-events: none;
 }
 
-/* Sheets (phone More and account): <dialog> slides up, its backdrop fades. */
+/* Sheets (account, a document's More): <dialog> slides up, its backdrop fades. */
 .ui-v2 dialog.sheet[open] {
   animation: v2-sheet-up var(--dur-sheet) var(--ease-spring) both;
 }
@@ -159,6 +164,17 @@
   .ui-v2 dialog.sheet-menu[open] {
     animation: v2-drop-in var(--dur-fast) var(--ease-out) both;
   }
+}
+/* The phone's menu slides in from the left; search drops 4px into place. Their backdrops fade. */
+.ui-v2 dialog.drawer[open] {
+  animation: v2-drawer-in var(--dur-sheet) var(--ease-out) both;
+}
+.ui-v2 dialog.search-dialog[open] {
+  animation: v2-drop-in var(--dur-fast) var(--ease-out) both;
+}
+.ui-v2 dialog.drawer[open]::backdrop,
+.ui-v2 dialog.search-dialog[open]::backdrop {
+  animation: v2-fade-in var(--dur-base) var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -193,7 +209,11 @@
     animation: v2-fade-in 120ms linear both;
   }
   .ui-v2 dialog.sheet[open],
-  .ui-v2 dialog.sheet[open]::backdrop {
+  .ui-v2 dialog.sheet[open]::backdrop,
+  .ui-v2 dialog.drawer[open],
+  .ui-v2 dialog.drawer[open]::backdrop,
+  .ui-v2 dialog.search-dialog[open],
+  .ui-v2 dialog.search-dialog[open]::backdrop {
     animation: v2-fade-in 120ms linear both;
   }
   .ui-v2 .notice-ok,

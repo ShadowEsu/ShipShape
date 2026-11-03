@@ -35,12 +35,23 @@
   --brand: #1d6a4e;
 }
 
-/* Inside the redesigned app the one accent is the brand green: the active item, the send button, the focus ring. */
+/*
+ * Inside the app, look A (Design calm v2; BOSS picked it 3 Nov): black, white and hairlines, no grey fills or tints.
+ * The one accent is --brand; look B is this one line set to Harbor green (#1d6a4e), nothing else.
+ */
 .ui-v2 {
+  --brand: #111111;
   --accent: var(--brand);
   --accent-ink: #ffffff;
-  --accent-soft: #e8f3ee;
-  --line: #e6e6e2;
+  --accent-soft: #f3f3f1;
+  --ink-2: #3f3f3d;
+  --line: #ececea;
+  --line-2: #e3e3e0;
+  --sep: #ececea;
+  --side: #fbfbfa;
+  /* The hover fill, and what's left of the old wells until the inner pages lose theirs. */
+  --tile: #f3f3f1;
+  --strip: linear-gradient(90deg, #f4efff, #fdf0f4 45%, #fff4ea);
 }
 
 @theme inline {
@@ -119,21 +130,20 @@ body {
   }
 }
 
-/* The redesigned app's controls (Design spec 2026-11-02 §2): 44px pills everywhere, an SF-like scale on Geist. */
+/* The app's controls (Design calm v2): pills of 44px on the phone (touch) and 40px from md up, 14px medium type. */
 @layer components {
   .ui-v2 .btn,
   .ui-v2 .btn-accent,
   .ui-v2 .btn-ghost,
   .ui-v2 .btn-danger {
-    @apply min-h-11 text-[15px];
+    @apply min-h-11 text-[14px] font-medium md:min-h-10;
   }
-  /* The phone's one big button: full width, 50px, radius 14. */
+  .ui-v2 .btn-ghost {
+    @apply border-[var(--line-2)] hover:bg-tile;
+  }
+  /* The phone's one big button: the whole row under the title, a 44px pill. */
   .ui-v2 .btn-block {
-    @apply min-h-[50px] w-full rounded-[14px] text-[17px] sm:min-h-11 sm:w-auto sm:rounded-full sm:text-[15px];
-  }
-  .ui-v2 .large-title {
-    /* Balanced, so a phone never leaves one word alone on the last line ("done?", Design 14:40). */
-    @apply font-serif text-[32px] leading-9 font-semibold tracking-tight text-balance text-ink sm:text-[44px] sm:leading-[48px];
+    @apply w-full sm:w-auto;
   }
   .ui-v2 .section-title {
     @apply text-[17px] leading-6 font-semibold text-ink;
@@ -207,50 +217,189 @@ body {
   .ui-v2 .row-field[aria-invalid="true"] {
     @apply ring-2 ring-bad;
   }
-  /* Check a request's text (Design 02 Nov): a --tile well, no border, the brand ring on focus. */
+  /* Check a request's text: a hairline box, the accent ring on focus. */
   .ui-v2 .request-well {
-    @apply block w-full resize-y rounded-2xl bg-tile px-4 py-3 text-base text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand;
+    @apply block w-full resize-y rounded-2xl border border-[var(--line-2)] bg-paper px-4 py-3 text-base text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand;
   }
   .ui-v2 .request-well[aria-invalid="true"] {
     @apply ring-2 ring-bad;
   }
 
-  /* The document page's round actions: a 56px tile with the icon, the label under it. */
+  /* The document page's round actions: the icon in a 56px hairline square, the label under it. */
   .ui-v2 .round-action {
     @apply flex min-w-0 flex-1 flex-col items-center gap-1.5 text-[13px] text-ink-2;
   }
   .ui-v2 .round-icon {
-    @apply grid size-14 place-items-center rounded-2xl bg-tile text-ink transition-colors duration-[180ms];
+    @apply grid size-14 place-items-center rounded-2xl border border-[var(--line-2)] bg-paper text-ink transition-colors duration-[180ms];
   }
   .ui-v2 .round-action:hover .round-icon {
-    @apply bg-line;
+    @apply bg-tile;
   }
   /* A row in an action sheet or menu (the document page's More). */
   .ui-v2 .menu-row {
     @apply flex min-h-12 w-full items-center rounded-xl px-3 text-left text-[15px] text-ink transition-colors duration-[180ms] hover:bg-tile md:min-h-10;
   }
-
-  /* Tool tiles. Option A ("Tinted"): each tool its own soft tint; .mono (option B, "One accent") makes every icon ink on white. */
+  /* A hairline card (Collect's counts). */
   .ui-v2 .tile {
-    @apply flex h-full flex-col gap-3 rounded-2xl border border-transparent bg-tile p-4 text-left transition-[transform,box-shadow] duration-[180ms];
-  }
-  .ui-v2 a.tile:hover {
-    @apply -translate-y-px shadow-[0_6px_20px_-12px_rgb(0_0_0/0.25)];
-  }
-  .ui-v2 .tile-icon {
-    @apply grid size-9 place-items-center rounded-xl;
-    background: var(--tint, var(--paper));
-    color: var(--tint-ink, var(--ink));
-  }
-  .ui-v2.mono .tile {
-    @apply border-line bg-paper;
-  }
-  .ui-v2.mono .tile-icon {
-    --tint: var(--tile);
-    --tint-ink: var(--ink);
+    @apply flex h-full flex-col gap-3 rounded-2xl border border-line bg-paper p-4 text-left;
   }
   .ui-v2 .tag {
     @apply inline-flex w-fit items-center rounded-full bg-paper px-2 py-0.5 text-xs text-ink-2 ring-1 ring-line;
+  }
+  /* An icon in a 34px hairline square: list rows, search results, sheets. */
+  .ui-v2 .row-icon {
+    @apply grid size-[34px] shrink-0 place-items-center rounded-[10px] border border-[var(--line-2)] bg-paper text-ink-2;
+  }
+
+  /* The shell (Design calm v2). The sidebar: flat rows under small grey labels, the active row's faint fill. */
+  .ui-v2 .side {
+    @apply border-r border-line bg-side px-2.5 py-3.5;
+  }
+  .ui-v2 .side-label {
+    @apply px-2.5 pt-3.5 pb-1 text-xs text-ink-3;
+  }
+  .ui-v2 .side-row {
+    @apply flex min-h-8 items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors duration-[180ms] hover:bg-tile;
+  }
+  .ui-v2 .side-row[aria-current="page"] {
+    @apply bg-tile font-medium text-ink;
+  }
+  .ui-v2 .side-icon {
+    @apply shrink-0 text-ink-3;
+  }
+  .ui-v2 .side-row[aria-current="page"] .side-icon {
+    @apply text-brand;
+  }
+  .ui-v2 .side-dot {
+    @apply ml-auto size-1.5 rounded-full bg-bad;
+  }
+  /* In the phone's menu every row is a 44px target. */
+  .ui-v2 .drawer .side-row {
+    @apply min-h-11 text-[15px];
+  }
+  .ui-v2 .account-row {
+    @apply flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-[180ms] hover:bg-tile;
+  }
+  .ui-v2 .account-tile {
+    @apply grid size-7 shrink-0 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-paper;
+  }
+  .ui-v2 .sample-strip {
+    @apply px-4 py-[7px] text-center text-[12.5px] leading-[18px];
+    background: var(--strip);
+    color: var(--ink-2);
+  }
+  /* The top bar: on the phone the menu, the logo and search; from md up the page's name, search, Help and Feedback. */
+  .ui-v2 .top-bar {
+    @apply sticky top-0 z-20 grid h-13 grid-cols-[44px_1fr_44px] items-center border-b border-line bg-paper/90 px-1.5 backdrop-blur-xl md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-3 md:px-5;
+  }
+  .ui-v2 .top-icon {
+    @apply grid size-11 place-items-center rounded-full text-ink-2;
+  }
+  .ui-v2 .top-link {
+    @apply items-center rounded-lg px-2.5 py-1.5 text-[13px] whitespace-nowrap text-ink-2 transition-colors duration-[180ms] hover:bg-tile hover:text-ink;
+  }
+  .ui-v2 .search-button {
+    @apply h-[34px] items-center gap-2 rounded-[10px] border border-[var(--line-2)] bg-paper px-2.5 text-left text-[13.5px] text-ink-3 transition-colors duration-[180ms] hover:border-field md:w-[200px] lg:w-[340px];
+  }
+  .ui-v2 .search-kbd {
+    @apply ml-auto rounded-md border border-[var(--line-2)] px-1.5 font-sans text-[11.5px] leading-4 text-ink-3;
+  }
+  .ui-v2 .search-row {
+    @apply flex min-h-11 items-center gap-3 rounded-lg px-2 py-1 text-sm text-ink transition-colors duration-[120ms] hover:bg-tile focus-visible:bg-tile;
+  }
+
+  /* Home: the question, the one-line box, one row of tools. */
+  .ui-v2 .home-top {
+    @apply flex flex-col items-center pt-4 md:pt-10;
+  }
+  .ui-v2 .home-title {
+    @apply text-center text-2xl leading-8 font-normal tracking-[-0.015em] text-balance text-ink sm:text-[28px] sm:leading-9;
+  }
+  .ui-v2 .prompt {
+    @apply mt-6 flex min-h-14 w-full items-start gap-3 rounded-2xl border border-[var(--line-2)] bg-paper py-[9px] pr-[9px] pl-3.5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors duration-[180ms];
+  }
+  .ui-v2 .prompt-orb {
+    @apply mt-[6px] size-[26px] shrink-0 rounded-full;
+    background: radial-gradient(circle at 30% 30%, #c9b8ff, #8ec5ff 45%, #ffb4c8 80%);
+  }
+  .ui-v2 .prompt-field {
+    @apply max-h-48 min-h-[38px] min-w-0 flex-1 resize-none bg-transparent py-[7px] text-base leading-6 text-ink outline-none placeholder:text-ink-3 sm:text-[15px];
+    field-sizing: content;
+  }
+  .ui-v2 .prompt-send {
+    @apply grid size-[38px] shrink-0 place-items-center rounded-full bg-ink text-paper transition-colors duration-[180ms] disabled:cursor-not-allowed disabled:bg-tile disabled:text-ink-3;
+  }
+  .ui-v2 .tool-row {
+    @apply mt-10 grid w-full grid-cols-5 gap-x-2 gap-y-4 lg:flex lg:w-auto lg:justify-center lg:gap-3.5;
+  }
+  .ui-v2 .tool {
+    @apply flex min-h-11 flex-col items-center gap-2 text-center text-[12.5px] leading-4 text-ink-2 lg:w-[76px];
+  }
+  .ui-v2 .tool-square {
+    @apply grid size-[52px] place-items-center rounded-[14px] border border-[var(--line-2)] bg-paper text-ink transition-colors duration-[180ms];
+  }
+  .ui-v2 .tool:hover .tool-square {
+    @apply bg-tile;
+  }
+  /* A closed tool: a dashed square and a grey icon; its name and tooltip say why. */
+  .ui-v2 .tool.closed {
+    @apply text-ink-3;
+  }
+  .ui-v2 .tool.closed .tool-square {
+    @apply border-dashed border-[#bdbdb8] text-ink-3;
+  }
+  /* Home's sections: a 14px title and View all, then a hairline list of 58px rows. */
+  .ui-v2 .home-section-title {
+    @apply text-sm font-medium text-ink;
+  }
+  .ui-v2 .hair-list {
+    @apply overflow-hidden rounded-[14px] border border-line bg-paper;
+  }
+  .ui-v2 .hair-list > li + li {
+    @apply border-t border-line;
+  }
+  /* Phone: icon | title and meta (wrapping), then the chip under them. From sm up: icon | text | chip | chevron, one line each. */
+  .ui-v2 .hair-row {
+    @apply grid min-h-[58px] grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 transition-colors duration-[180ms] hover:bg-[#fafaf8] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto];
+    grid-template-areas: "icon text" "icon chip";
+  }
+  .ui-v2 .hair-icon {
+    grid-area: icon;
+    @apply self-start sm:self-center;
+  }
+  .ui-v2 .hair-text {
+    grid-area: text;
+    @apply min-w-0;
+  }
+  .ui-v2 .hair-title {
+    @apply line-clamp-2 text-sm font-medium text-ink sm:line-clamp-none sm:truncate;
+  }
+  .ui-v2 .hair-meta {
+    @apply block text-[12.5px] leading-[18px] text-ink-3 sm:truncate;
+  }
+  .ui-v2 .hair-chip {
+    grid-area: chip;
+    @apply justify-self-start;
+  }
+  .ui-v2 .hair-chev {
+    grid-area: chev;
+    @apply hidden text-ink-3 sm:block;
+  }
+  @media (min-width: 640px) {
+    .ui-v2 .hair-row {
+      grid-template-areas: "icon text chip chev";
+    }
+  }
+  .ui-v2 .quiet-empty {
+    @apply rounded-[14px] border border-line px-4 py-4 text-sm text-ink-3;
+  }
+  /* A state as a dot and a word in a hairline pill (Design calm v2). Grey: waiting on someone. */
+  .ui-v2 .dot-chip {
+    @apply inline-flex h-6 items-center gap-1.5 rounded-full border border-[var(--line-2)] bg-paper px-2.5 text-xs whitespace-nowrap text-ink-2;
+  }
+  .ui-v2 .dot-chip::before {
+    content: "";
+    @apply size-1.5 rounded-full bg-ink-3;
   }
 }
 
@@ -258,16 +407,47 @@ body {
  * Every page in the redesigned app, through the hooks the shared components carry. Unlayered on purpose: these win
  * over the utilities the components were written with, so the earlier look (SHIPSHAPE_UI=v1) stays exactly as it was outside .ui-v2.
  */
+/* Page titles in the app's sans (Design calm v2): 500, 22/30 on the phone, 24/32 from sm up. */
 .ui-v2 .page-title {
-  font-size: 32px;
-  line-height: 36px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 30px;
+  letter-spacing: -0.015em;
   text-wrap: balance;
 }
 @media (min-width: 640px) {
   .ui-v2 .page-title {
-    font-size: 44px;
-    line-height: 48px;
+    font-size: 24px;
+    line-height: 32px;
   }
+}
+/* A state chip as a dot and a word in a hairline pill (Design calm v2); the dot carries the colour, the word the state. */
+.ui-v2 .validity-chip {
+  height: 24px;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--line-2);
+  background: var(--paper);
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.ui-v2 .validity-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.ui-v2 .validity-chip[data-validity="expiring"]::before {
+  background: var(--warn);
+}
+.ui-v2 .validity-chip[data-validity="expired"]::before {
+  background: var(--bad);
+}
+.ui-v2 .validity-chip > .validity-icon {
+  display: none;
 }
 /* A page's one big phone button (btn-block) takes the whole row under the title, as Home's does (Design 14:40). */
 @media (max-width: 639px) {
@@ -279,6 +459,23 @@ body {
    even after a keyboard Sign, which would draw one around the heading mid-moment (Design, 02 Nov). Tab goes on to Download. */
 .ui-v2 .stamp-title:focus-visible {
   outline: none;
+}
+/* Home's box and the search field show focus on what holds them (the box's border, the search row's rule), not as a
+   second ring drawn inside: the field fills its box, so the ring would sit on the box's own edge. */
+.ui-v2 .prompt-field:focus-visible,
+.ui-v2 #search-field:focus-visible {
+  outline: none;
+}
+.ui-v2 .prompt:focus-within {
+  border-color: var(--ink);
+}
+.ui-v2 #search-dialog form:focus-within {
+  border-bottom-color: var(--ink);
+}
+/* The search result the arrow keys are on shows as the faint fill, as a list's active row, not a ring (Design S1, 3 Nov). */
+.ui-v2 #search-dialog .search-row:focus-visible {
+  outline: none;
+  background: var(--tile);
 }
 /* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text. */
 .ui-v2 .page-eyebrow {
@@ -349,35 +546,23 @@ body {
 .ui-v2 main:has(> [aria-busy="true"]) > .legal-line {
   display: none;
 }
-/* While a form's Save is docked above the phone's tab bar (the document's Details), a focused field or a row scrolled
-   to stops clear of it: the tab bar (51px + its inset, at least 20px), 8px, the 44px button and 16px more (Design). */
+/* While a form's Save is docked at the bottom of the phone's screen (the document's Details), a focused field or a row
+   scrolled to stops clear of it: its 8px gap over the home indicator, the 44px button and 16px more (Design). */
 @media (max-width: 767px) {
   html:has(.ui-v2 .save-dock) {
-    scroll-padding-bottom: calc(51px + max(env(safe-area-inset-bottom), 20px) + 8px + 44px + 16px);
+    scroll-padding-bottom: calc(env(safe-area-inset-bottom) + 8px + 44px + 16px);
   }
   .ui-v2 main:has(.save-dock) {
-    padding-bottom: calc(8rem + 44px + 16px);
+    padding-bottom: calc(4rem + 44px + 16px);
   }
-  /* Paper behind the docked button, from the tab bar to 16px above it, fading in over its top 16px, so the rows that
-     run on under it never collide with the pill (Design, 390x667 dock stills). The sticky box is its stacking context. */
+  /* Paper behind the docked button, from the screen's foot to 16px above it, fading in over its top 16px, so the rows
+     that run on under it never collide with the pill (Design, 390x667 dock stills). The sticky box is its stacking context. */
   .ui-v2 .save-dock::before {
     content: "";
     position: absolute;
-    inset: -16px 0 -8px;
+    inset: -16px 0 calc(-8px - env(safe-area-inset-bottom));
     z-index: -1;
     background: linear-gradient(to bottom, transparent, var(--paper) 16px);
     pointer-events: none;
   }
 }
-
-/* Option A's tints: a soft fill and an icon colour of at least 4.5:1 on it. */
-.ui-v2 [data-tool="documents"] { --tint: #eaf1fd; --tint-ink: #1f5fbf; }
-.ui-v2 [data-tool="add"] { --tint: #ebf0f3; --tint-ink: #3f5f73; }
-.ui-v2 [data-tool="make"] { --tint: #f1ecfd; --tint-ink: #6b3fc8; }
-.ui-v2 [data-tool="check"] { --tint: #e6f5f3; --tint-ink: #0f766e; }
-.ui-v2 [data-tool="passport"] { --tint: #e8f3ee; --tint-ink: #1d6a4e; }
-.ui-v2 [data-tool="sign"] { --tint: #fdf3e2; --tint-ink: #8f5400; }
-.ui-v2 [data-tool="collect"] { --tint: #fcebef; --tint-ink: #b4234f; }
-.ui-v2 [data-tool="deadlines"] { --tint: #f8f1df; --tint-ink: #7f5a00; }
-.ui-v2 [data-tool="facts"] { --tint: #edf0f4; --tint-ink: #44546a; }
-.ui-v2 [data-tool="settings"] { --tint: #f0f0ee; --tint-ink: #4a4a4a; }

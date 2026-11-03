@@ -4,6 +4,7 @@ import { ViewTransition } from "react";
 import { EmptyState, PageHeader, ValidityChip } from "@/components/app-ui";
 import { Icon } from "@/components/icons";
 import { DOC_KINDS, DOCUMENTS_PAGE_SIZE, pageDocuments } from "@/lib/server/documents";
+import { esignAvailable } from "@/lib/server/esign";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 
@@ -56,6 +57,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             </>
           ))}
       </PageHeader>
+      {/* Home's Sign opens this page; while signing is closed here, the page says why (the tool's dashed square says the same). */}
+      {v2 && !esignAvailable(ctx) && <p className="text-[13px] text-ink-3">Signing by email opens once ShipShape can send email.</p>}
 
       {!empty &&
         (v2 ? (

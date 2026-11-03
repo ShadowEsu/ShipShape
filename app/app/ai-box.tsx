@@ -76,40 +76,43 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
   const linkIds = currentMatchIds(items ?? []);
 
   return (
-    <div className="mx-auto w-full max-w-[760px] space-y-3">
-      <form action={submit} className="rounded-3xl border border-line bg-paper p-3 shadow-[0_12px_40px_-24px_rgb(0_0_0/0.35)] focus-within:border-field">
-        <textarea
-          name="text"
-          rows={3}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          maxLength={AI_REQUEST_MAX_CHARS}
-          aria-labelledby="home-title"
-          aria-describedby={`${ids}-hint${textError ? ` ${ids}-text-error` : ""}`}
-          aria-invalid={textError ? true : undefined}
-          placeholder="Paste what a customer asked for, or say what you need to do."
-          className="block w-full resize-none bg-transparent px-2 py-1.5 text-base leading-6 text-ink outline-none placeholder:text-ink-3"
-        />
-        {textError && (
-          <p id={`${ids}-text-error`} className="px-2 text-sm text-bad">
-            {textError}
-          </p>
-        )}
-        <div className="flex items-center justify-between gap-3 pt-2 pl-1">
-          <span className={`rounded-full px-3 py-1 text-xs font-medium ${checking ? "bg-accent-soft text-brand" : "bg-tile text-ink-2"}`} aria-live="polite">
-            {checking ? "Check a request" : !aiOn && isRequest ? "AI is off; pick a tool below" : "Finds the right tool"}
-          </span>
+    <div className="mx-auto w-full max-w-[640px] space-y-3">
+      <form action={submit}>
+        {/* One line that grows with what's typed (field-sizing), with no mic: the box finds a tool or checks a request. */}
+        <div className="prompt">
+          <span className="prompt-orb" aria-hidden="true" />
+          <textarea
+            name="text"
+            rows={1}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            maxLength={AI_REQUEST_MAX_CHARS}
+            aria-labelledby="home-title"
+            aria-describedby={`${ids}-hint${textError ? ` ${ids}-text-error` : ""}`}
+            aria-invalid={textError ? true : undefined}
+            placeholder="Paste what a customer asked for, or say what you need to do."
+            className="prompt-field"
+          />
           <button
             disabled={!filled || pending}
             aria-label={pending ? stage : checking ? "Check this request" : "Find the right tool"}
-            className="press grid size-11 shrink-0 place-items-center rounded-full bg-brand text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            className="prompt-send press"
           >
-            <Icon name="send" />
+            <Icon name="send" size={18} />
           </button>
         </div>
+        <span className="sr-only" aria-live="polite">
+          {checking ? "Check a request" : !aiOn && isRequest ? "AI is off; pick a tool below" : "Finds the right tool"}
+        </span>
+        {textError && (
+          <p id={`${ids}-text-error`} className="mt-2 px-2 text-sm text-bad">
+            {textError}
+          </p>
+        )}
+        {!aiOn && isRequest && <p className="mt-2 px-2 text-[13px] text-ink-2">AI is off right now, so it can&apos;t check a request. Pick a tool below.</p>}
         {checking && (
-          <div className="mt-2 space-y-1 border-t border-sep px-2 pt-3">
-            <label className="flex items-start gap-3 text-sm text-ink-2">
+          <div className="mt-3.5 space-y-1.5 px-1">
+            <label className="flex items-start gap-3 text-[13px] leading-[19px] text-ink-2">
               <input
                 type="checkbox"
                 name="consent"
@@ -151,14 +154,14 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
       {answer && !pending && !textError && !consentError && (
         <section key={round} ref={result} tabIndex={-1} aria-label="Answer" className="arrive card space-y-4 outline-none">
           {answer.kind === "tool" && (
-            <div data-tool={answer.tool.id} className="flex flex-wrap items-center gap-4">
-              <span className="tile-icon">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="row-icon">
                 <Icon name={answer.tool.icon} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-semibold">{answer.name}</span>
                 <span className="block text-sm text-ink-3">{answer.line}</span>
-                {answer.tool.tag && <span className="tag mt-2">{answer.tool.tag}</span>}
+                {answer.tool.tag && <span className="mt-2 block text-[13px] text-ink-3">{answer.tool.tag}</span>}
               </span>
               <Link href={answer.href} className="btn press">
                 Open
