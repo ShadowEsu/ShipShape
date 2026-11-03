@@ -59,7 +59,7 @@ export function HomeV2(props: {
       {/* Waiting on others and Saved side by side from lg up, stacked on the phone (Design calm v2). */}
       <div className={saved.length > 0 ? "grid gap-12 lg:grid-cols-2 lg:gap-6" : undefined}>
         <section aria-labelledby="waiting-title" className="min-w-0">
-          <SectionHead id="waiting-title" title="Waiting on others" all={null} />
+          <SectionHead id="waiting-title" title="Waiting on others" all={waiting.signatures.length > 0 ? "/app/sent?tab=signatures" : null} />
           {nothingWaiting ? (
             <p className="quiet-empty">Signature requests nobody has signed yet, and vendors who still owe you a document, show up here.</p>
           ) : (

@@ -5,43 +5,6 @@ import type { TemplateInfo } from "@/lib/templates/types";
 
 // The words the document page uses, in both looks (v2.tsx by default, page.tsx's own under SHIPSHAPE_UI=v1).
 
-const ACTIONS: Record<string, string> = {
-  "document.created": "Added to documents",
-  "document.version_added": "Version added",
-  "document.updated": "Details changed",
-  "document.archived": "Archived",
-  "document.restored": "Restored",
-  "document.acknowledged": "Reviewed and acknowledged",
-  "document.viewed": "Opened",
-  "document.downloaded": "Downloaded",
-  "document.signed_version_added": "Signed copy added",
-  "esign.requested": "Signature requested",
-  "esign.opened": "Signer opened the link",
-  "esign.code_sent": "Signing code sent",
-  "esign.signed": "Signed",
-  "esign.revoked": "Signature request withdrawn",
-  "esign.review_downloaded": "File sent for signing downloaded",
-};
-
-/**
- * An outsider's row says who or which when the row knows it (`about_name`, 0038): the signer's name, the passport
- * link's label. Without it (the link or request is gone), the plain label.
- */
-export function historyLabel(action: string, about: string | null): string {
-  switch (action) {
-    case "document.link_viewed":
-      return about ? `Viewed through a passport link: ${about}` : "Viewed through a passport link";
-    case "document.link_downloaded":
-      return about ? `Downloaded through a passport link: ${about}` : "Downloaded through a passport link";
-    case "esign.file_downloaded":
-      return `${about ?? "Signer"} downloaded the file to sign`;
-    case "esign.signed_copy_downloaded":
-      return `${about ?? "Signer"} downloaded the signed copy`;
-    default:
-      return ACTIONS[action] ?? action;
-  }
-}
-
 /** What went wrong in a form posted from this page (see backToDocument in ../actions.ts), and the one thing that fixes it. */
 export const ERRORS: Record<string, { text: string; fix?: { href: string; label: string } }> = {
   limit: {

@@ -9,7 +9,7 @@ import { runReminders } from "@/lib/server/deadlines";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { SAMPLE_SIGNIN_BUSY } from "@/lib/server/limits";
 import { createLocalUser, finishSignIn, localSignInAllowed, signOutHere, viewerToday } from "@/lib/server/session";
-import { seedSampleWorkspace } from "@/lib/server/sample";
+import { seedSampleActivity, seedSampleWorkspace } from "@/lib/server/sample";
 import { landing, returnTo } from "@/lib/return-to";
 
 export interface SignInState {
@@ -74,6 +74,8 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
     );
     const today = await viewerToday();
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId, today));
+    // Its links, signatures and their visits, through the real functions, once the workspace is committed.
+    await seedSampleActivity(org.id, userId, today);
     // The sample's expired permit and expiring certificate show their reminders straight away, counted
     // from the same day the sample was seeded on, so the outbox and Deadlines agree (W10-2).
     await runReminders(today, org.id);

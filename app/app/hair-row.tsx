@@ -2,14 +2,29 @@ import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons";
 
 /**
- * A hairline row (Design calm v2, look A), for a `.hair-list`: Home's lists and the Saved page. From sm up: icon, title
- * over meta, the chip, the chevron. On the phone the title and meta wrap and the chip goes under them (Design MUST-1,
- * 3 Nov: a dated chip beside the title cut it to "Certificate …"). Without a chip, the state is in the meta line.
+ * A hairline row (Design calm v2, look A), for a `.hair-list`: Home's lists, Saved, Sent, Signed copies. From sm up:
+ * icon, title over meta, the chip, the chevron. On the phone the title and meta wrap and the chip goes under them
+ * (Design MUST-1, 3 Nov: a dated chip beside the title cut it to "Certificate …"). Without a chip, the state is in the
+ * meta line. `current`: the row whose detail is open beside the list (Sent), marked for everyone.
  */
-export function HairRow({ href, icon, title, line, chip }: { href: string; icon: IconName; title: string; line: string; chip?: React.ReactNode }) {
+export function HairRow({
+  href,
+  icon,
+  title,
+  line,
+  chip,
+  current = false,
+}: {
+  href: string;
+  icon: IconName;
+  title: string;
+  line: string;
+  chip?: React.ReactNode;
+  current?: boolean;
+}) {
   return (
     <li>
-      <Link href={href} className="hair-row">
+      <Link href={href} className="hair-row" aria-current={current ? "true" : undefined}>
         <span className="hair-icon row-icon">
           <Icon name={icon} size={17} />
         </span>
@@ -23,5 +38,16 @@ export function HairRow({ href, icon, title, line, chip }: { href: string; icon:
         </span>
       </Link>
     </li>
+  );
+}
+
+/** A state as a dot and a word in a hairline pill: green for done or working, grey for waiting or over (Design calm v2). */
+export function StateChip({ tone, children }: { tone: "ok" | "none"; children: React.ReactNode }) {
+  return tone === "ok" ? (
+    <span data-validity="ok" className="validity-chip inline-flex items-center rounded-full text-xs whitespace-nowrap">
+      {children}
+    </span>
+  ) : (
+    <span className="dot-chip">{children}</span>
   );
 }

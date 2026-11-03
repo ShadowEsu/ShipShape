@@ -6,9 +6,12 @@ import type { Facts, TemplateInfo } from "@/lib/templates/types";
 import { isoToday, plusDays } from "@/lib/today";
 import { seedSampleVendors } from "./collect";
 import { encryptField } from "./crypto";
-import type { Tx } from "./db";
+import { asUser, type Tx } from "./db";
+import { listOutbox } from "./deadlines";
 import { insertDocument } from "./documents";
+import { completeSigning, createSignatureRequest, sendSigningCode } from "./esign";
 import { fillRecord, prefill, render } from "./fill";
+import { createPassport, openPassport, passportFileUrl } from "./passport";
 import { seedSamplePeople } from "./people";
 import type { Ctx } from "./profile";
 import { saveInTx } from "./saved";
@@ -128,4 +131,66 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await seedSampleVendors(tx, ctx, day);
   // People (0046): three made-up contacts, so People has someone in it.
   await seedSamplePeople(tx, ctx);
+}
+
+/** The sample's people and their networks: names say (sample), emails are .example, networks are documentation addresses (RFC 5737). */
+export const SAMPLE_ACTIVITY = {
+  link: "Northwind Builders onboarding (sample)",
+  visitors: ["198.51.100.7", "198.51.100.23"],
+  signed: { name: "Jordan Lee (sample)", email: "jordan.lee@northwind.example", ip: "192.0.2.10" },
+  waiting: { name: "Dana Kim (sample)", email: "dana.kim@northwind.example" },
+} as const;
+
+/**
+ * The sample's activity (calm v2), once its workspace is committed: a passport link two people at Northwind opened (one came back) and
+ * downloaded from, the NDA signed by Jordan Lee, and a request Dana Kim hasn't signed yet, so Sent, Signed copies,
+ * History and Waiting have something real in them. Made through the same functions a workspace and its visitors use;
+ * only the signing code is read from the outbox, which a sample's owner can read (0039). Each part is on its own:
+ * one that fails (the PDF builder busy) is left out and logged, and the sample opens without it.
+ */
+export async function seedSampleActivity(orgId: string, userId: string, today = isoToday()) {
+  const ctx: Ctx = { userId, demo: true, authAt: 0, orgId, name: "Harbor Plumbing (sample)", role: "owner", today };
+  const docs = await asUser(userId, (tx) =>
+    tx.query<{ id: string; kind: string; template_id: string | null }>("select id, kind, template_id from app.documents where org_id = $1 and status = 'active'", [orgId]),
+  );
+  const w9 = docs.find((d) => d.template_id === "irs-w9")?.id;
+  const nda = docs.find((d) => d.template_id === "common-paper-mnda")?.id;
+  const coi = docs.find((d) => d.kind === "coi")?.id;
+  const license = docs.find((d) => d.kind === "license")?.id;
+  const a = SAMPLE_ACTIVITY;
+
+  const part = async (what: string, run: () => Promise<void>) => {
+    try {
+      await run();
+    } catch (e) {
+      console.error(`sample activity: ${what} left out (${e instanceof Error ? e.name : "error"})`);
+    }
+  };
+
+  await part("link", async () => {
+    if (!w9 || !coi || !license) return;
+    const link = await createPassport(ctx, { label: a.link, days: 30, documentIds: [w9, coi, license] });
+    const [first, second] = a.visitors;
+    await openPassport(link.id, link.token, first);
+    await passportFileUrl(link.id, link.token, w9, first);
+    await passportFileUrl(link.id, link.token, coi, first);
+    await openPassport(link.id, link.token, second);
+    await openPassport(link.id, link.token, first);
+  });
+
+  await part("waiting request", async () => {
+    if (!nda) return;
+    await createSignatureRequest(ctx, { documentId: nda, signerName: a.waiting.name, signerEmail: a.waiting.email, days: 14 });
+  });
+
+  await part("signed copy", async () => {
+    if (!nda) return;
+    const req = await createSignatureRequest(ctx, { documentId: nda, signerName: a.signed.name, signerEmail: a.signed.email, days: 14 });
+    if ((await sendSigningCode(req.id, req.token)) !== "ok") throw new Error("no code");
+    const message = (await listOutbox(ctx)).find((m) => m.to_email === a.signed.email);
+    const code = /\bis (\d{6})\./.exec(message?.body ?? "")?.[1];
+    if (!code) throw new Error("code not in the outbox");
+    const signed = await completeSigning(req.id, req.token, { code, typedName: a.signed.name, consented: true, ip: a.signed.ip });
+    if (signed !== "ok") throw new Error(`signing: ${signed}`);
+  });
 }

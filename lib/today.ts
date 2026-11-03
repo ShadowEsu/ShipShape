@@ -45,6 +45,11 @@ export function timeOf(instant: string, timeZone: string): string {
   return new Date(instant).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone });
 }
 
+/** An instant's wall-clock time where the viewer is ("7:04 AM"), for rows already grouped under their day (History). */
+export function clockOf(instant: string, timeZone: string): string {
+  return new Date(instant).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone });
+}
+
 /** Adds days to a YYYY-MM-DD date. */
 export function plusDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`);

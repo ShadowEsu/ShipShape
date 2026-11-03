@@ -414,6 +414,92 @@ body {
     content: "";
     @apply size-1.5 rounded-full bg-ink-3;
   }
+  /* The row whose detail is open beside the list (Sent). */
+  .ui-v2 .hair-row[aria-current="true"] {
+    @apply bg-tile;
+  }
+  /* Tabs that are links: grey words on a hairline, the current one ink with a 2px ink underline (Design calm v2). */
+  .ui-v2 .tab-row {
+    @apply flex gap-5 overflow-x-auto border-b border-line;
+  }
+  .ui-v2 .tab {
+    @apply -mb-px inline-flex min-h-11 items-center gap-1.5 border-b-2 border-transparent text-sm whitespace-nowrap text-ink-3 transition-colors duration-[180ms] hover:text-ink;
+  }
+  .ui-v2 .tab[aria-current="page"] {
+    @apply border-ink font-medium text-ink;
+  }
+  .ui-v2 .tab-count {
+    @apply text-xs text-ink-3;
+  }
+  /* A small menu of links: a hairline pill that opens a hairline card under it. */
+  .ui-v2 .filter-menu {
+    @apply relative;
+  }
+  .ui-v2 .filter-menu > summary {
+    @apply inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-full border border-[var(--line-2)] px-3.5 text-[13px] text-ink-2 hover:text-ink md:min-h-9;
+  }
+  .ui-v2 .filter-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+  .ui-v2 .filter-menu > ul {
+    @apply absolute top-[calc(100%+6px)] right-0 z-20 min-w-44 rounded-xl border border-[var(--line-2)] bg-paper p-1.5 shadow-[0_8px_24px_rgb(0_0_0/0.08)];
+  }
+  .ui-v2 .filter-menu a {
+    @apply flex min-h-10 items-center rounded-lg px-2.5 text-sm text-ink-2 hover:bg-tile hover:text-ink;
+  }
+  .ui-v2 .filter-menu a[aria-current="true"] {
+    @apply font-medium text-ink;
+  }
+  /* "Where it went": a hairline down the left, a dot per step; a step that hasn't happened has a hollow dot. */
+  .ui-v2 .timeline {
+    @apply ml-1 space-y-4 border-l border-line pl-5;
+  }
+  .ui-v2 .timeline > li {
+    @apply relative;
+  }
+  .ui-v2 .timeline > li::before {
+    content: "";
+    @apply absolute top-1.5 -left-[24.5px] size-2 rounded-full border border-ink-3 bg-paper;
+  }
+  .ui-v2 .timeline > li[data-done]::before {
+    @apply border-ink bg-ink;
+  }
+  /*
+   * History: time, icon, what happened, who in one line from sm up. On the phone the sentence gets the width and the
+   * time and who go under it ("2:56 AM · Signer"), so a long sentence wraps in two lines, not four.
+   */
+  .ui-v2 .history-row {
+    display: grid;
+    grid-template-columns: 34px auto 1fr;
+    grid-template-areas: "icon what what" "icon time who";
+    @apply min-h-13 items-center gap-x-3 gap-y-0.5 px-3.5 py-2.5;
+  }
+  .ui-v2 .history-row > .row-icon {
+    grid-area: icon;
+    @apply self-start sm:self-center;
+  }
+  .ui-v2 .history-what {
+    grid-area: what;
+    @apply min-w-0 text-sm text-ink;
+  }
+  .ui-v2 .history-time {
+    grid-area: time;
+    @apply text-[12.5px] whitespace-nowrap text-ink-3 tabular-nums;
+  }
+  .ui-v2 .history-who {
+    grid-area: who;
+    @apply text-[12.5px] whitespace-nowrap text-ink-3;
+  }
+  .ui-v2 .history-who::before {
+    content: "·" / "";
+    @apply mr-3 sm:hidden;
+  }
+  @media (width >= 40rem) {
+    .ui-v2 .history-row {
+      grid-template-columns: 4rem 34px 1fr auto;
+      grid-template-areas: "time icon what who";
+    }
+  }
 }
 
 /*

@@ -11,7 +11,7 @@ type Item = readonly [href: string, label: string, icon: IconName];
 
 /**
  * The sidebar (Design calm v2, look A): Home, then flat rows under small grey group labels, then Settings. Only pages
- * that exist are listed; Signed copies, Sent and History join their groups in the PRs that build them.
+ * that exist are listed.
  */
 const GROUPS: readonly { label: string | null; items: readonly Item[] }[] = [
   { label: null, items: [["/app", "Home", "home"]] },
@@ -20,12 +20,15 @@ const GROUPS: readonly { label: string | null; items: readonly Item[] }[] = [
     items: [
       ["/app/documents", "Documents", "documents"],
       ["/app/saved", "Saved", "bookmark"],
+      ["/app/signed", "Signed copies", "sign"],
+      ["/app/sent", "Sent", "send"],
       ["/app/make", "Templates", "page"],
     ],
   },
   {
     label: "Track",
     items: [
+      ["/app/history", "History", "history"],
       ["/app/deadlines", "Deadlines", "deadlines"],
       ["/app/passport", "Passport", "passport"],
     ],

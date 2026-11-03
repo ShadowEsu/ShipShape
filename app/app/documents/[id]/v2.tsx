@@ -5,6 +5,7 @@ import { ConfirmForm } from "@/components/confirm-form";
 import { HashLanding } from "@/components/hash-landing";
 import { Icon } from "@/components/icons";
 import { SubmitButton } from "@/components/submit-button";
+import { historyLabel } from "@/lib/history";
 import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, type AuditRow, type DocKind, type DocRow, type VersionRow } from "@/lib/server/documents";
 import { SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { timeOf } from "@/lib/today";
@@ -14,7 +15,7 @@ import { SaveToggle } from "../../saved/save-toggle";
 import { archive } from "../actions";
 import { DetailsListForm, SignRequestForm, VersionForm } from "../forms";
 import { archiveQuestion, versionWarning } from "../messages";
-import { fieldSources, historyLabel, size } from "./shared";
+import { fieldSources, size } from "./shared";
 import { SignatureRequests } from "./signatures";
 
 /** The kinds that get signed: only these offer "Ask to sign" (Design, 02 Nov), here and on a person's page in People. */
