@@ -10,6 +10,7 @@ import { SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { timeOf } from "@/lib/today";
 import type { TemplateInfo } from "@/lib/templates/types";
 import { ActionSheet } from "../../nav-v2";
+import { SaveToggle } from "../../saved/save-toggle";
 import { archive } from "../actions";
 import { DetailsListForm, SignRequestForm, VersionForm } from "../forms";
 import { archiveQuestion, versionWarning } from "../messages";
@@ -79,6 +80,8 @@ export function DocumentV2(p: {
   openSigners: string[];
   linksWarning: string | null;
   notices: React.ReactNode;
+  /** Whether this person saved it (Saved, 0045): the toggle shows while it's active. */
+  saved: boolean;
 }) {
   const { doc, versions, template, zone } = p;
   const latest = versions[0];
@@ -105,6 +108,11 @@ export function DocumentV2(p: {
             <ValidityChip validity={doc.validity} expiresOn={doc.expires_on} />
           </ViewTransition>
           {latest && <span>Version {latest.version}</span>}
+          {active && (
+            <div className="ml-auto">
+              <SaveToggle kind="document" id={doc.id} saved={p.saved} />
+            </div>
+          )}
         </div>
       </header>
 

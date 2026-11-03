@@ -352,30 +352,33 @@ body {
   .ui-v2 .home-section-title {
     @apply text-sm font-medium text-ink;
   }
+  /* The list is the container: a row's layout follows the list's width, not the screen's, so a list in a half column
+     (Home's Waiting beside Saved) wraps as on the phone instead of cutting its titles. */
   .ui-v2 .hair-list {
+    container-type: inline-size;
     @apply overflow-hidden rounded-[14px] border border-line bg-paper;
   }
   .ui-v2 .hair-list > li + li {
     @apply border-t border-line;
   }
-  /* Phone: icon | title and meta (wrapping), then the chip under them. From sm up: icon | text | chip | chevron, one line each. */
+  /* Narrow list: icon | title and meta (wrapping), then the chip under them. From 36rem: icon | text | chip | chevron, one line each. */
   .ui-v2 .hair-row {
-    @apply grid min-h-[58px] grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 transition-colors duration-[180ms] hover:bg-[#fafaf8] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto];
+    @apply grid min-h-[58px] grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 transition-colors duration-[180ms] hover:bg-[#fafaf8] @xl:grid-cols-[auto_minmax(0,1fr)_auto_auto];
     grid-template-areas: "icon text" "icon chip";
   }
   .ui-v2 .hair-icon {
     grid-area: icon;
-    @apply self-start sm:self-center;
+    @apply self-start @xl:self-center;
   }
   .ui-v2 .hair-text {
     grid-area: text;
     @apply min-w-0;
   }
   .ui-v2 .hair-title {
-    @apply line-clamp-2 text-sm font-medium text-ink sm:line-clamp-none sm:truncate;
+    @apply line-clamp-2 text-sm font-medium text-ink @xl:line-clamp-none @xl:truncate;
   }
   .ui-v2 .hair-meta {
-    @apply block text-[12.5px] leading-[18px] text-ink-3 sm:truncate;
+    @apply block text-[12.5px] leading-[18px] text-ink-3 @xl:truncate;
   }
   .ui-v2 .hair-chip {
     grid-area: chip;
@@ -383,11 +386,21 @@ body {
   }
   .ui-v2 .hair-chev {
     grid-area: chev;
-    @apply hidden text-ink-3 sm:block;
+    @apply hidden text-ink-3 @xl:block;
   }
-  @media (min-width: 640px) {
+  @container (min-width: 36rem) {
     .ui-v2 .hair-row {
       grid-template-areas: "icon text chip chev";
+    }
+  }
+  /* A row without a chip (Saved: its state is in the meta line). */
+  .ui-v2 .hair-row:not(:has(> .hair-chip)) {
+    grid-template-areas: "icon text";
+    @apply @xl:grid-cols-[auto_minmax(0,1fr)_auto];
+  }
+  @container (min-width: 36rem) {
+    .ui-v2 .hair-row:not(:has(> .hair-chip)) {
+      grid-template-areas: "icon text chev";
     }
   }
   .ui-v2 .quiet-empty {

@@ -28,6 +28,8 @@ export interface Waiting {
 
 /** How many of each Home's "Waiting on others" lists. */
 export const WAITING_MAX = 3;
+/** How many of the person's newest saves Home's "Saved" shows (View all opens the rest). */
+export const SAVED_MAX = 3;
 
 // Open requests on documents still in the workspace (an archived document's requests are withdrawn, and never come back
 // here: Security S5). The signer's name is the one the owner typed; the email stays on the document's page (S4).

@@ -19,6 +19,7 @@ const GROUPS: readonly { label: string | null; items: readonly Item[] }[] = [
     label: "Work",
     items: [
       ["/app/documents", "Documents", "documents"],
+      ["/app/saved", "Saved", "bookmark"],
       ["/app/make", "Templates", "page"],
     ],
   },

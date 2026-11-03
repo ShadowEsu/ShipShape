@@ -10,6 +10,7 @@ import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, getDocument } from "@/lib/server/doc
 import { esignAvailable, listSignatureRequests, SIGN_DAYS } from "@/lib/server/esign";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { openLinksWith } from "@/lib/server/passport";
+import { isSaved } from "@/lib/server/saved";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
 import { fmtDay, timeOf } from "@/lib/today";
@@ -111,6 +112,7 @@ export default async function DocumentPage({
         openSigners={openSigners}
         linksWarning={linksWarning}
         notices={notices}
+        saved={doc.status === "active" && (await isSaved(ctx, "document", doc.id))}
       />
     );
 

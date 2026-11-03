@@ -5,6 +5,7 @@ import { Icon } from "@/components/icons";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { type PassportDetail, PASSPORT_ACCESS_SHOWN } from "@/lib/server/passport";
 import { dayOf, timeOf } from "@/lib/today";
+import { SaveToggle } from "../../saved/save-toggle";
 import { turnOff } from "../actions";
 import { ACTION } from "./shared";
 
@@ -13,7 +14,7 @@ import { ACTION } from "./shared";
  * the documents on it and each time it was opened as grouped lists; Turn off this link at the foot, asking once first.
  * Same facts, words and actions as the current page.
  */
-export function PassportLinkV2({ p, zone, formError }: { p: PassportDetail; zone: string; formError: string | undefined }) {
+export function PassportLinkV2({ p, zone, formError, saved }: { p: PassportDetail; zone: string; formError: string | undefined; saved: boolean }) {
   const revokedAt = p.link.revoked_at;
   const expired = new Date(p.link.expires_at).getTime() < Date.now();
   return (
@@ -23,7 +24,10 @@ export function PassportLinkV2({ p, zone, formError }: { p: PassportDetail; zone
           ← Passport
         </Link>
       </nav>
-      <PageHeader eyebrow="Passport link" title={p.link.label} />
+      <PageHeader eyebrow="Passport link" title={p.link.label}>
+        {/* Saved (0045): turned-off and expired links can be saved too; the Saved list shows their state. */}
+        <SaveToggle kind="link" id={p.link.id} saved={saved} />
+      </PageHeader>
       {formError && (
         <p role="alert" className="rounded-xl bg-bad-soft px-4 py-3 text-sm text-bad">
           {formError}
