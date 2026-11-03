@@ -464,7 +464,8 @@ describe("export (P1)", () => {
     const files = await exported(ctx, "people-export");
     const contacts = files["contacts.csv"].split("\n");
     expect(contacts[0]).toBe("name,email,company,source,created_at");
-    expect(contacts.slice(1).map((l) => l.replace(/,[^,]*$/, ""))).toEqual([`"'=HYPERLINK(""x"")",jordan@northwind.example,'@Northwind,typed`, "Dana Kim,,Bayside Drywall,typed"]);
+    // Sorted here: where "=" sorts against letters depends on the database's collation (PGlite's C, CI's PostgreSQL en_US).
+    expect(contacts.slice(1).map((l) => l.replace(/,[^,]*$/, "")).sort()).toEqual([`"'=HYPERLINK(""x"")",jordan@northwind.example,'@Northwind,typed`, "Dana Kim,,Bayside Drywall,typed"]);
     expect(files["history.csv"]).toContain(`,"'=HYPERLINK(""x"")",`);
     expect(files["history.csv"]).not.toMatch(/(^|,)=HYPERLINK/m);
     expect(files["README.txt"]).toContain("\ncontacts.csv ");
