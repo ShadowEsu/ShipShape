@@ -5,6 +5,7 @@ import DocumentPage from "@/app/app/documents/[id]/page";
 import PassportDetail from "@/app/app/passport/[id]/page";
 import { toggleSaved } from "@/app/app/saved/actions";
 import SavedPage from "@/app/app/saved/page";
+import { fmtMonthDay } from "@/components/app-ui";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { migrate, type MigrationStep } from "@/lib/server/migrations";
 import { createPassport } from "@/lib/server/passport";
@@ -299,16 +300,25 @@ describe("pages", () => {
   it("Saved lists the person's saves newest first, each to its page, with a document's expiry and a link's state", async () => {
     const ctx = await signIn("saved-page-list@example.com");
     const doc = await addDoc(ctx, "Liability certificate", "coi", "2030-01-31");
+    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    const expiring = await addDoc(ctx, "Auto policy", "coi", soon);
+    const lapsed = await addDoc(ctx, "Old permit", "permit", "2020-01-31");
     const link = await addLink(ctx, "For Northwind", [doc]);
+    await saveAgo(ctx, "document", lapsed, 40);
+    await saveAgo(ctx, "document", expiring, 30);
     await saveAgo(ctx, "document", doc, 20);
     await saveAgo(ctx, "link", link, 10);
     await db.root((tx) => tx.query("update app.share_links set revoked_at = now() where id = $1", [link]));
     const html = await savedPage();
-    expect(html).toContain('<ul class="group-list">');
+    expect(html).toContain('<ul class="hair-list">');
     const hrefs = actionsOf(html).map((a) => a.href).filter((h) => h?.startsWith("/app/documents/") || h?.startsWith("/app/passport/"));
-    expect(hrefs).toEqual([`/app/passport/${link}`, `/app/documents/${doc}`]);
-    expect(textOf(html)).toContain("For Northwind Passport link · 1 document ○ Turned off");
-    expect(textOf(html)).toContain("Liability certificate Insurance certificate ✓ Current · Jan 31, 2030");
+    expect(hrefs).toEqual([`/app/passport/${link}`, `/app/documents/${doc}`, `/app/documents/${expiring}`, `/app/documents/${lapsed}`]);
+    // The redesigned look says the state in the meta line, as Home's Saved does (Design calm v2).
+    const text = textOf(html);
+    expect(text).toContain("For Northwind Passport link · 1 document · turned off");
+    expect(text).toContain("Liability certificate Insurance certificate · current");
+    expect(text).toContain(`Auto policy Insurance certificate · expires ${fmtMonthDay(soon)}`);
+    expect(text).toContain("Old permit Permit · expired Jan 31, 2020");
     vi.stubEnv("SHIPSHAPE_UI", "v1");
     expect(textOf(await savedPage())).toContain("Liability certificate Insurance certificate ✓ Current · Jan 31, 2030");
   });

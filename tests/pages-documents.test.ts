@@ -26,6 +26,7 @@ import { FILL_BUSY, SAMPLE_FULL } from "@/lib/server/limits";
 import { createPassport, passportFileUrl, revokePassport } from "@/lib/server/passport";
 import { factsForFill, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
+import { setSaved } from "@/lib/server/saved";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { templateById, TEMPLATES } from "@/lib/templates/catalog";
@@ -532,6 +533,24 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect(await otherHome()).not.toMatch(/Dana Kim|Bayside|Rivera/);
   });
 
+  it("Saved: the person's three newest saves beside Waiting, each to its page with its state in words; with nothing saved it isn't there", async () => {
+    const ctx = await signIn("home-v2-saved@example.com");
+    expect(await homePage()).not.toContain('id="saved-title"');
+    for (const n of [1, 2, 3, 4]) {
+      const [doc] = await db.root((tx) =>
+        tx.query<{ id: string }>("insert into app.documents (org_id, title, kind, expires_on) values ($1, $2, 'permit', $3::date + 400) returning id", [ctx.orgId, `Saved ${n}`, ctx.today]),
+      );
+      await setSaved(ctx, { kind: "document", id: doc.id, saved: true });
+    }
+    const html = await homePage();
+    const saved = section(html, "saved-title");
+    expect(rowTitles(saved)).toEqual(["Saved 4", "Saved 3", "Saved 2"]);
+    expect(textOf(saved)).toContain("Saved 4 Permit · current");
+    expect(saved).not.toContain("hair-chip");
+    expect(actionsOf(saved)[0]).toEqual({ tag: "a", label: "View all", href: "/app/saved" });
+    expect(html).toContain('<div class="grid gap-12 lg:grid-cols-2 lg:gap-6"><section aria-labelledby="waiting-title"');
+  });
+
   it("search finds this workspace's active documents by their words, never an archived one or another workspace's (S1, S5, S6)", async () => {
     const ctx = await signIn("search-v2@example.com");
     await db.root((tx) =>
@@ -570,7 +589,7 @@ describe("the app's frame, redesigned", () => {
 
   it("groups the pages that exist, and dots Deadlines only while a document has lapsed", async () => {
     const ctx = await signIn("shell-v2@example.com");
-    const rows = ["Home", "Work", "Documents", "Templates", "Track", "Deadlines", "Passport", "Business", "Business facts", "Collect", "Settings"];
+    const rows = ["Home", "Work", "Documents", "Saved", "Templates", "Track", "Deadlines", "Passport", "Business", "Business facts", "Collect", "Settings"];
     const html = await shell(ctx);
     expect(textOf(html.slice(html.indexOf('<nav aria-label="App"'), html.indexOf("</nav>")))).toBe(rows.join(" "));
     expect(sidebar(html)).not.toContain("Deadlines ● , something has lapsed");

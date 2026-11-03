@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { ValidityChip } from "@/components/app-ui";
-import { Icon, type IconName } from "@/components/icons";
+import { Icon } from "@/components/icons";
 import { DOC_KINDS, type DocRow } from "@/lib/server/documents";
 import type { WaitingSignature, WaitingVendor } from "@/lib/server/home";
+import type { SavedRow } from "@/lib/server/saved";
 import type { Tool } from "@/lib/server/tools";
 import { AiBox } from "./ai-box";
+import { HairRow } from "./hair-row";
+import { savedLine } from "./saved/list";
 
 /**
  * Home (Design calm v2, look A): the question, the box and one row of tools on top; under them what has happened and
@@ -14,10 +17,14 @@ export function HomeV2(props: {
   recent: DocRow[];
   /** The open signature requests, each with the day it was sent where the viewer is, and the vendors who owe a document. */
   waiting: { signatures: (WaitingSignature & { sentOn: string })[]; vendors: WaitingVendor[] };
+  /** This person's newest saves; none, and the section isn't there (Design: absent, not empty). */
+  saved: SavedRow[];
+  /** The viewer's time zone, for a saved link's last day. */
+  zone: string;
   tools: readonly Tool[];
   aiOn: boolean;
 }) {
-  const { recent, waiting, tools, aiOn } = props;
+  const { recent, waiting, saved, zone, tools, aiOn } = props;
   const nothingWaiting = waiting.signatures.length === 0 && waiting.vendors.length === 0;
   return (
     <div className="space-y-12">
@@ -36,7 +43,7 @@ export function HomeV2(props: {
         ) : (
           <ul className="hair-list">
             {recent.map((d) => (
-              <Row
+              <HairRow
                 key={d.id}
                 href={`/app/documents/${d.id}`}
                 icon="documents"
@@ -49,28 +56,47 @@ export function HomeV2(props: {
         )}
       </section>
 
-      <section aria-labelledby="waiting-title">
-        <SectionHead id="waiting-title" title="Waiting on others" all={null} />
-        {nothingWaiting ? (
-          <p className="quiet-empty">Signature requests nobody has signed yet, and vendors who still owe you a document, show up here.</p>
-        ) : (
-          <ul className="hair-list">
-            {waiting.signatures.map((s) => (
-              <Row
-                key={s.id}
-                href={`/app/documents/${s.documentId}`}
-                icon="sign"
-                title={s.title}
-                line={`${s.signerName} · sent ${s.sentOn}`}
-                chip={<span className="dot-chip">Not signed yet</span>}
-              />
-            ))}
-            {waiting.vendors.map((v) => (
-              <Row key={v.id} href={`/app/collect/${v.id}`} icon="collect" title={v.name} line={`Collect · ${v.outstanding.join(", ")}`} chip={<span className="dot-chip">Waiting</span>} />
-            ))}
-          </ul>
+      {/* Waiting on others and Saved side by side from lg up, stacked on the phone (Design calm v2). */}
+      <div className={saved.length > 0 ? "grid gap-12 lg:grid-cols-2 lg:gap-6" : undefined}>
+        <section aria-labelledby="waiting-title" className="min-w-0">
+          <SectionHead id="waiting-title" title="Waiting on others" all={null} />
+          {nothingWaiting ? (
+            <p className="quiet-empty">Signature requests nobody has signed yet, and vendors who still owe you a document, show up here.</p>
+          ) : (
+            <ul className="hair-list">
+              {waiting.signatures.map((s) => (
+                <HairRow
+                  key={s.id}
+                  href={`/app/documents/${s.documentId}`}
+                  icon="sign"
+                  title={s.title}
+                  line={`${s.signerName} · sent ${s.sentOn}`}
+                  chip={<span className="dot-chip">Not signed yet</span>}
+                />
+              ))}
+              {waiting.vendors.map((v) => (
+                <HairRow key={v.id} href={`/app/collect/${v.id}`} icon="collect" title={v.name} line={`Collect · ${v.outstanding.join(", ")}`} chip={<span className="dot-chip">Waiting</span>} />
+              ))}
+            </ul>
+          )}
+        </section>
+        {saved.length > 0 && (
+          <section aria-labelledby="saved-title" className="min-w-0">
+            <SectionHead id="saved-title" title="Saved" all="/app/saved" />
+            <ul className="hair-list">
+              {saved.map((r) => (
+                <HairRow
+                  key={`${r.kind}-${r.id}`}
+                  href={r.href}
+                  icon={r.kind === "document" ? "documents" : "passport"}
+                  title={r.kind === "document" ? r.title : r.label}
+                  line={savedLine(r, zone)}
+                />
+              ))}
+            </ul>
+          </section>
         )}
-      </section>
+      </div>
     </div>
   );
 }
@@ -106,29 +132,5 @@ function SectionHead({ id, title, all }: { id: string; title: string; all: strin
         </Link>
       )}
     </div>
-  );
-}
-
-/**
- * A hairline row. From sm up: icon, title over meta, the chip, the chevron. On the phone the title and meta wrap and the
- * chip goes under them (Design MUST-1, 3 Nov: a dated chip beside the title cut it to "Certificate …").
- */
-function Row({ href, icon, title, line, chip }: { href: string; icon: IconName; title: string; line: string; chip: React.ReactNode }) {
-  return (
-    <li>
-      <Link href={href} className="hair-row">
-        <span className="hair-icon row-icon">
-          <Icon name={icon} size={17} />
-        </span>
-        <span className="hair-text">
-          <span className="hair-title">{title}</span>
-          <span className="hair-meta">{line}</span>
-        </span>
-        <span className="hair-chip">{chip}</span>
-        <span className="hair-chev">
-          <Icon name="chevron" size={16} />
-        </span>
-      </Link>
-    </li>
   );
 }

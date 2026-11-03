@@ -4,9 +4,10 @@ import { attentionLine } from "@/lib/attention";
 import { aiEnabled } from "@/lib/server/ai";
 import { ATTENTION_MAX, DOC_KINDS, homeSummary, recentDocuments } from "@/lib/server/documents";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
-import { waitingOnOthers } from "@/lib/server/home";
+import { SAVED_MAX, waitingOnOthers } from "@/lib/server/home";
 import { listPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
+import { listSaved } from "@/lib/server/saved";
 import { DEFAULT_WORKSPACE_NAME, requireWorkspace, viewerZone } from "@/lib/server/session";
 import { appTools } from "@/lib/server/tools";
 import { dayOf } from "@/lib/today";
@@ -21,11 +22,13 @@ const TASKS = [
 export default async function AppHome() {
   const ctx = await requireWorkspace();
   if (uiV2()) {
-    const [recent, waiting, zone] = await Promise.all([recentDocuments(ctx), waitingOnOthers(ctx), viewerZone()]);
+    const [recent, waiting, saved, zone] = await Promise.all([recentDocuments(ctx), waitingOnOthers(ctx), listSaved(ctx, SAVED_MAX), viewerZone()]);
     return (
       <HomeV2
         recent={recent}
         waiting={{ signatures: waiting.signatures.map((s) => ({ ...s, sentOn: dayOf(s.sentAt, zone) })), vendors: waiting.vendors }}
+        saved={saved}
+        zone={zone}
         tools={appTools(ctx)}
         aiOn={aiEnabled()}
       />
