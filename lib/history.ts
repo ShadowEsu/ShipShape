@@ -13,12 +13,8 @@ const ACTIONS: Record<string, string> = {
   "document.viewed": "Opened",
   "document.downloaded": "Downloaded",
   "document.signed_version_added": "Signed copy added",
-  "esign.requested": "Signature requested",
   "esign.opened": "Signer opened the link",
   "esign.code_sent": "Signing code sent",
-  "esign.signed": "Signed",
-  "esign.declined": "Signer declined",
-  "esign.revoked": "Signature request withdrawn",
   "esign.review_downloaded": "File sent for signing downloaded",
   "passport.created": "Passport link made",
   "passport.updated": "Passport link changed",
@@ -46,8 +42,9 @@ const ACTIONS: Record<string, string> = {
 };
 
 /**
- * An outsider's row says who or which when the row knows it (`about_name`, 0038): the signer's name, the passport
- * link's label. Without it (the link or request is gone), the plain label.
+ * A row says who or which when it knows it (`about_name`): an outsider's row (0038) names the signer or the passport
+ * link's label, and a signature request's own rows (0047) name who it went to. Without it (the link or request is
+ * gone, or the row is older than 0047), the plain label.
  */
 export function historyLabel(action: string, about: string | null): string {
   switch (action) {
@@ -59,6 +56,14 @@ export function historyLabel(action: string, about: string | null): string {
       return `${about ?? "Signer"} downloaded the file to sign`;
     case "esign.signed_copy_downloaded":
       return `${about ?? "Signer"} downloaded the signed copy`;
+    case "esign.requested":
+      return about ? `Signature requested from ${about}` : "Signature requested";
+    case "esign.signed":
+      return about ? `Signed by ${about}` : "Signed";
+    case "esign.declined":
+      return about ? `${about} declined to sign` : "Signer declined";
+    case "esign.revoked":
+      return about ? `Signature request to ${about} withdrawn` : "Signature request withdrawn";
     default:
       return ACTIONS[action] ?? action;
   }

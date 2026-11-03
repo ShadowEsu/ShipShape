@@ -219,6 +219,8 @@ The next `npm run migrate` applies it again. Undo only the newest applied migrat
 
 `0046_contacts.down.sql` (People) drops `app.contacts` and its two trigger functions; every contact goes with it, so export the workspace first (`contacts.csv`) to keep them. `tests/people.test.ts` proves down then up for 0046 on PGlite.
 
+`0047_audit_request_about.down.sql` (History names a request's signer) puts back 0015's audit trigger function, so new signature-request rows are about the document only again. Rows written meanwhile keep their `about` and their hashes, which cover it, so `app.audit_verify` still passes. `tests/activity.test.ts` proves down then up for 0047 on PGlite.
+
 ## Not in these templates (operator or the account owner, at M6)
 
 | Item | Why it isn't here | Source |

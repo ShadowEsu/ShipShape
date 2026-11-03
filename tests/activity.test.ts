@@ -1,6 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PGlite } from "@electric-sql/pglite";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -24,8 +25,9 @@ import {
 } from "@/lib/server/activity";
 import { csvCell } from "@/lib/server/csv";
 import { asService, asUser } from "@/lib/server/db";
-import { setArchived } from "@/lib/server/documents";
-import { completeSigning, createSignatureRequest, sendSigningCode } from "@/lib/server/esign";
+import { getDocument, setArchived } from "@/lib/server/documents";
+import { completeSigning, createSignatureRequest, revokeSignatureRequest, sendSigningCode } from "@/lib/server/esign";
+import { migrate, type MigrationStep } from "@/lib/server/migrations";
 import { visitorId } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { SAMPLE_ACTIVITY, seedSampleActivity, seedSampleWorkspace } from "@/lib/server/sample";
@@ -311,6 +313,39 @@ describe("History", () => {
     expect(mine.some((r) => r.what.startsWith("A vendor sent a document"))).toBe(false);
   });
 
+  it("names who a signature request went to on its rows, here and on the document's page; rows from before 0047 read plainly (Design #25 S2)", async () => {
+    as(owner);
+    const [nda] = await db.root((tx) => tx.query<{ id: string; title: string }>("select id, title from app.documents where org_id = $1 and template_id = 'common-paper-mnda'", [owner.orgId]));
+    const req = await createSignatureRequest(owner, { documentId: nda.id, signerName: "Robin Withdrawn (sample)", signerEmail: "robin.private@northwind.example", days: 7 });
+    await revokeSignatureRequest(owner, req.id);
+    // A row as the trigger wrote them before 0047: about the document only.
+    await db.root((tx) => tx.query("select app.audit_write($1, $2, 'esign.requested', $3)", [owner.orgId, owner.userId, nda.id]));
+
+    const whats = (await listHistory(owner, { tab: "signatures", mine: false, days: 30 })).rows.map((r) => r.what);
+    expect(whats.slice(0, 3)).toEqual([
+      `Signature requested · ${nda.title}`,
+      `Signature request to Robin Withdrawn (sample) withdrawn · ${nda.title}`,
+      `Signature requested from Robin Withdrawn (sample) · ${nda.title}`,
+    ]);
+    // The sample's own requests, made through the same functions, name theirs too.
+    expect(whats).toEqual(expect.arrayContaining([expect.stringMatching(/^Signature requested from Sam Ortiz \(sample\) · /), expect.stringMatching(/^Signed by Jordan Lee \(sample\) · /)]));
+    const doc = await getDocument(owner, nda.id);
+    expect(doc?.audit.slice(0, 3).map((a) => historyLabel(a.action, a.about_name))).toEqual([
+      "Signature requested",
+      "Signature request to Robin Withdrawn (sample) withdrawn",
+      "Signature requested from Robin Withdrawn (sample)",
+    ]);
+
+    // The audit rows hold the request's id, never its name or email, and the chain still verifies with it.
+    const rows = await db.root((tx) => tx.query<{ action: string }>("select action from app.audit_log where org_id = $1 and about = $2 order by seq", [owner.orgId, req.id]));
+    expect(rows.map((r) => r.action)).toEqual(["esign.requested", "esign.revoked"]);
+    const log = JSON.stringify(await db.root((tx) => tx.query("select * from app.audit_log where org_id = $1", [owner.orgId])));
+    expect(log).not.toContain("Robin");
+    expect(log).not.toContain("robin.private");
+    const [chain] = await asUser(owner.userId, (tx) => tx.query<{ broken: string | null }>("select app.audit_verify($1)::text as broken", [owner.orgId]));
+    expect(chain.broken).toBeNull();
+  });
+
   it("exports exactly the rows and columns shown, logs the export, and refuses another site (S6)", async () => {
     as(owner);
     const choice: HistoryQuery = { tab: "signatures", mine: false, days: 30 };
@@ -337,6 +372,8 @@ describe("History", () => {
     const { rows } = await listHistory(owner, { tab: "signatures", mine: false, days: 30 });
     expect(rows.length).toBeGreaterThan(0);
     expect(JSON.stringify(rows)).not.toContain(nda.title);
+    // Nor who its requests went to (0047): an archived document's requests don't come back.
+    expect(rows.filter((r) => /Robin|Sam Ortiz|Jordan Lee|Pat Example/.test(r.what)).map((r) => r.what)).toEqual([]);
     expect(rows.some((r) => r.what.endsWith("· a document") && r.href === null)).toBe(true);
     as(owner);
     expect(textOf(await renderPage(SignedPage, {}))).toContain("When someone signs a document you sent for signature");
@@ -348,5 +385,46 @@ describe("History's day", () => {
     as(owner);
     const text = textOf(await renderPage(HistoryPage, params({ who: "me" })));
     expect(text).toContain(new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }));
+  });
+});
+
+describe("rollback", () => {
+  it("0047 goes down with its down file to 0015's trigger and comes back up with npm run migrate's runner (PGlite)", async () => {
+    const pg = await PGlite.create();
+    try {
+      const step = (t: Pick<PGlite, "exec" | "query">): MigrationStep => ({
+        exec: async (s) => void (await t.exec(s)),
+        query: async (text, params) => (await t.query<Record<string, unknown>>(text, params)).rows,
+      });
+      const conn = { ...step(pg), transaction: (fn: (t: MigrationStep) => Promise<void>) => pg.transaction((t) => fn(step(t))) };
+      const all = (await readdir("supabase/migrations")).filter((n) => n.endsWith(".sql")).sort();
+      const files = await Promise.all(all.map(async (name) => ({ name, sql: await readFile(`supabase/migrations/${name}`, "utf8") })));
+      const setup = [await readFile("supabase/platform/plain-postgres.sql", "utf8")];
+      const trigger = async () => (await pg.query<{ def: string }>("select pg_get_functiondef('app.audit_row_change'::regproc) as def")).rows[0].def;
+
+      // Up to 0046 only (0015's function), then 0047.
+      const upTo46 = files.filter((f) => f.name <= "0046_contacts.sql");
+      expect(upTo46.at(-1)?.name).toBe("0046_contacts.sql");
+      await migrate(conn, setup, upTo46);
+      const before = await trigger();
+      const upTo47 = files.filter((f) => f.name <= "0047_audit_request_about.sql");
+      expect(await migrate(conn, setup, upTo47)).toEqual(["0047_audit_request_about.sql"]);
+      expect(await trigger()).not.toBe(before);
+
+      // infra/README.md, "Undoing a migration": the down file as the owner, then 0047's row, in one transaction.
+      const down = await readFile("supabase/rollback/0047_audit_request_about.down.sql", "utf8");
+      await pg.transaction(async (t) => {
+        await t.exec("set local role shipshape_owner");
+        await t.exec(down);
+        await t.query("delete from meta.migrations where name = $1", ["0047_audit_request_about.sql"]);
+      });
+      expect(await trigger()).toBe(before);
+
+      expect(await migrate(conn, setup, upTo47)).toEqual(["0047_audit_request_about.sql"]);
+      expect(await trigger()).not.toBe(before);
+      expect(await migrate(conn, setup, upTo47)).toEqual([]);
+    } finally {
+      await pg.close();
+    }
   });
 });

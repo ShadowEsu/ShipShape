@@ -249,7 +249,9 @@ export const HISTORY_DAYS_DEFAULT: ActivityDays = 30;
 // uploads as its owner). A People row names the person while they're kept; the audit row itself holds only their id
 // (0046), so once deleted they're unnamed. A vendor or Collect row names the vendor the same way (its object is the
 // vendor's id: 0015's trigger, collect.file_downloaded in lib/server/collect.ts), so the rows can be told apart (Design
-// #25 S1). One more row than shown, so the page knows there are more.
+// #25 S1). A signature request's rows name who it went to (0047; a signer's own rows since 0038) through the request,
+// and only on an active document's rows: an archived document's requests don't come back here either (S5). One more
+// row than shown, so the page knows there are more.
 const HISTORY_SQL = `
   select h.seq, h.at, h.action, h.actor, h.doc_title, h.doc_id, h.link_id, h.link_label, h.person_id, h.person_name, h.vendor_id, h.vendor_name,
          h.about_name, h.tab
@@ -268,7 +270,7 @@ const HISTORY_SQL = `
     left join app.share_links l on l.id = a.object_id and l.org_id = a.org_id
     left join app.contacts c on c.id = a.object_id and c.org_id = a.org_id and starts_with(a.action, 'contact.')
     left join app.vendors v on v.id = a.object_id and v.org_id = a.org_id and (starts_with(a.action, 'vendor.') or starts_with(a.action, 'collect.'))
-    left join app.signature_requests r on r.id = a.about and r.org_id = a.org_id
+    left join app.signature_requests r on r.id = a.about and r.org_id = a.org_id and r.document_id = d.id
     left join app.share_links al on al.id = a.about and al.org_id = a.org_id
     where a.org_id = $1 and a.at >= now() - make_interval(days => $3)
       and ($5::boolean or d.id is not null)
