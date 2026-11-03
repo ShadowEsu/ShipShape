@@ -42,7 +42,8 @@ export default async function PersonPage({ params, searchParams }: { params: Pro
         </Link>
       </nav>
       <div className="space-y-2">
-        <PageHeader eyebrow="People" title={person.name} />
+        {/* The back link above already says People; the redesigned look doesn't say it twice. */}
+        <PageHeader eyebrow={v2 ? undefined : "People"} title={person.name} />
         <p className="text-ink-2">{[person.company, person.email].filter(Boolean).join(" · ") || "No email or company yet."}</p>
       </div>
       {error === "change" && (

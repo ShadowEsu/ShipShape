@@ -3,7 +3,8 @@
 import { useActionState, useEffect, useRef } from "react";
 import { addPersonAction, editPersonAction, type PersonField, type PersonFormState } from "./actions";
 
-const LABELS: Record<PersonField, string> = { name: "Name", email: "Email (optional)", company: "Company (optional)" };
+// Short enough for a field row's label column on one line (Design calm v2); the optional ones say so in the field.
+const LABELS: Record<PersonField, string> = { name: "Name", email: "Email", company: "Company" };
 
 /**
  * Add a person (People) or Edit (a person's page): name, then the optional email and company. The redesigned look as field
@@ -28,6 +29,7 @@ export function PersonForm({ v2, person }: { v2: boolean; person?: { id: string;
       maxLength={f === "email" ? 200 : 120}
       autoComplete="off"
       defaultValue={value(f)}
+      placeholder={f === "name" ? undefined : "Optional"}
       className={v2 ? "row-field" : "input"}
       aria-invalid={errors[f] ? true : undefined}
       aria-describedby={errors[f] ? `${prefix}-${f}-error` : undefined}
