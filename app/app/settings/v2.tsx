@@ -140,7 +140,7 @@ export function SettingsV2({
         <h2 id="export-title" tabIndex={-1} className="section-title">
           Export everything
         </h2>
-        <div className="rounded-2xl bg-tile px-4 py-4 text-sm text-ink-2">
+        <div className="rounded-2xl border border-line px-4 py-4 text-sm text-ink-2">
           <p>One ZIP file with:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li>every version of every document, with its details and fingerprint</li>

@@ -67,7 +67,11 @@ const LIST_WHERE = ` where d.org_id = $2 and d.status = $3
 // d.id last: created_at ties within one transaction (the sample workspace), and limit/offset needs a total order.
 const LIST_ORDER = ` order by coalesce(d.expires_on, '9999-12-31') asc, d.created_at desc, d.id`;
 const LIST_SQL = DOC_SELECT + LIST_WHERE + LIST_ORDER;
-const PAGE_SQL = LIST_SQL + " limit $6 offset $7";
+// The list page's order, $8: 'expiry' is LIST_ORDER; 'added' puts the newest first, then the same.
+const PAGE_SQL =
+  DOC_SELECT +
+  LIST_WHERE +
+  ` order by case when $8::text = 'added' then d.created_at end desc nulls last, coalesce(d.expires_on, '9999-12-31') asc, d.created_at desc, d.id limit $6 offset $7`;
 // $1 is unused here, so the page and the count share one parameter list.
 const COUNT_SQL = `select count(*)::int as n, $1::date as today from app.documents d` + LIST_WHERE;
 const GET_SQL = DOC_SELECT + " where d.id = $2 and d.org_id = $3";
@@ -83,6 +87,16 @@ function breaksOneLine(c: string): boolean {
 }
 
 type ListOpts = { q?: string; kind?: string; archived?: boolean };
+
+/** The Documents page's orders, in its menu's order; the first is the default. */
+export type DocSort = "expiry" | "added";
+export const DOC_SORTS: readonly (readonly [DocSort, string])[] = [
+  ["expiry", "Soonest expiry"],
+  ["added", "Recently added"],
+];
+
+/** Reads a `?sort=` value; anything else is the default. */
+export const docSort = (v: unknown): DocSort => DOC_SORTS.find(([s]) => s === v)?.[0] ?? "expiry";
 
 function listParams(ctx: Ctx, opts: ListOpts): [string, string, string, string | null, string] {
   const q = Array.from(opts.q ?? "", (c) => (breaksOneLine(c) ? " " : c)).join("").trim().slice(0, 100);
@@ -223,14 +237,14 @@ export interface DocPage {
   pages: number;
 }
 
-/** One page of the documents list, in the list's order, with the count the filter matches. */
-export async function pageDocuments(ctx: Ctx, opts: ListOpts & { page?: number } = {}): Promise<DocPage> {
+/** One page of the documents list, in the chosen order (soonest expiry unless said), with the count the filter matches. */
+export async function pageDocuments(ctx: Ctx, opts: ListOpts & { page?: number; sort?: DocSort } = {}): Promise<DocPage> {
   const params = listParams(ctx, opts);
   return asUser(ctx.userId, async (tx) => {
     const [{ n: total }] = await tx.query<{ n: number }>(COUNT_SQL, params);
     const pages = Math.max(1, Math.ceil(total / DOCUMENTS_PAGE_SIZE));
     const page = Math.min(pages, Math.max(1, Math.floor(opts.page ?? 1)));
-    const rows = await tx.query<DocRow>(PAGE_SQL, [...params, DOCUMENTS_PAGE_SIZE, (page - 1) * DOCUMENTS_PAGE_SIZE]);
+    const rows = await tx.query<DocRow>(PAGE_SQL, [...params, DOCUMENTS_PAGE_SIZE, (page - 1) * DOCUMENTS_PAGE_SIZE, docSort(opts.sort)]);
     return { rows, total, page, pages };
   });
 }

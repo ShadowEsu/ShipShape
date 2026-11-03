@@ -114,7 +114,8 @@ const form = (fields: Record<string, string>) => {
   return data;
 };
 
-const documentsPage = (searchParams: { q?: string; kind?: string; archived?: string; page?: string }) => renderPage(DocumentsPage, { searchParams: Promise.resolve(searchParams) });
+const documentsPage = (searchParams: { q?: string; kind?: string; archived?: string; page?: string; sort?: string }) =>
+  renderPage(DocumentsPage, { searchParams: Promise.resolve(searchParams) });
 
 describe("documents list", () => {
   it("with no documents says what lives here, shows a ghosted example, and offers Fill your first W-9, plus Upload while uploads are open", async () => {
@@ -152,6 +153,7 @@ describe("documents list", () => {
   });
 
   it("with nothing archived says what archiving does and offers one action: back to current documents", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "");
     const ctx = await signIn("docs-archived@example.com");
     await uploadDocument(ctx, { title: "Business license", kind: "license" }, PDF);
     const html = await documentsPage({ archived: "1" });
@@ -159,7 +161,16 @@ describe("documents list", () => {
     expect(text).toContain("No archived documents");
     expect(text).toContain("Documents you archive will be listed here");
     expect(primaryActions(html)).toEqual([{ label: "Go to current documents", href: "/app/documents" }]);
-    expect(actionsOf(html).filter((a) => a.href === "/app/documents")).toHaveLength(1);
+    // The tabs stay, Archived current, so the page says where you are (Design #26 S1); no kind or order menus for nothing.
+    const tabs = /<nav aria-label="Current or archived"[^>]*>(.*?)<\/nav>/s.exec(html)?.[1] ?? "";
+    expect([...tabs.matchAll(/<a[^>]*aria-current="page"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["Archived"]);
+    expect(html).not.toContain('aria-label="Kind:');
+
+    // The earlier look: the empty state's one action is the only way back.
+    vi.stubEnv("SHIPSHAPE_UI", "v1");
+    const v1 = await documentsPage({ archived: "1" });
+    expect(actionsOf(v1).filter((a) => a.href === "/app/documents")).toHaveLength(1);
+    expect(v1).not.toContain("Current or archived");
   });
 
   it("on Pro, lists 50 documents at a time in the list's order, says which are shown, and pages with the filter kept; a page past the end shows the last", async () => {
@@ -208,6 +219,43 @@ describe("documents list", () => {
     expect(textOf(second)).toMatch(/Showing 51\s*–\s*51 of 51/);
     expect(textOf(second)).toContain("License 01");
     expect(pager(second)).toEqual([{ tag: "a", label: "Previous", href: "/app/documents?kind=license" }]);
+  });
+
+  it("in the default look: tabs All / Archived and the kind and order menus, each link keeping the other choices; Recently added puts the newest first", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "");
+    const ctx = await signIn("docs-order@example.com");
+    await uploadDocument(ctx, { title: "Soonest license", kind: "license", expires_on: "2030-01-01" }, PDF);
+    await uploadDocument(ctx, { title: "Newest permit", kind: "permit" }, PDF);
+    const order = (text: string) => [text.indexOf("Soonest license"), text.indexOf("Newest permit")];
+
+    const html = await documentsPage({});
+    const [license, permit] = order(textOf(html));
+    expect(license).toBeLessThan(permit);
+    const links = actionsOf(html);
+    const hrefOf = (label: string) => links.find((a) => a.label === label)?.href;
+    expect([hrefOf("All"), hrefOf("Archived"), hrefOf("License"), hrefOf("Recently added")]).toEqual([
+      "/app/documents",
+      "/app/documents?archived=1",
+      "/app/documents?kind=license",
+      "/app/documents?sort=added",
+    ]);
+    // Search is the top bar's here: no form on the page.
+    expect(html).not.toContain('role="search"');
+
+    const [license2, permit2] = order(textOf(await documentsPage({ sort: "added" })));
+    expect(permit2).toBeLessThan(license2);
+    // Anything else reads as the default order.
+    const [license3, permit3] = order(textOf(await documentsPage({ sort: "title" })));
+    expect(license3).toBeLessThan(permit3);
+
+    const both = actionsOf(await documentsPage({ sort: "added", kind: "license" }));
+    expect(both.find((a) => a.label === "Archived")?.href).toBe("/app/documents?kind=license&amp;archived=1&amp;sort=added");
+    expect(both.find((a) => a.label === "Soonest expiry")?.href).toBe("/app/documents?kind=license");
+
+    // A search from the top bar says what it shows and how to clear it, keeping the rest.
+    const searched = await documentsPage({ q: "permit", sort: "added" });
+    expect(textOf(searched)).toContain("Showing documents that match “permit”. Clear the search");
+    expect(actionsOf(searched).find((a) => a.label === "Clear the search")?.href).toBe("/app/documents?sort=added");
   });
 });
 

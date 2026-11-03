@@ -170,12 +170,12 @@ function NewPassportFormV2({ onDone, ...props }: PassportFormProps & { onDone: (
               {docs.map((d) => (
                 <li key={d.id}>
                   <label className="group-row cursor-pointer hover:bg-tile">
-                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-tile text-ink-2">
+                    <span className="row-icon">
                       <Icon name="documents" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{d.title}</span>
-                      <span className="block truncate text-[13px] text-ink-3">
+                      <span className="block font-medium">{d.title}</span>
+                      <span className="block text-[13px] text-ink-3">
                         {d.kindLabel}
                         {d.note && ` · ${d.note}`}
                       </span>

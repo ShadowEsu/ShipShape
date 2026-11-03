@@ -115,7 +115,7 @@ export function NewVendorFormV2({ kinds }: { kinds: { key: string; label: string
       <div>
         <ul className="group-list plain">
           <li className="field-row">
-            <label htmlFor="vendor-name">Vendor or subcontractor</label>
+            <label htmlFor="vendor-name">Vendor</label>
             <input
               id="vendor-name"
               name="name"

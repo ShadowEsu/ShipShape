@@ -24,7 +24,7 @@ export function MakeV2({ closed }: { closed: boolean }) {
         {TEMPLATES.map((t, n) => (
           <li key={t.id} style={{ "--i": n }}>
             <Link href={`/app/make/${t.id}`} className="group-row py-3">
-              <span className="grid size-8 shrink-0 place-items-center self-start rounded-lg bg-tile text-ink-2">
+              <span className="row-icon self-start">
                 <Icon name="make" />
               </span>
               <span className="min-w-0 flex-1">
@@ -43,7 +43,7 @@ export function MakeV2({ closed }: { closed: boolean }) {
         {LINK_OUTS.map((l, n) => (
           <li key={l.id} style={{ "--i": TEMPLATES.length + n }}>
             <a href={l.url} target="_blank" rel="noopener noreferrer" className="group-row py-3">
-              <span className="grid size-8 shrink-0 place-items-center self-start rounded-lg bg-tile text-ink-2">
+              <span className="row-icon self-start">
                 <Icon name="page" />
               </span>
               <span className="min-w-0 flex-1">

@@ -283,6 +283,21 @@ describe("History", () => {
     ]);
   });
 
+  it("names the vendor on vendor and Collect rows and links to it, so the rows can be told apart", async () => {
+    const [rivera] = await db.root((tx) => tx.query<{ id: string }>("select id from app.vendors where org_id = $1 and name = 'Rivera Electric (sample)'", [owner.orgId]));
+    const rows = (await listHistory(owner, { tab: "account", mine: false, days: 30 })).rows;
+    const riveras = rows.filter((r) => r.href === `/app/collect/${rivera.id}`).map((r) => r.what);
+    expect(riveras).toEqual(expect.arrayContaining(["Vendor added · Rivera Electric (sample)", "Collect link made · Rivera Electric (sample)"]));
+    expect(riveras.every((w) => w.endsWith(" · Rivera Electric (sample)"))).toBe(true);
+    // Every vendor and Collect row of the sample names its vendor.
+    expect(rows.filter((r) => /^(Vendor|Collect|A vendor)/.test(r.what) && !/ · .+ \(sample\)$/.test(r.what))).toEqual([]);
+    // Another sample workspace's History links only to its own vendors.
+    const other = await sampleOwner();
+    const theirs = (await listHistory(other, { tab: "all", mine: false, days: 30 })).rows;
+    expect(theirs.some((r) => r.href === `/app/collect/${rivera.id}`)).toBe(false);
+    as(owner);
+  });
+
   it("'You' shows only what the viewer did", async () => {
     const mine = (await listHistory(owner, { tab: "all", mine: true, days: 30 })).rows;
     expect(mine.length).toBeGreaterThan(0);
@@ -290,10 +305,10 @@ describe("History", () => {
     const all = (await listHistory(owner, { tab: "all", mine: false, days: 30 })).rows;
     expect(all.some((r) => r.who === "Signer")).toBe(true);
     // The sample's made-up vendor uploads are stored by its setup, as the owner; they're still the vendor's.
-    const received = all.filter((r) => r.what === "A vendor sent a document");
+    const received = all.filter((r) => r.what.startsWith("A vendor sent a document"));
     expect(received.length).toBeGreaterThan(0);
     expect(received.every((r) => r.who === "Vendor")).toBe(true);
-    expect(mine.some((r) => r.what === "A vendor sent a document")).toBe(false);
+    expect(mine.some((r) => r.what.startsWith("A vendor sent a document"))).toBe(false);
   });
 
   it("exports exactly the rows and columns shown, logs the export, and refuses another site (S6)", async () => {

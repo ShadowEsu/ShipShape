@@ -32,7 +32,12 @@ export function RequestItemBody({ item }: { item: RequestItem }) {
       {item.quote && (
         <p className="text-sm text-ink-3">
           &ldquo;{item.quote}&rdquo;
-          {item.traced === false && <span className="ml-2 rounded bg-warn-soft px-1.5 py-0.5 text-xs text-warn">Not found in the request</span>}
+          {/* The redesigned app shows it as the amber dot and its words, like every other state (Design #26 S3). */}
+          {item.traced === false && (
+            <span data-validity="expiring" className="validity-chip ml-2 inline-flex items-center rounded bg-warn-soft px-1.5 py-0.5 text-xs text-warn">
+              Not found in the request
+            </span>
+          )}
         </p>
       )}
       {item.matches.length > 0 && (

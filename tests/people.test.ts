@@ -381,6 +381,14 @@ describe("Keep in People (P2)", () => {
     expect(await contactsOf(a.orgId)).toHaveLength(1);
   });
 
+  it("an archived document's request isn't kept: the page doesn't offer it, and a crafted id creates nothing", async () => {
+    const ctx = await signIn("people-keep-archived@example.com");
+    const doc = await addDoc(ctx, "Old agreement", "agreement", "archived");
+    const request = await addRequest(ctx, doc, "Jordan Lee", "jordan@northwind.example");
+    await expect(keepSigner(ctx, request)).rejects.toThrow(KEEP_GONE);
+    expect(await contactsOf(ctx.orgId)).toEqual([]);
+  });
+
   it("the redesigned document page offers Keep in People beside each signer, posting only the request's id, then shows In People", async () => {
     const ctx = await signIn("people-keep-page@example.com");
     const doc = await addDoc(ctx, "Mutual NDA");

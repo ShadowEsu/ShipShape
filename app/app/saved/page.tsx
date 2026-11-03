@@ -20,7 +20,7 @@ export default async function SavedPage() {
         <p className="text-ink-2">Documents and links you saved.</p>
       </div>
       {rows.length === 0 ? (
-        <EmptyState title="Nothing saved yet" body="Save a document or link from its page to keep it here." action={{ href: "/app/documents", label: "Go to Documents" }} />
+        <EmptyState icon="bookmark" title="Nothing saved yet" body="Save a document or link from its page to keep it here." action={{ href: "/app/documents", label: "Go to Documents" }} />
       ) : (
         <SavedList rows={rows} zone={zone} v2={v2} />
       )}
