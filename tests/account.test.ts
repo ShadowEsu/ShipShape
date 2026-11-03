@@ -145,9 +145,17 @@ describe("export", () => {
     const file = path.join(blobDir, "export-passports.zip");
     await writeFile(file, bytes);
     const names = execFileSync("unzip", ["-Z1", file]).toString().trim().split("\n");
-    expect(names.slice(6, 9)).toEqual(["passports.json", "signatures.json", "agreements.json"]);
+    expect(names.slice(6, 10)).toEqual(["passports.json", "signatures.json", "agreements.json", "contacts.csv"]);
     const readme = execFileSync("unzip", ["-p", file, "README.txt"]).toString();
-    for (const name of ["passports.json", "signatures.json", "agreements.json"]) expect(readme).toContain(`\n${name} `);
+    for (const name of ["passports.json", "signatures.json", "agreements.json", "contacts.csv"]) expect(readme).toContain(`\n${name} `);
+    // People (0046): the sample's three made-up contacts.
+    const contacts = execFileSync("unzip", ["-p", file, "contacts.csv"]).toString().split("\n");
+    expect(contacts[0]).toBe("name,email,company,source,created_at");
+    expect(contacts.slice(1).map((l) => l.split(",").slice(0, 4).join(","))).toEqual([
+      "Dana Kim (sample),dana.kim@bayside.example,Bayside Drywall (sample),sample",
+      "Jordan Lee (sample),jordan.lee@northwind.example,Northwind Builders (sample),sample",
+      "Priya Shah (sample),priya.shah@summit.example,Summit Supply Co. (sample),sample",
+    ]);
 
     const passports: Record<string, unknown>[] = JSON.parse(execFileSync("unzip", ["-p", file, "passports.json"]).toString());
     expect(passports).toEqual([
