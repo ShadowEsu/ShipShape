@@ -14,6 +14,8 @@ import { POST as signCode } from "@/app/s/[id]/code/route";
 import { GET as signFile } from "@/app/s/[id]/file/route";
 import { POST as signOpen } from "@/app/s/[id]/open/route";
 import FaqPage from "@/app/faq/page";
+import ContractorsPage from "@/app/for/contractors/page";
+import FreelancersPage from "@/app/for/freelancers/page";
 import HomePage from "@/app/page";
 import PricingPage from "@/app/pricing/page";
 import PrivacyPage from "@/app/privacy/page";
@@ -314,8 +316,10 @@ describe("a signing link (/s)", () => {
     const text = said(html);
     expect(text).toContain("Signed");
     expect(text).toMatch(
-      /There's nothing else you need to do\. Harbor Plumbing \(sample\) has the same signed copy, saved to their documents in ShipShape\. The certificate at the end records the name you typed, when you signed, that a code sent to your email confirmed it, and a fingerprint of your network connection \(not your address\)\. Download yours for your records; this link works until \w{3} \d{1,2}, \d{4}\./,
+      /There's nothing else you need to do\. Harbor Plumbing \(sample\) has the same signed copy, saved to their documents in ShipShape\. The certificate at the end records .+? Download yours for your records; this link works until \w{3} \d{1,2}, \d{4}\./,
     );
+    // The code was shown in the sample's app, not emailed: the page never says it came by email.
+    expect(text).not.toMatch(/sent to your email|emailed/);
     expect(actionsOf(html)).toEqual([{ tag: "a", label: "Download the signed copy", href: `/s/${id}/file` }]);
 
     // Once that day has passed, the signer learns when the copy stopped being here, not that it was withdrawn.
@@ -432,12 +436,14 @@ describe("a signing link (/s)", () => {
       const nda = (await listDocuments(sample)).find((d) => d.kind === "nda");
       const { id, at, until } = await signAs("J. Lee");
       const html = await signingPage(id);
-      expect(said(html)).toContain(
+      const text = said(html);
+      expect(text).toContain(
         `Signed ${nda?.title} Signed as J. Lee Signed ${timeOf(at, "America/Los_Angeles")} · code confirmed What happens next ` +
-          "Harbor Plumbing (sample) sees it's signed. They have the same signed copy, saved to their documents in ShipShape. " +
-          "A certificate page is added to the signed copy. It records the name you typed, when you signed, that a code sent to your email confirmed it, and a fingerprint of your network connection (not your address). " +
-          `Download the signed copy This link works until ${dayOf(until, "America/Los_Angeles")}. The workspace chose this name; ShipShape doesn't verify business names.`,
+          "Harbor Plumbing (sample) sees it's signed. They have the same signed copy, saved to their documents in ShipShape. A certificate page is added to the signed copy.",
       );
+      expect(text).toContain(`Download the signed copy This link works until ${dayOf(until, "America/Los_Angeles")}. The workspace chose this name; ShipShape doesn't verify business names.`);
+      // The code was shown in the sample's app, not emailed: the page never says it came by email.
+      expect(text).not.toMatch(/sent to your email|emailed/);
       // The stamp carries the day it was signed and is decoration: "Signed" says it.
       expect(html).toMatch(new RegExp(`<svg class="stamp[^"]*"[^>]*aria-hidden="true"[^]*?SIGNED · ${dayOf(at, "America/Los_Angeles").toUpperCase()}</textPath>`));
       expect(said(html)).not.toContain("Jordan Lee");
@@ -712,7 +718,7 @@ describe("pricing (/pricing)", () => {
 });
 
 describe("the public pages once payments are live (Security MUST-3, MUST-4)", () => {
-  const PAGES = { home: HomePage, faq: FaqPage, pricing: PricingPage, terms: TermsPage, privacy: PrivacyPage, status: StatusPage };
+  const PAGES = { home: HomePage, contractors: ContractorsPage, freelancers: FreelancersPage, faq: FaqPage, pricing: PricingPage, terms: TermsPage, privacy: PrivacyPage, status: StatusPage };
   const texts = async () => Object.fromEntries(await Promise.all(Object.entries(PAGES).map(async ([name, page]) => [name, textOf(await renderPage(page, {}))] as const)));
   const goLive = () => {
     vi.stubEnv("CONTACT_EMAIL", "support@example.com");
@@ -771,6 +777,19 @@ describe("the public pages once payments are live (Security MUST-3, MUST-4)", ()
     const off = textOf(await renderPage(StatusPage, {}));
     expect(off).toContain("Features Sample workspaces");
     expect(off).toContain("Payments No real charges. Off");
+  });
+
+  it("the pages for contractors and freelancers say 'in the sample' while real documents are closed, and mark Collect and signing for what they are once open", async () => {
+    const preview = await texts();
+    expect(preview.contractors).toContain("Your certificate of insurance Awaiting setup");
+    expect(preview.contractors).toContain("“Works today” means in the sample workspace.");
+    expect(preview.freelancers).toContain("Getting it signed Works today");
+    goLive();
+    const live = await texts();
+    expect(live.contractors).toContain("Your certificate of insurance Works today");
+    expect(live.contractors).toContain("Collecting from your subcontractors Planned");
+    expect(live.freelancers).toContain("Getting it signed Awaiting setup");
+    for (const text of [live.contractors, live.freelancers]) expect(text).not.toContain("means in the sample workspace");
   });
 
   it("pricing names sales tax only when Stripe Tax is on in live mode (Security SHOULD-3)", async () => {

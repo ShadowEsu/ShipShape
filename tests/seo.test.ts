@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { metadata as faq } from "@/app/faq/page";
+import { metadata as contractors } from "@/app/for/contractors/page";
+import { metadata as freelancers } from "@/app/for/freelancers/page";
 import { metadata as home } from "@/app/page";
 import { metadata as pricing } from "@/app/pricing/page";
 import { metadata as privacy } from "@/app/privacy/page";
@@ -15,7 +17,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("what search engines are told", () => {
   it("every page in the sitemap names itself as canonical and has its own description", () => {
-    const pages: Record<string, Metadata> = { "/": home, "/pricing": pricing, "/faq": faq, "/status": status, "/privacy": privacy, "/terms": terms };
+    const pages: Record<string, Metadata> = { "/": home, "/for/contractors": contractors, "/for/freelancers": freelancers, "/pricing": pricing, "/faq": faq, "/status": status, "/privacy": privacy, "/terms": terms };
     vi.stubEnv("SHIPSHAPE_APP_URL", SITE.href);
     expect(sitemap().map((e) => new URL(e.url).pathname).sort()).toEqual(Object.keys(pages).sort());
     for (const [path, meta] of Object.entries(pages)) {

@@ -66,8 +66,8 @@ export function SignedV2({ id, view, zone, contact }: { id: string; view: Signin
               <div>
                 <p>A certificate page is added to the signed copy.</p>
                 <p className="mt-0.5 text-sm text-ink-2">
-                  It records the name you typed, when you signed, that a code sent to your email confirmed it, and a fingerprint of your
-                  network connection (not your address).
+                  It records the name you typed, when you signed, that a one-time code confirmed it, and a fingerprint of your network
+                  connection (not your address).
                 </p>
               </div>
             </li>

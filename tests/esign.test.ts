@@ -10,10 +10,11 @@ import { BuildBusy, BuildCrashed } from "@/lib/pdf/build-isolated";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { downloadUrl, getDocument, insertDocument, listDocuments, setArchived, uploadVersion } from "@/lib/server/documents";
-import { CERTIFICATE_ALLOWANCE, completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl } from "@/lib/server/esign";
+import { CERTIFICATE_ALLOWANCE, completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl, SIGNING_CODE_DELIVERY } from "@/lib/server/esign";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import { ESIGN_BUSY, ESIGN_TRIES_PER_HOUR } from "@/lib/server/limits";
+import { QUEUED_KINDS } from "@/lib/server/mail";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
@@ -531,6 +532,21 @@ describe("signing", () => {
     expect(certificate).toContain(word("Sent"));
     expect(certificate).toContain(word("Sample"));
     expect(certificate).not.toContain(word("Renamed"));
+  });
+
+  it("says on the certificate how the code reached the signer: the outbox, never an email check, while the sender doesn't email codes (Security, 4 Nov)", async () => {
+    // The sender's allow-list and the certificate agree: codes are emailed exactly when the certificate says "email".
+    expect(QUEUED_KINDS.some((k: string) => k === "esign_code")).toBe(SIGNING_CODE_DELIVERY === "email");
+    const ctx = await sampleWorkspace();
+    const { id, token } = await request(ctx);
+    await sendSigningCode(id, token);
+    expect(await completeSigning(id, token, { code: await lastCode(ctx.orgId), typedName: "Jordan Lee", consented: true, ip: IP })).toBe("ok");
+    const docId = (await nda(ctx)).id;
+    const versions = (await getDocument(ctx, docId))?.versions ?? [];
+    const certificate = certificateText(await PDFDocument.load(await blobStore().get(`${ctx.orgId}/${docId}/v${versions[0].version}.pdf`)));
+    expect(certificate).toContain(word("One-time"));
+    expect(certificate).toContain(word("outbox,"));
+    expect(certificate).not.toContain(word("Email"));
   });
 
   it("stores the instant it printed: the certificate's Signed at is the signed_at the pages show, exactly (wave 7 #12)", async () => {
