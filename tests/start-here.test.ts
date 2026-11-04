@@ -2,12 +2,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { askAction } from "@/app/app/ask/actions";
 import AppHome from "@/app/app/page";
 import { makePassport } from "@/app/app/passport/actions";
+import SettingsPage from "@/app/app/settings/page";
 import { markDeadlinesSeen } from "@/app/app/start-actions";
 import { asService, asUser } from "@/lib/server/db";
 import { readRequestByNames } from "@/lib/server/request-check";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { parseStart, SAMPLE_REQUEST } from "@/lib/server/start-here";
+import { START_SEEN_COOKIE } from "@/lib/start-seen";
 import { freshDb, type TestDb } from "./support/db";
 import { renderPage, textOf } from "./support/render";
 
@@ -21,7 +23,7 @@ vi.mock("next/headers", () => ({
       return c && { name, value: c.value };
     },
     set: (name: string, value: string, options?: Record<string, unknown>) => void jar.set(name, { value, options }),
-    delete: (name: string) => void jar.delete(name),
+    delete: (c: string | { name: string }) => void jar.delete(typeof c === "string" ? c : c.name),
   }),
   headers: async () => new Headers({ "x-forwarded-for": "192.0.2.41" }),
 }));
@@ -103,6 +105,22 @@ describe("Start here", () => {
     const done = await startHere();
     expect(done?.steps.map((s) => s.chip)).toEqual(["Done", "Done", "Done"]);
     expect([done?.count, done?.waitlist]).toEqual(["3 of 3 done", true]);
+
+    // Shown finished once (the browser notes it), the next Home leaves it out; the waitlist stays in Settings.
+    jar.set(START_SEEN_COOKIE, { value: "1" });
+    expect(await startHere()).toBeNull();
+    expect(textOf(await renderPage(SettingsPage, { searchParams: Promise.resolve({}) }))).toContain("Hear when real accounts open");
+  });
+
+  it("doesn't leave out an unfinished path, and a new sample's first step clears an earlier sample's finish", async () => {
+    await signInSample();
+    jar.set(START_SEEN_COOKIE, { value: "1" });
+    expect((await startHere())?.count).toBe("0 of 3 done");
+
+    // The first step here clears an earlier sample's mark, so this sample's finish shows when it comes.
+    await askAction({}, form({ text: SAMPLE_REQUEST }));
+    expect(jar.has(START_SEEN_COOKIE)).toBe(false);
+    expect((await startHere())?.count).toBe("1 of 3 done");
   });
 
   it("step 1 opens Check with the request pasted; step 2 opens a link with the current documents it asks for ticked", async () => {

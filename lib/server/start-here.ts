@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { askedDocuments, currentMatchIds } from "@/lib/request-words";
+import { START_SEEN_COOKIE } from "@/lib/start-seen";
 import type { Ctx } from "./profile";
 import { matchToDocuments } from "./request-check";
 
@@ -8,8 +9,9 @@ import { matchToDocuments } from "./request-check";
  * The sample's "Start here" path (ledger 461, weakest spot 3): the product's loop in 3 steps, on the sample's own
  * documents. 1: check the request Northwind Builders sent; 2: send them the packet in a passport link; 3: see what's
  * due. A step ticks when it's done in this sample (a request checked, a link made, Deadlines opened), kept in one
- * HttpOnly cookie that names the sample workspace, so a new sample in the same browser starts over. Nothing else is
- * stored, and real workspaces never see the path.
+ * HttpOnly cookie that names the sample workspace, so a new sample in the same browser starts over. Finished, Home
+ * shows it once more (the celebration and the waitlist), then leaves it out. Nothing else is stored, and real
+ * workspaces never see the path.
  */
 
 /** Its value is `?try=` on Check a request, which then opens with the request already pasted. */
@@ -55,8 +57,11 @@ export async function markStart(ctx: Ctx, step: StartStep) {
   if (!ctx.demo) return;
   const done = await doneHere(ctx);
   if (done.has(step)) return;
+  const jar = await cookies();
+  // A new sample's first step: an earlier sample's "finish shown" mark mustn't hide this one's finish.
+  if (done.size === 0 && jar.get(START_SEEN_COOKIE)) jar.delete({ name: START_SEEN_COOKIE, path: "/app" });
   done.add(step);
-  (await cookies()).set(COOKIE, `${ctx.orgId}.${[...done].sort().join("")}`, {
+  jar.set(COOKIE, `${ctx.orgId}.${[...done].sort().join("")}`, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -72,10 +77,11 @@ export interface StartPath {
   packet: string[];
 }
 
-/** The path for this workspace, or null outside a sample. */
+/** The path for this workspace; null outside a sample, and once its finish has been shown. */
 export async function startPath(ctx: Ctx): Promise<StartPath | null> {
   if (!ctx.demo) return null;
   const done = await doneHere(ctx);
+  if (done.size === 3 && (await cookies()).get(START_SEEN_COOKIE)?.value === "1") return null;
   const packet = done.has(2) ? [] : currentMatchIds(await matchToDocuments(ctx, askedDocuments(SAMPLE_REQUEST), SAMPLE_REQUEST));
   return { done: [done.has(1), done.has(2), done.has(3)], packet };
 }

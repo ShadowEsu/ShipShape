@@ -2,11 +2,13 @@ import type { IconName } from "@/components/icons";
 import { WaitlistForm } from "@/components/waitlist";
 import { SAMPLE_REQUEST_KEY, type StartPath } from "@/lib/server/start-here";
 import { HairRow, StateChip } from "./hair-row";
+import { StartFinishShown } from "./start-mark";
 
 /**
  * A sample's "Start here" (ledger 461, weakest spot 3): the request Northwind Builders sent, answered in 3 steps on the
  * sample's own documents, each ticked once it's done here (lib/server/start-here.ts). The first step not done is
- * marked Next. Done, it ends on the waitlist, since real accounts aren't open yet (spot 2a).
+ * marked Next. Done, it ends on the waitlist, since real accounts aren't open yet (spot 2a), shown once: the next Home
+ * leaves it out (Design, 4 Nov), and the waitlist stays under Settings, Plan.
  */
 export function StartHere({ path }: { path: StartPath }) {
   const packet = path.packet.length > 0 ? `&docs=${path.packet.join(",")}` : "";
@@ -45,6 +47,7 @@ export function StartHere({ path }: { path: StartPath }) {
       </ol>
       {next === -1 && (
         <div className="space-y-3 pt-2">
+          <StartFinishShown />
           <p className="text-sm text-ink-2">That&apos;s ShipShape: the request in, the packet out, the dates watched. Real accounts aren&apos;t open yet.</p>
           <WaitlistForm label="Hear when real accounts open" />
         </div>
