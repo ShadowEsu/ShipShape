@@ -10,15 +10,18 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
  */
 
 const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-// False while hydrating the server HTML, true for anything that mounts later (a page reached by a link).
+// False while hydrating the server HTML, true for anything that mounts later (a page reached by a link). After
+// hydration React re-renders with true, so a component keeps what it was at its first render.
 const noSubscribe = () => () => {};
-const useMountedLate = () =>
-  useSyncExternalStore(
+const useMountedLate = () => {
+  const late = useSyncExternalStore(
     noSubscribe,
     () => true,
     () => false,
   );
-const SKIP = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+  return useState(late)[0];
+};
+const SKIP = ["pointerdown", "keydown", "wheel", "touchstart"];
 
 /** The spec's arrival curve, cubic-bezier(0.22, 1, 0.36, 1), as y for progress x (solved for t by Newton's method). */
 export function easeSmooth(x: number): number {
@@ -45,22 +48,27 @@ export const countDuration = (n: number) => (Math.abs(n) < 100 ? 700 : Math.abs(
 export function CountUp({ value }: { value: number }) {
   const late = useMountedLate();
   const [running, setRunning] = useState(false);
+  const counted = useRef(false);
   const box = useRef<HTMLSpanElement>(null);
   const digits = useRef<HTMLSpanElement>(null);
 
   useLayoutEffect(() => {
     const el = box.current;
-    if (!el || value === 0 || still()) return;
+    if (!el || counted.current || value === 0 || still()) return;
+    const start = () => {
+      counted.current = true;
+      setRunning(true);
+    };
     const r = el.getBoundingClientRect();
-    const onScreen = r.bottom > 0 && r.top < window.innerHeight;
-    if (onScreen) {
-      if (late) setRunning(true);
+    if (r.bottom > 0 && r.top < window.innerHeight) {
+      if (late) start();
+      else counted.current = true;
       return;
     }
     const seen = new IntersectionObserver(([e]) => {
       if (!e?.isIntersecting) return;
       seen.disconnect();
-      setRunning(true);
+      start();
     });
     seen.observe(el);
     return () => seen.disconnect();
@@ -113,8 +121,9 @@ const arrived = new Set<string>();
 const ARRIVAL_MS = 7 * 70 + 350;
 
 /**
- * A list whose rows rise into place the first time it loads in a visit (spec §2, staggered arrival). The class comes
- * off once they're in place, so rows added, sorted or filtered later just appear. Rows carry their place as `--i`.
+ * A list whose rows rise into place the first time it loads in a visit (spec §2, staggered arrival; each row's delay
+ * comes from its place, app/motion.css). The class comes off once they're in place, so rows added, sorted or filtered
+ * later just appear.
  */
 export function Arrive({ list, className, children }: { list: string; className: string; children: React.ReactNode }) {
   const [on, setOn] = useState(() => !arrived.has(list));
@@ -147,7 +156,7 @@ export function CelebrationSwitch() {
     <label className="group-row cursor-pointer items-center gap-3 hover:bg-tile">
       <span className="min-w-0 flex-1">
         <span className="block text-[15px]">Celebrate wins</span>
-        <span className="block text-[13px] text-ink-3">A short burst when a request finds everything, or every document is current. In this browser.</span>
+        <span className="block text-[13px] text-ink-3">A short burst for a real win, like a request where you have everything. In this browser.</span>
       </span>
       <input
         type="checkbox"
@@ -167,8 +176,8 @@ const BURST = 8;
 
 /**
  * A real win, once a day per trigger (spec §2, celebration): the check pops and 8 small shapes burst from it and fade
- * in 900ms, inside its card. Off in Settings, under reduced motion, or when already seen today, the check is just
- * there. The parent is the positioned card.
+ * in 900ms, around it and no further than 48px. Off in Settings, under reduced motion, or when already seen today, the
+ * check is just there.
  */
 export function Celebrate({ trigger, children }: { trigger: CelebrationTrigger; children: React.ReactNode }) {
   const [burst, setBurst] = useState(false);
@@ -176,9 +185,12 @@ export function Celebrate({ trigger, children }: { trigger: CelebrationTrigger; 
     const today = new Date().toISOString().slice(0, 10);
     const key = `ss-celebrated-${trigger}`;
     if (still() || localStorage.getItem(CELEBRATE_KEY) === "off" || localStorage.getItem(key) === today) return;
-    localStorage.setItem(key, today);
     setBurst(true);
-    const end = () => setBurst(false);
+    // Seen once it has played or been skipped, so a page left mid-burst plays it next time.
+    const end = () => {
+      localStorage.setItem(key, today);
+      setBurst(false);
+    };
     const t = setTimeout(end, 900);
     for (const type of SKIP) window.addEventListener(type, end, { capture: true, passive: true, once: true });
     return () => {

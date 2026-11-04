@@ -3,6 +3,7 @@ import type { PassportRow } from "@/lib/server/passport";
 import { PASSPORT_DAYS } from "@/lib/server/passport";
 import { dayOf } from "@/lib/today";
 import { HairRow, StateChip } from "../hair-row";
+import { CountUp } from "../motion-moments";
 import type { PickableDoc } from "./forms";
 import { NewLinkV2 } from "./forms-v2";
 import { linkStatus } from "./link-status";
@@ -19,7 +20,12 @@ function YourLinks({ links, zone }: { links: PassportRow[]; zone: string }) {
           href={`/app/passport/${l.id}`}
           icon="passport"
           title={l.label}
-          line={`${l.documents} ${l.documents === 1 ? "document" : "documents"} · opened ${l.opens} ${l.opens === 1 ? "time" : "times"} · until ${dayOf(l.expires_at, zone)}`}
+          line={
+            <>
+              {l.documents} {l.documents === 1 ? "document" : "documents"} · opened <CountUp value={l.opens} /> {l.opens === 1 ? "time" : "times"} · until{" "}
+              {dayOf(l.expires_at, zone)}
+            </>
+          }
           chip={<StateChip tone={s.working ? "ok" : "none"}>{s.label}</StateChip>}
         />
       ))}

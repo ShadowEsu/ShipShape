@@ -2,6 +2,7 @@ import type { IconName } from "@/components/icons";
 import { WaitlistForm } from "@/components/waitlist";
 import { SAMPLE_REQUEST_KEY, type StartPath } from "@/lib/server/start-here";
 import { HairRow, StateChip } from "./hair-row";
+import { Celebrate } from "./motion-moments";
 import { StartFinishShown } from "./start-mark";
 
 /**
@@ -48,7 +49,14 @@ export function StartHere({ path }: { path: StartPath }) {
       {next === -1 && (
         <div className="space-y-3 pt-2">
           <StartFinishShown />
-          <p className="text-sm text-ink-2">That&apos;s ShipShape: the request in, the packet out, the dates watched. Real accounts aren&apos;t open yet.</p>
+          <p className="flex items-start gap-2 text-sm text-ink-2">
+            <Celebrate trigger="start-done">
+              <span aria-hidden="true" className="grid size-5 place-items-center rounded-full bg-ok text-xs text-white">
+                ✓
+              </span>
+            </Celebrate>
+            <span>That&apos;s ShipShape: the request in, the packet out, the dates watched. Real accounts aren&apos;t open yet.</span>
+          </p>
           <WaitlistForm label="Hear when real accounts open" />
         </div>
       )}

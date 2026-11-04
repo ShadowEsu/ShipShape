@@ -339,7 +339,27 @@
    70ms apart; the rest arrive with the 8th. */
 .ui-v2 .m-arrive > * {
   animation: m-rise var(--m-normal) var(--m-ease-smooth) both;
-  animation-delay: calc(min(var(--i, 0), 7) * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(2) {
+  animation-delay: var(--m-stagger);
+}
+.ui-v2 .m-arrive > :nth-child(3) {
+  animation-delay: calc(2 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(4) {
+  animation-delay: calc(3 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(5) {
+  animation-delay: calc(4 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(6) {
+  animation-delay: calc(5 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(7) {
+  animation-delay: calc(6 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(n + 8) {
+  animation-delay: calc(7 * var(--m-stagger));
 }
 
 /* Count-ups (CountUp): the digits keep their width while they change. */

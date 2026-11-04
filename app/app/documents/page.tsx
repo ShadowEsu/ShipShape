@@ -7,6 +7,7 @@ import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { FilterMenu, TabLinks } from "../filters";
 import { HairRow } from "../hair-row";
+import { Arrive } from "../motion-moments";
 import { DELETE_PROMISE } from "./messages";
 
 export const metadata: Metadata = { title: "Documents" };
@@ -185,7 +186,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         )
       ) : v2 ? (
         // Hairline rows, as Home's Recent (Design calm v2); the title morphs into the document page's title (spec §6.1).
-        <ul className="hair-list">
+        // The rows rise in on the list's first load in a visit, not on a search, filter or return (motion spec §2).
+        <Arrive list="documents" className="hair-list">
           {docs.map((d) => (
             <HairRow
               key={d.id}
@@ -197,7 +199,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
               chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
             />
           ))}
-        </ul>
+        </Arrive>
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
           {docs.map((d) => (

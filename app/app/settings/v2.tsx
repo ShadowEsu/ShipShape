@@ -9,6 +9,7 @@ import type { LiveSession, SignedIn } from "@/lib/server/session";
 import { RECENT_AUTH_SECONDS } from "@/lib/server/session";
 import { dayOf } from "@/lib/today";
 import { signOut } from "../../signin/actions";
+import { CelebrationSwitch } from "../motion-moments";
 import { signOutEverywhere, signOutSession } from "./actions";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
 import { ExportButton } from "./export-button";
@@ -181,6 +182,18 @@ export function SettingsV2({
         ) : (
           <ExportButton />
         )}
+      </section>
+
+      {/* The celebration toggle (motion spec §2): on by default, kept in this browser, so nothing is stored about it. */}
+      <section aria-labelledby="motion-title" className="space-y-3">
+        <h2 id="motion-title" className="section-title">
+          Animations
+        </h2>
+        <ul className="group-list plain">
+          <li>
+            <CelebrationSwitch />
+          </li>
+        </ul>
       </section>
 
       {/* The sign-in pool requires an authenticator app for everyone (infra/signin.yaml), so this is a statement, not a switch.
