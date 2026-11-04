@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { megabytes, PLANS } from "@/lib/plans";
-import { billingConfig } from "@/lib/server/billing-config";
+import { billingConfig, paymentsMode } from "@/lib/server/billing-config";
 import { contactEmail, realDocsEnabled } from "@/lib/server/flags";
 
 const { free, pro } = PLANS;
@@ -27,7 +27,7 @@ const ROWS: [feature: string, free: string, pro: string][] = [
   ["Export and account deletion", "✓", "✓"],
 ];
 
-type Payments = "off" | "test" | "live";
+type Payments = ReturnType<typeof paymentsMode>;
 
 /** The billing questions, worded for whether payments are off, in test mode or live, and where refunds are asked for (Security L6). */
 function billingQuestions(payments: Payments, contact: string | null): [q: string, a: string][] {
@@ -53,7 +53,7 @@ function billingQuestions(payments: Payments, contact: string | null): [q: strin
 
 export default function PricingPage() {
   const cfg = billingConfig();
-  const payments: Payments = cfg === null ? "off" : cfg.live ? "live" : "test";
+  const payments = paymentsMode();
   // Stripe Tax adds sales tax at checkout on top of the tax-exclusive price (Security SHOULD-3).
   const tax = cfg?.automaticTax === true;
   // A real account can buy Pro only when payments are live and new checkouts aren't paused (PRESTON-STRIPE-LIVE.md, part G).

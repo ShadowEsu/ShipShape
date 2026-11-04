@@ -667,7 +667,10 @@ describe("pricing (/pricing)", () => {
     // Payments switched off: pricing doesn't claim a test mode that isn't running.
     expect(preview[0]).toContain("Prices in US dollars. Payments aren't switched on yet: no real charges.");
     expect(preview[0]).toContain("Am I charged now? No. Payments aren't switched on yet, so nothing can be charged.");
-    expect(preview.map((t) => /test mode/.test(t))).toEqual([false, true, true]);
+    // No page claims a test mode that isn't running; the legal pages say payments are switched off.
+    expect(preview.map((t) => /test mode/.test(t))).toEqual([false, false, false]);
+    expect(preview.slice(1).map((t) => t.includes("Payments are switched off: no real money moves."))).toEqual([true, true]);
+    expect(preview[1]).toContain("During the preview, payments are switched off: no real money moves.");
     expect(preview.join(" ")).not.toMatch(/Draft, pending lawyer review|\(draft\)/);
     expect(preview[1]).toContain("ShipShape is in preview. Only sample workspaces with made-up documents are open.");
     vi.stubEnv("BILLING_ENABLED", "1");
@@ -675,9 +678,10 @@ describe("pricing (/pricing)", () => {
     vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test1");
     vi.stubEnv("STRIPE_PRICE_PRO", "price_Test1");
-    const test = textOf(await renderPage(PricingPage, {}));
+    const [test, ...testLegal] = await pages();
     expect(test).toContain("Prices in US dollars. Payments are in test mode during the preview: no real charges.");
     expect(test).not.toContain("Sign in to move to Pro");
+    expect(testLegal.map((t) => t.includes("Payments run in Stripe's test mode: no real money moves."))).toEqual([true, true]);
     vi.stubEnv("VERCEL_ENV", "production");
     vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", "1");
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
