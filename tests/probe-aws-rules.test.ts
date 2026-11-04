@@ -237,6 +237,50 @@ describe("the app role's policy (W12-1, W12-11)", () => {
     const narrowed = { ...files, Condition: { StringEquals: { "aws:RequestedRegion": "us-east-1" } } };
     expect(check([narrowed, sweep, fileKey, deleteAccounts]).problems).toEqual(['app: condition {"StringEquals":{"aws:RequestedRegion":"us-east-1"}}']);
   });
+
+  describe("with email on (Security 2026-11-04 0715, answer 5)", () => {
+    const email = {
+      from: "reminders@shipshape.example",
+      identityArn: `arn:aws:ses:us-east-1:${account}:identity/shipshape.example`,
+      configurationSetArn: `arn:aws:ses:us-east-1:${account}:configuration-set/shipshape-mail`,
+    };
+    // app-role.yaml's SendReminders, as IAM returns it.
+    const send = {
+      Sid: "SendReminders",
+      Effect: "Allow",
+      Action: "ses:SendEmail",
+      Resource: [email.identityArn, email.configurationSetArn],
+      Condition: { StringEquals: { "ses:FromAddress": email.from } },
+    };
+    const withEmail = (statement: unknown, grant: typeof email | null = email) => rolePolicyProblems("app", [files, sweep, fileKey, deleteAccounts, statement], resourceOf, "us-east-1", grant);
+    const refused = "app: ses other than SendEmail alone, on the sender's identity and the configuration set, under ses:FromAddress reminders@shipshape.example";
+
+    it("passes SendEmail alone, on the identity and the configuration set, from the one sender", () => {
+      const { problems, granted } = withEmail(send);
+      expect(problems).toEqual([]);
+      expect(granted).toContain("ses:SendEmail");
+    });
+
+    it.each([
+      ["SendRawEmail beside it", { ...send, Action: ["ses:SendEmail", "ses:SendRawEmail"] }],
+      ["SendRawEmail instead", { ...send, Action: "ses:SendRawEmail" }],
+      ["SendBulkEmail", { ...send, Action: "ses:SendBulkEmail" }],
+      ["ses:*", { ...send, Action: "ses:*" }],
+      ["any resource", { ...send, Resource: "*" }],
+      ["another identity", { ...send, Resource: [`arn:aws:ses:us-east-1:${account}:identity/*`, email.configurationSetArn] }],
+      ["the identity only", { ...send, Resource: email.identityArn }],
+      ["no condition", { ...send, Condition: undefined }],
+      ["another sender", { ...send, Condition: { StringEquals: { "ses:FromAddress": "anyone@shipshape.example" } } }],
+      ["StringLike", { ...send, Condition: { StringLike: { "ses:FromAddress": "*@shipshape.example" } } }],
+      ["a second condition", { ...send, Condition: { ...send.Condition, Bool: { "aws:SecureTransport": "true" } } }],
+    ])("refuses %s", (_what, statement) => {
+      expect(withEmail(statement).problems).toEqual([refused]);
+    });
+
+    it("refuses any ses grant while email is off (no PROBE_SES_*)", () => {
+      expect(withEmail(send, null).problems).toEqual(['app: condition {"StringEquals":{"ses:FromAddress":"reminders@shipshape.example"}}', "app: action ses:SendEmail"]);
+    });
+  });
 });
 
 // The probe pins what the templates write; a template edited alone would fail the launch's probe.
@@ -254,5 +298,75 @@ describe("the templates write what the probe pins", () => {
     const yaml = template("database.yaml");
     expect(yaml).toMatch(/^ {8}log_error_verbosity: terse$/m);
     expect(yaml).not.toMatch(/log_statement:/);
+  });
+
+  /** The lines of `yaml` from the one matching `start` through the one matching `end`. */
+  const block = (yaml: string, start: RegExp, end: RegExp) => {
+    const lines = yaml.split("\n");
+    const from = lines.findIndex((l) => start.test(l));
+    const to = lines.findIndex((l, i) => i > from && end.test(l));
+    return lines.slice(from, to + 1).join("\n");
+  };
+  /** Every non-comment line naming an SES action or condition key. */
+  const sesLines = (yaml: string) =>
+    yaml
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("#") && /\bses:[A-Za-z*]/.test(l))
+      .map((l) => l.trim());
+
+  it("infra/app-role.yaml: SendEmail only, on the identity and the configuration set, from SenderAddress, and only with both parameters set (Security answer 5)", () => {
+    const yaml = template("app-role.yaml");
+    expect(block(yaml, /^ {14}- !If$/, /^ {16}- !Ref AWS::NoValue$/)).toBe(
+      [
+        "              - !If",
+        "                - SendsEmail",
+        "                - Sid: SendReminders",
+        "                  Effect: Allow",
+        "                  Action: ses:SendEmail",
+        "                  Resource:",
+        "                    - !Ref SenderIdentityArn",
+        '                    - !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/shipshape-mail"',
+        "                  Condition:",
+        "                    StringEquals:",
+        "                      ses:FromAddress: !Ref SenderAddress",
+        "                - !Ref AWS::NoValue",
+      ].join("\n"),
+    );
+    expect(sesLines(yaml)).toEqual(["Action: ses:SendEmail", "ses:FromAddress: !Ref SenderAddress"]);
+    expect(block(yaml, /^Conditions:$/, /SenderIdentityArn, ""/)).toBe(
+      ["Conditions:", "  SendsEmail: !And", '    - !Not [!Equals [!Ref SenderAddress, ""]]', '    - !Not [!Equals [!Ref SenderIdentityArn, ""]]'].join("\n"),
+    );
+    // Off by default: both parameters default to empty.
+    expect(block(yaml, /^ {2}SenderAddress:$/, /Default:/)).toContain('Default: ""');
+    expect(block(yaml, /^ {2}SenderIdentityArn:$/, /Default:/)).toContain('Default: ""');
+  });
+
+  it("infra/signin.yaml: Cognito sends through SES (DEVELOPER, the identity) only with both parameters set, off by default", () => {
+    const yaml = template("signin.yaml");
+    expect(block(yaml, /^ {6}EmailConfiguration: !If$/, /^ {8}- !Ref AWS::NoValue$/)).toBe(
+      [
+        "      EmailConfiguration: !If",
+        "        - CodesThroughSes",
+        "        - EmailSendingAccount: DEVELOPER",
+        "          SourceArn: !Ref CodesIdentityArn",
+        "          From: !Ref CodesFrom",
+        "          ConfigurationSet: shipshape-mail",
+        "        - !Ref AWS::NoValue",
+      ].join("\n"),
+    );
+    expect(yaml).toContain("only once SES is out of the sandbox, Security #5");
+    expect(block(yaml, /^ {2}CodesFrom:$/, /Default:/)).toContain('Default: ""');
+    expect(block(yaml, /^ {2}CodesIdentityArn:$/, /Default:/)).toContain('Default: ""');
+  });
+
+  it("infra/mail.yaml: the configuration set suppresses bounces and complaints, tracks nothing, and publishes only those two events, signed with SHA256", () => {
+    const yaml = template("mail.yaml");
+    expect(yaml).toMatch(/^ {6}Name: shipshape-mail$/m);
+    expect(block(yaml, /^ {6}SuppressionOptions:$/, /- COMPLAINT$/)).toBe(["      SuppressionOptions:", "        SuppressedReasons:", "          - BOUNCE", "          - COMPLAINT"].join("\n"));
+    expect(yaml).not.toMatch(/^\s*TrackingOptions:/m);
+    expect(yaml).not.toMatch(/^\s*- (open|click|OPEN|CLICK)$/m);
+    expect(block(yaml, /^ {8}MatchingEventTypes:$/, /- complaint$/)).toBe(["        MatchingEventTypes:", "          - bounce", "          - complaint"].join("\n"));
+    expect(yaml).toContain('SignatureVersion: "2"');
+    expect(yaml).toContain('Endpoint: !Sub "${AppUrl}/api/mail/events"');
   });
 });

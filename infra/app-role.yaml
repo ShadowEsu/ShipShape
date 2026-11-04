@@ -31,6 +31,24 @@ Parameters:
     Type: String
     Description: signin.yaml output UserPoolArn.
     AllowedPattern: "^arn:aws:cognito-idp:[a-z0-9-]+:[0-9]{12}:userpool/[a-z0-9-]+_[A-Za-z0-9]+$"
+  # Reminder email (B12; Security 2026-11-04 0715, answer 5). Both empty (the default): the role has no
+  # SES permission at all. Set only after SES leaves the sandbox, with Preston's sender address and
+  # Security's GO on the PR (README, "Email").
+  SenderAddress:
+    Type: String
+    Default: ""
+    Description: SHIPSHAPE_EMAIL_FROM, the one From address the app may send as. Empty means no email.
+    AllowedPattern: "^$|^[A-Za-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"
+  SenderIdentityArn:
+    Type: String
+    Default: ""
+    Description: mail.yaml output IdentityArn, the sender's verified domain. Empty means no email.
+    AllowedPattern: "^$|^arn:aws:ses:[a-z0-9-]+:[0-9]{12}:identity/[a-z0-9.-]+$"
+
+Conditions:
+  SendsEmail: !And
+    - !Not [!Equals [!Ref SenderAddress, ""]]
+    - !Not [!Equals [!Ref SenderIdentityArn, ""]]
 
 Resources:
   VercelOidcProvider:
@@ -62,9 +80,10 @@ Resources:
           }]
         }
       # The one inline policy: every action the app needs, each on its one resource (PR-2, P-b0a).
-      # Two conditions, which the probe pins exactly: listing only under a workspace's "<org id>/" prefix
+      # Conditions, which the probe pins exactly: listing only under a workspace's "<org id>/" prefix
       # (the daily sweep after an account deletion, W11-7, aws-plan TO-1; and telling a missing file from
-      # a refused one, W12-1), and the key only through S3 (W12-11). No managed policies, no boundary.
+      # a refused one, W12-1), the key only through S3 (W12-11), and, where email is on, sending only as
+      # the one sender. No managed policies, no boundary.
       Policies:
         - PolicyName: app
           PolicyDocument:
@@ -102,6 +121,21 @@ Resources:
                 Effect: Allow
                 Action: cognito-idp:AdminDeleteUser
                 Resource: !Ref UserPoolArn
+              # Only with SenderAddress and SenderIdentityArn set (Security 2026-11-04 0715, answer 5):
+              # SendEmail alone (no SendRawEmail, SendBulkEmail or ses:*), on the sender's identity and the
+              # configuration set SendEmail names (mail.yaml; SES v2 authorizes both), from that one address.
+              - !If
+                - SendsEmail
+                - Sid: SendReminders
+                  Effect: Allow
+                  Action: ses:SendEmail
+                  Resource:
+                    - !Ref SenderIdentityArn
+                    - !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/shipshape-mail"
+                  Condition:
+                    StringEquals:
+                      ses:FromAddress: !Ref SenderAddress
+                - !Ref AWS::NoValue
 
 Outputs:
   RoleArn:

@@ -2,6 +2,7 @@ import "server-only";
 import { cognitoConfig } from "./cognito";
 import { fieldKey, hashKey } from "./crypto";
 import { appUrl, contactEmail, cronSecret } from "./flags";
+import { mailConfig } from "./mail";
 import { sessionSecret } from "./session";
 import { storeFromEnv } from "./storage";
 
@@ -40,6 +41,9 @@ export function launchProblems(env: Env): string[] {
   check(() => {
     if (!cognitoConfig(env) && env.SHIPSHAPE_REAL_DOCS === "1") throw new Error("Real documents need account sign-in (COGNITO_*)");
   });
+  // Email is off unless SHIPSHAPE_EMAIL is exactly 1 (B12); any other value is a typo that would leave it off silently.
+  if (env.SHIPSHAPE_EMAIL && env.SHIPSHAPE_EMAIL !== "1") problems.push("SHIPSHAPE_EMAIL must be 1 or unset");
+  check(() => mailConfig(env));
   return problems;
 }
 

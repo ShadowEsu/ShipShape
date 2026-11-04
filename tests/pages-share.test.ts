@@ -694,6 +694,40 @@ describe("Deadlines", () => {
       expect(textOf(html)).toContain("Later expiry");
       expect(html).not.toContain("<details");
     });
+
+    it("with email on (SHIPSHAPE_EMAIL=1, B12), an owner reads that reminders are emailed; off, the earlier look and the sample keep saying email is off", async () => {
+      const off = "During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown.";
+      const on = "ShipShape emails each reminder to the sign-in address of every owner and admin, and keeps a copy here. Signing codes for real documents aren't shown.";
+      await signIn("deadlines-v2-email@example.com");
+      expect(textOf(await page())).toContain(off);
+
+      vi.stubEnv("SHIPSHAPE_EMAIL", "1");
+      vi.stubEnv("SHIPSHAPE_EMAIL_FROM", "reminders@shipshape.example");
+      vi.stubEnv("AWS_REGION", "us-east-1");
+      vi.stubEnv("SHIPSHAPE_SES_EVENTS_TOPIC_ARN", "arn:aws:sns:us-east-1:111122223333:shipshape-mail-events");
+      const emailed = textOf(await page());
+      expect(emailed).toContain(on);
+      expect(emailed).not.toContain("doesn't send email");
+
+      // A setting missing: email isn't really on, so the page doesn't say it is.
+      vi.stubEnv("SHIPSHAPE_SES_EVENTS_TOPIC_ARN", "");
+      expect(textOf(await page())).toContain(off);
+      vi.stubEnv("SHIPSHAPE_SES_EVENTS_TOPIC_ARN", "arn:aws:sns:us-east-1:111122223333:shipshape-mail-events");
+
+      // The earlier look renders exactly as before.
+      vi.stubEnv("SHIPSHAPE_UI", "v1");
+      expect(textOf(await page())).toContain(off);
+      vi.stubEnv("SHIPSHAPE_UI", "v2");
+
+      // The sample never emails.
+      const userId = await createLocalUser(null, true);
+      const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
+      await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+      await finishSignIn(userId, { demo: true });
+      const sample = textOf(await page());
+      expect(sample).toContain("During the preview ShipShape doesn't send email; reminders and signing codes land here instead.");
+      expect(sample).not.toContain("ShipShape emails each reminder");
+    });
   });
 });
 

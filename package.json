@@ -20,6 +20,7 @@
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "3.1161.0",
     "@aws-sdk/client-s3": "3.1161.0",
+    "@aws-sdk/client-sesv2": "3.1161.0",
     "@electric-sql/pglite": "0.5.13",
     "@vercel/oidc-aws-credentials-provider": "3.3.17",
     "next": "16.4.3",
