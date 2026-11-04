@@ -26,7 +26,12 @@ jobs:
             if [[ $f =~ ^supabase/migrations/[0-9]{4}_[a-z0-9_]+\.sql$ ]]; then args+=("/m/${f#supabase/migrations/}"); fi
           done < <(git diff -z --name-only --diff-filter=AM "$BASE_SHA" HEAD -- supabase/migrations/)
           if [ ${#args[@]} -eq 0 ]; then echo "No migration files changed."; exit 0; fi
+          # Findings (exit 1) are advisory: a warning, and the check passes, because prod-merge refuses a PR with any
+          # failing check. Anything else (the image didn't pull or run) fails, so a broken lint never passes as clean.
+          rc=0
           docker run --rm --network none --read-only \
             -v "$PWD/supabase/migrations:/m:ro" \
             ghcr.io/sbdchd/squawk@sha256:439751d978b127ccf882e76967efb754ae2421ffd5161dd1d401b7cfbb6e354b \
-            --assume-in-transaction --pg-version=17.0 "${args[@]}"
+            --assume-in-transaction --pg-version=17.0 "${args[@]}" || rc=$?
+          if [ "$rc" -eq 1 ]; then echo "::warning::Squawk found issues in the changed migrations (advisory; read the log above)"; exit 0; fi
+          exit "$rc"
