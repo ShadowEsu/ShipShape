@@ -62,7 +62,8 @@ const faq = (docs: boolean, accounts: boolean): { q: string; a: React.ReactNode 
           {AI_TRAINING_SOURCE.label}
           <span className="sr-only"> (opens in a new tab)</span>
         </a>
-        , checked {AI_TRAINING_SOURCE.checked}). The answer is a draft you check, not legal advice.
+        , checked {AI_TRAINING_SOURCE.checked}). The answer is a draft you check, not legal advice. While AI is off, the same check
+        matches the names of documents in the message instead: no AI, and the text goes nowhere else.
       </>
     ),
   },

@@ -479,7 +479,7 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
 
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", "v2"));
 
-  it("asks the question first, then one row of all ten tools by their one-word names, each opening its own page; a closed one says why (AI off)", async () => {
+  it("asks the question first, then one row of all ten tools by their one-word names, each opening its own page; Check opens with AI off (it matches names)", async () => {
     await signIn("home-v2@example.com");
     const html = await homePage();
     expect(textOf(html)).toMatch(/^What do you need to get done\?/);
@@ -487,7 +487,7 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
       { href: "/app/documents", name: "Documents", closed: false },
       { href: "/app/documents/new", name: "Add", closed: false },
       { href: "/app/make", name: "Make", closed: false },
-      { href: "/app/ask", name: "Check", closed: true },
+      { href: "/app/ask", name: "Check", closed: false },
       { href: "/app/passport", name: "Passport", closed: false },
       { href: "/app/documents", name: "Sign", closed: false },
       { href: "/app/collect", name: "Collect", closed: false },
@@ -495,7 +495,7 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
       { href: "/app/facts", name: "Facts", closed: false },
       { href: "/app/settings", name: "Settings", closed: false },
     ]);
-    expect(closedOnes(html)).toEqual(["Check: AI is off right now (AI is off right now)"]);
+    expect(closedOnes(html)).toEqual([]);
   });
 
   it("before the security review, a real workspace's closed tools say what isn't open yet; Facts, view only, still opens", async () => {
@@ -505,7 +505,6 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect(closedOnes(html)).toEqual([
       "Add: Opens after our security review (Opens after our security review)",
       "Make: Opens after our security review (Opens after our security review)",
-      "Check: AI is off right now (AI is off right now)",
       "Collect: Not open yet (Not open yet)",
     ]);
     // The page each one opens says the same.

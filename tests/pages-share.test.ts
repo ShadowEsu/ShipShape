@@ -746,12 +746,15 @@ describe.each([
 ])("What are they asking for?, %s", (_look, ui) => {
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
 
-  it("with AI switched off: one line on what that means, and one way forward", async () => {
+  it("with AI switched off: the same form checks by document names, with no tick and nothing said about Anthropic", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "");
     await signIn(`${ui || "v2"}-ask-off@example.com`);
     const html = await renderPage(AskPage, {});
-    expect(textOf(html)).toContain("Reading requests with AI is switched off right now, so check the request against your documents yourself");
-    expect(actionsOf(html)).toEqual([{ tag: "a", label: "Open your documents", href: "/app/documents" }]);
+    expect(html).toMatch(/<textarea[^>]*name="text"/);
+    expect(html).not.toContain('name="consent"');
+    expect(textOf(html)).not.toContain("Anthropic");
+    expect(textOf(html)).toContain("ShipShape is document software, not a law firm, and doesn't give legal advice.");
+    expect(textOf(html)).toContain("Read the request");
   });
 
   it("with AI on: the consent box claims only what Anthropic says, and names the source and when it was checked", async () => {
@@ -1102,8 +1105,39 @@ describe("form errors name the field to fix", () => {
       const text = "Before your first job we need a W-9 and a certificate of insurance.";
       const done = await askAction({}, form({ text, consent: "yes" }));
       expect(done.items?.map((i) => i.label)).toEqual(["W-9"]);
+      expect(done.by).toBe("ai");
       expect(done).not.toHaveProperty("consent");
       expect(done).not.toHaveProperty("error");
+    } finally {
+      setAiProviderForTests(null);
+    }
+  });
+
+  it("reading a request with AI off: the server matches document names, with or without a tick, and nothing reaches the model", async () => {
+    vi.stubEnv("SHIPSHAPE_AI", "");
+    let calls = 0;
+    setAiProviderForTests(async () => {
+      calls++;
+      return { text: JSON.stringify({ items: [] }), inputTokens: 1, outputTokens: 1, truncated: false };
+    });
+    try {
+      await signIn("form-ask-off@example.com");
+      const text = "Before your first job we need a W-9 and a certificate of insurance.";
+      for (const ticked of [{}, { consent: "yes" }]) {
+        const done = await askAction({}, form({ text, ...ticked }));
+        expect(done.by).toBe("names");
+        expect(done.items?.map((i) => [i.kind, i.quote, i.traced])).toEqual([
+          ["w9", "Before your first job we need a W-9 and a certificate of insurance", true],
+          ["coi", "Before your first job we need a W-9 and a certificate of insurance", true],
+        ]);
+      }
+      expect(await askAction({}, form({ text: "too short" }))).toEqual({
+        error: "Paste the request: the email or checklist that asks for your documents.",
+        field: "text",
+        text: "too short",
+        consent: false,
+      });
+      expect(calls).toBe(0);
     } finally {
       setAiProviderForTests(null);
     }
