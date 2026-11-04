@@ -3,6 +3,7 @@ import { safeEqual } from "@/lib/server/crypto";
 import { purgeOutbox, runReminders } from "@/lib/server/deadlines";
 import { cronSecret } from "@/lib/server/flags";
 import { fail, purgeRateHits } from "@/lib/server/http";
+import { sendReminderMail } from "@/lib/server/mail";
 import { purgeSessions } from "@/lib/server/session";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,8 @@ export const maxDuration = 60;
  * (Security N-091a) and whatever else is still stored under a deleted workspace (W11-7, 0040),
  * deleting session rows that ended over 30 days ago (Design row 34), and deleting
  * outbox reminders over 90 days old and signing-code messages over 1 day old (the privacy policy
- * says so; Security 2026-11-01 0749). The scheduler (vercel.json) sends
+ * says so; Security 2026-11-01 0749). Where email is on (SHIPSHAPE_EMAIL=1, lib/server/mail.ts), the
+ * reminders just written are then emailed. The scheduler (vercel.json) sends
  * `Authorization: Bearer $CRON_SECRET`; nothing else may run it.
  */
 export async function GET(req: Request) {
@@ -31,13 +33,20 @@ export async function GET(req: Request) {
   // accounts or their files past the day the privacy policy promises. Deletions go before the file
   // cleanup, so files a deletion couldn't remove today are retried in the same run.
   const until = Date.now() + DAILY_RUN_BUDGET_MS;
-  const [sent, cleared, deletions, samples, sessions, outbox] = await Promise.allSettled([runReminders(), purgeRateHits(), finishDeletions(until), purgeSampleAccounts(until), purgeSessions(), purgeOutbox()]);
+  const reminders = runReminders();
+  // Email goes after the reminders are written, whether or not each was: rows already in the outbox still go out.
+  const mailing = reminders.then(
+    () => sendReminderMail(until),
+    () => sendReminderMail(until),
+  );
+  const [sent, mailed, cleared, deletions, samples, sessions, outbox] = await Promise.allSettled([reminders, mailing, purgeRateHits(), finishDeletions(until), purgeSampleAccounts(until), purgeSessions(), purgeOutbox()]);
   const [files, swept] = await Promise.allSettled([retryStorageCleanup(until), sweepDeletedWorkspaces(until)]);
   // Logs the error's name only: its message may hold addresses or query text.
   const log = (what: string, r: PromiseSettledResult<unknown>) => {
     if (r.status === "rejected") console.error(`cron: ${what} failed (${r.reason instanceof Error ? r.reason.name : "error"})`);
   };
   log("reminders", sent);
+  log("reminder email", mailed);
   log("rate-limit purge", cleared);
   log("account deletions", deletions);
   log("sample purge", samples);
@@ -45,8 +54,11 @@ export async function GET(req: Request) {
   log("workspace sweep", swept);
   log("session purge", sessions);
   log("outbox purge", outbox);
-  if (sent.status === "rejected" || sent.value.failed > 0 || cleared.status === "rejected" || deletions.status === "rejected" || deletions.value.failed > 0 || samples.status === "rejected" || samples.value.failed > 0 || files.status === "rejected" || swept.status === "rejected" || sessions.status === "rejected" || outbox.status === "rejected") {
+  const mailFailed = mailed.status === "rejected" || (mailed.value?.failed ?? 0) > 0;
+  if (sent.status === "rejected" || sent.value.failed > 0 || mailFailed || cleared.status === "rejected" || deletions.status === "rejected" || deletions.value.failed > 0 || samples.status === "rejected" || samples.value.failed > 0 || files.status === "rejected" || swept.status === "rejected" || sessions.status === "rejected" || outbox.status === "rejected") {
     return fail("The daily run failed.", 500);
   }
-  return Response.json({ ok: true, sent: sent.value, cleared: cleared.value, deletions: deletions.value, samples: samples.value, files: files.value, swept: swept.value, sessions: sessions.value, outbox: outbox.value }, { headers: { "Cache-Control": "no-store" } });
+  // `mail` only where email is on: off, the answer is exactly what it was before email existed.
+  const mail = mailed.value ? { mail: mailed.value } : {};
+  return Response.json({ ok: true, sent: sent.value, ...mail, cleared: cleared.value, deletions: deletions.value, samples: samples.value, files: files.value, swept: swept.value, sessions: sessions.value, outbox: outbox.value }, { headers: { "Cache-Control": "no-store" } });
 }

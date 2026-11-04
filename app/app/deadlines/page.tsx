@@ -6,6 +6,7 @@ import { billingView } from "@/lib/server/billing";
 import { listDeadlines, listOutbox, type Deadline } from "@/lib/server/deadlines";
 import { DOC_KINDS, firstDocument } from "@/lib/server/documents";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
+import { mailOn } from "@/lib/server/mail";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { fmtDay, timeOf } from "@/lib/today";
 import { DeadlinesV2 } from "./v2";
@@ -63,6 +64,7 @@ export default async function DeadlinesPage({ searchParams }: { searchParams: Pr
         reminders={reminders}
         member={member}
         demo={ctx.demo}
+        emailed={mailOn()}
         first={first}
         zone={zone}
         quiet={quiet}

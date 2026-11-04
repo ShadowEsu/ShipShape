@@ -11,6 +11,10 @@
 //   PROBE_COGNITO_POOL_ID=<pool id> PROBE_COGNITO_CLIENT_ID=<app client id> PROBE_APP_URL=https://<app> \
 //   node scripts/probe-aws.mjs
 //
+// Only once email is on (infra/README.md "Email"), also PROBE_SES_SENDER=<SenderAddress> and
+// PROBE_SES_IDENTITY_ARN=<mail.yaml IdentityArn>: the role must then allow ses:SendEmail exactly as
+// app-role.yaml writes it. Without them, any ses grant fails the run.
+//
 // Before the real run, re-lock the AWS SDK packages with the app's (M6 step 7, `--before`; Security
 // PR-4): the operator's credentials can do more than the app role. infra/launch.sh refuses to run it
 // unless package-lock.json is 7 days old (or overridden, in the log) and node_modules matches it.
@@ -33,8 +37,9 @@
 // every one and nothing more, on its one resource, with no permissions boundary. Two grants carry a
 // condition, each exactly as infra/app-role.yaml writes it: s3:ListBucket only under a workspace id's
 // prefix (s3:prefix "<36 characters>/*", so any one workspace's keys, one prefix per call), and the
-// key's two actions only through S3 (kms:ViaService). A preview's token, checked first to be this
-// project's preview token (iss, aud, sub), is refused.
+// key's two actions only through S3 (kms:ViaService); where email is on, a third: ses:SendEmail alone,
+// on the sender's identity and the configuration set, from the one sender (ses:FromAddress). A
+// preview's token, checked first to be this project's preview token (iss, aud, sub), is refused.
 // The file key's policy and the account's Block Public Access are read by infra/launch.sh (aws CLI).
 // The canary and all its versions are removed at the end. Exits 1 on any failure.
 //
@@ -387,8 +392,8 @@ await attempt("the app role trusts exactly this account's Vercel provider, its a
 });
 // Exactly these: one more is a wider grant; one fewer breaks the app where it matters least visibly (a missing
 // s3:DeleteObject or kms:Decrypt strands a deleted account's files, Security N-091a). And nothing that could
-// quietly take one away again: no permissions boundary, and no condition on a grant (P-b0a) except the two
-// app-role.yaml writes (rolePolicyProblems in probe-aws-rules.ts).
+// quietly take one away again: no permissions boundary, and no condition on a grant (P-b0a) except the ones
+// app-role.yaml writes (rolePolicyProblems in probe-aws-rules.ts). Email's grant only with PROBE_SES_*.
 await attempt("the app role allows each action it needs, every one, on its one resource only: the bucket's objects, listing under a workspace's prefix, the key through S3 only, the pool (no wildcards, no managed policies, no permissions boundary; PR-2)", async () => {
   if (!poolArn) return [false, "no pool ARN to compare AdminDeleteUser with"];
   if (!roleRead) return [false, "couldn't read the role, so its permissions boundary is unknown"];
@@ -402,6 +407,10 @@ await attempt("the app role allows each action it needs, every one, on its one r
     ["kms:Decrypt", env.PROBE_KMS_KEY_ARN],
     ["cognito-idp:AdminDeleteUser", poolArn],
   ]);
+  const email =
+    env.PROBE_SES_SENDER && env.PROBE_SES_IDENTITY_ARN
+      ? { from: env.PROBE_SES_SENDER, identityArn: env.PROBE_SES_IDENTITY_ARN, configurationSetArn: `arn:aws:ses:${region}:${account}:configuration-set/shipshape-mail` }
+      : null;
   const attached = (await iam.send(new ListAttachedRolePoliciesCommand({ RoleName: env.PROBE_ROLE_NAME }))).AttachedPolicies ?? [];
   const names = (await iam.send(new ListRolePoliciesCommand({ RoleName: env.PROBE_ROLE_NAME }))).PolicyNames ?? [];
   const problems = attached.map((p) => `managed policy ${p.PolicyName}`);
@@ -409,11 +418,12 @@ await attempt("the app role allows each action it needs, every one, on its one r
   const granted = new Set();
   for (const name of names) {
     const doc = JSON.parse(decodeURIComponent((await iam.send(new GetRolePolicyCommand({ RoleName: env.PROBE_ROLE_NAME, PolicyName: name }))).PolicyDocument ?? "{}"));
-    const found = rolePolicyProblems(name, list(doc.Statement), resourceOf, region);
+    const found = rolePolicyProblems(name, list(doc.Statement), resourceOf, region, email);
     problems.push(...found.problems);
     for (const a of found.granted) granted.add(a);
   }
   for (const a of resourceOf.keys()) if (!granted.has(a)) problems.push(`missing ${a}`);
+  if (email && !granted.has("ses:SendEmail")) problems.push("missing ses:SendEmail");
   return [names.length > 0 && problems.length === 0, problems.join("; ") || names.join(", ")];
 });
 await attempt("STS refuses this project's preview token for the app role (the token's iss, aud and sub checked first)", async () => {

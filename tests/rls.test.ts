@@ -134,6 +134,7 @@ const TABLES: Record<string, string | null> = {
   sessions: null, // each person's own rows only: the browsers they're signed in on, checked below
   saved_items: "org_id", // and each person's own only: checked in saved.test.ts
   contacts: "org_id", // People (0046): who may change which, the cap and the checks are in people.test.ts
+  email_suppressions: null, // server only: addresses SES said bounced or complained (0049), checked below
 };
 
 describe("row level security", () => {
@@ -182,7 +183,7 @@ describe("row level security", () => {
     }
   });
 
-  it("waitlist, rate limits, sign-in identities, deletion requests and the file-cleanup queues are closed to signed-in users", async () => {
+  it("waitlist, rate limits, sign-in identities, deletion requests, the file-cleanup queues and the email suppression list are closed to signed-in users", async () => {
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.waitlist")));
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.waitlist (email) values ('x@example.com')")));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.rate_hits")));
@@ -203,6 +204,11 @@ describe("row level security", () => {
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.storage_prefix_cleanup (prefix) values ($1)", [`${orgB}/`])));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.storage_prefix_cleanup")));
     await expectDenied(asUser(a, (tx) => tx.query("delete from app.storage_prefix_cleanup")));
+    // A row here stops reminders to that address (0049): only SES's verified notifications put one there.
+    await expectDenied(asUser(a, (tx) => tx.query("insert into app.email_suppressions (address_hash, reason) values ($1, 'bounce')", ["0".repeat(32)])));
+    await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.email_suppressions")));
+    // Whether a reminder was emailed is the sender's to record: an owner can't mark one sent or put one back in the queue.
+    await expectDenied(asUser(a, (tx) => tx.query("update app.outbox set sent_at = null, claimed_at = null, attempts = 0 where org_id = $1", [orgA])));
   });
 
   it("sign-out-everywhere times: each person reads only their own, and only moves it themselves (Security E9)", async () => {

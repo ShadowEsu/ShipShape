@@ -13,6 +13,26 @@ Parameters:
     Type: String
     Description: Managed login's domain prefix; COGNITO_DOMAIN becomes https://<prefix>.auth.<region>.amazoncognito.com.
     AllowedPattern: "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+  # Sign-up and recovery codes from ShipShape's own address through SES (Security 2026-11-04 0715,
+  # answer 5), instead of Cognito's default no-reply@verificationemail.com. Both empty (the default):
+  # Cognito's default sender, which is what the privacy policy names. Set them only once SES has left
+  # the sandbox (in the sandbox Cognito can't email anyone unverified, so nobody could sign up), and
+  # change the privacy policy's sender in the same release (README, "Email").
+  CodesFrom:
+    Type: String
+    Default: ""
+    Description: The From line for Cognito's email, e.g. "ShipShape <reminders@<domain>>"; its address is in the identity's domain. Empty means Cognito's default sender.
+    AllowedPattern: "^$|^[^<>]{0,64} ?<[A-Za-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}>$|^[A-Za-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"
+  CodesIdentityArn:
+    Type: String
+    Default: ""
+    Description: mail.yaml output IdentityArn. Empty means Cognito's default sender.
+    AllowedPattern: "^$|^arn:aws:ses:[a-z0-9-]+:[0-9]{12}:identity/[a-z0-9.-]+$"
+
+Conditions:
+  CodesThroughSes: !And
+    - !Not [!Equals [!Ref CodesFrom, ""]]
+    - !Not [!Equals [!Ref CodesIdentityArn, ""]]
 
 Resources:
   UserPool:
@@ -53,6 +73,17 @@ Resources:
       # Self-registration on.
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: false
+      # Off by default (CodesThroughSes, above): only once SES is out of the sandbox, Security #5. On, Cognito
+      # sends through the same identity and configuration set as the reminders, so its bounces and
+      # complaints are suppressed too. DEVELOPER makes Cognito create its service-linked role, so the
+      # deploying session needs iam:CreateServiceLinkedRole.
+      EmailConfiguration: !If
+        - CodesThroughSes
+        - EmailSendingAccount: DEVELOPER
+          SourceArn: !Ref CodesIdentityArn
+          From: !Ref CodesFrom
+          ConfigurationSet: shipshape-mail
+        - !Ref AWS::NoValue
 
   # Managed login (version 2), not the classic hosted UI: only managed login honours prompt=login.
   UserPoolDomain:

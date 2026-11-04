@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ShipShape reminder email (B12; Security 2026-11-04 0715, answer 5): the sender's domain as an SES
+  identity with Easy DKIM, the configuration set every message goes through (SES suppresses addresses
+  that bounce or complain; no open or click tracking), and the SNS topic that posts bounces and
+  complaints to the app's own suppression list. Sends nothing by itself: the app role needs
+  SenderAddress (app-role.yaml) and the app SHIPSHAPE_EMAIL=1. Not part of launch.sh; deployed only by
+  README "Email", after AWS, Preston's sender address and Security's GO.
+
+Parameters:
+  SenderAddress:
+    Type: String
+    Description: SHIPSHAPE_EMAIL_FROM, e.g. reminders@<domain>. Its domain becomes the SES identity.
+    AllowedPattern: "^[A-Za-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"
+  AppUrl:
+    Type: String
+    Description: SHIPSHAPE_APP_URL (https, no trailing slash); SNS posts to <AppUrl>/api/mail/events.
+    AllowedPattern: "^https://[a-z0-9.-]+$"
+
+Resources:
+  # The name is fixed: lib/server/mail.ts (CONFIGURATION_SET), app-role.yaml and signin.yaml use it.
+  MailSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: shipshape-mail
+      # Addresses that hard-bounce or complain are suppressed by SES itself, whatever the app does.
+      SuppressionOptions:
+        SuppressedReasons:
+          - BOUNCE
+          - COMPLAINT
+      # Reminders name documents: never sent over plain SMTP.
+      DeliveryOptions:
+        TlsPolicy: REQUIRE
+      ReputationOptions:
+        ReputationMetricsEnabled: true
+      SendingOptions:
+        SendingEnabled: true
+      # No TrackingOptions and no open or click events: SES adds no pixel and rewrites no link.
+
+  SenderDomain:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Select [1, !Split ["@", !Ref SenderAddress]]
+      DkimSigningAttributes:
+        NextSigningKeyLength: RSA_2048_BIT
+      DkimAttributes:
+        SigningEnabled: true
+      # Mail from the domain without a configuration set of its own still gets this one's suppression.
+      ConfigurationSetAttributes:
+        ConfigurationSetName: !Ref MailSet
+
+  # SignatureVersion 2 (SHA256): the only one the app accepts.
+  EventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: shipshape-mail-events
+      SignatureVersion: "2"
+
+  # Only SES, for this account's configuration set, may publish.
+  EventsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref EventsTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SesPublishesBouncesAndComplaints
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref EventsTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/shipshape-mail"
+
+  # Bounces and complaints only: no send, delivery, open or click events leave SES.
+  BouncesAndComplaints:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    DependsOn: EventsTopicPolicy
+    Properties:
+      ConfigurationSetName: !Ref MailSet
+      EventDestination:
+        Name: suppression
+        Enabled: true
+        MatchingEventTypes:
+          - bounce
+          - complaint
+        SnsDestination:
+          TopicARN: !Ref EventsTopic
+
+  # The app confirms the subscription itself once email is on (lib/server/mail.ts); before that the
+  # endpoint answers 404 and the subscription stays pending (README "Email": request a new confirmation).
+  AppSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref EventsTopic
+      Protocol: https
+      Endpoint: !Sub "${AppUrl}/api/mail/events"
+
+Outputs:
+  IdentityArn:
+    Description: SenderIdentityArn for app-role.yaml and CodesIdentityArn for signin.yaml.
+    Value: !Sub
+      - "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${Domain}"
+      - Domain: !Ref SenderDomain
+  EventsTopicArn:
+    Description: SHIPSHAPE_SES_EVENTS_TOPIC_ARN.
+    Value: !Ref EventsTopic
+  DkimRecord1:
+    Description: CNAME for the sender's DNS (name, then value).
+    Value: !Sub "${SenderDomain.DkimDNSTokenName1} CNAME ${SenderDomain.DkimDNSTokenValue1}"
+  DkimRecord2:
+    Description: CNAME for the sender's DNS (name, then value).
+    Value: !Sub "${SenderDomain.DkimDNSTokenName2} CNAME ${SenderDomain.DkimDNSTokenValue2}"
+  DkimRecord3:
+    Description: CNAME for the sender's DNS (name, then value).
+    Value: !Sub "${SenderDomain.DkimDNSTokenName3} CNAME ${SenderDomain.DkimDNSTokenValue3}"

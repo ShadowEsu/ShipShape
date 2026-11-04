@@ -142,18 +142,29 @@ export function poolCheck(pool: UserPoolType, mfa: GetUserPoolMfaConfigCommandOu
   return { ok, facts };
 }
 
-// The only two conditions the app role's policy may carry, each exactly as infra/app-role.yaml writes it.
+// The only conditions the app role's policy may carry, each exactly as infra/app-role.yaml writes it.
 // s3:ListBucket only under a workspace id's prefix (the daily sweep, and telling a missing file from a
-// refused one; W11-7, W12-1); the key only through S3's SSE-KMS (W12-11).
+// refused one; W11-7, W12-1); the key only through S3's SSE-KMS (W12-11); and, where email is on,
+// ses:SendEmail only from the one sender (Security 2026-11-04 0715, answer 5).
 export const SWEEP_CONDITION = { StringLike: { "s3:prefix": "????????-????-????-????-????????????/*" } };
 export const fileKeyCondition = (region: string) => ({ StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } });
+export const senderCondition = (from: string) => ({ StringEquals: { "ses:FromAddress": from } });
+
+/** Email's grant where app-role.yaml has SenderAddress set: the sender, its SES identity and the configuration set. */
+export interface EmailGrant {
+  from: string;
+  identityArn: string;
+  configurationSetArn: string;
+}
 
 /**
  * One inline policy's statements against the role's grants (resourceOf: each action and its one
  * resource). Every statement allows; s3:ListBucket stands alone under SWEEP_CONDITION; the two kms
- * actions stand together under the file key condition; nothing else carries a condition.
+ * actions stand together under the file key condition; with `email`, ses:SendEmail stands alone on the
+ * identity and the configuration set under senderCondition, and without it no ses action passes;
+ * nothing else carries a condition.
  */
-export function rolePolicyProblems(name: string, statements: unknown[], resourceOf: Map<string, string>, region: string) {
+export function rolePolicyProblems(name: string, statements: unknown[], resourceOf: Map<string, string>, region: string, email: EmailGrant | null = null) {
   const problems: string[] = [];
   const granted: string[] = [];
   const kmsCondition = JSON.stringify(fileKeyCondition(region));
@@ -166,6 +177,13 @@ export function rolePolicyProblems(name: string, statements: unknown[], resource
     if (s.NotAction || s.NotResource || s.NotPrincipal) problems.push(`${name}: NotAction/NotResource/NotPrincipal`);
     const actions = list(s.Action).map(String);
     const condition = JSON.stringify(s.Condition ?? {});
+    const resources = list(s.Resource).map(String);
+    if (email && actions.some((a) => a.toLowerCase().startsWith("ses:"))) {
+      const exact = same(actions, ["ses:SendEmail"]) && condition === JSON.stringify(senderCondition(email.from)) && same(resources, [email.identityArn, email.configurationSetArn]);
+      if (!exact) problems.push(`${name}: ses other than SendEmail alone, on the sender's identity and the configuration set, under ses:FromAddress ${email.from}`);
+      granted.push(...actions);
+      continue;
+    }
     if (actions.includes("s3:ListBucket")) {
       if (!(same(actions, ["s3:ListBucket"]) && condition === JSON.stringify(SWEEP_CONDITION))) problems.push(`${name}: s3:ListBucket other than alone, under the workspace-prefix condition`);
     } else if (actions.some((a) => a.startsWith("kms:"))) {
@@ -173,7 +191,6 @@ export function rolePolicyProblems(name: string, statements: unknown[], resource
     } else if (condition !== "{}") {
       problems.push(`${name}: condition ${condition}`);
     }
-    const resources = list(s.Resource).map(String);
     if (!resources.length) problems.push(`${name}: no resource`);
     for (const a of actions) {
       granted.push(a);
