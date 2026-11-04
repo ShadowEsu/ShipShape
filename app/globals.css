@@ -826,6 +826,14 @@ body {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+/* Never glass in glass (Design spec §3): a control on a glass bar, sheet, menu, dialog or full-level list (the bar's
+   search button, Sign out, Done, Keep editing, More's Keep it and filled Archive and withdraw, ⌘K's search field)
+   keeps its fill, rim and edge but not a frost of its own, which would frost the surface's frost. The surface's own
+   pane stays glass. */
+.ui-v2[data-glass] :is(.top-bar, .side, dialog, .glass-frame):has(> .glass-pane) :is(.lg-glass, .btn-ghost, .round-icon, .tool-square, .search-button, .filter-menu > summary, .filter-menu > ul):not(.glass-pane) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 
 /* Glisse's Button at the app's sizes: 44px on the phone (touch), 40px from md up, 14px medium. */
 .ui-v2 .glass-button.lg-button {
