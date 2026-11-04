@@ -43,9 +43,13 @@ export function pdfSurface(page: PDFPage, f: Fonts): Surface {
   };
 }
 
-/** One mark of a preview, in SVG units (y grows downward), with colours as hex. */
+/**
+ * One mark of a preview, in SVG units (y grows downward), with colours as hex. A text's `width` is its width in the
+ * PDF's own font: the SVG fits the browser's face to it (textLength), so a phone without Arial or Times New Roman
+ * still sets each word where the file has it.
+ */
 export type PaperMark =
-  | { kind: "text"; text: string; x: number; y: number; size: number; font: FontKey; fill: string; opacity?: number; rotate?: number }
+  | { kind: "text"; text: string; x: number; y: number; size: number; font: FontKey; fill: string; width: number; opacity?: number; rotate?: number }
   | { kind: "rect"; x: number; y: number; width: number; height: number; fill?: string; stroke?: string; strokeWidth?: number }
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; stroke: string; strokeWidth: number; dash?: string }
   | { kind: "circle"; cx: number; cy: number; r: number; stroke: string; strokeWidth: number };
@@ -58,7 +62,17 @@ const at = (n: number) => Math.round(n * 100) / 100;
 export function recorder(f: Fonts, height: number, marks: PaperMark[]): Surface {
   return {
     text: (str, x, y, size, font, color, turn) =>
-      marks.push({ kind: "text", text: str, x: at(x), y: at(height - y), size, font, fill: hex(color), ...(turn && { opacity: turn.opacity, rotate: turn.degrees }) }),
+      marks.push({
+        kind: "text",
+        text: str,
+        x: at(x),
+        y: at(height - y),
+        size,
+        font,
+        fill: hex(color),
+        width: at(f[font].widthOfTextAtSize(str, size)),
+        ...(turn && { opacity: turn.opacity, rotate: turn.degrees }),
+      }),
     rect: (x, y, width, h, look) =>
       marks.push({
         kind: "rect",
@@ -76,6 +90,13 @@ export function recorder(f: Fonts, height: number, marks: PaperMark[]): Surface 
   };
 }
 
-// The standard fonts' metrics for previews, from a document that's never saved. Kept for the process.
+// The standard fonts' metrics for previews, from a document that's never saved. Kept for the process once they load;
+// a load that fails isn't kept, so the next preview tries again.
 let metrics: Promise<Fonts> | undefined;
-export const previewFonts = () => (metrics ??= PDFDocument.create().then(embedFonts));
+export const previewFonts = () =>
+  (metrics ??= PDFDocument.create()
+    .then(embedFonts)
+    .catch((e: unknown) => {
+      metrics = undefined;
+      throw e;
+    }));

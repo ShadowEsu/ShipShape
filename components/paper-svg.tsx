@@ -1,12 +1,16 @@
 import type { FontKey, PaperMark } from "@/lib/pdf/surface";
 
-/** The PDF's standard fonts and the faces a browser has with the same widths (Arial for Helvetica, Times New Roman for Times). */
+/**
+ * The PDF's standard fonts and the faces a browser has with the same widths (Arial or Liberation Sans for Helvetica,
+ * Times New Roman or Liberation Serif for Times). Where there's none of them (Android), each text is still fitted to
+ * the PDF's width for it (textLength below), so words land where the file has them.
+ */
 const FACE: Record<FontKey, { fontFamily: string; fontWeight?: number; fontStyle?: "italic" }> = {
-  sans: { fontFamily: "Helvetica, Arial, sans-serif" },
-  sansBold: { fontFamily: "Helvetica, Arial, sans-serif", fontWeight: 700 },
-  serif: { fontFamily: "'Times New Roman', Times, serif" },
-  serifBold: { fontFamily: "'Times New Roman', Times, serif", fontWeight: 700 },
-  serifItalic: { fontFamily: "'Times New Roman', Times, serif", fontStyle: "italic" },
+  sans: { fontFamily: "Helvetica, Arial, 'Liberation Sans', sans-serif" },
+  sansBold: { fontFamily: "Helvetica, Arial, 'Liberation Sans', sans-serif", fontWeight: 700 },
+  serif: { fontFamily: "'Times New Roman', Times, 'Liberation Serif', serif" },
+  serifBold: { fontFamily: "'Times New Roman', Times, 'Liberation Serif', serif", fontWeight: 700 },
+  serifItalic: { fontFamily: "'Times New Roman', Times, 'Liberation Serif', serif", fontStyle: "italic" },
 };
 
 /**
@@ -28,6 +32,8 @@ export function PaperSvg({ marks, width, height, className }: { marks: readonly 
               {...FACE[m.font]}
               fill={m.fill}
               opacity={m.opacity}
+              textLength={m.width > 0 ? m.width : undefined}
+              lengthAdjust={m.width > 0 ? "spacingAndGlyphs" : undefined}
               transform={m.rotate ? `rotate(${-m.rotate} ${m.x} ${m.y})` : undefined}
             >
               {m.text}

@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { samplePaper, samplePaperMarks, samplePaperPdf, type SampleBusiness, type SamplePaper } from "@/lib/pdf/sample-papers";
+import { SAMPLE_DRAWING, samplePaper, samplePaperMarks, samplePaperPdf, type SampleBusiness, type SamplePaper } from "@/lib/pdf/sample-papers";
 import type { PaperMark } from "@/lib/pdf/surface";
 import type { ProfileKey } from "@/lib/profile-fields";
 import { templateById } from "@/lib/templates/catalog";
@@ -11,7 +11,7 @@ import { encryptField } from "./crypto";
 import { asUser, type Tx } from "./db";
 import { listOutbox } from "./deadlines";
 import { insertDocument, type VersionRow } from "./documents";
-import { completeSigning, createSignatureRequest, sendSigningCode } from "./esign";
+import { completeSigning, createSignatureRequest, sendSigningCode, type SignatureRequestRow } from "./esign";
 import { fillRecord, prefill, render, sampleNdaCover } from "./fill";
 import { createPassport, openPassport, passportFileUrl } from "./passport";
 import { seedSamplePeople } from "./people";
@@ -53,8 +53,14 @@ async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides
     { title, kind: t.kind, counterparty: out.counterparty, issued_on: out.issuedOn, expires_on: out.expiresOn, template_id: t.id },
     { bytes: out.bytes, mime: "application/pdf" },
     "sample",
-    // The NDA keeps the values it was filled with, so its preview draws its cover page from them (spot 5b).
-    { template: t.id, templateVersion: t.source.version, fields: fillRecord(t, values, start), ...(t.kind === "nda" && { paper: { kind: "nda", values } }) },
+    // The NDA keeps the values it was filled with, and which drawing drew it, so its preview draws its cover page from
+    // them (spot 5b).
+    {
+      template: t.id,
+      templateVersion: t.source.version,
+      fields: fillRecord(t, values, start),
+      ...(t.kind === "nda" && { paper: { kind: "nda", values }, drawn: SAMPLE_DRAWING }),
+    },
   );
 }
 
@@ -126,7 +132,7 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       { title: `${c.title} (sample)`, kind: c.kind, issuer: c.issuer, issued_on: day(c.issued), expires_on: day(c.expires) },
       { bytes: await samplePaperPdf(c.paper), mime: "application/pdf" },
       "sample",
-      { paper: c.paper },
+      { paper: c.paper, drawn: SAMPLE_DRAWING },
     );
     if (c.kind === "coi") certificate = id;
   }
@@ -138,21 +144,47 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await seedSamplePeople(tx, ctx);
 }
 
-/** A sample NDA's kept values: the cover page is drawn from them by the template's own code. */
-const sampleNda = z.object({ kind: z.literal("nda"), values: z.record(z.string().max(60), z.string().max(2000)) });
+const MNDA = templateById("common-paper-mnda");
+/**
+ * A sample NDA's kept values: the cover page is drawn from them by the template's own code, and only when every value
+ * the template's form requires is there (a record of nothing would still draw a plausible cover).
+ */
+const sampleNda = z
+  .object({ kind: z.literal("nda"), values: z.record(z.string().max(60), z.string().max(2000)) })
+  .refine(
+    ({ values }) =>
+      MNDA !== undefined && MNDA.fields.every((f) => !f.required || (f.when !== undefined && values[f.when.key] !== f.when.equals) || Boolean(values[f.key])),
+  );
 
 /**
  * A sample document's first page as preview marks (spot 5b), or null. Decided here, on the server: only in a sample,
- * only for a version the sample drew (its values kept with it), and only when those values still read as a paper.
- * Real documents never get one (their thumbnails wait for 5c); no file is read either way (Security 20261104-1327).
+ * only for a version the sample drew with today's drawing (SAMPLE_DRAWING; its values kept with it), and only when those
+ * values still read as a paper. A signed copy starts with the pages of the version that was sent (lib/pdf/to-sign.ts,
+ * then the certificate appended), so its first page is that version's: the request leads back to it. Real documents
+ * never get one (their thumbnails wait for 5c); no file is read either way (Security 20261104-1327). Decorative, so a
+ * failure to draw it leaves the paper card, never the page broken.
  */
-export async function samplePaperPreview(ctx: Ctx, version: Pick<VersionRow, "origin" | "fill_record"> | undefined): Promise<PaperMark[] | null> {
-  if (!ctx.demo || version?.origin !== "sample") return null;
-  const raw = version.fill_record?.paper;
-  const paper = samplePaper.safeParse(raw);
-  if (paper.success) return samplePaperMarks(paper.data);
-  const nda = sampleNda.safeParse(raw);
-  return nda.success ? sampleNdaCover(nda.data.values) : null;
+export async function samplePaperPreview(
+  ctx: Ctx,
+  versions: readonly Pick<VersionRow, "version" | "origin" | "fill_record">[],
+  requests: readonly Pick<SignatureRequestRow, "version" | "signed_version">[],
+): Promise<PaperMark[] | null> {
+  if (!ctx.demo) return null;
+  const latest = versions[0];
+  const sent = latest?.origin === "signed" ? requests.find((r) => r.signed_version === latest.version)?.version : undefined;
+  const drawn = sent === undefined ? latest : versions.find((v) => v.version === sent);
+  const record = drawn?.origin === "sample" ? drawn.fill_record : null;
+  if (!record || record.drawn !== SAMPLE_DRAWING) return null;
+  try {
+    const raw = record.paper;
+    const paper = samplePaper.safeParse(raw);
+    if (paper.success) return await samplePaperMarks(paper.data);
+    const nda = sampleNda.safeParse(raw);
+    return nda.success ? await sampleNdaCover(nda.data.values) : null;
+  } catch (e) {
+    console.error(`sample preview: not drawn (${e instanceof Error ? e.name : "error"})`);
+    return null;
+  }
 }
 
 /**

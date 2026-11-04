@@ -26,7 +26,7 @@ export function PagePreview({ title, page }: { title: string; page: React.ReactN
         ref={sheet}
         id="page-preview"
         aria-labelledby="page-preview-title"
-        className="sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:inset-0 md:m-auto md:h-fit md:w-[min(92vw,640px)] md:rounded-2xl"
+        className="sheet sheet-card fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:inset-0 md:m-auto md:h-fit md:w-[min(92vw,640px)] md:rounded-2xl"
         onClick={(e) => {
           // A click on the backdrop lands on the dialog element itself.
           if (e.target === e.currentTarget) e.currentTarget.close();
@@ -41,7 +41,9 @@ export function PagePreview({ title, page }: { title: string; page: React.ReactN
             <Icon name="close" />
           </button>
         </div>
-        <div className="max-h-[80dvh] overflow-y-auto px-4 pb-4">
+        {/* Taller than the window from md up: focusable, so arrows and Page Down scroll it where browsers don't make a
+            scroller focusable themselves (Safari), as the pricing table's scroller is. */}
+        <div role="region" aria-label="The whole first page" tabIndex={0} className="max-h-[80dvh] overflow-y-auto px-4 pb-4">
           <div className="overflow-hidden rounded-md border border-[var(--line-2)]">{page}</div>
         </div>
       </dialog>

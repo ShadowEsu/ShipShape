@@ -1,5 +1,5 @@
 import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
-import { embedFonts, pdfSurface, previewFonts, recorder, type FontKey, type PaperMark, type Surface } from "./surface";
+import { embedFonts, LETTER, pdfSurface, previewFonts, recorder, type FontKey, type PaperMark, type Surface } from "./surface";
 
 /**
  * A small text composer for documents ShipShape generates (NDA cover pages, sample documents,
@@ -19,7 +19,7 @@ export type Block =
   | { type: "rule" }
   | { type: "stamp"; text: string };
 
-const PAGE = { w: 612, h: 792, margin: 72 };
+const PAGE = { ...LETTER, margin: 72 };
 const INK = rgb(0.07, 0.07, 0.07);
 const MUTED = rgb(0.4, 0.4, 0.4);
 

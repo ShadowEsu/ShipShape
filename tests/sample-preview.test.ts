@@ -1,10 +1,16 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import DocumentPage from "@/app/app/documents/[id]/page";
 import { usDate } from "@/lib/pdf/sample-papers";
 import { asService, asUser } from "@/lib/server/db";
 import type { VersionRow } from "@/lib/server/documents";
-import { samplePaperPreview, seedSampleWorkspace } from "@/lib/server/sample";
+import type { SignatureRequestRow } from "@/lib/server/esign";
+import type { Ctx } from "@/lib/server/profile";
+import { samplePaperPreview, seedSampleActivity, seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
+import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { plusDays } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 import { renderPage, textOf } from "./support/render";
@@ -37,9 +43,15 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 let db: TestDb;
+let blobDir: string;
 
 beforeAll(async () => {
   db = await freshDb();
+  blobDir = await mkdtemp(path.join(os.tmpdir(), "shipshape-preview-"));
+  setBlobStoreForTests(localBlobStore(blobDir));
+});
+afterAll(async () => {
+  await rm(blobDir, { recursive: true, force: true });
 });
 beforeEach(() => {
   vi.stubEnv("SHIPSHAPE_UI", "v2");
@@ -49,22 +61,32 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+/** A sample as the sign-in page opens one: the workspace, then its activity (which signs the NDA). */
 async function signInSample() {
   const userId = await createLocalUser(null, true);
   const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
   await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+  await seedSampleActivity(org.id, userId);
   await finishSignIn(userId, { demo: true });
   return requireWorkspace();
 }
 
-/** Every version in the workspace, with its document's title. */
-const versionsOf = (orgId: string) =>
-  db.root((tx) =>
-    tx.query<{ title: string; origin: VersionRow["origin"]; fill_record: VersionRow["fill_record"] }>(
-      "select d.title, v.origin, v.fill_record from app.document_versions v join app.documents d on d.id = v.document_id where d.org_id = $1 order by d.title",
-      [orgId],
-    ),
+type Version = Pick<VersionRow, "version" | "origin" | "fill_record">;
+type Request = Pick<SignatureRequestRow, "version" | "signed_version">;
+
+/** Each document in the workspace by title: its versions, newest first, and its signature requests, as its page has them. */
+async function documentsOf(ctx: Ctx) {
+  const docs = await db.root((tx) => tx.query<{ id: string; title: string }>("select id, title from app.documents where org_id = $1 order by title", [ctx.orgId]));
+  return Promise.all(
+    docs.map(async (d) => ({
+      title: d.title,
+      versions: await db.root((tx) =>
+        tx.query<Version>("select version, origin, fill_record from app.document_versions where document_id = $1 order by version desc", [d.id]),
+      ),
+      requests: await db.root((tx) => tx.query<Request>("select version, signed_version from app.signature_requests where document_id = $1", [d.id])),
+    })),
   );
+}
 
 describe("a sample paper's first page", () => {
   it("shows the certificate's own page, drawn from the values it was made with, SAMPLE marks and all", async () => {
@@ -92,9 +114,9 @@ describe("a sample paper's first page", () => {
 
   it("draws only the sample's drawn papers and its NDA, only in a sample, and only from values that read as one", async () => {
     const ctx = await signInSample();
-    const versions = await versionsOf(ctx.orgId);
+    const docs = await documentsOf(ctx);
     const drawn: string[] = [];
-    for (const v of versions) if (await samplePaperPreview(ctx, v)) drawn.push(v.title);
+    for (const d of docs) if (await samplePaperPreview(ctx, d.versions, d.requests)) drawn.push(d.title);
     // Not the W-9: the IRS form isn't drawn by ShipShape's code, so its page isn't drawn here.
     expect(drawn).toEqual([
       "Certificate of liability insurance (sample)",
@@ -103,21 +125,36 @@ describe("a sample paper's first page", () => {
       "Mutual NDA with Northwind Builders (sample)",
     ]);
 
-    const coi = versions.find((v) => v.title.startsWith("Certificate of liability"));
-    expect(await samplePaperPreview(ctx, coi)).not.toBeNull();
-    expect(await samplePaperPreview({ ...ctx, demo: false }, coi)).toBeNull();
-    expect(await samplePaperPreview(ctx, coi && { ...coi, origin: "upload" })).toBeNull();
-    expect(await samplePaperPreview(ctx, { origin: "sample", fill_record: { paper: { kind: "w9" } } })).toBeNull();
-    expect(await samplePaperPreview(ctx, undefined)).toBeNull();
+    const coi = docs.find((d) => d.title.startsWith("Certificate of liability"));
+    const v1 = coi?.versions[0];
+    if (!v1) throw new Error("the sample has no certificate version");
+    expect(await samplePaperPreview(ctx, [v1], [])).not.toBeNull();
+    expect(await samplePaperPreview({ ...ctx, demo: false }, [v1], [])).toBeNull();
+    expect(await samplePaperPreview(ctx, [{ ...v1, origin: "upload" }], [])).toBeNull();
+    // Drawn by an earlier drawing (or before drawings were numbered): its file may differ from today's drawing.
+    expect(await samplePaperPreview(ctx, [{ ...v1, fill_record: { paper: v1.fill_record?.paper } }], [])).toBeNull();
+    expect(await samplePaperPreview(ctx, [{ ...v1, fill_record: { paper: v1.fill_record?.paper, drawn: 0 } }], [])).toBeNull();
+    expect(await samplePaperPreview(ctx, [{ version: 1, origin: "sample", fill_record: { paper: { kind: "w9" }, drawn: 1 } }], [])).toBeNull();
+    // An NDA record missing a value its form requires would still draw a plausible cover: not drawn.
+    expect(await samplePaperPreview(ctx, [{ version: 1, origin: "sample", fill_record: { paper: { kind: "nda", values: {} }, drawn: 1 } }], [])).toBeNull();
+    expect(await samplePaperPreview(ctx, [], [])).toBeNull();
+    // A newer version that isn't a signed copy of the drawn one (an upload over it): its own page, which isn't drawn.
+    expect(await samplePaperPreview(ctx, [{ version: 2, origin: "upload", fill_record: null }, v1], [])).toBeNull();
   });
 
-  it("shows the NDA's cover page, as its file's page 1, stamped SAMPLE", async () => {
+  it("shows the signed NDA's cover page: a signed copy starts with the pages of the version that was sent", async () => {
     const ctx = await signInSample();
     const [nda] = await db.root((tx) =>
       tx.query<{ id: string; issued_on: string }>("select id, issued_on::text as issued_on from app.documents where org_id = $1 and kind = 'nda'", [ctx.orgId]),
     );
+    // The sample's activity signed it, as the sign-in page's does: the newest version is the signed copy.
+    const [latest] = await db.root((tx) =>
+      tx.query<{ origin: string }>("select origin from app.document_versions where document_id = $1 order by version desc limit 1", [nda.id]),
+    );
+    expect(latest.origin).toBe("signed");
     const html = await renderPage(DocumentPage, { params: Promise.resolve({ id: nda.id }), searchParams: Promise.resolve({}) });
     const at = html.indexOf('viewBox="0 0 612 792"');
+    expect(at).toBeGreaterThan(-1);
     const page = textOf(html.slice(at, html.indexOf("</svg>", at)));
     expect(page).toContain("Mutual Non-Disclosure Agreement");
     expect(page).toContain(nda.issued_on);

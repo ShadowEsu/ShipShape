@@ -256,8 +256,11 @@ export interface VersionRow {
   size_bytes: number;
   sha256: string;
   origin: DocRow["latest_origin"];
-  /** How a filled document was made; for a sample's drawn paper, `paper` holds the values it was drawn from (checked where read). */
-  fill_record: { template?: string; templateVersion?: string; fields?: Record<string, FieldSource>; paper?: unknown } | null;
+  /**
+   * How a filled document was made; for a sample's drawn paper, `paper` holds the values it was drawn from and `drawn`
+   * which drawing drew it (SAMPLE_DRAWING), both checked where read.
+   */
+  fill_record: { template?: string; templateVersion?: string; fields?: Record<string, FieldSource>; paper?: unknown; drawn?: unknown } | null;
   created_at: string;
 }
 

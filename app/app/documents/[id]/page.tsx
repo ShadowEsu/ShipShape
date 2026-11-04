@@ -127,7 +127,7 @@ export default async function DocumentPage({
         signer={signer}
         kept={await keptEmails(ctx, requests.map((r) => r.signer_email))}
         canDelete={canDeleteDocuments(ctx)}
-        preview={await samplePaperPreview(ctx, latest)}
+        preview={await samplePaperPreview(ctx, versions, requests)}
       />
     );
 

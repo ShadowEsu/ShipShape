@@ -160,9 +160,11 @@
 .ui-v2 dialog.sheet[open]::backdrop {
   animation: v2-fade-in var(--dur-base) var(--ease-out) both;
 }
-/* From md up a menu sheet sits under its button: it drops 4px into place and fades in, instead of sliding up. */
+/* From md up a menu sheet sits under its button, and a card sheet (a document's first page) sits in the middle: each
+   drops 4px into place and fades in, instead of sliding up from the bottom edge. */
 @media (min-width: 768px) {
-  .ui-v2 dialog.sheet-menu[open] {
+  .ui-v2 dialog.sheet-menu[open],
+  .ui-v2 dialog.sheet-card[open] {
     animation: v2-drop-in var(--dur-fast) var(--ease-out) both;
   }
 }
