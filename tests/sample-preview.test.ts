@@ -90,13 +90,18 @@ describe("a sample paper's first page", () => {
     expect(textOf(html)).toContain("Show the first page of Certificate of liability insurance (sample)");
   });
 
-  it("draws only the sample's 3 drawn papers, only in a sample, and only from values that read as one", async () => {
+  it("draws only the sample's drawn papers and its NDA, only in a sample, and only from values that read as one", async () => {
     const ctx = await signInSample();
     const versions = await versionsOf(ctx.orgId);
     const drawn: string[] = [];
     for (const v of versions) if (await samplePaperPreview(ctx, v)) drawn.push(v.title);
-    // Not the W-9 or the NDA: the sample fills those from templates, and their pages aren't drawn here.
-    expect(drawn).toEqual(["Certificate of liability insurance (sample)", "City business license (sample)", "Contractor license (sample)"]);
+    // Not the W-9: the IRS form isn't drawn by ShipShape's code, so its page isn't drawn here.
+    expect(drawn).toEqual([
+      "Certificate of liability insurance (sample)",
+      "City business license (sample)",
+      "Contractor license (sample)",
+      "Mutual NDA with Northwind Builders (sample)",
+    ]);
 
     const coi = versions.find((v) => v.title.startsWith("Certificate of liability"));
     expect(await samplePaperPreview(ctx, coi)).not.toBeNull();
@@ -104,6 +109,22 @@ describe("a sample paper's first page", () => {
     expect(await samplePaperPreview(ctx, coi && { ...coi, origin: "upload" })).toBeNull();
     expect(await samplePaperPreview(ctx, { origin: "sample", fill_record: { paper: { kind: "w9" } } })).toBeNull();
     expect(await samplePaperPreview(ctx, undefined)).toBeNull();
+  });
+
+  it("shows the NDA's cover page, as its file's page 1, stamped SAMPLE", async () => {
+    const ctx = await signInSample();
+    const [nda] = await db.root((tx) =>
+      tx.query<{ id: string; issued_on: string }>("select id, issued_on::text as issued_on from app.documents where org_id = $1 and kind = 'nda'", [ctx.orgId]),
+    );
+    const html = await renderPage(DocumentPage, { params: Promise.resolve({ id: nda.id }), searchParams: Promise.resolve({}) });
+    const at = html.indexOf('viewBox="0 0 612 792"');
+    const page = textOf(html.slice(at, html.indexOf("</svg>", at)));
+    expect(page).toContain("Mutual Non-Disclosure Agreement");
+    expect(page).toContain(nda.issued_on);
+    expect(page).toContain("Northwind Builders (sample)");
+    expect(page).toMatch(/Page 1 of \d+/);
+    expect(page).not.toContain("Page 2 of");
+    expect(html.slice(at)).toMatch(/<text[^>]*opacity="0.12"[^>]*>SAMPLE<\/text>/);
   });
 
   it("keeps the paper card for the documents it doesn't draw", async () => {

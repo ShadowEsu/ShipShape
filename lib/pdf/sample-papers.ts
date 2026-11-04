@@ -1,6 +1,7 @@
-import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
+import { PDFDocument, rgb } from "pdf-lib";
 import { z } from "zod";
 import { wrapLines } from "./compose";
+import { embedFonts, LETTER, pdfSurface, previewFonts, recorder, type FontKey, type PaperMark, type Surface } from "./surface";
 
 /**
  * The sample workspace's papers drawn as full pages (ledger 461, weakest spot 5a): an insurance certificate, a state
@@ -30,10 +31,8 @@ export const samplePaper = z.discriminatedUnion("kind", [
 ]);
 export type SamplePaper = z.infer<typeof samplePaper>;
 
-/** The page size, in points: US Letter. */
-export const PAPER = { w: 612, h: 792 };
-const W = PAPER.w;
-const H = PAPER.h;
+const W = LETTER.w;
+const H = LETTER.h;
 const M = 36;
 const INK = rgb(0.07, 0.07, 0.07);
 const MUTED = rgb(0.38, 0.38, 0.38);
@@ -43,74 +42,8 @@ const WHITE = rgb(1, 1, 1);
 const MARK = rgb(0.86, 0.2, 0.18);
 const FOOTER = "SAMPLE DOCUMENT made by ShipShape for its demo. The business, people, numbers and issuer are fictional.";
 
-export type FontKey = "sans" | "sansBold" | "serif" | "serifBold" | "serifItalic";
-type Fonts = Record<FontKey, PDFFont>;
-
 /** 2026-03-14 as 03/14/2026, the way US paperwork prints dates. */
 export const usDate = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`;
-
-/** What a paper is drawn on, in PDF points (y grows upward): a PDF page, or the preview's recorder. */
-interface Surface {
-  text(s: string, x: number, y: number, size: number, font: FontKey, color: RGB, turn?: { opacity: number; degrees: number }): void;
-  rect(x: number, y: number, w: number, h: number, look: { fill?: RGB; stroke?: RGB; strokeWidth?: number }): void;
-  line(x1: number, y1: number, x2: number, y2: number, thickness: number, color: RGB, dash?: [number, number]): void;
-  circle(cx: number, cy: number, r: number, stroke: RGB, strokeWidth: number): void;
-  width(s: string, size: number, font: FontKey): number;
-}
-
-async function embedFonts(doc: PDFDocument): Promise<Fonts> {
-  return {
-    sans: await doc.embedFont(StandardFonts.Helvetica),
-    sansBold: await doc.embedFont(StandardFonts.HelveticaBold),
-    serif: await doc.embedFont(StandardFonts.TimesRoman),
-    serifBold: await doc.embedFont(StandardFonts.TimesRomanBold),
-    serifItalic: await doc.embedFont(StandardFonts.TimesRomanItalic),
-  };
-}
-
-function pdfSurface(page: PDFPage, f: Fonts): Surface {
-  return {
-    text: (s, x, y, size, font, color, turn) =>
-      page.drawText(s, { x, y, size, font: f[font], color, ...(turn && { opacity: turn.opacity, rotate: degrees(turn.degrees) }) }),
-    rect: (x, y, width, height, look) =>
-      page.drawRectangle({ x, y, width, height, ...(look.fill && { color: look.fill }), ...(look.stroke && { borderColor: look.stroke, borderWidth: look.strokeWidth ?? 1 }) }),
-    line: (x1, y1, x2, y2, thickness, color, dash) => page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness, color, ...(dash && { dashArray: dash }) }),
-    circle: (x, y, size, borderColor, borderWidth) => page.drawCircle({ x, y, size, borderColor, borderWidth }),
-    width: (s, size, font) => f[font].widthOfTextAtSize(s, size),
-  };
-}
-
-/** One mark of a preview, in SVG units (y grows downward), with colours as hex. */
-export type PaperMark =
-  | { kind: "text"; text: string; x: number; y: number; size: number; font: FontKey; fill: string; opacity?: number; rotate?: number }
-  | { kind: "rect"; x: number; y: number; width: number; height: number; fill?: string; stroke?: string; strokeWidth?: number }
-  | { kind: "line"; x1: number; y1: number; x2: number; y2: number; stroke: string; strokeWidth: number; dash?: string }
-  | { kind: "circle"; cx: number; cy: number; r: number; stroke: string; strokeWidth: number };
-
-const hex = (c: RGB) => `#${[c.red, c.green, c.blue].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`;
-/** Rounded to a hundredth of a point: the preview's size, not the PDF's precision. */
-const at = (n: number) => Math.round(n * 100) / 100;
-
-function recorder(f: Fonts, marks: PaperMark[]): Surface {
-  return {
-    text: (str, x, y, size, font, color, turn) =>
-      marks.push({ kind: "text", text: str, x: at(x), y: at(H - y), size, font, fill: hex(color), ...(turn && { opacity: turn.opacity, rotate: turn.degrees }) }),
-    rect: (x, y, width, height, look) =>
-      marks.push({
-        kind: "rect",
-        x: at(x),
-        y: at(H - y - height),
-        width: at(width),
-        height: at(height),
-        ...(look.fill && { fill: hex(look.fill) }),
-        ...(look.stroke && { stroke: hex(look.stroke), strokeWidth: look.strokeWidth ?? 1 }),
-      }),
-    line: (x1, y1, x2, y2, strokeWidth, color, dash) =>
-      marks.push({ kind: "line", x1: at(x1), y1: at(H - y1), x2: at(x2), y2: at(H - y2), stroke: hex(color), strokeWidth, ...(dash && { dash: dash.join(" ") }) }),
-    circle: (cx, cy, r, stroke, strokeWidth) => marks.push({ kind: "circle", cx: at(cx), cy: at(H - cy), r, stroke: hex(stroke), strokeWidth }),
-    width: (s, size, font) => f[font].widthOfTextAtSize(s, size),
-  };
-}
 
 const TITLE: Record<SamplePaper["kind"], string> = {
   coi: "Certificate of liability insurance",
@@ -140,14 +73,10 @@ export async function samplePaperPdf(p: SamplePaper): Promise<Uint8Array> {
   return doc.save();
 }
 
-// Text widths for the preview: the same standard-font metrics the PDF lays out with. Kept for the process.
-let metrics: Promise<Fonts> | undefined;
-
 /** The paper as preview marks: the same calls as its PDF, recorded instead of drawn. */
 export async function samplePaperMarks(p: SamplePaper): Promise<PaperMark[]> {
-  metrics ??= PDFDocument.create().then(embedFonts);
   const marks: PaperMark[] = [];
-  drawPaper(recorder(await metrics, marks), p);
+  drawPaper(recorder(await previewFonts(), H, marks), p);
   return marks;
 }
 

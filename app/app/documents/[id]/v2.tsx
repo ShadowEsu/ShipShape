@@ -7,7 +7,7 @@ import { Icon } from "@/components/icons";
 import { PaperSvg } from "@/components/paper-svg";
 import { SubmitButton } from "@/components/submit-button";
 import { historyLabel } from "@/lib/history";
-import { PAPER, type PaperMark } from "@/lib/pdf/sample-papers";
+import { LETTER, type PaperMark } from "@/lib/pdf/surface";
 import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, type AuditRow, type DocKind, type DocRow, type VersionRow } from "@/lib/server/documents";
 import { SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { timeOf } from "@/lib/today";
@@ -143,7 +143,7 @@ export function DocumentV2(p: {
         20261102-1109). The 3:4 page sits in a fixed crop, so either fills it without moving anything.
       */}
       {p.preview ? (
-        <PagePreview title={doc.title} page={<PaperSvg marks={p.preview} width={PAPER.w} height={PAPER.h} className="block h-auto w-full" />} />
+        <PagePreview title={doc.title} page={<PaperSvg marks={p.preview} width={LETTER.w} height={LETTER.h} className="block h-auto w-full" />} />
       ) : (
         <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl border border-line px-8 pt-6 md:h-64">
           <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md border border-b-0 border-[var(--line-2)] bg-paper p-5">

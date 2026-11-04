@@ -1,4 +1,4 @@
-import type { FontKey, PaperMark } from "@/lib/pdf/sample-papers";
+import type { FontKey, PaperMark } from "@/lib/pdf/surface";
 
 /** The PDF's standard fonts and the faces a browser has with the same widths (Arial for Helvetica, Times New Roman for Times). */
 const FACE: Record<FontKey, { fontFamily: string; fontWeight?: number; fontStyle?: "italic" }> = {
@@ -10,7 +10,7 @@ const FACE: Record<FontKey, { fontFamily: string; fontWeight?: number; fontStyle
 };
 
 /**
- * A paper's page as SVG, from the marks its drawing recorded (lib/pdf/sample-papers.ts). Every value goes in as JSX
+ * A paper's page as SVG, from the marks its drawing recorded (lib/pdf/surface.ts). Every value goes in as JSX
  * text or an attribute, never as markup (Security 20261104-1327, P2). Decorative: the page around it names the document.
  */
 export function PaperSvg({ marks, width, height, className }: { marks: readonly PaperMark[]; width: number; height: number; className?: string }) {

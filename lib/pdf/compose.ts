@@ -1,4 +1,5 @@
-import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
+import { embedFonts, pdfSurface, previewFonts, recorder, type FontKey, type PaperMark, type Surface } from "./surface";
 
 /**
  * A small text composer for documents ShipShape generates (NDA cover pages, sample documents,
@@ -123,25 +124,18 @@ export function wrapLines(text: string, font: Pick<PDFFont, "widthOfTextAtSize">
   return lines;
 }
 
-interface Fonts {
-  regular: PDFFont;
-  bold: PDFFont;
-  sans: PDFFont;
-  sansBold: PDFFont;
-}
-
 class Writer {
-  page!: PDFPage;
+  page!: Surface;
   y = 0;
-  pages: PDFPage[] = [];
-  constructor(private doc: PDFDocument, private f: Fonts) {
+  pages: Surface[] = [];
+  constructor(private addPage: () => Surface) {
     this.newPage();
   }
   get width() {
     return PAGE.w - PAGE.margin * 2;
   }
   newPage() {
-    this.page = this.doc.addPage([PAGE.w, PAGE.h]);
+    this.page = this.addPage();
     this.pages.push(this.page);
     this.y = PAGE.h - PAGE.margin;
   }
@@ -150,15 +144,15 @@ class Writer {
   }
 
   private fontFor(sans: boolean) {
-    return (r: Run) => (sans ? (r.bold ? this.f.sansBold : this.f.sans) : r.bold ? this.f.bold : this.f.regular);
+    return (r: Run): FontKey => (sans ? (r.bold ? "sansBold" : "sans") : r.bold ? "serifBold" : "serif");
   }
 
   /** The lines `runs` wrap to in `width` at `size`: each a list of words, each word its runs. A line break or empty text is an empty line. */
   private layout(runs: Run[], width: number, size: number, sans: boolean): Run[][][] {
     const fontOf = this.fontFor(sans);
     const words = wordsOf(runs);
-    const widthOf = (w: Run[]) => w.reduce((n, p) => n + fontOf(p).widthOfTextAtSize(p.text, size), 0);
-    const space = (w: Run[]) => fontOf(w[0]).widthOfTextAtSize(" ", size);
+    const widthOf = (w: Run[]) => w.reduce((n, p) => n + this.page.width(p.text, size, fontOf(p)), 0);
+    const space = (w: Run[]) => this.page.width(" ", size, fontOf(w[0]));
     const lines: Run[][][] = [];
     let line: Run[][] = [];
     let lineWidth = 0;
@@ -199,10 +193,10 @@ class Writer {
       this.ensure(lineHeight);
       let cx = x;
       for (const [wi, w] of line.entries()) {
-        if (wi > 0) cx += fontOf(w[0]).widthOfTextAtSize(" ", size);
+        if (wi > 0) cx += this.page.width(" ", size, fontOf(w[0]));
         for (const p of w) {
-          this.page.drawText(p.text, { x: cx, y: this.y - size, size, font: fontOf(p), color });
-          cx += fontOf(p).widthOfTextAtSize(p.text, size);
+          this.page.text(p.text, cx, this.y - size, size, fontOf(p), color);
+          cx += this.page.width(p.text, size, fontOf(p));
         }
       }
       this.y -= lineHeight;
@@ -210,22 +204,9 @@ class Writer {
   }
 }
 
-export async function composePdf(
-  blocks: Block[],
-  meta: { title: string; subject?: string; footer: string },
-): Promise<Uint8Array> {
-  const doc = await PDFDocument.create();
-  doc.setTitle(meta.title);
-  if (meta.subject) doc.setSubject(meta.subject);
-  doc.setProducer("ShipShape");
-  doc.setCreator("ShipShape");
-  const f: Fonts = {
-    regular: await doc.embedFont(StandardFonts.TimesRoman),
-    bold: await doc.embedFont(StandardFonts.TimesRomanBold),
-    sans: await doc.embedFont(StandardFonts.Helvetica),
-    sansBold: await doc.embedFont(StandardFonts.HelveticaBold),
-  };
-  const w = new Writer(doc, f);
+/** Draws the blocks onto pages from `addPage`, then each page's footer and "Page n of N". */
+function draw(blocks: Block[], footer: string, addPage: () => Surface) {
+  const w = new Writer(addPage);
 
   for (const b of blocks) {
     switch (b.type) {
@@ -247,7 +228,7 @@ export async function composePdf(
       case "clause": {
         w.ensure(16);
         const top = w.y;
-        w.page.drawText(b.number, { x: PAGE.margin, y: top - 10.5, size: 10.5, font: f.bold, color: INK });
+        w.page.text(b.number, PAGE.margin, top - 10.5, 10.5, "serifBold", INK);
         w.flow(b.runs, { x: PAGE.margin + 22, width: w.width - 22 });
         w.y -= 5;
         break;
@@ -265,7 +246,7 @@ export async function composePdf(
           w.y = top;
           w.flow(valueRuns, { x: PAGE.margin + 160, width: w.width - 160 });
           w.y = Math.min(w.y, afterLabel) - 6;
-          w.page.drawLine({ start: { x: PAGE.margin, y: w.y + 3 }, end: { x: PAGE.w - PAGE.margin, y: w.y + 3 }, thickness: 0.4, color: rgb(0.85, 0.85, 0.85) });
+          w.page.line(PAGE.margin, w.y + 3, PAGE.w - PAGE.margin, w.y + 3, 0.4, rgb(0.85, 0.85, 0.85));
         }
         w.y -= 6;
         break;
@@ -293,7 +274,7 @@ export async function composePdf(
             bottom = Math.min(bottom, w.y);
           }
           w.y = Math.min(bottom, top - 22) - 4;
-          w.page.drawLine({ start: { x: PAGE.margin, y: w.y + 3 }, end: { x: PAGE.w - PAGE.margin, y: w.y + 3 }, thickness: 0.4, color: rgb(0.7, 0.7, 0.7) });
+          w.page.line(PAGE.margin, w.y + 3, PAGE.w - PAGE.margin, w.y + 3, 0.4, rgb(0.7, 0.7, 0.7));
         }
         w.y -= 8;
         break;
@@ -303,15 +284,15 @@ export async function composePdf(
         break;
       case "rule":
         w.ensure(12);
-        w.page.drawLine({ start: { x: PAGE.margin, y: w.y - 4 }, end: { x: PAGE.w - PAGE.margin, y: w.y - 4 }, thickness: 0.8, color: INK });
+        w.page.line(PAGE.margin, w.y - 4, PAGE.w - PAGE.margin, w.y - 4, 0.8, INK);
         w.y -= 14;
         break;
       case "stamp": {
         // A diagonal watermark on the current page (used for SAMPLE documents).
         const size = 64;
-        const tw = f.sansBold.widthOfTextAtSize(b.text, size);
+        const tw = w.page.width(b.text, size, "sansBold");
         for (const page of w.pages) {
-          page.drawText(b.text, { x: PAGE.w / 2 - (tw / 2) * 0.7, y: PAGE.h / 2 - tw * 0.35, size, font: f.sansBold, color: rgb(0.86, 0.2, 0.18), opacity: 0.12, rotate: degrees(35) });
+          page.text(b.text, PAGE.w / 2 - (tw / 2) * 0.7, PAGE.h / 2 - tw * 0.35, size, "sansBold", rgb(0.86, 0.2, 0.18), { opacity: 0.12, degrees: 35 });
         }
         break;
       }
@@ -321,12 +302,37 @@ export async function composePdf(
   const total = w.pages.length;
   for (const [i, page] of w.pages.entries()) {
     // Wrapped upwards from the page label's baseline, so a long footer never runs off the page.
-    const lines = wrapLines(meta.footer, f.sans, 7.5, PAGE.w - PAGE.margin * 2 - 70);
+    const lines = wrapLines(footer, { widthOfTextAtSize: (t, size) => page.width(t, size, "sans") }, 7.5, PAGE.w - PAGE.margin * 2 - 70);
     for (const [li, text] of lines.entries()) {
-      page.drawText(text, { x: PAGE.margin, y: 40 + (lines.length - 1 - li) * 9.5, size: 7.5, font: f.sans, color: MUTED });
+      page.text(text, PAGE.margin, 40 + (lines.length - 1 - li) * 9.5, 7.5, "sans", MUTED);
     }
     const label = `Page ${i + 1} of ${total}`;
-    page.drawText(label, { x: PAGE.w - PAGE.margin - f.sans.widthOfTextAtSize(label, 7.5), y: 40, size: 7.5, font: f.sans, color: MUTED });
+    page.text(label, PAGE.w - PAGE.margin - page.width(label, 7.5, "sans"), 40, 7.5, "sans", MUTED);
   }
+}
+
+export async function composePdf(
+  blocks: Block[],
+  meta: { title: string; subject?: string; footer: string },
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.setTitle(meta.title);
+  if (meta.subject) doc.setSubject(meta.subject);
+  doc.setProducer("ShipShape");
+  doc.setCreator("ShipShape");
+  const f = await embedFonts(doc);
+  draw(blocks, meta.footer, () => pdfSurface(doc.addPage([PAGE.w, PAGE.h]), f));
   return doc.save();
+}
+
+/** Every page composePdf would draw for these blocks, as preview marks: the same calls, recorded instead of drawn. */
+export async function composeMarks(blocks: Block[], footer: string): Promise<PaperMark[][]> {
+  const f = await previewFonts();
+  const pages: PaperMark[][] = [];
+  draw(blocks, footer, () => {
+    const marks: PaperMark[] = [];
+    pages.push(marks);
+    return recorder(f, PAGE.h, marks);
+  });
+  return pages;
 }

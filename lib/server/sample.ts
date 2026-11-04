@@ -1,5 +1,7 @@
 import "server-only";
-import { samplePaper, samplePaperMarks, samplePaperPdf, type PaperMark, type SampleBusiness, type SamplePaper } from "@/lib/pdf/sample-papers";
+import { z } from "zod";
+import { samplePaper, samplePaperMarks, samplePaperPdf, type SampleBusiness, type SamplePaper } from "@/lib/pdf/sample-papers";
+import type { PaperMark } from "@/lib/pdf/surface";
 import type { ProfileKey } from "@/lib/profile-fields";
 import { templateById } from "@/lib/templates/catalog";
 import type { Facts, TemplateInfo } from "@/lib/templates/types";
@@ -10,7 +12,7 @@ import { asUser, type Tx } from "./db";
 import { listOutbox } from "./deadlines";
 import { insertDocument, type VersionRow } from "./documents";
 import { completeSigning, createSignatureRequest, sendSigningCode } from "./esign";
-import { fillRecord, prefill, render } from "./fill";
+import { fillRecord, prefill, render, sampleNdaCover } from "./fill";
 import { createPassport, openPassport, passportFileUrl } from "./passport";
 import { seedSamplePeople } from "./people";
 import type { Ctx } from "./profile";
@@ -51,7 +53,8 @@ async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides
     { title, kind: t.kind, counterparty: out.counterparty, issued_on: out.issuedOn, expires_on: out.expiresOn, template_id: t.id },
     { bytes: out.bytes, mime: "application/pdf" },
     "sample",
-    { template: t.id, templateVersion: t.source.version, fields: fillRecord(t, values, start) },
+    // The NDA keeps the values it was filled with, so its preview draws its cover page from them (spot 5b).
+    { template: t.id, templateVersion: t.source.version, fields: fillRecord(t, values, start), ...(t.kind === "nda" && { paper: { kind: "nda", values } }) },
   );
 }
 
@@ -135,6 +138,9 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await seedSamplePeople(tx, ctx);
 }
 
+/** A sample NDA's kept values: the cover page is drawn from them by the template's own code. */
+const sampleNda = z.object({ kind: z.literal("nda"), values: z.record(z.string().max(60), z.string().max(2000)) });
+
 /**
  * A sample document's first page as preview marks (spot 5b), or null. Decided here, on the server: only in a sample,
  * only for a version the sample drew (its values kept with it), and only when those values still read as a paper.
@@ -142,8 +148,11 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
  */
 export async function samplePaperPreview(ctx: Ctx, version: Pick<VersionRow, "origin" | "fill_record"> | undefined): Promise<PaperMark[] | null> {
   if (!ctx.demo || version?.origin !== "sample") return null;
-  const paper = samplePaper.safeParse(version.fill_record?.paper);
-  return paper.success ? samplePaperMarks(paper.data) : null;
+  const raw = version.fill_record?.paper;
+  const paper = samplePaper.safeParse(raw);
+  if (paper.success) return samplePaperMarks(paper.data);
+  const nda = sampleNda.safeParse(raw);
+  return nda.success ? sampleNdaCover(nda.data.values) : null;
 }
 
 /**
