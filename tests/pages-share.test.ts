@@ -705,6 +705,7 @@ describe("Deadlines", () => {
       vi.stubEnv("SHIPSHAPE_EMAIL_FROM", "reminders@shipshape.example");
       vi.stubEnv("AWS_REGION", "us-east-1");
       vi.stubEnv("SHIPSHAPE_SES_EVENTS_TOPIC_ARN", "arn:aws:sns:us-east-1:111122223333:shipshape-mail-events");
+      vi.stubEnv("CONTACT_EMAIL", "help@shipshape.example");
       const emailed = textOf(await page());
       expect(emailed).toContain(on);
       expect(emailed).not.toContain("doesn't send email");
