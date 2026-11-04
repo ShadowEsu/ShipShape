@@ -71,11 +71,20 @@ export function RequestItemBody({ item }: { item: RequestItem }) {
 export function RequestAnswer({ items, titleId, by, v2 = true }: { items: readonly RequestItem[]; titleId: string; by: ReadBy; v2?: boolean }) {
   const linkIds = currentMatchIds(items);
   const count = `${items.length} ${items.length === 1 ? "document" : "documents"}`;
+  // Who found the items: under the title in the redesigned app (Design, 4 Nov), at the foot in the earlier look.
+  const readBy = (
+    <p className="text-[13px] leading-5 text-ink-3">
+      {by === "ai" ? "Read by AI. Check it against the request." : "Found by matching document names, not by AI. Check it against the request."}
+    </p>
+  );
   return (
     <div className="space-y-4">
-      <h2 id={titleId} tabIndex={-1} className={v2 ? "section-title" : "font-serif text-2xl font-semibold"}>
-        {items.length === 0 ? "The request doesn't ask for any documents" : `The request asks for ${count}`}
-      </h2>
+      <div className="space-y-1">
+        <h2 id={titleId} tabIndex={-1} className={v2 ? "section-title" : "font-serif text-2xl font-semibold"}>
+          {items.length === 0 ? "The request doesn't ask for any documents" : `The request asks for ${count}`}
+        </h2>
+        {v2 && readBy}
+      </div>
       {items.length === 0 ? (
         <p className="text-sm text-ink-2">
           {by === "ai"
@@ -92,9 +101,7 @@ export function RequestAnswer({ items, titleId, by, v2 = true }: { items: readon
         </ul>
       )}
       <div className="space-y-1">
-        <p className="text-[13px] leading-5 text-ink-3">
-          {by === "ai" ? "Read by AI. Check it against the request." : "Found by matching document names, not by AI. Check it against the request."}
-        </p>
+        {!v2 && readBy}
         <NotLegalAdvice />
       </div>
       {linkIds.length > 0 && (
