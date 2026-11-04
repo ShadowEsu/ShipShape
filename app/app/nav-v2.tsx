@@ -20,8 +20,12 @@ function titleFor(path: string): string {
   return TITLES.find(([href]) => isActive(path, href))?.[1] ?? "ShipShape";
 }
 
-/** The sidebar's rows. The active row has the faint fill and the accent icon; nothing moves on hover. */
-export function SideNav({ lapsed }: { lapsed: boolean }) {
+/**
+ * The sidebar's rows. The active row has the faint fill and the accent icon; nothing moves on hover. `lapsed`: how many
+ * active documents have lapsed; while it isn't 0, Deadlines carries the count as a small red badge, so it means something
+ * to sighted people too (not just a dot), with its word on hover and ", N lapsed" read with the row.
+ */
+export function SideNav({ lapsed }: { lapsed: number }) {
   const path = usePathname();
   return (
     <nav aria-label="App" className="side-nav">
@@ -31,16 +35,18 @@ export function SideNav({ lapsed }: { lapsed: boolean }) {
           <ul>
             {g.items.map(([href, label, icon]) => {
               const active = isActive(path, href);
-              const dot = lapsed && href === "/app/deadlines";
+              const count = lapsed > 0 && href === "/app/deadlines";
               return (
                 <li key={href}>
                   <Link href={href} aria-current={active ? "page" : undefined} className="side-row">
                     <Icon name={icon} size={18} className="side-icon" />
                     {label}
-                    {dot && (
+                    {count && (
                       <>
-                        <span className="side-dot" aria-hidden="true" />
-                        <span className="sr-only">, something has lapsed</span>
+                        <span className="side-count" aria-hidden="true" title={`${lapsed} lapsed`}>
+                          {lapsed}
+                        </span>
+                        <span className="sr-only">{`, ${lapsed} lapsed`}</span>
                       </>
                     )}
                   </Link>
@@ -197,7 +203,7 @@ export function AccountSheet({ id, workspace, role, children }: { id: string; wo
 }
 
 /** The phone's menu: the sidebar as a panel from the left, Help and Feedback (the top bar's, which the phone hides), and the workspace row at its foot. */
-function NavDrawer({ open, lapsed, contact, account }: { open: React.RefObject<HTMLDialogElement | null>; lapsed: boolean; contact: string | null; account: React.ReactNode }) {
+function NavDrawer({ open, lapsed, contact, account }: { open: React.RefObject<HTMLDialogElement | null>; lapsed: number; contact: string | null; account: React.ReactNode }) {
   const path = usePathname();
   useEffect(() => {
     open.current?.close();
@@ -248,7 +254,7 @@ const isApple = () => /Mac|iPhone|iPad/.test(navigator.userAgent);
  * The slim bar over every page: the page's name on the left, search in the middle (⌘K or Ctrl K from anywhere), Help
  * and Feedback on the right. On the phone: the menu, the logo, and search.
  */
-export function TopBar({ tools, contact, lapsed, account }: { tools: readonly SearchTool[]; contact: string | null; lapsed: boolean; account: React.ReactNode }) {
+export function TopBar({ tools, contact, lapsed, account }: { tools: readonly SearchTool[]; contact: string | null; lapsed: number; account: React.ReactNode }) {
   const path = usePathname();
   const search = useRef<HTMLDialogElement>(null);
   const drawer = useRef<HTMLDialogElement>(null);

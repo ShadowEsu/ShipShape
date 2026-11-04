@@ -14,7 +14,7 @@ import { AccountSheet, SideNav, TopBar } from "./nav-v2";
  * bar alone, with the menu and search. The shell itself never animates.
  */
 export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: boolean; children: React.ReactNode }) {
-  const lapsed = (await lapsedCount(ws)) > 0;
+  const lapsed = await lapsedCount(ws);
   const tools = appTools(ws).map(({ name, href, icon, tag, closed }) => ({ name, href, icon, tag: closed ? tag : null }));
   const signOutForm = (
     <form action={signOut}>

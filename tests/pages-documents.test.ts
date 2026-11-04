@@ -636,27 +636,32 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
 
 describe("the app's frame, redesigned", () => {
   const shell = (ws: Ctx, deleting = false) => renderPage(ShellV2, { ws, deleting, children: null });
-  /** The sidebar's rows, with a ● where the lapsed dot is. */
+  /** The sidebar's rows, with the lapsed count's badge as [N]. */
   const sidebar = (html: string) => {
     const aside = html.slice(html.indexOf('<aside aria-label="Workspace"'), html.indexOf("</aside>"));
-    return [...aside.matchAll(/<a [^>]*class="side-row"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => textOf(m[1].replace(/<span class="side-dot"[^>]*><\/span>/, " ● ")));
+    return [...aside.matchAll(/<a [^>]*class="side-row"[^>]*>([\s\S]*?)<\/a>/g)].map((m) =>
+      textOf(m[1].replace(/<span class="side-count" aria-hidden="true" title="(\d+) lapsed">(\d+)<\/span>/, (_, t, n) => (t === n ? ` [${n}] ` : " [title differs] "))),
+    );
   };
 
-  it("groups the pages that exist, and dots Deadlines only while a document has lapsed", async () => {
+  it("groups the pages that exist, and counts lapsed documents on Deadlines only while there are any: a visible number, its word on hover, and read with the row", async () => {
     const ctx = await signIn("shell-v2@example.com");
     const rows = ["Home", "Work", "Documents", "Saved", "Signed copies", "Sent", "Templates", "Track", "History", "Deadlines", "Passport", "Business", "Business facts", "Collect", "People", "Settings"];
     const html = await shell(ctx);
     expect(textOf(html.slice(html.indexOf('<nav aria-label="App"'), html.indexOf("</nav>")))).toBe(rows.join(" "));
-    expect(sidebar(html)).not.toContain("Deadlines ● , something has lapsed");
-    // Expiring today is still current today ("Expires soon"), so no dot until the day after.
+    expect(sidebar(html)).toContain("Deadlines");
+    expect(html).not.toContain("side-count");
+    // Expiring today is still current today ("Expires soon"), so no count until the day after.
     await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Last day', 'permit', $2::date)", [ctx.orgId, ctx.today]));
-    expect(sidebar(await shell(ctx))).not.toContain("Deadlines ● , something has lapsed");
+    expect(await shell(ctx)).not.toContain("side-count");
     await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Old permit', 'permit', $2::date - 1)", [ctx.orgId, ctx.today]));
-    expect(sidebar(await shell(ctx))).toContain("Deadlines ● , something has lapsed");
-    // Archived, it no longer counts.
+    expect(sidebar(await shell(ctx))).toContain("Deadlines [1] , 1 lapsed");
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Old license', 'license', $2::date - 30)", [ctx.orgId, ctx.today]));
+    expect(sidebar(await shell(ctx))).toContain("Deadlines [2] , 2 lapsed");
+    // Archived, they no longer count.
     await db.root((tx) => tx.query("update app.documents set status = 'archived' where org_id = $1", [ctx.orgId]));
     expect(sidebar(await shell(ctx))).toContain("Deadlines");
-    expect(sidebar(await shell(ctx))).not.toContain("Deadlines ● , something has lapsed");
+    expect(await shell(ctx)).not.toContain("side-count");
   });
 
   it("a sample carries Security's strip word for word, and the account row is the workspace and its role, never a person", async () => {

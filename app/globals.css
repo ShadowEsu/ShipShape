@@ -275,8 +275,9 @@ body {
   .ui-v2 .side-row[aria-current="page"] .side-icon {
     @apply text-brand;
   }
-  .ui-v2 .side-dot {
-    @apply ml-auto size-1.5 rounded-full bg-bad;
+  /* Deadlines' count of lapsed documents: a small red badge, its number legible at 11px (#b42318 on #fef3f2, 6:1). */
+  .ui-v2 .side-count {
+    @apply ml-auto grid h-[18px] min-w-[18px] place-items-center rounded-full bg-bad-soft px-1.5 text-[11px] leading-none font-semibold text-bad tabular-nums;
   }
   /* In the phone's menu every row is a 44px target. */
   .ui-v2 .drawer .side-row {
