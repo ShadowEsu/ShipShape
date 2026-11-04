@@ -2,10 +2,11 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { AI_MODEL, readRequest, setAiProviderForTests, type AiRequest, type RequestItem } from "@/lib/server/ai";
+import { AI_MODEL, readRequest, setAiProviderForTests, type AiRequest } from "@/lib/server/ai";
 import { asUser } from "@/lib/server/db";
 import type { DocKind } from "@/lib/server/documents";
 import type { Ctx } from "@/lib/server/profile";
+import type { RequestItem } from "@/lib/server/request-check";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "../tests/support/db";
 

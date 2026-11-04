@@ -1123,8 +1123,9 @@ describe("form errors name the field to fix", () => {
     try {
       await signIn("form-ask-off@example.com");
       const text = "Before your first job we need a W-9 and a certificate of insurance.";
-      for (const ticked of [{}, { consent: "yes" }]) {
-        const done = await askAction({}, form({ text, ...ticked }));
+      const ticked: Record<string, string>[] = [{ text }, { text, consent: "yes" }];
+      for (const fields of ticked) {
+        const done = await askAction({}, form(fields));
         expect(done.by).toBe("names");
         expect(done.items?.map((i) => [i.kind, i.quote, i.traced])).toEqual([
           ["w9", "Before your first job we need a W-9 and a certificate of insurance", true],
