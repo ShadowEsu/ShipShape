@@ -24,6 +24,14 @@ export function assertCanFill(ws: { demo: boolean }) {
 }
 
 /**
+ * People holds third parties' names, emails and companies, the same class of data as documents (Security 0715 #2): a
+ * real workspace adds or changes them only once G3 opens. The sample's people are made up, as its documents are.
+ */
+export function peopleOpen(ws: { demo: boolean }): boolean {
+  return ws.demo || realDocsEnabled();
+}
+
+/**
  * Collect (asking vendors for documents) isn't sold yet: sample workspaces show it with made-up
  * files; real workspaces get it only outside production, and only with the G3 gate open.
  */

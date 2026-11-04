@@ -5,7 +5,7 @@ import { redirect, RedirectType } from "next/navigation";
 import { z } from "zod";
 import { UserError } from "@/lib/server/errors";
 import { PEOPLE_BUSY, PEOPLE_FULL } from "@/lib/server/limits";
-import { addPerson, deletePerson, editPerson, keepSigner } from "@/lib/server/people";
+import { addPerson, deletePerson, editPerson, keepSigner, PEOPLE_CLOSED } from "@/lib/server/people";
 import { requireWorkspace } from "@/lib/server/session";
 
 /** The person form's fields, as its error messages name them. */
@@ -94,8 +94,11 @@ export async function keepSignerAction(data: FormData) {
     const kept = await keepSigner(ctx, data.get("request"));
     page = `/app/documents/${kept.documentId}${kept.kept === "already" ? "?kept=already" : ""}`;
   } catch (e) {
-    // Full, the hourly limit, or not this workspace's request: People says which (ERRORS in page.tsx).
-    if (e instanceof UserError) redirect(`/app/people?error=${e.message === PEOPLE_FULL ? "full" : e.message === PEOPLE_BUSY ? "busy" : "keep"}`, RedirectType.replace);
+    // Full, the hourly limit, People not open yet, or not this workspace's request: People says which (ERRORS in page.tsx).
+    if (e instanceof UserError) {
+      const why = e.message === PEOPLE_FULL ? "full" : e.message === PEOPLE_BUSY ? "busy" : e.message === PEOPLE_CLOSED ? "closed" : "keep";
+      redirect(`/app/people?error=${why}`, RedirectType.replace);
+    }
     throw e;
   }
   revalidatePath("/app/people");

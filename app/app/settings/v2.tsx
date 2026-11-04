@@ -53,8 +53,6 @@ export function SettingsV2({
           Workspace
         </h2>
         {canRename ? <RenameWorkspaceForm name={ctx.name} v2 /> : null}
-        {/* An owner or admin of a real workspace who can't rename yet: naming waits for real documents to open. */}
-        {!ctx.demo && ctx.role !== "member" && !canRename && <Notice>Naming the workspace opens after our security review.</Notice>}
         <dl className="group-list plain">
           {!canRename && (
             <div className="group-row justify-between gap-4">
