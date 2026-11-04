@@ -43,6 +43,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
   const kindLabel = Object.entries(DOC_KINDS).find(([k]) => k === sp.kind)?.[1] ?? null;
   const v2 = uiV2();
   const canUpload = !ctx.demo && realDocsEnabled();
+  // A real workspace before real documents open can neither add nor make one, so the first-run action would lead to a
+  // closed page; the redesigned app says so instead (the earlier look stays as it was).
+  const closed = v2 && !ctx.demo && !realDocsEnabled();
 
   return (
     <div className="space-y-6">
@@ -152,13 +155,17 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
           <EmptyState
             icon="documents"
             title={hasArchived ? "No current documents" : "No documents yet"}
-            body="Your W-9, insurance certificate and licenses live here, with the date each one runs out, every version, and its history."
+            body={
+              closed
+                ? "Your W-9, insurance certificate and licenses will live here, with the date each one runs out, every version, and its history. Adding and making real documents opens after our security review."
+                : "Your W-9, insurance certificate and licenses live here, with the date each one runs out, every version, and its history."
+            }
             example={[
               "W-9 · Form W-9, signed Oct 2026 · No expiry date",
               "Insurance certificate · General liability 2026 · Expires soon · Mar 1, 2027",
               "License · Contractor license · Current · Aug 31, 2027",
             ]}
-            action={{ href: "/app/make/irs-w9", label: "Fill your first W-9" }}
+            action={closed ? undefined : { href: "/app/make/irs-w9", label: "Fill your first W-9" }}
           >
             {/* Same gate as /app/documents/new: uploads are closed in the sample workspace and before the security review. */}
             {!ctx.demo && realDocsEnabled() && (

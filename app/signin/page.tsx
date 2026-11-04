@@ -59,8 +59,8 @@ export default async function SignInPage({
                 ? `Sign in again to continue in ${RETURN_TO[back].where}.`
                 : accounts
                   ? realDocsEnabled()
-                    ? "Sign in, or create an account with your email. You can also explore a sample business with made-up documents."
-                    : "Create an account with your email now; real documents open after our security review. Until then, explore a sample business with made-up documents."
+                    ? "Sign in, or create an account with your email. You'll need an authenticator app for the two-step code. You can also explore a sample business with made-up documents."
+                    : "Create an account with your email now; you'll need an authenticator app for the two-step code. Real documents open after our security review. Until then, explore a sample business with made-up documents."
                   : "Accounts for real documents open after our security review. Until then, explore a sample business with made-up documents."}
             </p>
           </div>

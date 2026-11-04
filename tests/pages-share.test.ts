@@ -99,6 +99,15 @@ describe("Passport", () => {
     expect(textOf(html)).not.toContain("make one");
   });
 
+  it("with no documents before real documents open: says why, and offers no way to the closed Add page", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    await signIn("passport-empty-closed@example.com");
+    const html = await renderPage(PassportPage, none());
+    expect(textOf(html)).toContain("A link shares documents from this workspace, so it needs at least one. Adding real documents opens after our security review.");
+    expect(primary(html)).toEqual([]);
+    expect(actionsOf(html).map((a) => a.href)).not.toContain("/app/documents/new");
+  });
+
   it("with documents and no links yet: shows what a link will look like, and Make the link is the one action", async () => {
     const ctx = await signIn("passport-nolinks@example.com");
     await addDoc(ctx, "Liability certificate");
@@ -500,9 +509,17 @@ describe("Deadlines", () => {
     const html = await renderPage(DeadlinesPage, none());
     expect(textOf(html)).toContain("No dates yet Expiry and renewal dates from your certificates, licenses and agreements show here, soonest first");
     expect(primary(html)).toEqual(["Add an expiry date"]);
-    expect(textOf(html)).toContain("Add these dates to your calendar and set reminders there for 30 and 7 days before.");
-    expect(textOf(html)).not.toContain("ShipShape reminds owners and admins");
+    expect(textOf(html)).toContain("Add these dates to your calendar: the file includes alerts 30 and 7 days before.");
+    expect(textOf(html)).not.toContain("ShipShape lists a reminder");
     expect(textOf(html)).toContain("Nothing here: on the Free plan ShipShape doesn't send reminders.");
+  });
+
+  it("with no documents before real documents open: no action, since there's nothing to add a date to", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    await signIn("deadlines-empty-closed@example.com");
+    const html = await renderPage(DeadlinesPage, none());
+    expect(primary(html)).toEqual([]);
+    expect(actionsOf(html).map((a) => a.href)).not.toContain("/app/documents");
   });
 
   it("with a document but no dates: the action goes to that document's expiry field, by name", async () => {
@@ -548,7 +565,7 @@ describe("Deadlines", () => {
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
     await finishSignIn(userId, { demo: true });
     const html = await renderPage(DeadlinesPage, none());
-    expect(textOf(html)).toContain("ShipShape reminds owners and admins 90, 30 and 7 days before");
+    expect(textOf(html)).toContain("ShipShape lists a reminder for owners and admins under Reminders sent 90, 30 and 7 days before");
     // The sample workspace shows its signing codes too (0039).
     expect(textOf(html)).toContain("During the preview ShipShape doesn't send email; reminders and signing codes land here instead.");
   });

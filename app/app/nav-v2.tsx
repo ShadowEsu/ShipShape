@@ -232,8 +232,8 @@ export function AccountSheet({ id, workspace, role, children }: { id: string; wo
   );
 }
 
-/** The phone's menu: the sidebar as a panel from the left, with the workspace row at its foot. */
-function NavDrawer({ open, lapsed, account }: { open: React.RefObject<HTMLDialogElement | null>; lapsed: boolean; account: React.ReactNode }) {
+/** The phone's menu: the sidebar as a panel from the left, Help and Feedback (the top bar's, which the phone hides), and the workspace row at its foot. */
+function NavDrawer({ open, lapsed, contact, account }: { open: React.RefObject<HTMLDialogElement | null>; lapsed: boolean; contact: string | null; account: React.ReactNode }) {
   const path = usePathname();
   useEffect(() => {
     open.current?.close();
@@ -256,6 +256,20 @@ function NavDrawer({ open, lapsed, account }: { open: React.RefObject<HTMLDialog
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5">
         <SideNav lapsed={lapsed} />
+        <ul aria-label="Help" className="mt-4 mb-2 flex gap-1 px-1.5 text-sm text-ink-2">
+          <li>
+            <Link href="/faq" className="inline-flex min-h-11 items-center rounded-full px-2.5 hover:text-ink">
+              Help
+            </Link>
+          </li>
+          {contact && (
+            <li>
+              <a href={`mailto:${contact}?subject=${encodeURIComponent("ShipShape feedback")}`} className="inline-flex min-h-11 items-center rounded-full px-2.5 hover:text-ink">
+                Feedback
+              </a>
+            </li>
+          )}
+        </ul>
       </div>
       <div className="border-t border-line px-2.5 py-2">{account}</div>
     </dialog>
@@ -317,7 +331,7 @@ export function TopBar({ tools, contact, lapsed, account }: { tools: readonly Se
         </div>
       </header>
       <SearchDialog open={search} tools={tools} />
-      <NavDrawer open={drawer} lapsed={lapsed} account={account} />
+      <NavDrawer open={drawer} lapsed={lapsed} contact={contact} account={account} />
     </>
   );
 }

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/site";
 import { AI_RECIPIENT, AI_TRAINING_SOURCE } from "@/lib/ai";
 import { PLANS } from "@/lib/plans";
-import { realDocsEnabled } from "@/lib/server/flags";
+import { cognitoConfig } from "@/lib/server/cognito";
+import { contactEmail, realDocsEnabled } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
   title: "FAQ",
@@ -12,10 +13,12 @@ export const metadata: Metadata = {
 };
 
 /** Worded for whether real accounts are open: the preview answers go once they are (Security MUST-4). */
-const faq = (docs: boolean): { q: string; a: React.ReactNode }[] => [
+const faq = (docs: boolean, accounts: boolean): { q: string; a: React.ReactNode }[] => [
   {
     q: "What is ShipShape?",
-    a: "An app that keeps a business's everyday paperwork in one place: W-9s, insurance certificates, licenses, permits and agreements. It fills new forms from facts you've confirmed, shares a packet of documents with one link, tracks expiry dates, and collects signatures.",
+    a: docs
+      ? "An app that keeps a business's everyday paperwork in one place: W-9s, insurance certificates, licenses, permits and agreements. It fills new forms from facts you've confirmed, shares a packet of documents with one link, and tracks expiry dates. Collecting signatures works in the sample workspace today, and for your own documents once ShipShape sends email."
+      : "An app that keeps a business's everyday paperwork in one place: W-9s, insurance certificates, licenses, permits and agreements. It fills new forms from facts you've confirmed, shares a packet of documents with one link, tracks expiry dates, and collects signatures.",
   },
   {
     q: "Is ShipShape a law firm? Does it give legal advice?",
@@ -85,6 +88,14 @@ const faq = (docs: boolean): { q: string; a: React.ReactNode }[] => [
       </>
     ),
   },
+  ...(accounts
+    ? [
+        {
+          q: "What do I need to sign in?",
+          a: "An email address, a password and an authenticator app on your phone for the two-step code. The sample workspace needs none of these.",
+        },
+      ]
+    : []),
   ...(docs
     ? []
     : [
@@ -96,6 +107,7 @@ const faq = (docs: boolean): { q: string; a: React.ReactNode }[] => [
 ];
 
 export default function FaqPage() {
+  const contact = contactEmail();
   return (
     <>
       <SiteHeader />
@@ -103,7 +115,7 @@ export default function FaqPage() {
         <p className="eyebrow">FAQ</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Questions, answered plainly.</h1>
         <div className="mt-10 divide-y divide-line border-y border-line">
-          {faq(realDocsEnabled()).map(({ q, a }) => (
+          {faq(realDocsEnabled(), cognitoConfig(process.env) !== null).map(({ q, a }) => (
             <details key={q} className="group py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium">
                 {q}
@@ -115,6 +127,24 @@ export default function FaqPage() {
             </details>
           ))}
         </div>
+        <section id="support" aria-labelledby="support-title" className="mt-12 scroll-mt-6">
+          <h2 id="support-title" className="font-serif text-2xl font-semibold tracking-tight">
+            Still stuck?
+          </h2>
+          <p className="mt-3 text-ink-2">
+            {contact ? (
+              <>
+                Write to{" "}
+                <a href={`mailto:${contact}`} className="underline">
+                  {contact}
+                </a>
+                . If a page showed an error, include the reference it gave.
+              </>
+            ) : (
+              "A support address will be listed here before real accounts open."
+            )}
+          </p>
+        </section>
       </main>
       <SiteFooter />
     </>

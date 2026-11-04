@@ -660,14 +660,24 @@ describe("pricing (/pricing)", () => {
     expect(text).toContain("For getting your papers in order: 10 active documents, 100 MB of files and 1 passport link open at a time.");
   });
 
-  it("says test mode, with no real money, until payments are live; then names the seller and the refund address, and no page says test mode (Security L6)", async () => {
+  it("says payments are off, then test mode, with no real money, until they're live; then names the seller and the refund address, offers Pro, and no page says test mode (Security L6)", async () => {
     const pages = () => Promise.all([PricingPage, TermsPage, PrivacyPage].map(async (page) => textOf(await renderPage(page, {}))));
     vi.stubEnv("CONTACT_EMAIL", "support@example.com");
     const preview = await pages();
-    expect(preview.map((t) => /test mode/.test(t))).toEqual([true, true, true]);
+    // Payments switched off: pricing doesn't claim a test mode that isn't running.
+    expect(preview[0]).toContain("Prices in US dollars. Payments aren't switched on yet: no real charges.");
+    expect(preview[0]).toContain("Am I charged now? No. Payments aren't switched on yet, so nothing can be charged.");
+    expect(preview.map((t) => /test mode/.test(t))).toEqual([false, true, true]);
     expect(preview.join(" ")).not.toMatch(/Draft, pending lawyer review|\(draft\)/);
     expect(preview[1]).toContain("ShipShape is in preview. Only sample workspaces with made-up documents are open.");
     vi.stubEnv("BILLING_ENABLED", "1");
+    vi.stubEnv("SHIPSHAPE_APP_URL", "http://localhost:3000");
+    vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_test1");
+    vi.stubEnv("STRIPE_PRICE_PRO", "price_Test1");
+    const test = textOf(await renderPage(PricingPage, {}));
+    expect(test).toContain("Prices in US dollars. Payments are in test mode during the preview: no real charges.");
+    expect(test).not.toContain("Sign in to move to Pro");
     vi.stubEnv("VERCEL_ENV", "production");
     vi.stubEnv("SHIPSHAPE_CHECKOUT_LIVE", "1");
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
@@ -677,6 +687,16 @@ describe("pricing (/pricing)", () => {
     vi.stubEnv("STRIPE_PRICE_PRO", "price_Live1");
     const [pricing, terms, privacy] = await pages();
     for (const text of [pricing, terms, privacy]) expect(text).not.toMatch(/test mode|no real money|in preview/i);
+    const faq = await renderPage(FaqPage, {});
+    expect(textOf(faq)).toContain("Still stuck? Write to support@example.com");
+    expect(actionsOf(faq).filter((a) => a.href === "mailto:support@example.com")).toEqual([{ tag: "a", label: "support@example.com", href: "mailto:support@example.com" }]);
+    // The header's Sign in, Free's way in, and Pro's.
+    expect(actionsOf(await renderPage(PricingPage, {})).filter((a) => a.href === "/signin").map((a) => a.label)).toEqual(["Sign in", "Sign in or try the sample", "Sign in to move to Pro"]);
+    expect(pricing).toContain("Then choose “Move to Pro” under Settings, Plan.");
+    // New checkouts paused (Part G): nothing to buy, so Pro's button goes back to the sample.
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
+    expect(textOf(await renderPage(PricingPage, {}))).not.toContain("Sign in to move to Pro");
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", undefined);
     // One refund sentence, word for word the same on both pages (Design, PR 17).
     const refund = "If you ask within 14 days of your first Pro payment, we refund it in full. Email ";
     expect(pricing).toContain(`${refund}support@example.com.`);
