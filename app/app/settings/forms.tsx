@@ -23,7 +23,7 @@ export function RenameWorkspaceForm({ name, v2 }: { name: string; v2?: boolean }
       name="name"
       defaultValue={state.name ?? name}
       required
-      maxLength={120}
+      maxLength={80}
       autoComplete="organization"
       className={className}
       aria-invalid={state.error ? true : undefined}

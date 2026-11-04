@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isPrintable } from "@/lib/pdf/compose";
 import { asUser, pgErrorCode, type Tx } from "./db";
 import { UserError } from "./errors";
+import { peopleOpen } from "./flags";
 import { rateLimited } from "./http";
 import { PEOPLE_BUSY, PEOPLE_FULL, PEOPLE_MAX, PEOPLE_PER_HOUR } from "./limits";
 import type { Ctx } from "./profile";
@@ -46,6 +47,12 @@ export const PERSON_GONE = "That person isn't in People any more.";
 export const PERSON_NOT_YOURS = "Only owners, admins and the member who added this person can change or delete them.";
 /** "Keep in People" with a request id that isn't one of this workspace's: the same words whether it exists elsewhere or not. */
 export const KEEP_GONE = "That signature request isn't in this workspace, so nobody was added to People.";
+/** Adding or changing someone in a real workspace before G3 (Security 0715 #2). Deleting stays open: it only removes. */
+export const PEOPLE_CLOSED = "Adding people to a real workspace opens after our security review.";
+
+function assertPeopleOpen(ctx: Ctx) {
+  if (!peopleOpen(ctx)) throw new UserError(PEOPLE_CLOSED);
+}
 
 const PersonInput = z.object({
   name: z.string().trim().min(1, "Give the person a name.").max(120, "Keep it to 120 characters.").refine(isPrintable, "Use letters, numbers and common punctuation."),
@@ -203,6 +210,7 @@ async function refusalsAsWords<T>(run: () => Promise<T>, email: string | null): 
 
 /** Adds a person typed on People. Returns their id. */
 export async function addPerson(ctx: Ctx, input: unknown): Promise<string> {
+  assertPeopleOpen(ctx);
   const p = PersonInput.parse(input);
   if (await rateLimited("people", ctx.userId, PEOPLE_PER_HOUR, 3600)) throw new UserError(PEOPLE_BUSY);
   return refusalsAsWords(
@@ -230,6 +238,7 @@ async function assertMayChange(tx: Tx, ctx: Ctx, id: string) {
 
 /** Changes a person's name, email and company. */
 export async function editPerson(ctx: Ctx, id: string, input: unknown): Promise<void> {
+  assertPeopleOpen(ctx);
   if (!PersonId.safeParse(id).success) throw new UserError(PERSON_GONE);
   const p = PersonInput.parse(input);
   await refusalsAsWords(
@@ -271,6 +280,7 @@ export type KeepResult = { kept: "added" | "already"; id: string; name: string; 
  * An address already in People adds nothing and says who has it.
  */
 export async function keepSigner(ctx: Ctx, requestId: unknown): Promise<KeepResult> {
+  assertPeopleOpen(ctx);
   const id = PersonId.safeParse(requestId);
   if (!id.success) throw new UserError(KEEP_GONE);
   const signer = await asUser(ctx.userId, async (tx) => {
