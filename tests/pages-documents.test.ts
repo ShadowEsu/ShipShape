@@ -135,12 +135,18 @@ describe("documents list", () => {
     expect(text).not.toContain("See archived documents");
   });
 
-  it("with no documents and uploads not open yet: Fill your first W-9 only, no link to the closed upload page", async () => {
+  it("with no documents and real documents not open yet: says why, and offers no way to the closed Make or Upload pages; the earlier look as it was", async () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
     await signIn("docs-empty-closed@example.com");
     const html = await documentsPage({});
-    expect(primaryActions(html)).toEqual([{ label: "Fill your first W-9", href: "/app/make/irs-w9" }]);
+    expect(textOf(html)).toContain("Adding and making real documents opens after our security review.");
+    expect(primaryActions(html)).toEqual([]);
+    expect(actionsOf(html).map((a) => a.href)).not.toContain("/app/make/irs-w9");
     expect(actionsOf(html).map((a) => a.label)).not.toContain("Upload a document");
+    vi.stubEnv("SHIPSHAPE_UI", "v1");
+    const earlier = await documentsPage({});
+    expect(primaryActions(earlier)).toEqual([{ label: "Fill your first W-9", href: "/app/make/irs-w9" }]);
+    expect(actionsOf(earlier).map((a) => a.label)).not.toContain("Upload a document");
   });
 
   it("with a search that finds nothing says what was searched and offers one action: clear it", async () => {
@@ -663,15 +669,18 @@ describe("the app's frame, redesigned", () => {
     expect(textOf(await shell(await signIn("shell-v2-real@example.com")))).not.toContain("Sample workspace");
   });
 
-  it("Feedback writes to the contact address, and isn't there while none is set; Help opens the FAQ", async () => {
+  it("Feedback writes to the contact address, and isn't there while none is set; Help opens the FAQ, in the top bar and the phone's menu", async () => {
     const ctx = await signIn("shell-v2-feedback@example.com");
     expect(actionsOf(await shell(ctx)).filter((a) => a.label === "Feedback")).toEqual([]);
+    expect(actionsOf(await shell(ctx)).filter((a) => a.label === "Help")).toHaveLength(2);
     vi.stubEnv("CONTACT_EMAIL", "hello@shipshape.example");
     const html = await shell(ctx);
-    expect(actionsOf(html).filter((a) => a.label === "Feedback" || a.label === "Help")).toEqual([
+    const pair = [
       { tag: "a", label: "Help", href: "/faq" },
       { tag: "a", label: "Feedback", href: "mailto:hello@shipshape.example?subject=ShipShape%20feedback" },
-    ]);
+    ];
+    // The top bar's (hidden on the phone), then the phone menu's.
+    expect(actionsOf(html).filter((a) => a.label === "Feedback" || a.label === "Help")).toEqual([...pair, ...pair]);
   });
 });
 
@@ -1279,10 +1288,13 @@ describe("a document's page", () => {
 });
 
 describe("error and not-found pages", () => {
-  it("an error says in one line what happened, offers one button, and keeps the reference small", async () => {
+  it("an error says in one line what happened, offers one button and where to write, and keeps the reference small", async () => {
     const html = await renderPage(ErrorPanel, { digest: "abc123", reset: () => {} });
-    expect(textOf(html)).toBe("This page didn't load because of a problem on our side. Try again Reference for support: abc123");
-    expect(actionsOf(html)).toEqual([{ tag: "button", label: "Try again", href: undefined }]);
+    expect(textOf(html)).toBe("This page didn't load because of a problem on our side. Try again Still not working? Write to us and quote this reference. Reference for support: abc123");
+    expect(actionsOf(html)).toEqual([
+      { tag: "button", label: "Try again", href: undefined },
+      { tag: "a", label: "Write to us", href: "/faq#support" },
+    ]);
   });
 
   it("a missing document links back to the documents list, and nothing else", async () => {
