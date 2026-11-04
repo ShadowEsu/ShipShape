@@ -44,7 +44,7 @@ const faq = (docs: boolean, accounts: boolean): { q: string; a: React.ReactNode 
   },
   {
     q: "Are the e-signatures valid?",
-    a: "ShipShape records what U.S. e-signature law (the ESIGN Act and UETA) looks for: the signer's agreement to sign electronically, their intent (a typed name), an email address confirmed with a one-time code, the time, and a fingerprint of the exact file. All of it goes on a certificate page in the signed copy. Whether a particular signature holds up depends on the document and where you are, so ask a lawyer about anything important.",
+    a: "ShipShape records what U.S. e-signature law (the ESIGN Act and UETA) looks for: the signer's agreement to sign electronically, their intent (a typed name), the email address the sender gave, a one-time code they entered, the time, and a fingerprint of the exact file. All of it goes on a certificate page in the signed copy. Whether a particular signature holds up depends on the document and where you are, so ask a lawyer about anything important.",
   },
   {
     q: "How is my EIN protected?",

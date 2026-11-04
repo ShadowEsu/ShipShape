@@ -298,6 +298,25 @@ export type SignResult =
   | "too_large"
   | "file_changed";
 
+/** How signers get their one-time code; the certificate says which, so it never claims an email check that didn't happen. */
+export type CodeDelivery = "outbox" | "email";
+
+/**
+ * Today every code goes to the outbox: app.esign_issue_code writes an 'esign_code' row there, and the sender never takes
+ * that kind (mail.ts QUEUED_KINDS; emailing codes is E, still closed). It becomes "email" only in the release that really
+ * emails signing codes, not with the email turn-on (Security, 4 Nov). tests/esign.test.ts holds the two together.
+ */
+export const SIGNING_CODE_DELIVERY: CodeDelivery = "outbox";
+
+/** The certificate's rows about the signer's address and code, true to how the code reached them. */
+export function codeRows(delivery: CodeDelivery, signerEmail: string): [string, string][] {
+  if (delivery === "email") return [["Email confirmed by one-time code", signerEmail]];
+  return [
+    ["Signer's email (as entered by the sender)", signerEmail],
+    ["One-time code", "confirmed (shown in the workspace's outbox, not emailed)"],
+  ];
+}
+
 /** The certificate page(s) appended to the reviewed file to make the signed copy. */
 function certificatePdf(rows: [string, string][]): Promise<Uint8Array> {
   return composePdf(
@@ -368,7 +387,7 @@ export async function completeSigning(
       ["Requested", r.requested_at],
       ["Signer named by the sender", r.signer_name],
       ["Signed as (typed name)", typedName],
-      ["Email confirmed by one-time code", r.signer_email],
+      ...codeRows(SIGNING_CODE_DELIVERY, r.signer_email),
       ["Signed at", signedAt],
       ["Signer's network fingerprint", visitor],
       ["Reviewed file SHA-256", r.to_sign_sha256],
