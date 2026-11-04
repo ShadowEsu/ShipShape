@@ -25,19 +25,19 @@ async function dailyRun(): Promise<unknown> {
 const age = (userId: string, interval: string) => db.root((tx) => tx.query("update auth.users set created_at = now() - $2::interval where id = $1", [userId, interval]));
 
 describe("health: the daily run", () => {
-  it("is current until a sample the purge would take is past 49 hours (two days and the cron's hour), and current again once it's gone", async () => {
+  it("is current until a sample the purge would take is past 48 hours (Privacy's two days), and current again once it's gone", async () => {
     expect(await dailyRun()).toBe("current");
     const sample = await createLocalUser(null, true);
     await asService((tx) => tx.query("select app.create_sample_workspace($1, 'Sample')", [sample]));
-    await age(sample, "48 hours 59 minutes");
+    await age(sample, "47 hours 59 minutes");
     expect(await dailyRun()).toBe("current");
-    await age(sample, "49 hours 1 minute");
+    await age(sample, "48 hours 1 minute");
     expect(await dailyRun()).toBe("overdue");
     expect(await purgeSampleAccounts()).toEqual({ purged: 1, failed: 0 });
     expect(await dailyRun()).toBe("current");
   });
 
-  it("ignores an old anonymous member of a real workspace (never the purge's), and is overdue on a recorded deletion past 49 hours", async () => {
+  it("ignores an old anonymous member of a real workspace (never the purge's), and is overdue on a recorded deletion past 48 hours", async () => {
     const owner = await db.user("owner@example.com");
     const [org] = await asUser(owner, (tx) => tx.query<{ id: string }>("select app.create_workspace('Real Co') as id"));
     const anonMember = await createLocalUser(null, true);
@@ -45,9 +45,9 @@ describe("health: the daily run", () => {
     await age(anonMember, "30 days");
     expect(await dailyRun()).toBe("current");
 
-    await db.root((tx) => tx.query("insert into app.deletion_requests (user_id, requested_at) values ($1, now() - interval '48 hours 59 minutes')", [owner]));
+    await db.root((tx) => tx.query("insert into app.deletion_requests (user_id, requested_at) values ($1, now() - interval '47 hours 59 minutes')", [owner]));
     expect(await dailyRun()).toBe("current");
-    await db.root((tx) => tx.query("update app.deletion_requests set requested_at = now() - interval '49 hours 1 minute' where user_id = $1", [owner]));
+    await db.root((tx) => tx.query("update app.deletion_requests set requested_at = now() - interval '48 hours 1 minute' where user_id = $1", [owner]));
     expect(await dailyRun()).toBe("overdue");
   });
 });

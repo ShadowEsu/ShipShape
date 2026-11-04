@@ -156,7 +156,7 @@ The redesigned app is the default. If it breaks somewhere in production, set `SH
 
 `.github/workflows/uptime.yml` asks production's `/api/health` every 15 minutes, twice a minute apart before it calls a failure. It passes on 200 with `"ok": true`, `"db": "up"`, `"config": "ok"` and `"dailyRun": "current"`. A failed run is the alert: GitHub emails whoever last changed the workflow's schedule. It is off until the repository variable `SHIPSHAPE_PROD_URL` holds production's `https://` address (Settings → Secrets and variables → Actions → Variables; no secret is needed), and GitHub runs schedules only from the default branch, so it starts once `rebuild` is the default branch (or merged into it). Run it by hand from the Actions tab (`workflow_dispatch`) after setting the variable.
 
-`"dailyRun": "overdue"` means the daily run (`/api/cron/reminders`, 15:00 UTC, `vercel.json`) has fallen behind the privacy policy's "within two days": a recorded account deletion, or a sample account the purge would take, is over 49 hours old (`dailyRunOverdue` in `lib/server/account.ts`; the extra hour is the cron's, which Vercel may start anywhere in its hour). It doesn't change `ok` or the status code. The run answers 500 when any of its jobs failed and logs `cron: <job> failed (<error name>)` without the error's message; Vercel lists each run under the project's Cron Jobs. A failed run leaves its work for the next day, and one failed day can already put a deletion past two days, so read the log the first day it fails.
+`"dailyRun": "overdue"` means the daily run (`/api/cron/reminders`, 15:00 UTC, `vercel.json`) has fallen behind the privacy policy's "within two days": a recorded account deletion, or a sample account the purge would take, is over 48 hours old (`dailyRunOverdue` in `lib/server/account.ts`). On a working run neither gets there: samples go after 22 hours, so even with Vercel starting the run anywhere in its hour they're gone by 46 h 59 min. It doesn't change `ok` or the status code. The run answers 500 when any of its jobs failed and logs `cron: <job> failed (<error name>)` without the error's message; Vercel lists each run under the project's Cron Jobs. A failed run leaves its work for the next day, and one failed day can already put a sample past two days, so read the log the first day it fails.
 
 ### The AI action (after Security's G4)
 
@@ -164,7 +164,7 @@ Off in production until Security's G4 GO and BOSS's budget say otherwise. To tur
 
 ### Restoring the database to a point in time
 
-RDS keeps 7 days of point-in-time backups (`BackupRetentionPeriod: 7`). A restore makes a new instance; production keeps running on the old one until the swap, and anything written after the restore time exists only on the old one (export what you need from it first). us-east-1, as the account owner; the subnet group, security group and parameter group names are in the `shipshape-database` stack's resources.
+RDS keeps 7 days of point-in-time backups (`BackupRetentionPeriod: 7`). A restore makes a new instance; production keeps running on the old one until the swap, and anything written after the restore time exists only on the old one (export what you need from it first). **Anything deleted after the restore time comes back on the copy**, so every such deletion is done again on the copy before it takes traffic (step 4; Security MUST-R1). **A copy whose deletions can't all be done again is never swapped in.** us-east-1, as the account owner; the subnet group, security group and parameter group names are in the `shipshape-database` stack's resources.
 
 ```sh
 aws rds describe-db-instances --region us-east-1 --db-instance-identifier shipshape-prod \
@@ -185,17 +185,45 @@ aws rds modify-db-instance --region us-east-1 --db-instance-identifier shipshape
 ```
 
 3. Check the copy before production uses it: as the master, `npm run migrate` against it (a migration applied after the restore time is applied again), then in `psql` as the master, inside `begin; set local role shipshape_owner; … rollback;`, count a few rows you expect and run `select app.audit_verify('<org id>')` for an affected workspace. `shipshape_app`'s password lives inside the database, so production's `DATABASE_URL` works on the copy unchanged.
-4. Swap. Production is down from the first rename until the second finishes (a few minutes). The second gives the copy the old name, so its address, `DATABASE_URL`, the log group and the stack's `InstanceIdentifier` are the same as before:
+4. Do every deletion again on the copy (Security MUST-R1). The copy holds rows the old instance no longer has, and those are exactly what was deleted after the restore time: accounts (by their owner or the daily run, sample accounts included), documents deleted for good (from `0048` on), files vendors sent that a workspace deleted, people deleted from People, and waitlist addresses removed on request. Their stored files are already gone from the bucket, so this removes rows only; a path the copy queues for removal is cleared by the next daily run (removal is idempotent).
+   1. List them. On each instance, as the master in `psql` inside `begin; set local role shipshape_owner; … rollback;` (old = `shipshape-prod`, copy = `shipshape-restore`), write the same six sorted files, `-old` from the old instance and `-copy` from the copy:
+      ```sql
+      \copy (select id from auth.users order by 1) to 'users-old.txt'
+      \copy (select id from app.organizations order by 1) to 'orgs-old.txt'
+      \copy (select id || ' ' || org_id from app.documents order by 1) to 'docs-old.txt'
+      \copy (select id || ' ' || org_id from app.vendor_files order by 1) to 'vendorfiles-old.txt'
+      \copy (select id || ' ' || org_id from app.contacts order by 1) to 'contacts-old.txt'
+      \copy (select email from app.waitlist order by 1) to 'waitlist-old.txt'
+      ```
+      Then, for each of the six, `comm -23 <name>-copy.txt <name>-old.txt > <name>-gone.txt`. A document, vendor file or person whose workspace is in `orgs-gone.txt` went with that workspace: step 2 takes it.
+   2. Accounts: for each id in `users-gone.txt`, on the copy, connected as `shipshape_app` (production's `DATABASE_URL` with the copy's host: the request roles belong to that login, not to the master), the account deletion the app runs (`lib/server/account.ts` deleteRows). It names every workspace the person owned as handled, because their subscriptions were already cancelled when the account went:
+      ```sql
+      begin;
+      set local role authenticated;
+      select set_config('request.jwt.claims', json_build_object('sub', '<user id>', 'role', 'authenticated')::text, true);
+      select storage_path from app.delete_my_account(array(select org_id from app.members where user_id = '<user id>' and role = 'owner'));
+      commit;
+      ```
+   3. The rest, the same way (as `shipshape_app`, `set local role authenticated`, the claims of an owner of that workspace on the copy: `select user_id from app.members where org_id = '<org id>' and role = 'owner' limit 1`), for each line whose workspace isn't in `orgs-gone.txt`:
+      - a document: `update app.documents set status = 'archived' where id = '<document id>' and org_id = '<org id>';` then `select storage_path from app.delete_document('<org id>', '<document id>');`. It can't refuse for a signature: a signed document couldn't have been deleted, and a signature is never undone;
+      - a vendor file: `delete from app.vendor_files where id = '<file id>' and org_id = '<org id>';` (what `deleteVendorFile` does);
+      - a person: `delete from app.contacts where id = '<contact id>' and org_id = '<org id>';` (what People's delete does);
+      - a waitlist address, as the master with `set local role shipshape_owner` instead: `delete from app.waitlist where email = '<address>';`.
+   4. List the copy again and compare: every `-gone` file must now be empty, except documents, vendor files and people whose workspace is in the old `orgs-gone.txt`. **Anything left is a deletion this runbook doesn't cover: stop, and don't swap.**
+   5. Sign everyone out on the copy. A "Sign out on every device" or a suspension after the restore time is undone on the copy, so its sessions would work again. As the master with `set local role shipshape_owner`: `insert into app.session_revocations (user_id, valid_after) select id, now() from auth.users on conflict (user_id) do update set valid_after = excluded.valid_after;` and `update app.sessions set revoked_at = now() where revoked_at is null;`. Everyone signs in again once; Cognito's own disables and sign-outs live outside the database and still hold.
+   6. Payments: in Stripe's Dashboard (Developers, Webhooks, ShipShape's endpoint), resend every event after the restore time once the swap is done, so plans and statuses match what Stripe charged. The webhook is idempotent (`app.stripe_events`), so a repeat does nothing.
+5. Swap. Production is down from the first rename until the second finishes (a few minutes). Between them, with nothing writing to the old instance any more, do step 4 once more for anything deleted since you first listed it (connect to the old one by its new name). The second rename gives the copy the old name, so its address, `DATABASE_URL`, the log group and the stack's `InstanceIdentifier` are the same as before:
 
 ```sh
 aws rds modify-db-instance --region us-east-1 --db-instance-identifier shipshape-prod --new-db-instance-identifier shipshape-prod-old --apply-immediately
 aws rds wait db-instance-available --region us-east-1 --db-instance-identifier shipshape-prod-old
+# Step 4 again, old = shipshape-prod-old, then:
 aws rds modify-db-instance --region us-east-1 --db-instance-identifier shipshape-restore --new-db-instance-identifier shipshape-prod --apply-immediately
 aws rds wait db-instance-available --region us-east-1 --db-instance-identifier shipshape-prod
 ```
 
-5. Open `/api/health` (200, `"db": "up"`), then run `scripts/probe-aws.mjs` as at launch. The stack's `MasterSecretArn` output now names the old instance's secret; the master's secret is the one `describe-db-instances` shows under `MasterUserSecret`.
-6. Delete `shipshape-prod-old` within 7 days (BOSS rule 1: no copy outlives them), as in Rollback step 2 with its new name, and the log group `/aws/rds/instance/shipshape-restore/postgresql`, which the copy wrote to before its rename.
+6. Open `/api/health` (200, `"db": "up"`), then run `scripts/probe-aws.mjs` as at launch. Run the daily run once by hand (`curl -H "Authorization: Bearer $CRON_SECRET" <production>/api/cron/reminders`) so the queued paths clear. The stack's `MasterSecretArn` output now names the old instance's secret; the master's secret is the one `describe-db-instances` shows under `MasterUserSecret`.
+7. Delete `shipshape-prod-old` within 7 days (BOSS rule 1: no copy outlives them), as in Rollback step 2 with its new name, and the log group `/aws/rds/instance/shipshape-restore/postgresql`, which the copy wrote to before its rename.
 
 ### Suspending an account
 
