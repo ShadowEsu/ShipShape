@@ -270,7 +270,8 @@ describe("row level security", () => {
   it("user B can't change, delete or add to A's workspace", async () => {
     const changed = (q: (tx: Tx) => Promise<unknown[]>) => asUser(b, q);
     expect(await changed((tx) => tx.query("update app.documents set title = 'x' where id = $1 returning 1", [docA]))).toEqual([]);
-    expect(await changed((tx) => tx.query("delete from app.documents where id = $1 returning 1", [docA]))).toEqual([]);
+    // Nobody signed in deletes a document directly: only app.delete_document does, for its own workspace (0048).
+    await expectDenied(changed((tx) => tx.query("delete from app.documents where id = $1 returning 1", [docA])));
     expect(await changed((tx) => tx.query("update app.profiles set legal_name = 'x' where org_id = $1 returning 1", [orgA]))).toEqual([]);
     expect(await changed((tx) => tx.query("update app.organizations set name = 'x' where id = $1 returning 1", [orgA]))).toEqual([]);
     await expectDenied(
@@ -324,7 +325,7 @@ describe("row level security", () => {
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [orgA, c]));
     await expectDenied(asUser(c, (tx) => tx.query("update app.members set role = 'owner' where user_id = $1", [c])));
     expect(await asUser(c, (tx) => tx.query("update app.profiles set legal_name = 'x' where org_id = $1 returning 1", [orgA]))).toEqual([]);
-    expect(await asUser(c, (tx) => tx.query("delete from app.documents where id = $1 returning 1", [docA]))).toEqual([]);
+    await expectDenied(asUser(c, (tx) => tx.query("delete from app.documents where id = $1 returning 1", [docA])));
     expect((await asUser(c, (tx) => tx.query("select 1 from app.documents where id = $1", [docA]))).length).toBe(1);
   });
 });

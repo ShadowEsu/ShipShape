@@ -19,7 +19,7 @@ export async function orgPlan(tx: Tx, orgId: string): Promise<PlanId> {
 export function planLimit(ctx: Pick<Ctx, "role" | "demo">, what: "documents" | "passports" | "esign" | "files"): PlanLimit {
   const pro = billingConfig() !== null && ctx.role === "owner" && !ctx.demo;
   if (what === "esign") return new PlanLimit("Asking for signatures is part of Pro.");
-  // Free has no delete, so archiving makes no room: Pro is the only way on, and only for someone who can take it.
+  // Archiving makes no room (its files still count); deleting an archived document for good does, or Pro, for someone who can take it.
   if (what === "files") return new PlanLimit(pro ? FILES_FULL + FILES_FULL_PRO : FILES_FULL);
   if (what === "documents") {
     // The fix link says what to do; the message adds only the Pro half, so "archive one" isn't said twice.
@@ -48,7 +48,7 @@ export async function assertWithinPlan(tx: Tx, ctx: Pick<Ctx, "orgId" | "role" |
     return;
   }
   // A sample counts as Pro (no document limit) but holds SAMPLE_DOCUMENTS in all, archived ones included:
-  // it can't delete, so archiving makes no room (W15-2). Checked before Pro's no-limit return below.
+  // archiving makes no room, deleting one for good does (W15-2). Checked before Pro's no-limit return below.
   if (what === "documents" && ctx.demo) {
     await lockPlan(tx, orgId);
     if (await sampleFull(tx, ctx)) throw new PlanLimit(SAMPLE_FULL);
@@ -74,7 +74,7 @@ export async function sampleFull(tx: Tx, ctx: Pick<Ctx, "orgId" | "demo">): Prom
 
 /**
  * Refuses storing a file that would take the workspace past its plan's total (W15-3): every stored version
- * counts, archived documents included, since Free can't delete. Under the plan lock, in the storing transaction.
+ * counts, archived documents included, until a document is deleted for good. Under the plan lock, in the storing transaction.
  */
 export async function assertRoomForFile(tx: Tx, ctx: Pick<Ctx, "orgId" | "role" | "demo">, size: number) {
   const quota = PLANS[await orgPlan(tx, ctx.orgId)].files;

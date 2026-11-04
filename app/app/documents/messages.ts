@@ -1,5 +1,11 @@
 import type { Withdrawn } from "@/lib/server/documents";
 
+/**
+ * What Delete for good does to the file, in its confirm and on Documents afterwards (Security D5): true about the
+ * backups (the bucket's earlier versions expire 7 days later, infra/storage.yaml), so never "permanently" or "instantly".
+ */
+export const DELETE_PROMISE = "It's gone from ShipShape now, and removed from our storage backups within 7 days.";
+
 /** "the open signing request for Jordan Lee", or "the open signing requests for Jordan Lee and 1 other". */
 function openRequestsFor(signers: string[]): string {
   const others = signers.length - 1;

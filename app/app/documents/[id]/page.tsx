@@ -7,7 +7,7 @@ import { ConfirmForm } from "@/components/confirm-form";
 import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
 import { historyLabel } from "@/lib/history";
-import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, getDocument } from "@/lib/server/documents";
+import { canDeleteDocuments, DOC_KINDS, DOCUMENT_HISTORY_SHOWN, getDocument } from "@/lib/server/documents";
 import { esignAvailable, listSignatureRequests, SIGN_DAYS } from "@/lib/server/esign";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { openLinksWith } from "@/lib/server/passport";
@@ -125,6 +125,7 @@ export default async function DocumentPage({
         saved={doc.status === "active" && (await isSaved(ctx, "document", doc.id))}
         signer={signer}
         kept={await keptEmails(ctx, requests.map((r) => r.signer_email))}
+        canDelete={canDeleteDocuments(ctx)}
       />
     );
 

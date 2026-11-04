@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect, RedirectType } from "next/navigation";
 import { z } from "zod";
-import { DOCUMENT_GONE, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { deleteDocument, DOCUMENT_GONE, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { PlanLimit, UserError } from "@/lib/server/errors";
 import { requestSignature, revokeSignatureRequest } from "@/lib/server/esign";
 import { UploadRefused } from "@/lib/server/files";
 import { GateClosed } from "@/lib/server/flags";
 import { clientIp } from "@/lib/server/http";
+import { NeedsRecentSignIn } from "@/lib/server/profile";
 import { requireWorkspace } from "@/lib/server/session";
 import { versionAdded } from "./messages";
 
@@ -125,6 +126,30 @@ export async function archive(data: FormData) {
   revalidatePath("/app/documents");
   revalidatePath(`/app/documents/${id}`);
   backToDocument(id);
+}
+
+export interface DeleteDocumentState {
+  error?: string;
+  /** The sign-in is too old for this: the fix is signing in again. */
+  reauth?: boolean;
+}
+
+/**
+ * Delete for good, from an archived document's confirm dialog. A server action, so Next.js refuses a post whose Origin
+ * isn't this site (Security D3's CSRF condition). Refused, the dialog stays open with the reason; done, Documents
+ * says so.
+ */
+export async function deleteForGood(_prev: DeleteDocumentState, data: FormData): Promise<DeleteDocumentState> {
+  const ctx = await requireWorkspace();
+  try {
+    await deleteDocument(ctx, documentId(data));
+  } catch (e) {
+    if (e instanceof NeedsRecentSignIn) return { error: e.message, reauth: true };
+    if (e instanceof UserError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath("/app/documents");
+  redirect("/app/documents?deleted=1", RedirectType.replace);
 }
 
 export interface SignFormState {

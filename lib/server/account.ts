@@ -8,7 +8,7 @@ import { downloadName } from "./documents";
 import { UserError } from "./errors";
 import { loadProfile, NeedsRecentSignIn, type Ctx } from "./profile";
 import { recentEnough } from "./session";
-import { blobStore, ObjectMissing } from "./storage";
+import { blobStore, ObjectMissing, removeQueued } from "./storage";
 import { zip } from "./zip";
 
 /** delete_my_account's refusal when a billed workspace it would delete wasn't handled (0019). */
@@ -474,17 +474,10 @@ async function removeAfterDeletion(rows: { storage_path: string }[]): Promise<vo
   }
 }
 
-/** Removes stored files whose rows are gone, then their queue entries. Removal is idempotent, so a retry is safe. */
-async function removeQueued(paths: string[]): Promise<void> {
-  if (!paths.length) return;
-  await blobStore().remove(paths);
-  await asService((tx) => tx.query("delete from app.storage_cleanup where path = any($1::text[])", [paths]));
-}
-
 const CLEANUP_BATCH = 1000;
 
 /**
- * The daily run: removes stored files an account deletion couldn't remove (Security N-091a), in
+ * The daily run: removes stored files a deletion (an account, or one document deleted for good) couldn't remove (Security N-091a), in
  * batches of 1,000 until none are left or `until` passes; past `until` it doesn't start a batch at
  * all (W11-16). Returns how many. A batch storage refuses (one key under a policy or lock) goes to
  * the back of the queue so the paths behind it still get their turn (review #16); the run then
