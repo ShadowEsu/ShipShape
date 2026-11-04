@@ -57,7 +57,9 @@ function capabilities(docs: boolean, live: boolean): { title: string; body: stri
       ? { title: "Signature requests", body: "Consent, a one-time code and a certificate page on the signed copy. In the sample today; for your own documents once ShipShape sends email.", status: "Awaiting setup" }
       : { title: "Signature requests", body: "Consent, a one-time code and a certificate page on the signed copy.", status: "Works today" },
     { title: "Export and account deletion", body: "One ZIP of everything; deletion removes files and links.", status: "Works today" },
-    { title: "Collect", body: "Ask your own vendors for W-9s and certificates through an upload link and see who's current. Not in a plan yet.", status: "Works today" },
+    docs
+      ? { title: "Collect", body: "Ask your own vendors for W-9s and certificates through an upload link and see who's current. In the sample today; not in a plan yet.", status: "Planned" }
+      : { title: "Collect", body: "Ask your own vendors for W-9s and certificates through an upload link and see who's current. Not in a plan yet.", status: "Works today" },
     docs
       ? { title: "Accounts for real documents", body: "Your own account and workspace for your real paperwork.", status: "Works today" }
       : { title: "Accounts for real documents", body: "Pending our security review and the production database.", status: "Awaiting setup" },
@@ -67,7 +69,7 @@ function capabilities(docs: boolean, live: boolean): { title: string; body: stri
     { title: "Email reminders and signing codes", body: "Pending an email provider; the sample shows them inside the app meanwhile.", status: "Awaiting setup" },
     live
       ? { title: "Payments", body: "Pro is paid monthly through Stripe; cancel any time from Settings.", status: "Works today" }
-      : { title: "Payments", body: "Checkout, billing portal and webhooks, checked against a simulated Stripe; the Stripe sandbox run is pending. No real charges.", status: "Awaiting setup" },
+      : { title: "Payments", body: "Checkout, billing portal and webhooks, checked against a simulated Stripe. No real charges.", status: "Awaiting setup" },
     { title: "“What are they asking for?”", body: "Paste a request and see which documents it asks for and which you have. Built; opt-in per request, switched on after our security review.", status: "Awaiting setup" },
     { title: "Dates read off certificates", body: "Expiry dates filled in from an uploaded certificate, with your OK. Opt-in AI.", status: "Planned" },
   ];
@@ -125,7 +127,7 @@ export default function Home() {
                 wrapped only when Geist loaded, shifting the page (CLS 0.1). Stack them below 400px from the start. */}
             <div className="flex flex-col items-start gap-3 min-[400px]:flex-row min-[400px]:flex-wrap min-[400px]:items-center">
               <Link href="/signin" className="btn-accent">
-                Try the sample workspace
+                {docs ? "Sign in or try the sample" : "Try the sample workspace"}
               </Link>
               <Link href="#how" className="btn-ghost">
                 How it works
@@ -184,7 +186,7 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-            <p className="mt-4 text-base text-ink-3 sm:text-sm">&ldquo;Works today&rdquo; means in the sample workspace.</p>
+            {!docs && <p className="mt-4 text-base text-ink-3 sm:text-sm">&ldquo;Works today&rdquo; means in the sample workspace.</p>}
           </div>
         </section>
 

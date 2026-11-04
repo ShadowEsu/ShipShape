@@ -59,14 +59,16 @@ export function RenewalChip({ renewsOn }: { renewsOn: string }) {
 }
 
 /**
- * What an empty page shows: what will appear here, optionally a ghosted example list of it (hidden
- * from screen readers: the body already says what will appear), the one action that fills it, and
- * any secondary link (children). The redesigned app (`.ui-v2`) drops the card for open space, sets the
- * title in the app's sans and shows `icon` (the page's sidebar icon) in a hairline square (Design, PR 5).
+ * What an empty page shows: what will appear here, optionally a status `note` on its own line (what isn't open yet,
+ * kept apart from the promise), a ghosted example list of it (hidden from screen readers: the body already says what
+ * will appear), the one action that fills it, and any secondary link (children). The redesigned app (`.ui-v2`) drops
+ * the card for open space, sets the title in the app's sans and shows `icon` (the page's sidebar icon) in a hairline
+ * square (Design, PR 5).
  */
 export function EmptyState({
   title,
   body,
+  note,
   example,
   action,
   icon,
@@ -74,6 +76,7 @@ export function EmptyState({
 }: {
   title: string;
   body: string;
+  note?: string;
   example?: string[];
   action?: { href: string; label: string };
   icon?: IconName;
@@ -88,6 +91,7 @@ export function EmptyState({
       )}
       <p className="empty-title font-serif text-2xl font-semibold">{title}</p>
       <p className="max-w-prose text-sm text-ink-2">{body}</p>
+      {note && <p className="max-w-prose text-sm text-ink-2">{note}</p>}
       {example && (
         <div aria-hidden="true" className="w-full max-w-prose select-none">
           <p className="empty-example-label mb-1 font-mono text-xs tracking-wide text-ink-3 uppercase">Example</p>

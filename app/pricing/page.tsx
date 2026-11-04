@@ -4,7 +4,7 @@ import { SiteFooter, SiteHeader, StatusLabel } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { megabytes, PLANS } from "@/lib/plans";
 import { billingConfig } from "@/lib/server/billing-config";
-import { contactEmail } from "@/lib/server/flags";
+import { contactEmail, realDocsEnabled } from "@/lib/server/flags";
 
 const { free, pro } = PLANS;
 
@@ -27,8 +27,10 @@ const ROWS: [feature: string, free: string, pro: string][] = [
   ["Export and account deletion", "✓", "✓"],
 ];
 
-/** The billing questions, worded for whether payments are live and where refunds are asked for (Security L6). */
-function billingQuestions(live: boolean, contact: string | null): [q: string, a: string][] {
+type Payments = "off" | "test" | "live";
+
+/** The billing questions, worded for whether payments are off, in test mode or live, and where refunds are asked for (Security L6). */
+function billingQuestions(payments: Payments, contact: string | null): [q: string, a: string][] {
   const ask = contact ? `Email ${contact}.` : "The terms will give the address to ask before real payments start.";
   return [
     ["Can I cancel any time?", "Yes, from Settings. Pro stays on until the end of the period you paid for, then the workspace moves to Free."],
@@ -38,16 +40,26 @@ function billingQuestions(live: boolean, contact: string | null): [q: string, a:
       "Refunds?",
       `If you ask within 14 days of your first Pro payment, we refund it in full. ${ask} After that you can cancel any time, but earlier payments aren't refunded, in whole or in part. A full refund or a disputed charge ends Pro straight away.`,
     ],
-    ...(live ? [] : [["Am I charged now?", "No. During the preview, payments run in Stripe's test mode and no real money moves."] satisfies [string, string]]),
+    ...(payments === "live"
+      ? []
+      : [
+          [
+            "Am I charged now?",
+            payments === "test" ? "No. During the preview, payments run in Stripe's test mode and no real money moves." : "No. Payments aren't switched on yet, so nothing can be charged.",
+          ] satisfies [string, string],
+        ]),
   ];
 }
 
 export default function PricingPage() {
   const cfg = billingConfig();
-  const live = cfg?.live === true;
+  const payments: Payments = cfg === null ? "off" : cfg.live ? "live" : "test";
   // Stripe Tax adds sales tax at checkout on top of the tax-exclusive price (Security SHOULD-3).
   const tax = cfg?.automaticTax === true;
-  const billing = billingQuestions(live, contactEmail());
+  // A real account can buy Pro only when payments are live and new checkouts aren't paused (PRESTON-STRIPE-LIVE.md, part G).
+  const buy = cfg?.live === true && !cfg.checkoutPaused;
+  const docs = realDocsEnabled();
+  const billing = billingQuestions(payments, contactEmail());
   return (
     <>
       <SiteHeader />
@@ -55,11 +67,13 @@ export default function PricingPage() {
         <p className="eyebrow">Pricing</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Free to start. Pro when you need more.</h1>
         <p className="mt-3 max-w-2xl text-ink-2">
-          {live
+          {payments === "live"
             ? tax
               ? "Prices in US dollars. Sales tax is added at checkout where it applies."
               : "Prices in US dollars."
-            : "Prices in US dollars. Payments are in test mode during the preview: no real charges."}
+            : payments === "test"
+              ? "Prices in US dollars. Payments are in test mode during the preview: no real charges."
+              : "Prices in US dollars. Payments aren't switched on yet: no real charges."}
         </p>
 
         <div className="mt-10 grid gap-4 md:grid-cols-3">
@@ -73,7 +87,7 @@ export default function PricingPage() {
               open at a time.
             </p>
             <Link href="/signin" className="btn-ghost mt-auto">
-              Try the sample
+              {docs ? "Sign in or try the sample" : "Try the sample"}
             </Link>
           </section>
           <section className="card flex flex-col gap-4 border-ink">
@@ -84,14 +98,14 @@ export default function PricingPage() {
             </p>
             <p className="text-base text-ink-2 sm:text-sm">No limits on documents or links, plus deadline reminders on your Deadlines page.</p>
             <Link href="/signin" className="btn-accent mt-auto">
-              Try the sample
+              {buy ? "Sign in to move to Pro" : "Try the sample"}
             </Link>
-            <p className="text-xs text-ink-3">Sample workspaces include every Pro feature.</p>
+            <p className="text-xs text-ink-3">{buy ? "Then choose “Move to Pro” under Settings, Plan." : "Sample workspaces include every Pro feature."}</p>
           </section>
           <section className="card flex flex-col gap-4 bg-canvas">
             <div className="flex items-start justify-between gap-3">
               <h2 className="text-lg font-semibold">Collect</h2>
-              <StatusLabel status="Works today" />
+              <StatusLabel status={docs ? "Planned" : "Works today"} />
             </div>
             <p className="text-base text-ink-2 sm:text-sm">
               For businesses that gather documents from many vendors or subcontractors: send each one an upload link and see who&apos;s

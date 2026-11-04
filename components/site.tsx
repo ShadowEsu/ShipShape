@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo, NotLegalAdvice } from "@/components/ui";
+import { realDocsEnabled } from "@/lib/server/flags";
 
 const NAV: [href: string, label: string][] = [
   ["/#how", "How it works"],
@@ -18,7 +19,7 @@ export function SiteHeader() {
           </Link>
         ))}
         <Link href="/signin" className="btn-ghost ml-2">
-          Try the sample
+          {realDocsEnabled() ? "Sign in" : "Try the sample"}
         </Link>
       </nav>
     </header>
@@ -31,6 +32,7 @@ const FOOTER: [href: string, label: string][] = [
   ["/status", "Status"],
   ["/terms", "Terms"],
   ["/privacy", "Privacy"],
+  ["/faq#support", "Contact"],
 ];
 
 export function SiteFooter() {

@@ -5,7 +5,7 @@ import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
 import { listDeadlines, listOutbox, type Deadline } from "@/lib/server/deadlines";
 import { DOC_KINDS, firstDocument } from "@/lib/server/documents";
-import { uiV2 } from "@/lib/server/flags";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { fmtDay, timeOf } from "@/lib/today";
 import { DeadlinesV2 } from "./v2";
@@ -67,6 +67,7 @@ export default async function DeadlinesPage({ searchParams }: { searchParams: Pr
         zone={zone}
         quiet={quiet}
         soon={sp.soon === "1"}
+        gated={!ctx.demo && !realDocsEnabled()}
       />
     );
 

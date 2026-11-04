@@ -39,6 +39,7 @@ export function PassportV2({
   today,
   initial,
   zone,
+  gated,
 }: {
   links: PassportRow[];
   docs: PickableDoc[];
@@ -46,6 +47,8 @@ export function PassportV2({
   today: string;
   initial: { label: string; days: number };
   zone: string;
+  /** A real workspace before real documents open: it can't add one, so "Add a document" would lead nowhere. */
+  gated: boolean;
 }) {
   const yours = (
     <section aria-labelledby="links-title" className="space-y-3">
@@ -76,7 +79,11 @@ export function PassportV2({
         <h2 id="new-link-title" className="section-title">
           New link
         </h2>
-        <NewLinkV2 days={PASSPORT_DAYS} preselected={preselected} today={today} initial={initial} docs={docs} />
+        {gated && docs.length === 0 ? (
+          <p className="text-sm text-ink-2">A link shares documents from this workspace, so it needs at least one. Adding real documents opens after our security review.</p>
+        ) : (
+          <NewLinkV2 days={PASSPORT_DAYS} preselected={preselected} today={today} initial={initial} docs={docs} />
+        )}
       </section>
       {links.length === 0 && yours}
     </div>

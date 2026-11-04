@@ -59,7 +59,7 @@ export default async function StatusPage() {
 
         <h2 className="mt-10 font-semibold">{realDocs ? "Features" : "Features during the preview"}</h2>
         <ul className="mt-3 divide-y divide-line rounded-2xl border border-line bg-paper">
-          <Row name="Sample workspaces" state="On" tone="ok" note="Made-up business and documents; everything except uploading your own files." />
+          <Row name="Sample workspaces" state="On" tone="ok" note="Made-up business and documents; everything except uploading files and editing business facts." />
           <Row
             name="Real documents"
             state={realDocs ? "On" : "Off"}
@@ -80,7 +80,7 @@ export default async function StatusPage() {
             name="AI features"
             state={aiEnabled() ? "On" : "Off"}
             tone={aiEnabled() ? "ok" : "off"}
-            note="Reading a pasted request; opt-in each time. On after our security review."
+            note={aiEnabled() ? "Reading a pasted request; opt-in each time." : "Reading a pasted request; opt-in each time. On after our security review."}
           />
         </ul>
       </main>

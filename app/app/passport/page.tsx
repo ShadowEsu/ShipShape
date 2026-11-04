@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/app-ui";
 import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
-import { uiV2 } from "@/lib/server/flags";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { listPassports, PASSPORT_DAYS } from "@/lib/server/passport";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf } from "@/lib/today";
@@ -33,7 +33,10 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
     holdsTaxId: d.kind === "w9" || d.template_id === "irs-w9",
   }));
 
-  if (uiV2()) return <PassportV2 links={links} docs={pickable} preselected={preselected} today={ctx.today} initial={comingBack} zone={zone} />;
+  if (uiV2())
+    return (
+      <PassportV2 links={links} docs={pickable} preselected={preselected} today={ctx.today} initial={comingBack} zone={zone} gated={!ctx.demo && !realDocsEnabled()} />
+    );
 
   return (
     <div className="space-y-8">
