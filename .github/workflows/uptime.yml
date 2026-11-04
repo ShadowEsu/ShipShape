@@ -1,0 +1,47 @@
+name: uptime
+
+# Production's /api/health every 15 minutes (finish list B14): it must answer 200 with ok, db up and config ok, and the
+# daily run must not be overdue (the privacy policy's "within two days", dailyRunOverdue in lib/server/account.ts).
+# A failed run is the alert: GitHub emails it to whoever last changed this schedule. Off until the repository variable
+# SHIPSHAPE_PROD_URL holds production's https:// address (set at M6, infra/README.md "Watching it"). GitHub runs
+# schedules only from the default branch.
+on:
+  schedule:
+    - cron: "4,19,34,49 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  health:
+    if: vars.SHIPSHAPE_PROD_URL != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: GET /api/health answers 200 with ok, db up and config ok, and the daily run isn't overdue
+        env:
+          BASE: ${{ vars.SHIPSHAPE_PROD_URL }}
+        run: |
+          set -euo pipefail
+          case "$BASE" in https://*) ;; *) echo "SHIPSHAPE_PROD_URL must start with https://"; exit 1 ;; esac
+          body="$RUNNER_TEMP/health.json"
+          # Two tries a minute apart, so one cold start or blip isn't an alert.
+          for try in 1 2; do
+            rm -f "$body"
+            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 20 -H 'Cache-Control: no-cache' "${BASE%/}/api/health" || true)
+            if [ "$code" = 200 ] && jq -e '.ok == true and .db == "up" and .config == "ok"' "$body" >/dev/null; then
+              jq -c '{revision, db, config, billing, checkout, dailyRun}' "$body"
+              if jq -e '.dailyRun == "current"' "$body" >/dev/null; then exit 0; fi
+              echo "::error::the daily run is $(jq -r '.dailyRun' "$body"): a deletion or a sample workspace is past the privacy policy's two days (infra/README.md, Watching it)"
+              exit 1
+            fi
+            echo "try $try: HTTP $code"
+            [ -s "$body" ] && jq -c '{ok, db, config}' "$body" 2>/dev/null || true
+            [ "$try" = 1 ] && sleep 60
+          done
+          echo "::error::production health failed twice: ${BASE%/}/api/health"
+          exit 1

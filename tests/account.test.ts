@@ -565,7 +565,7 @@ describe("sample account purge", () => {
     expect(await purgeSampleAccounts()).toEqual({ purged: 0, failed: 0 });
   });
 
-  it("a sample goes after one day, so it's gone within two of being made (W11-8); 120 old samples go in one run, a real workspace and a fresh sample stay (W11-2)", async () => {
+  it("a sample goes after 22 hours, so it's gone within two days of being made even with runs 24 h 59 min apart (W11-8, Security 0745); 120 old samples go in one run, a real workspace and a fresh sample stay (W11-2)", async () => {
     // Bare sample accounts (no seeded files): the loop, not the seeding, is under test.
     const olds: string[] = [];
     for (let i = 0; i < 120; i++) {
@@ -573,9 +573,9 @@ describe("sample account purge", () => {
       await asService((tx) => tx.query("select app.create_sample_workspace($1, 'Sample')", [userId]));
       olds.push(userId);
     }
-    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '25 hours' where id = any($1::uuid[])", [olds]));
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '22 hours 1 minute' where id = any($1::uuid[])", [olds]));
     const fresh = await sampleWorkspace();
-    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '23 hours' where id = $1", [fresh.userId]));
+    await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '21 hours 59 minutes' where id = $1", [fresh.userId]));
     const real = await db.user("stays@example.com");
     const [org] = await asUser(real, (tx) => tx.query<{ id: string }>("select app.create_workspace('Stays Co') as id"));
     await db.root((tx) => tx.query("update auth.users set created_at = now() - interval '30 days' where id = $1", [real]));
