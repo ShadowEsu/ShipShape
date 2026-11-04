@@ -571,9 +571,11 @@ body {
     flex-basis: 100%;
   }
 }
-/* The signer's "Signed" takes focus right after signing (app/s/[id]/stamp.tsx). It's a place, not a control, so no ring,
-   even after a keyboard Sign, which would draw one around the heading mid-moment (Design, 02 Nov). Tab goes on to Download. */
-.ui-v2 .stamp-title:focus-visible {
+/* Places that take focus after an action so it isn't lost, not controls, so no ring, even after a keyboard press, which
+   would draw one around them mid-moment (Design, 02 Nov and 4 Nov). The signer's "Signed" after signing
+   (app/s/[id]/stamp.tsx; Tab goes on to Download); a form's Saved line once its Save has left with the dock; the
+   document's heading after Restore and its Archived block after Archive (StatusLanding). */
+.ui-v2 :is(.stamp-title, .saved-line, #document-title, #archived):focus-visible {
   outline: none;
 }
 /* Home's box and the search field show focus on what holds them (the box's border, the search row's rule), not as a
