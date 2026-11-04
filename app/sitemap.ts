@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { appUrl } from "@/lib/server/flags";
 
-const PUBLIC_PAGES = ["/", "/pricing", "/faq", "/status", "/privacy", "/terms"];
+const PUBLIC_PAGES = ["/", "/for/contractors", "/for/freelancers", "/pricing", "/faq", "/status", "/privacy", "/terms"];
 
 // Absolute URLs need the site's address; without SHIPSHAPE_APP_URL (local runs) the sitemap is empty.
 export default function sitemap(): MetadataRoute.Sitemap {

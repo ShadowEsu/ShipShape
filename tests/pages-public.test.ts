@@ -14,6 +14,8 @@ import { POST as signCode } from "@/app/s/[id]/code/route";
 import { GET as signFile } from "@/app/s/[id]/file/route";
 import { POST as signOpen } from "@/app/s/[id]/open/route";
 import FaqPage from "@/app/faq/page";
+import ContractorsPage from "@/app/for/contractors/page";
+import FreelancersPage from "@/app/for/freelancers/page";
 import HomePage from "@/app/page";
 import PricingPage from "@/app/pricing/page";
 import PrivacyPage from "@/app/privacy/page";
@@ -712,7 +714,7 @@ describe("pricing (/pricing)", () => {
 });
 
 describe("the public pages once payments are live (Security MUST-3, MUST-4)", () => {
-  const PAGES = { home: HomePage, faq: FaqPage, pricing: PricingPage, terms: TermsPage, privacy: PrivacyPage, status: StatusPage };
+  const PAGES = { home: HomePage, contractors: ContractorsPage, freelancers: FreelancersPage, faq: FaqPage, pricing: PricingPage, terms: TermsPage, privacy: PrivacyPage, status: StatusPage };
   const texts = async () => Object.fromEntries(await Promise.all(Object.entries(PAGES).map(async ([name, page]) => [name, textOf(await renderPage(page, {}))] as const)));
   const goLive = () => {
     vi.stubEnv("CONTACT_EMAIL", "support@example.com");
@@ -771,6 +773,19 @@ describe("the public pages once payments are live (Security MUST-3, MUST-4)", ()
     const off = textOf(await renderPage(StatusPage, {}));
     expect(off).toContain("Features Sample workspaces");
     expect(off).toContain("Payments No real charges. Off");
+  });
+
+  it("the pages for contractors and freelancers say 'in the sample' while real documents are closed, and mark Collect and signing for what they are once open", async () => {
+    const preview = await texts();
+    expect(preview.contractors).toContain("Your certificate of insurance Awaiting setup");
+    expect(preview.contractors).toContain("“Works today” means in the sample workspace.");
+    expect(preview.freelancers).toContain("Getting it signed Works today");
+    goLive();
+    const live = await texts();
+    expect(live.contractors).toContain("Your certificate of insurance Works today");
+    expect(live.contractors).toContain("Collecting from your subcontractors Planned");
+    expect(live.freelancers).toContain("Getting it signed Awaiting setup");
+    for (const text of [live.contractors, live.freelancers]) expect(text).not.toContain("means in the sample workspace");
   });
 
   it("pricing names sales tax only when Stripe Tax is on in live mode (Security SHOULD-3)", async () => {

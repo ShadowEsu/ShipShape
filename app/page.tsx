@@ -33,9 +33,17 @@ const TRUST: { key: string; text: ReactNode }[] = [
   { key: "export", text: "Owners and admins can export everything from Settings (one ZIP, up to 200 MB); anyone can delete their account there, any time." },
 ];
 
-const WHO: { who: string; asks: string }[] = [
-  { who: "Contractors", asks: "Every new general contractor or property manager wants your W-9, insurance certificate and license. Then the certificate again when it renews." },
-  { who: "Freelancers", asks: "Each client wants a W-9 and an NDA signed before the first call, and your own agreement after it." },
+const WHO: { who: string; asks: string; page?: { href: string; label: string } }[] = [
+  {
+    who: "Contractors",
+    asks: "Every new general contractor or property manager wants your W-9, insurance certificate and license. Then the certificate again when it renews.",
+    page: { href: "/for/contractors", label: "ShipShape for contractors" },
+  },
+  {
+    who: "Freelancers",
+    asks: "Each client wants a W-9 and an NDA signed before the first call, and your own agreement after it.",
+    page: { href: "/for/freelancers", label: "ShipShape for freelancers" },
+  },
   { who: "Restaurants and shops", asks: "Landlords, suppliers and delivery apps ask for permits, certificates and tax forms, and you collect the same from your vendors." },
 ];
 
@@ -150,6 +158,11 @@ export default function Home() {
                 <div key={w.who} className="rounded-2xl border border-line p-5">
                   <h3 className="font-semibold">{w.who}</h3>
                   <p className="mt-2 text-base text-ink-2 sm:text-sm">{w.asks}</p>
+                  {w.page && (
+                    <Link href={w.page.href} className="mt-3 inline-block text-base underline sm:text-sm">
+                      {w.page.label}
+                    </Link>
+                  )}
                 </div>
               ))}
             </div>

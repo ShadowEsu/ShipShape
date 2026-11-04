@@ -27,6 +27,8 @@ export function SiteHeader() {
 }
 
 const FOOTER: [href: string, label: string][] = [
+  ["/for/contractors", "For contractors"],
+  ["/for/freelancers", "For freelancers"],
   ["/pricing", "Pricing"],
   ["/faq", "FAQ"],
   ["/status", "Status"],
