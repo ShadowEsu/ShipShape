@@ -31,7 +31,8 @@ const RULES: { kind: DocKind; test: RegExp; name?: string; verb?: { before?: Reg
     test: /\b(?:(?:form\s+)?w-?\s?8(?:\s?-?\s?ben(?:-?e)?)?|resale\s+certificates?|(?:sales[\s-]+tax\s+)?exemption\s+certificates?|tax[\s-]+exempt(?:ion)?\s+certificates?)\b/gi,
   },
   {
-    kind: "coi",
+    // Kind "other": matched by its title's words only, so a general liability certificate isn't taken for it.
+    kind: "other",
     test: /\bworkers['’]?\s*comp(?:ensation)?(?:\s+insurance)?(?:\s+certificates?)?\b/gi,
     name: "Workers' compensation certificate",
   },

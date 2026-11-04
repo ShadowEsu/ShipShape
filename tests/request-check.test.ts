@@ -40,6 +40,13 @@ describe("what a request names", () => {
     ]);
   });
 
+  it("names a workers' comp certificate as its own document, not as the general liability certificate", () => {
+    expect(kinds("A certificate of insurance and a workers' comp certificate.")).toEqual([
+      ["coi", "Certificate of insurance"],
+      ["other", "Workers' compensation certificate"],
+    ]);
+  });
+
   it("counts a document named twice once, and a bare name after a fuller one as that same document", () => {
     expect(kinds("Send your COI today. The COI must name us as additional insured.")).toEqual([["coi", "Certificate of insurance"]]);
     expect(kinds("We need your contractor license. The license must be current, and so must the licenses of your subs.")).toEqual([
@@ -136,6 +143,13 @@ describe("checking a request by names", () => {
     expect(await count("select count(*)::int as n from app.ai_calls where org_id = $1", ctx.orgId)).toBe(0);
     expect(await count("select count(*)::int as n from app.consents where user_id = $1", ctx.userId)).toBe(0);
     expect(await count("select count(*)::int as n from app.audit_log where org_id = $1 and action like 'ai.%'", ctx.orgId)).toBe(0);
+  });
+
+  it("doesn't count a general liability certificate as the workers' comp certificate asked for", async () => {
+    const ctx = await workspace();
+    await addDoc(ctx, "Certificate of liability insurance", "coi", 200);
+    const [item] = await readRequestByNames(ctx, "Please send your workers' comp certificate before Monday.", "net-6");
+    expect([item.state, item.matches]).toEqual(["unmatched", []]);
   });
 
   it("refuses text too short or too long for the text field, as the AI does", async () => {
