@@ -54,7 +54,7 @@ No secret is printed:
 
 To undo it, see "Rollback" below.
 
-**Every later production deploy: migrations first, then the code** (Security MUST-ST1, 2026-11-02). When a release adds a migration, run `npm run migrate` against production (as the master, as in step 6) and see it applied before the new code takes traffic. The code may read what the migration adds: from `0044` on, the signing page reads `esign_open`'s `signed_name`. Code from before `0044` still runs on the migrated database (it selects its own columns), but code from `0044` on fails on an older one, and every `/s/` link breaks in both looks. From `0045` on, the redesigned document and passport link pages, `/app/saved` and the sample workspace's setup read `app.saved_items`: on a database without it they fail too. From `0046` on, the redesigned document page, `/app/people`, search (⌘K), the export and the sample workspace's setup read `app.contacts`, and fail the same way without it. From `0048` on, the daily reminder run writes `app.outbox.document_id` and Delete for good calls `app.delete_document`: on a database without them, no reminder is written and deleting fails. A future migration that the running code can't survive needs its own order, agreed with Security before the release.
+**Every later production deploy: migrations first, then the code** (Security MUST-ST1, 2026-11-02). When a release adds a migration, run `npm run migrate` against production (as the master, as in step 6) and see it applied before the new code takes traffic. The code may read what the migration adds: from `0044` on, the signing page reads `esign_open`'s `signed_name`. Code from before `0044` still runs on the migrated database (it selects its own columns), but code from `0044` on fails on an older one, and every `/s/` link breaks in both looks. From `0045` on, the redesigned document and passport link pages, `/app/saved` and the sample workspace's setup read `app.saved_items`: on a database without it they fail too. From `0046` on, the redesigned document page, `/app/people`, search (⌘K), the export and the sample workspace's setup read `app.contacts`, and fail the same way without it. From `0048` on, the daily reminder run writes `app.outbox.document_id` and Delete for good calls `app.delete_document`: on a database without them, no reminder is written and deleting fails. From `0049` on, only the email sender reads what it adds, and only with `SHIPSHAPE_EMAIL=1` ("Email"); with email off the code runs on a database without it. A future migration that the running code can't survive needs its own order, agreed with Security before the release.
 
 | File | Creates |
 | --- | --- |
@@ -63,6 +63,7 @@ To undo it, see "Rollback" below.
 | `app-role.yaml` | Vercel's IAM OIDC provider and the role `shipshape-prod-app`, with one inline policy |
 | `database.yaml` | RDS for PostgreSQL 17 (`db.t4g.micro`, Single-AZ, 20 GB gp3), its parameter group, subnet group, security group and log group |
 | `budgets.yaml` | The two budget alarms |
+| `mail.yaml` | Reminder email, off until Security's GO and not run by `launch.sh`: the sender's SES domain identity (Easy DKIM), the configuration set `shipshape-mail`, and the SNS topic for bounces and complaints, subscribed to the app. See "Email" |
 
 Everything is in us-east-1.
 
@@ -83,6 +84,9 @@ Everything is in us-east-1.
 | database | `InstanceIdentifier` | Default `shipshape-prod` (`PROBE_DB_INSTANCE`) |
 | database | `LogRetentionDays` | Default `30`: how long CloudWatch keeps the exported Postgres log |
 | budgets | `AlertEmail` | the account owner's own address |
+| app-role | `SenderAddress`, `SenderIdentityArn` | Default empty: no SES permission. Only when turning email on ("Email"): the sender address and mail's `IdentityArn` |
+| signin | `CodesFrom`, `CodesIdentityArn` | Default empty: Cognito's own sender. Only once SES is out of the sandbox ("Email", step 8) |
+| mail | `SenderAddress`, `AppUrl` | Preston's sender address (its domain becomes the identity) and `SHIPSHAPE_APP_URL` |
 
 ## Deploy order and commands
 
@@ -150,6 +154,44 @@ Afterwards:
 
 The redesigned app is the default. If it breaks somewhere in production, set `SHIPSHAPE_UI` to exactly `v1` (lowercase, nothing else) in Vercel's Production environment and redeploy in the day's slot: every page renders the earlier look, with the same data, actions and routes. Any other value, or no value, is the redesigned app. To return to it, delete the variable and redeploy.
 
+## Email (off until Security's GO)
+
+Nothing here is live. Reminder email (B12) stays off until all three are there: the AWS account (the launch above), Preston's sender address, and Security's GO on the PR that turns it on (Security 2026-11-04 0715, answer 5). Off is the default: `SHIPSHAPE_EMAIL` unset, the app sends no email, the app role has no SES permission, Cognito uses its own sender (`no-reply@verificationemail.com`, which the privacy policy names), and Deadlines says email is off.
+
+On, the daily run emails each reminder it wrote (`lib/server/mail.ts`):
+- once, plain text only, through the configuration set `shipshape-mail` (no open or click tracking; SES itself suppresses addresses that bounce or complain);
+- only reminders, never signing codes, and only to the account address of an owner or admin of the workspace who signed up through Cognito, never a vendor's or signer's address;
+- at most 10 per account and 200 in all per 24 hours, and none over 3 days old;
+- never to an address on the app's suppression list (`app.email_suppressions`, filled from SES's bounce and complaint notifications, which `POST /api/mail/events` takes only from `shipshape-mail-events` with a valid SNS signature). A failed send is retried by the next two daily runs.
+
+To turn it on, in this order (us-east-1, the launch's Identity Center session):
+
+```sh
+# 1. The identity, configuration set and topic.
+aws cloudformation deploy --region us-east-1 --stack-name shipshape-mail --template-file infra/mail.yaml \
+  --parameter-overrides SenderAddress=<Preston's sender address> AppUrl=https://<app>
+aws cloudformation describe-stacks --region us-east-1 --stack-name shipshape-mail --query 'Stacks[0].Outputs'
+
+# 2. Add the three DkimRecord CNAMEs to the domain's DNS, then wait for SUCCESS.
+aws sesv2 get-email-identity --region us-east-1 --email-identity <the sender's domain> --query 'DkimAttributes.Status'
+
+# 3. Leave the sandbox: SES console, Account dashboard, "Request production access" (transactional; bounces and
+#    complaints handled by the configuration set and the app's suppression list). Wait for true:
+aws sesv2 get-account --region us-east-1 --query ProductionAccessEnabled
+
+# 4. Let the app role send, as the sender only. Unnamed parameters keep their values.
+aws cloudformation deploy --region us-east-1 --stack-name shipshape-app-role --template-file infra/app-role.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides SenderAddress=<the sender address> SenderIdentityArn=<mail IdentityArn>
+```
+
+5. Run `npm run migrate` against production (0049 adds the outbox's sending columns and the suppression list), then set in Vercel, Production only: `SHIPSHAPE_EMAIL=1`, `SHIPSHAPE_EMAIL_FROM=<the sender address>` and `SHIPSHAPE_SES_EVENTS_TOPIC_ARN=<mail EventsTopicArn>` (`AWS_REGION` is already there). Redeploy. `/api/health` answers 503 with `"config": "missing"` if any of them is missing or invalid.
+6. Confirm the topic's subscription: it was pending since step 1 (the endpoint answered 404 while email was off). In the SNS console, open `shipshape-mail-events`, select the subscription and choose "Request confirmation"; the app confirms it itself. `aws sns list-subscriptions-by-topic --region us-east-1 --topic-arn <EventsTopicArn>` then shows a subscription ARN, not `PendingConfirmation`.
+7. Run `scripts/probe-aws.mjs` again with `PROBE_SES_SENDER` and `PROBE_SES_IDENTITY_ARN` set too: the role must allow `ses:SendEmail` exactly as `app-role.yaml` writes it.
+8. Sign-up codes from the sender too (a separate decision, only after step 3: in the sandbox Cognito couldn't email anyone): redeploy `shipshape-signin` with `CodesFrom="ShipShape <the sender address>" CodesIdentityArn=<mail IdentityArn>`, and in the same release change the privacy policy's sender to the address (Security answer 6). The session needs `iam:CreateServiceLinkedRole`: Cognito makes its service-linked role for SES.
+
+To turn it off: delete `SHIPSHAPE_EMAIL` and redeploy (sending stops at once); then redeploy `shipshape-app-role` and `shipshape-signin` with the four email parameters empty (`SenderAddress= SenderIdentityArn=`, `CodesFrom= CodesIdentityArn=`), and delete the `shipshape-mail` stack (the identity, configuration set, topic and subscription go with it; nothing is retained). SES costs $0.10 per 1,000 emails; the topic's HTTPS deliveries cost pennies.
+
 ## Rollback
 
 Deleting a stack never deletes data. The key, bucket, pool, database and log group have `DeletionPolicy: Retain`, so they stay behind:
@@ -161,6 +203,7 @@ Deleting a stack never deletes data. The key, bucket, pool, database and log gro
 | `shipshape-app-role` | Nothing | The OIDC provider, the role |
 | `shipshape-database` | The RDS instance (also deletion protection) and its log group | The parameter group, subnet group and security group, but only once the instance is gone: while it uses them, the stack's delete fails |
 | `shipshape-budgets` | Nothing | Both budgets |
+| `shipshape-mail` (only if email was turned on) | Nothing | The SES identity, the configuration set, the topic and its subscription |
 
 To remove everything, in this order (us-east-1; the ids are in each stack's outputs):
 
@@ -223,6 +266,8 @@ The next `npm run migrate` applies it again. Undo only the newest applied migrat
 
 `0048_delete_document.down.sql` (Delete for good) drops `app.delete_document`, puts back 0039's `esign_issue_code` and the outbox without `document_id`, and gives signed-in owners and admins their direct delete on `app.documents` back (0001's grant and policy). Documents already deleted stay deleted, with their History rows; files still queued in `app.storage_cleanup` stay queued for the daily run. `tests/delete-document.test.ts` proves down then up for 0048 on PGlite.
 
+`0049_email_sending.down.sql` (reminder email) drops `app.email_suppressions` and the outbox's sending columns (`claimed_at`, `sent_at`, `attempts`, `last_error`, `ses_message_id`). Turn email off first: the sender reads them. The outbox rows stay. `tests/mail.test.ts` proves down then up for 0049 on PGlite.
+
 ## Not in these templates (operator or the account owner, at M6)
 
 | Item | Why it isn't here | Source |
@@ -230,7 +275,7 @@ The next `npm run migrate` applies it again. Undo only the newest applied migrat
 | Account-level Block Public Access | Not a CloudFormation resource. Step 0 above sets it; `launch.sh` reads it back for the signed-in account (`--output json`, all four on and nothing else, or the run fails) | aws-plan S3 row |
 | CloudTrail, all regions, into a separate private bucket | aws-plan lists it under Audit. It isn't one of these five templates | aws-plan Audit row |
 | GuardDuty RDS Protection | Account-wide, and it costs money after the trial. aws-plan says to check that cost at setup | R-4 (SHOULD) |
-| SES production access | It's a support request. Production email stays off until BOSS and Security say go | aws-plan Email row |
+| SES production access | It's a support request ("Email", step 3). Production email stays off until BOSS and Security say go | aws-plan Email row |
 | IAM Identity Center, root MFA, the Paid plan, Activate | account owner only | aws-plan "What the owner does" |
 | The database's roles and `shipshape_app`'s password | They live in SQL (`plain-postgres.sql`, `npm run migrate`), not in AWS resources. `launch.sh` sets the password as a SCRAM-SHA-256 verifier it computes (`scripts/launch-checks.ts`), then logs in once as `shipshape_app` to prove it | R-1, R-2, BOSS rule 2 |
 
@@ -276,7 +321,10 @@ The next `npm run migrate` applies it again. Undo only the newest applied migrat
 | `s3:ListBucket` on the bucket, only under a workspace's `<org id>/` prefix (the daily sweep of a deleted workspace's files, W11-7; telling a missing file from a refused one, W12-1) | aws-plan TO-1; probe PR-2 (exactly this condition) | Sid `SweepDeletedWorkspace`, `Condition: StringLike s3:prefix "????????-????-????-????-????????????/*"`. Any one workspace's keys, one prefix per call: listing `<org id>/` already returned every key under it. The app checks the exact id shape before it lists (`assertWorkspacePrefix`) |
 | `kms:GenerateDataKey` and `kms:Decrypt` on the one key, only through S3 | IAM drafts `FileKey`; W12-11; probe PR-2 (exactly this condition) | Sid `FileKey`, `Resource: FileKeyArn`, `Condition: StringEquals kms:ViaService "s3.${AWS::Region}.amazonaws.com"` (the app uses the key only through SSE-KMS) |
 | `cognito-idp:AdminDeleteUser` on the one pool | IAM drafts `DeleteAccounts`; probe PR-2 | Sid `DeleteAccounts`, `Resource: UserPoolArn` |
-| Nothing more: no other conditions, no wildcards, no managed policies, no permissions boundary | probe PR-2, P-b0a | `AppRole` has one inline policy and no `ManagedPolicyArns` or `PermissionsBoundary`. Only `SweepDeletedWorkspace` and `FileKey` carry a condition |
+| `ses:SendEmail` only, on the sender's identity and the configuration set, as the one sender; only once email is on | Security 2026-11-04 0715, answer 5; probe PR-2 with `PROBE_SES_*` (exactly this statement; without them any ses grant fails) | Sid `SendReminders`, only with `SenderAddress` and `SenderIdentityArn` set (`SendsEmail`): `Action: ses:SendEmail` (no `SendRawEmail`, `SendBulkEmail` or `ses:*`), `Resource: [SenderIdentityArn, configuration-set/shipshape-mail]`, `Condition: StringEquals ses:FromAddress SenderAddress`. `tests/probe-aws-rules.test.ts` pins the template's lines |
+| Cognito email through SES only once out of the sandbox | Security answer 5 | `signin.yaml` `UserPool.EmailConfiguration`, only with `CodesFrom` and `CodesIdentityArn` set (`CodesThroughSes`): `EmailSendingAccount: DEVELOPER`, `SourceArn: CodesIdentityArn`, `ConfigurationSet: shipshape-mail`. Otherwise absent: Cognito's default sender |
+| Bounces and complaints suppressed; no tracking | Security answer 5 | `mail.yaml` `MailSet.SuppressionOptions.SuppressedReasons: [BOUNCE, COMPLAINT]`, no `TrackingOptions`; `BouncesAndComplaints` publishes only `bounce` and `complaint` to `EventsTopic` (`SignatureVersion: "2"`), whose policy lets only SES, for this configuration set, publish |
+| Nothing more: no other conditions, no wildcards, no managed policies, no permissions boundary | probe PR-2, P-b0a | `AppRole` has one inline policy and no `ManagedPolicyArns` or `PermissionsBoundary`. Only `SweepDeletedWorkspace`, `FileKey` and (with email on) `SendReminders` carry a condition |
 | No long-lived access keys | aws-plan Credentials | No `AWS::IAM::User` or `AccessKey` anywhere |
 | Pool: email sign-in, email required and auto-verified | Security 0541 M6 list; probe Cognito pool | `signin.yaml` `UserPool.UsernameAttributes: [email]`, `Schema` email `Required: true`, `AutoVerifiedAttributes: [email]` |
 | An email change applies only once the new address is verified | same probe line | `UserPool.UserAttributeUpdateSettings.AttributesRequireVerificationBeforeUpdate: [email]` |

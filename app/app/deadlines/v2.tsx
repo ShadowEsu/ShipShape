@@ -90,6 +90,7 @@ export function DeadlinesV2({
   reminders,
   member,
   demo,
+  emailed,
   first,
   zone,
   quiet,
@@ -101,6 +102,8 @@ export function DeadlinesV2({
   reminders: boolean;
   member: boolean;
   demo: boolean;
+  /** Reminders are emailed (SHIPSHAPE_EMAIL=1, lib/server/mail.ts). Never a sample workspace's: `demo` wins. */
+  emailed: boolean;
   first: { id: string; title: string } | null;
   zone: string;
   quiet: boolean;
@@ -170,7 +173,9 @@ export function DeadlinesV2({
           <p className="text-sm text-ink-3">
             {demo
               ? "During the preview ShipShape doesn't send email; reminders and signing codes land here instead."
-              : "During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown."}
+              : emailed
+                ? "ShipShape emails each reminder to the sign-in address of every owner and admin, and keeps a copy here. Signing codes for real documents aren't shown."
+                : "During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown."}
           </p>
         )}
         {member ? null : outbox.length === 0 ? (
