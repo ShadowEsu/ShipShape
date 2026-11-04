@@ -3,9 +3,9 @@ import { wrapLines } from "./compose";
 
 /**
  * The sample workspace's papers drawn as full pages (ledger 461, weakest spot 5a): an insurance certificate, a state
- * contractor license and a city business license that read as the real thing at a glance. Each layout is ShipShape's
- * own (not a copy of any issuer's or ACORD's form), every name and number is made up, and every page says SAMPLE in
- * its watermark, its headings and its footer.
+ * contractor license and a city business license that read as the real thing at a glance. Each layout, label and notice
+ * is ShipShape's own wording (not a copy of any issuer's or ACORD's form); every name, code and number is made up, none
+ * a real agency's or board's; and every page says SAMPLE in its watermark, its headings and its footer.
  */
 
 export interface SampleBusiness {
@@ -113,7 +113,7 @@ export function sampleCertificate(b: SampleBusiness, d: CertificateDates): Promi
     let y = H - M - 38;
     y = para(
       page,
-      "This certificate is a summary, given for information only. It doesn't change, extend or replace the coverage of the policies below, and it gives the certificate holder no rights beyond what those policies give. Where the holder is an additional insured, the policy must say so in an endorsement.",
+      "For the holder's records: the policies in force on the date above. The policies alone decide what is covered; nothing on this page changes them or gives the holder rights under them. To be an additional insured, the holder must be named in an endorsement to the policy.",
       M,
       y,
       W - M * 2,
@@ -123,30 +123,31 @@ export function sampleCertificate(b: SampleBusiness, d: CertificateDates): Promi
     );
 
     const top1 = y - 6;
-    box(page, f, M, top1, mid - M, 74, "PRODUCER");
-    lines(page, f, ["Example Insurance Agency (sample)", "300 Example Boulevard, Suite 4", "Springfield, CA 90000", "License 0X00000 (sample)"], M, top1);
-    box(page, f, mid, top1, right - mid, 74, "CONTACT");
+    box(page, f, M, top1, mid - M, 74, "AGENCY");
+    lines(page, f, ["Example Insurance Agency (sample)", "300 Example Boulevard, Suite 4", "Springfield, CA 90000", "Agency license SAMPLE-AG-01"], M, top1);
+    box(page, f, mid, top1, right - mid, 74, "AGENCY CONTACT");
     lines(page, f, ["Pat Example (sample)", "Phone (555) 010-0199", "certificates@agency.example"], mid, top1);
 
     const top2 = top1 - 74;
-    box(page, f, M, top2, mid - M, 74, "INSURED");
+    box(page, f, M, top2, mid - M, 74, "POLICYHOLDER");
     lines(page, f, [b.legalName, `DBA ${b.dba}`, b.address[0], b.address[1]], M, top2);
-    box(page, f, mid, top2, right - mid, 74, "INSURERS AFFORDING COVERAGE");
+    box(page, f, mid, top2, right - mid, 74, "INSURANCE COMPANIES");
     for (const [i, [ltr, name, naic]] of [
       ["A", "Example Mutual Insurance (sample)", "00000"],
       ["B", "Example Casualty Company (sample)", "00001"],
     ].entries()) {
       const ry = top2 - 18 - i * 16;
-      text(page, `INSURER ${ltr}`, mid + 8, ry, 7, f.sansBold, MUTED);
+      text(page, `CO. ${ltr}`, mid + 8, ry, 7, f.sansBold, MUTED);
       text(page, name, mid + 52, ry, 9, f.sans);
-      text(page, `NAIC ${naic}`, right - 8 - f.sans.widthOfTextAtSize(`NAIC ${naic}`, 8), ry, 8, f.sans, MUTED);
+      text(page, `Code ${naic}`, right - 8 - f.sans.widthOfTextAtSize(`Code ${naic}`, 8), ry, 8, f.sans, MUTED);
     }
 
     const top3 = top2 - 82;
-    band(page, f, top3, 18, "COVERAGES", 9);
-    const certNo = "CERTIFICATE NUMBER SAMPLE-0001";
+    band(page, f, top3, 18, "POLICIES IN FORCE", 9);
+    const certNo = "No. SAMPLE-0001";
     text(page, certNo, right - 8 - f.sansBold.widthOfTextAtSize(certNo, 7.5), top3 - 5.5, 7.5, f.sansBold, WHITE);
-    // Letter, type, additional insured, policy number, effective, expires, limits: 540 points across.
+    // Company, coverage, the holder added as an insured, policy number, start, end, limits: 540 points across. Each
+    // heading fits its column at 6.5pt bold ("HOLDER" is about 27pt in 34).
     const cols = [20, 148, 34, 100, 54, 54, 130];
     let edge = M;
     const xs = cols.map((w) => {
@@ -154,7 +155,7 @@ export function sampleCertificate(b: SampleBusiness, d: CertificateDates): Promi
       edge += w;
       return x;
     });
-    const head = ["LTR", "TYPE OF INSURANCE", "ADDL INSD", "POLICY NUMBER", "EFFECTIVE", "EXPIRES", "LIMITS"];
+    const head = ["CO.", "COVERAGE", "HOLDER", "POLICY NO.", "STARTS", "ENDS", "LIMITS"];
     let ty = top3 - 18;
     page.drawRectangle({ x: M, y: ty - 16, width: W - M * 2, height: 16, color: TINT });
     head.forEach((h, i) => text(page, h, xs[i] + 3, ty - 5, 6.5, f.sansBold, MUTED));
@@ -164,18 +165,18 @@ export function sampleCertificate(b: SampleBusiness, d: CertificateDates): Promi
       {
         ltr: "A",
         type: ["Commercial general liability", "Occurrence"],
-        addl: "Y",
+        addl: "Yes",
         policy: "SAMPLE-GL-0000001",
         limits: [
           ["Each occurrence", "$1,000,000"],
-          ["Damage to rented premises", "$100,000"],
-          ["Medical expense, 1 person", "$5,000"],
-          ["Personal and adv. injury", "$1,000,000"],
+          ["Rented premises damage", "$100,000"],
+          ["Medical, per person", "$5,000"],
+          ["Personal and ad injury", "$1,000,000"],
           ["General aggregate", "$2,000,000"],
-          ["Products and comp. ops", "$2,000,000"],
+          ["Products and finished work", "$2,000,000"],
         ],
       },
-      { ltr: "A", type: ["Automobile liability", "Any auto"], addl: "Y", policy: "SAMPLE-AU-0000002", limits: [["Combined single limit", "$1,000,000"]] },
+      { ltr: "A", type: ["Automobile liability", "Any auto"], addl: "Yes", policy: "SAMPLE-AU-0000002", limits: [["Combined single limit", "$1,000,000"]] },
       { ltr: "A", type: ["Umbrella liability", "Occurrence"], addl: "", policy: "SAMPLE-UM-0000003", limits: [["Each occurrence", "$2,000,000"], ["Aggregate", "$2,000,000"]] },
       {
         ltr: "B",
@@ -195,7 +196,7 @@ export function sampleCertificate(b: SampleBusiness, d: CertificateDates): Promi
       const top = ty;
       text(page, r.ltr, xs[0] + 6, top - 5, 8.5, f.sansBold);
       r.type.forEach((t, i) => text(page, t, xs[1] + 3, top - 5 - i * 10, 8.5, i === 0 ? f.sansBold : f.sans));
-      if (r.addl) text(page, r.addl, xs[2] + 13, top - 5, 8.5, f.sansBold);
+      if (r.addl) text(page, r.addl, xs[2] + 9, top - 5, 8.5, f.sansBold);
       text(page, r.policy, xs[3] + 3, top - 5, 8, f.sans);
       text(page, period[0], xs[4] + 3, top - 5, 8, f.sans);
       text(page, period[1], xs[5] + 3, top - 5, 8, f.sans);
@@ -210,10 +211,10 @@ export function sampleCertificate(b: SampleBusiness, d: CertificateDates): Promi
     for (const x of xs.slice(1)) page.drawLine({ start: { x, y: ty }, end: { x, y: top3 - 18 }, thickness: 0.4, color: RULE });
 
     const top4 = ty - 8;
-    box(page, f, M, top4, W - M * 2, 52, "DESCRIPTION OF OPERATIONS, LOCATIONS AND VEHICLES");
+    box(page, f, M, top4, W - M * 2, 52, "WORK COVERED, AND THE HOLDER");
     para(
       page,
-      "Plumbing contractor. Northwind Builders (sample) is an additional insured on the general liability and automobile policies for the insured's work for it, as the written contract between them requires.",
+      "Plumbing work. Northwind Builders (sample) is added as an insured on the general liability and auto policies, for work the policyholder does for it, as their written contract requires.",
       M + 8,
       top4 - 16,
       W - M * 2 - 16,
@@ -222,13 +223,13 @@ export function sampleCertificate(b: SampleBusiness, d: CertificateDates): Promi
     );
 
     const top5 = top4 - 60;
-    box(page, f, M, top5, mid - M, 96, "CERTIFICATE HOLDER");
+    box(page, f, M, top5, mid - M, 96, "ISSUED TO");
     lines(page, f, ["Northwind Builders (sample)", "Attn: Jordan Lee", "200 Example Avenue", "Springfield, CA 90000"], M, top5, 10);
-    box(page, f, mid, top5, right - mid, 96, "CANCELLATION");
-    para(page, "If any policy above is cancelled before its expiration date, notice will be delivered under the policy's own terms.", mid + 8, top5 - 16, right - mid - 16, 8, f.sans);
+    box(page, f, mid, top5, right - mid, 96, "IF A POLICY ENDS EARLY");
+    para(page, "If a policy above ends before the date shown, the insurer gives notice as that policy requires.", mid + 8, top5 - 16, right - mid - 16, 8, f.sans);
     rule(page, mid + 8, right - 8, top5 - 78, 0.6, INK);
     text(page, "R. Example", mid + 12, top5 - 60, 14, f.serifItalic);
-    text(page, "AUTHORIZED REPRESENTATIVE (SAMPLE)", mid + 8, top5 - 82, 6.5, f.sansBold, MUTED);
+    text(page, "SIGNED FOR THE AGENCY (SAMPLE)", mid + 8, top5 - 82, 6.5, f.sansBold, MUTED);
   });
 }
 
@@ -251,7 +252,7 @@ export function sampleContractorLicense(b: SampleBusiness, d: { issued: string; 
   return paper("Contractor license", (page, f) => {
     page.drawRectangle({ x: M - 8, y: M + 4, width: W - (M - 8) * 2, height: H - M * 2 - 4, borderColor: INK, borderWidth: 2 });
     page.drawRectangle({ x: M - 2, y: M + 10, width: W - (M - 2) * 2, height: H - M * 2 - 16, borderColor: INK, borderWidth: 0.5 });
-    centred(page, "STATE CONTRACTORS LICENSE BOARD (SAMPLE)", H - 64, 10, f.sansBold);
+    centred(page, "EXAMPLE STATE BOARD OF CONTRACTORS (SAMPLE)", H - 64, 10, f.sansBold);
     centred(page, "A made-up board for ShipShape's sample. No board issued this license.", H - 78, 7.5, f.sans, MUTED);
     seal(page, f, W / 2, H - 140, ["STATE OF", "EXAMPLE", "BOARD SEAL"]);
     centred(page, "Contractor License", H - 210, 34, f.serifBold);
@@ -270,8 +271,8 @@ export function sampleContractorLicense(b: SampleBusiness, d: { issued: string; 
     const colW = (W - left * 2 - 32) / 2;
     const second = left + colW + 32;
     const rows: [string, string, string, string][] = [
-      ["CLASSIFICATION", "C-36 Plumbing (sample)", "STATUS", "Active"],
-      ["ENTITY", "Limited liability company", "QUALIFIER (RMO)", b.signer],
+      ["CLASSIFICATION", "Class P-1 Plumbing (sample)", "STATUS", "Active"],
+      ["ENTITY", "Limited liability company", "QUALIFYING PERSON", b.signer],
       ["ISSUED", usDate(d.issued), "EXPIRES", usDate(d.expires)],
       ["BUSINESS ADDRESS", b.address[0], "", b.address[1]],
     ];
@@ -284,7 +285,7 @@ export function sampleContractorLicense(b: SampleBusiness, d: { issued: string; 
     const sy = M + 120;
     text(page, "J. Example", left + 6, sy + 22, 18, f.serifItalic);
     rule(page, left, left + colW, sy, 0.6, INK);
-    text(page, "REGISTRAR OF CONTRACTORS (SAMPLE)", left, sy - 6, 6.5, f.sansBold, MUTED);
+    text(page, "FOR THE BOARD (SAMPLE)", left, sy - 6, 6.5, f.sansBold, MUTED);
     para(
       page,
       "Display this license where you do business. A license is personal to the licensee and can't be transferred. Anyone can check its status with the board.",
@@ -310,7 +311,9 @@ export function sampleCityLicense(b: SampleBusiness, d: { from: string; to: stri
     text(page, "ACCOUNT NUMBER", right - 142, H - M - 12, 6.5, f.sansBold, MUTED);
     text(page, d.account, right - 142, H - M - 24, 11, f.sansBold);
     text(page, "LICENSE YEAR", right - 142, H - M - 42, 6.5, f.sansBold, MUTED);
-    text(page, `${d.from.slice(0, 4)} to ${d.to.slice(0, 4)}`, right - 142, H - M - 54, 11, f.sansBold);
+    // One year when the license runs inside a single calendar year (Jan 1 to Dec 31), not "2024 to 2024".
+    const [y1, y2] = [d.from.slice(0, 4), d.to.slice(0, 4)];
+    text(page, y1 === y2 ? y2 : `${y1} to ${y2}`, right - 142, H - M - 54, 11, f.sansBold);
 
     band(page, f, H - 130, 36, "BUSINESS LICENSE AND TAX CERTIFICATE", 15);
 
