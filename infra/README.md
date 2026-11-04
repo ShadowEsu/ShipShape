@@ -54,7 +54,7 @@ No secret is printed:
 
 To undo it, see "Rollback" below.
 
-**Every later production deploy: migrations first, then the code** (Security MUST-ST1, 2026-11-02). When a release adds a migration, run `npm run migrate` against production (as the master, as in step 6) and see it applied before the new code takes traffic. The code may read what the migration adds: from `0044` on, the signing page reads `esign_open`'s `signed_name`. Code from before `0044` still runs on the migrated database (it selects its own columns), but code from `0044` on fails on an older one, and every `/s/` link breaks in both looks. From `0045` on, the redesigned document and passport link pages, `/app/saved` and the sample workspace's setup read `app.saved_items`: on a database without it they fail too. From `0046` on, the redesigned document page, `/app/people`, search (⌘K), the export and the sample workspace's setup read `app.contacts`, and fail the same way without it. A future migration that the running code can't survive needs its own order, agreed with Security before the release.
+**Every later production deploy: migrations first, then the code** (Security MUST-ST1, 2026-11-02). When a release adds a migration, run `npm run migrate` against production (as the master, as in step 6) and see it applied before the new code takes traffic. The code may read what the migration adds: from `0044` on, the signing page reads `esign_open`'s `signed_name`. Code from before `0044` still runs on the migrated database (it selects its own columns), but code from `0044` on fails on an older one, and every `/s/` link breaks in both looks. From `0045` on, the redesigned document and passport link pages, `/app/saved` and the sample workspace's setup read `app.saved_items`: on a database without it they fail too. From `0046` on, the redesigned document page, `/app/people`, search (⌘K), the export and the sample workspace's setup read `app.contacts`, and fail the same way without it. From `0048` on, the daily reminder run writes `app.outbox.document_id` and Delete for good calls `app.delete_document`: on a database without them, no reminder is written and deleting fails. A future migration that the running code can't survive needs its own order, agreed with Security before the release.
 
 | File | Creates |
 | --- | --- |
@@ -220,6 +220,8 @@ The next `npm run migrate` applies it again. Undo only the newest applied migrat
 `0046_contacts.down.sql` (People) drops `app.contacts` and its two trigger functions; every contact goes with it, so export the workspace first (`contacts.csv`) to keep them. `tests/people.test.ts` proves down then up for 0046 on PGlite.
 
 `0047_audit_request_about.down.sql` (History names a request's signer) puts back 0015's audit trigger function, so new signature-request rows are about the document only again. Rows written meanwhile keep their `about` and their hashes, which cover it, so `app.audit_verify` still passes. `tests/activity.test.ts` proves down then up for 0047 on PGlite.
+
+`0048_delete_document.down.sql` (Delete for good) drops `app.delete_document`, puts back 0039's `esign_issue_code` and the outbox without `document_id`, and gives signed-in owners and admins their direct delete on `app.documents` back (0001's grant and policy). Documents already deleted stay deleted, with their History rows; files still queued in `app.storage_cleanup` stay queued for the daily run. `tests/delete-document.test.ts` proves down then up for 0048 on PGlite.
 
 ## Not in these templates (operator or the account owner, at M6)
 

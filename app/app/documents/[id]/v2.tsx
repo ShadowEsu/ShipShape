@@ -16,6 +16,7 @@ import { SaveToggle } from "../../saved/save-toggle";
 import { archive } from "../actions";
 import { DetailsListForm, SignRequestForm, VersionForm } from "../forms";
 import { archiveQuestion, versionWarning } from "../messages";
+import { DeleteForGood } from "./delete-dialog";
 import { fieldSources, size } from "./shared";
 import { SignatureRequests } from "./signatures";
 
@@ -88,6 +89,8 @@ export function DocumentV2(p: {
   signer: { name: string; email: string } | null;
   /** The signers' addresses already in People (lowercased): "In People" beside them, "Keep in People" beside the others. */
   kept: ReadonlySet<string>;
+  /** An owner or admin (Security D3): an archived document offers Delete for good. */
+  canDelete: boolean;
 }) {
   const { doc, versions, template, zone } = p;
   const latest = versions[0];
@@ -156,6 +159,7 @@ export function DocumentV2(p: {
             This document is archived. It keeps its history and was taken off your passport links; it isn&apos;t reminded about or open for signing.
             Restoring it won&apos;t put it back on any link.
           </Notice>
+          {p.canDelete && <DeleteForGood id={doc.id} title={doc.title} />}
         </div>
       )}
 

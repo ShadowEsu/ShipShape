@@ -182,8 +182,9 @@ export async function runReminders(today = isoToday(), onlyOrg: string | null = 
             [r.org_id],
           );
           const { subject, body } = reminderText(r);
+          // The message names the document's title, so it goes when the document is deleted for good (0048).
           for (const to of recipients) {
-            await sp.query("insert into app.outbox (org_id, to_email, subject, body) values ($1, $2, $3, $4)", [r.org_id, to.email, subject, body]);
+            await sp.query("insert into app.outbox (org_id, to_email, subject, body, document_id) values ($1, $2, $3, $4, $5)", [r.org_id, to.email, subject, body, r.document_id]);
           }
           return true;
         });

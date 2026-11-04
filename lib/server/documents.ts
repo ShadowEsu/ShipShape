@@ -6,7 +6,7 @@ import { isPrintable } from "@/lib/pdf/compose";
 import { templateById } from "@/lib/templates/catalog";
 import type { Validity } from "@/lib/today";
 import { sha256Hex } from "./crypto";
-import { asUser, type Tx } from "./db";
+import { asUser, pgErrorCode, type Tx } from "./db";
 import { checkUpload, EXTENSION, UploadRefused, type AllowedMime } from "./files";
 import { fillRecord, prefill, render, validate, type FieldSource, type Values } from "./fill";
 import { UserError } from "./errors";
@@ -14,8 +14,9 @@ import { assertCanFill, assertRealData, realDocsEnabled } from "./flags";
 import { rateLimited } from "./http";
 import { FILL_BUSY, UPLOAD_BUSY } from "./limits";
 import { assertRoomForFile, assertWithinPlan, sampleFull } from "./plans";
-import { factsForFill, saveEin, type Ctx } from "./profile";
-import { blobStore, foldName, putVersionFile } from "./storage";
+import { factsForFill, NeedsRecentSignIn, saveEin, type Ctx } from "./profile";
+import { recentEnough } from "./session";
+import { blobStore, foldName, putVersionFile, removeQueued } from "./storage";
 
 export const DOC_KINDS = {
   w9: "W-9",
@@ -522,6 +523,61 @@ export async function setArchived(ctx: Ctx, id: string, archived: boolean) {
     return tx.query("update app.documents set status = $3 where id = $1 and org_id = $2 returning 1", [id, ctx.orgId, archived ? "archived" : "active"]);
   });
   if (!rows.length) throw new UserError(DOCUMENT_GONE);
+}
+
+/** Who may delete a document for good: owners and admins (Security D3), as app.delete_document checks again. */
+export const canDeleteDocuments = (ctx: Pick<Ctx, "role">) => ctx.role !== "member";
+
+/** Why a delete didn't happen, in the words the document's page shows. */
+export const DELETE_REFUSED = {
+  role: "Only an owner or admin can delete a document.",
+  active: "Archive this document first. Only an archived document can be deleted.",
+  signed: "Someone has already signed this document, so it can't be deleted: the signed copy is a record they rely on too.",
+  reauth: "For your security, sign in again to delete this document.",
+} as const;
+
+/** app.delete_document's refusals (0048) as sentences; another workspace's id reads as one this workspace doesn't have. */
+function deleteRefusal(code: string | null): string | null {
+  switch (code) {
+    case "42501":
+      return DELETE_REFUSED.role;
+    case "SS003":
+      return DOCUMENT_GONE;
+    case "SS004":
+      return DELETE_REFUSED.active;
+    case "SS005":
+      return DELETE_REFUSED.signed;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Deletes one archived document for good (C17; Security D1-D6), with its versions, stored files, signature requests,
+ * passport link membership, saves, reminders and outbox messages. The role and the sign-in come first, so a member is
+ * never sent to sign in again for something they can't do. The database does the rest in one transaction
+ * (app.delete_document): the document must be this workspace's and archived, and nobody may have signed it; open
+ * requests are withdrawn first; History keeps one document.deleted row with no title. The files go after the commit:
+ * they were queued in app.storage_cleanup with the rows, so a removal that fails here is logged (the count only) and
+ * the daily run retries it, and no row is ever left pointing at a removed file.
+ */
+export async function deleteDocument(ctx: Ctx, id: string): Promise<void> {
+  if (!z.uuid().safeParse(id).success) throw new UserError(DOCUMENT_GONE);
+  if (!canDeleteDocuments(ctx)) throw new UserError(DELETE_REFUSED.role);
+  if (!recentEnough(ctx)) throw new NeedsRecentSignIn(DELETE_REFUSED.reauth);
+  let rows: { storage_path: string }[];
+  try {
+    rows = await asUser(ctx.userId, (tx) => tx.query<{ storage_path: string }>("select storage_path from app.delete_document($1, $2)", [ctx.orgId, id]));
+  } catch (e) {
+    const refused = deleteRefusal(pgErrorCode(e));
+    if (refused) throw new UserError(refused);
+    throw e;
+  }
+  try {
+    await removeQueued(rows.map((r) => r.storage_path));
+  } catch {
+    console.error(`delete document: ${rows.length} stored files could not be removed yet; queued for the daily run`);
+  }
 }
 
 /** The name a downloaded file gets: the title in header-safe characters (accents folded), plus its version. */
