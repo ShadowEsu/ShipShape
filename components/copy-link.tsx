@@ -61,6 +61,10 @@ export function CopyLink({ id, label, url, v2 = false, focus = false }: { id: st
             "Copy link"
           )}
         </button>
+        {/* Always mounted, so the copy is announced: a button's own label changing isn't read out by many screen readers. */}
+        <p role="status" className="sr-only">
+          {copied ? "Link copied" : ""}
+        </p>
       </div>
       {state === "failed" && (
         <p role="alert" className="text-sm text-bad">

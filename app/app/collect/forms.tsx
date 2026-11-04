@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { ConfirmForm } from "@/components/confirm-form";
 import { CopyLink } from "@/components/copy-link";
 import { DaysChoice } from "@/components/days-choice";
 import { addVendorAction, deleteVendorFileAction, makeVendorLink, type CollectFormState } from "./actions";
@@ -238,11 +239,32 @@ export function VendorLinkForm({ vendorId, vendorName, days, v2 }: { vendorId: s
   );
 }
 
-/** Delete asks once more in place: the file and its stored copy go for good. */
-export function DeleteVendorFileForm({ fileId, filename }: { fileId: string; filename: string }) {
+/**
+ * Delete asks once more in place: the file and its stored copy go for good. Redesigned (`v2`), it's the app's
+ * ConfirmForm, which names the file and moves focus to the question and back; the current look keeps its own.
+ */
+export function DeleteVendorFileForm({ fileId, filename, v2 = false }: { fileId: string; filename: string; v2?: boolean }) {
   const [state, action, pending] = useActionState<CollectFormState, FormData>(deleteVendorFileAction, {});
   const [confirming, setConfirming] = useState(false);
 
+  if (v2) {
+    return (
+      <div className="space-y-2">
+        <ConfirmForm
+          action={action}
+          fields={{ id: fileId }}
+          trigger="Delete"
+          triggerLabel={`Delete ${filename}`}
+          question={`Delete ${filename} for good?`}
+          confirm="Delete file"
+          cancel="Keep"
+          destructive
+          pendingLabel="Deleting…"
+        />
+        <FormError error={state.error} />
+      </div>
+    );
+  }
   if (!confirming) {
     return (
       <button type="button" className="btn-ghost" onClick={() => setConfirming(true)} aria-label={`Delete ${filename}`}>

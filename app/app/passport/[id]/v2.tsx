@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Notice, PageHeader } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
+import { FocusOnLoad } from "@/components/focus-on-load";
 import { Icon } from "@/components/icons";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { type PassportDetail, PASSPORT_ACCESS_SHOWN } from "@/lib/server/passport";
@@ -34,7 +35,11 @@ export function PassportLinkV2({ p, zone, formError, saved }: { p: PassportDetai
         </p>
       )}
       {revokedAt ? (
-        <Notice tone="info">Turned off {timeOf(revokedAt, zone)}. Nobody can open it any more.</Notice>
+        // Turning off removes the control that had focus; the answer takes it and is read out (also on a later visit,
+        // where it's the link's one fact that matters).
+        <FocusOnLoad role="status">
+          <Notice tone="info">Turned off {timeOf(revokedAt, zone)}. Nobody can open it any more.</Notice>
+        </FocusOnLoad>
       ) : expired ? (
         <div className="space-y-3">
           <Notice>Expired {dayOf(p.link.expires_at, zone)}, so nobody can open it. If they still need these documents, make a new link.</Notice>

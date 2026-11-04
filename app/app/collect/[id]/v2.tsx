@@ -123,7 +123,7 @@ export function VendorV2({
                   <a href={`/app/collect/file/${f.id}`} className="btn-ghost press">
                     Download
                   </a>
-                  {!member && <DeleteVendorFileForm fileId={f.id} filename={f.filename} />}
+                  {!member && <DeleteVendorFileForm fileId={f.id} filename={f.filename} v2 />}
                 </span>
               </li>
             ))}
