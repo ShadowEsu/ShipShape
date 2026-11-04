@@ -12,6 +12,7 @@ import { esignAvailable, listSignatureRequests, SIGN_DAYS } from "@/lib/server/e
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { openLinksWith } from "@/lib/server/passport";
 import { keptEmails, signerFor } from "@/lib/server/people";
+import { samplePaperPreview } from "@/lib/server/sample";
 import { isSaved } from "@/lib/server/saved";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { templateById } from "@/lib/templates/catalog";
@@ -126,6 +127,7 @@ export default async function DocumentPage({
         signer={signer}
         kept={await keptEmails(ctx, requests.map((r) => r.signer_email))}
         canDelete={canDeleteDocuments(ctx)}
+        preview={await samplePaperPreview(ctx, latest)}
       />
     );
 

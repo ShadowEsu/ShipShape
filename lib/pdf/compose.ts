@@ -103,7 +103,7 @@ export function breakWord(word: Run[], width: number, widthOf: (w: Run[]) => num
 }
 
 /** Wraps one-font text into lines no wider than `width`; a word wider than a line is cut (`breakWord`). */
-export function wrapLines(text: string, font: PDFFont, size: number, width: number): string[] {
+export function wrapLines(text: string, font: Pick<PDFFont, "widthOfTextAtSize">, size: number, width: number): string[] {
   const widthOf = (w: Run[]) => font.widthOfTextAtSize(w.map((r) => r.text).join(""), size);
   const lines: string[] = [];
   let line = "";

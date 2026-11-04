@@ -1,5 +1,5 @@
 import "server-only";
-import { sampleCertificate, sampleCityLicense, sampleContractorLicense, type SampleBusiness } from "@/lib/pdf/sample-papers";
+import { samplePaper, samplePaperMarks, samplePaperPdf, type PaperMark, type SampleBusiness, type SamplePaper } from "@/lib/pdf/sample-papers";
 import type { ProfileKey } from "@/lib/profile-fields";
 import { templateById } from "@/lib/templates/catalog";
 import type { Facts, TemplateInfo } from "@/lib/templates/types";
@@ -8,7 +8,7 @@ import { seedSampleVendors } from "./collect";
 import { encryptField } from "./crypto";
 import { asUser, type Tx } from "./db";
 import { listOutbox } from "./deadlines";
-import { insertDocument } from "./documents";
+import { insertDocument, type VersionRow } from "./documents";
 import { completeSigning, createSignatureRequest, sendSigningCode } from "./esign";
 import { fillRecord, prefill, render } from "./fill";
 import { createPassport, openPassport, passportFileUrl } from "./passport";
@@ -85,16 +85,18 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
     p2_notice: "contracts@northwind.example",
   });
 
-  // Full-page papers drawn for the sample (lib/pdf/sample-papers.ts), each with the dates the documents carry.
+  // Full-page papers drawn for the sample (lib/pdf/sample-papers.ts), each with the dates the documents carry. The
+  // values a paper was drawn from stay with its version, so its preview is drawn from them too, never from details a
+  // visitor can edit afterwards (spot 5b).
   const business: SampleBusiness = { legalName: f.legal_name, dba: f.dba, address: [f.address_line1, `${f.city}, ${f.state} ${f.postal_code}`], signer: f.signer_name };
-  const certificates: { title: string; kind: "coi" | "license" | "permit"; issuer: string; issued: number; expires: number; pdf: () => Promise<Uint8Array> }[] = [
+  const papers: { title: string; kind: "coi" | "license" | "permit"; issuer: string; issued: number; expires: number; paper: SamplePaper }[] = [
     {
       title: "Certificate of liability insurance",
       kind: "coi",
       issuer: "Example Mutual Insurance (sample)",
       issued: -344,
       expires: 21,
-      pdf: () => sampleCertificate(business, { issued: day(-344), from: day(-344), to: day(21) }),
+      paper: { kind: "coi", business, dates: { issued: day(-344), from: day(-344), to: day(21) } },
     },
     {
       title: "Contractor license",
@@ -102,7 +104,7 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       issuer: "State licensing board (sample)",
       issued: -480,
       expires: 250,
-      pdf: () => sampleContractorLicense(business, { issued: day(-480), expires: day(250), number: "SAMPLE-000000" }),
+      paper: { kind: "contractor-license", business, license: { issued: day(-480), expires: day(250), number: "SAMPLE-000000" } },
     },
     {
       title: "City business license",
@@ -110,17 +112,18 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       issuer: "City of Springfield (sample)",
       issued: -377,
       expires: -12,
-      pdf: () => sampleCityLicense(business, { from: day(-377), to: day(-12), account: "SAMPLE-BL-0000" }),
+      paper: { kind: "city-license", business, license: { from: day(-377), to: day(-12), account: "SAMPLE-BL-0000" } },
     },
   ];
   let certificate: string | undefined;
-  for (const c of certificates) {
+  for (const c of papers) {
     const id = await insertDocument(
       tx,
       ctx,
       { title: `${c.title} (sample)`, kind: c.kind, issuer: c.issuer, issued_on: day(c.issued), expires_on: day(c.expires) },
-      { bytes: await c.pdf(), mime: "application/pdf" },
+      { bytes: await samplePaperPdf(c.paper), mime: "application/pdf" },
       "sample",
+      { paper: c.paper },
     );
     if (c.kind === "coi") certificate = id;
   }
@@ -130,6 +133,17 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await seedSampleVendors(tx, ctx, day);
   // People (0046): three made-up contacts, so People has someone in it.
   await seedSamplePeople(tx, ctx);
+}
+
+/**
+ * A sample document's first page as preview marks (spot 5b), or null. Decided here, on the server: only in a sample,
+ * only for a version the sample drew (its values kept with it), and only when those values still read as a paper.
+ * Real documents never get one (their thumbnails wait for 5c); no file is read either way (Security 20261104-1327).
+ */
+export async function samplePaperPreview(ctx: Ctx, version: Pick<VersionRow, "origin" | "fill_record"> | undefined): Promise<PaperMark[] | null> {
+  if (!ctx.demo || version?.origin !== "sample") return null;
+  const paper = samplePaper.safeParse(version.fill_record?.paper);
+  return paper.success ? samplePaperMarks(paper.data) : null;
 }
 
 /**
