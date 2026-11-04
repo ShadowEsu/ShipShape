@@ -7,7 +7,7 @@ import { PLANS } from "@/lib/plans";
 import { deletionPreview } from "@/lib/server/account";
 import { billingView } from "@/lib/server/billing";
 import { signInMethod } from "@/lib/server/cognito";
-import { contactEmail, realDocsEnabled, uiV2 } from "@/lib/server/flags";
+import { contactEmail, uiV2 } from "@/lib/server/flags";
 import { liveSessions, RECENT_AUTH_SECONDS, requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf } from "@/lib/today";
 import { signOut } from "../../signin/actions";
@@ -26,7 +26,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const contact = contactEmail();
   const exportError = exportProblem(error, contact);
   const [view, goes, method, sessions] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId), ctx.demo ? "local" : signInMethod(ctx.userId), liveSessions(ctx)]);
-  const canRename = !ctx.demo && ctx.role !== "member" && realDocsEnabled();
+  // Renaming is open before G3 (Security 0715 #3); a sample keeps its made-up name, and members can't rename.
+  const canRename = !ctx.demo && ctx.role !== "member";
   if (uiV2())
     return (
       <SettingsV2
@@ -51,7 +52,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <section id="workspace" className="card space-y-3">
         <h2 className="font-semibold">Workspace</h2>
         {canRename ? <RenameWorkspaceForm name={ctx.name} /> : null}
-        {!ctx.demo && ctx.role !== "member" && !realDocsEnabled() && <Notice>Naming the workspace opens after our security review.</Notice>}
         <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
           {!canRename && (
             <>

@@ -88,21 +88,24 @@ const POSES_AS_SHIPSHAPE = [
   /(?:^|[a-z0-9])Ship[\s._-]*Shape/,
   /Ship[\s._-]*Shape(?=[A-Z0-9]|$)/,
 ];
+// 1-80 characters from the PDF fonts' set, which already leaves out control and bidi characters (Security 0715 #3).
 const WorkspaceName = z
   .string()
   .trim()
   .min(1, "Give your workspace a name.")
-  .max(120, "Use 120 characters or fewer.")
+  .max(80, "Use 80 characters or fewer.")
   .refine(isPrintable, "Use letters, numbers and common punctuation.")
   .refine((s) => !POSES_AS_SHIPSHAPE.some((re) => re.test(s)), "Use your own business's name; it can't include ShipShape.")
   .refine((s) => !s.includes("://") && !s.includes("@"), "Leave web and email addresses out of the name.");
 
 /**
  * Renames the workspace: the name people outside it see on its passport links, signature requests
- * and Collect pages. Owners and admins; the rename goes into the workspace history (0024).
+ * and Collect pages. Owners and admins; the rename goes into the workspace history (0024). Open before G3
+ * (Security 0715 #3): it's a name the account holder chose, and before G3 a real workspace has no outside page to
+ * show it on (a passport link needs a document, signing and Collect are closed). A sample keeps its made-up name.
  */
 export async function renameWorkspace(ctx: Ctx, raw: unknown): Promise<string> {
-  assertRealData(ctx);
+  if (ctx.demo) throw new GateClosed("This is a sample workspace, so it keeps its made-up name.");
   const parsed = WorkspaceName.safeParse(raw);
   if (!parsed.success) throw new UserError(parsed.error.issues[0].message);
   const rows = await asUser(ctx.userId, (tx) => tx.query("update app.organizations set name = $2 where id = $1 returning 1", [ctx.orgId, parsed.data]));

@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import DocumentPage from "@/app/app/documents/[id]/page";
 import PersonPage from "@/app/app/people/[id]/page";
 import { addPersonAction, deletePersonAction, keepSignerAction } from "@/app/app/people/actions";
@@ -14,7 +14,7 @@ import { csvCell } from "@/lib/server/csv";
 import { asAnon, asService, asUser } from "@/lib/server/db";
 import { PEOPLE_FULL } from "@/lib/server/limits";
 import { migrate, type MigrationStep } from "@/lib/server/migrations";
-import { addPerson, deletePerson, editPerson, getPerson, KEEP_GONE, keepSigner, listPeople, PERSON_NOT_YOURS, searchPeople } from "@/lib/server/people";
+import { addPerson, deletePerson, editPerson, getPerson, KEEP_GONE, keepSigner, listPeople, PEOPLE_CLOSED, PERSON_NOT_YOURS, searchPeople } from "@/lib/server/people";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
@@ -65,6 +65,9 @@ beforeAll(async () => {
 afterAll(async () => {
   await rm(blobDir, { recursive: true, force: true });
 });
+
+// Real workspaces take People only once G3 opens (Security 0715 #2); these tests run with it open, except where they say.
+beforeEach(() => vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1"));
 
 afterEach(() => {
   jar.clear();
@@ -155,6 +158,44 @@ async function exported(ctx: Ctx, name: string): Promise<Record<string, string>>
   const names = execFileSync("unzip", ["-Z1", file]).toString().trim().split("\n");
   return Object.fromEntries(names.filter((n) => !n.includes("/")).map((n) => [n, execFileSync("unzip", ["-p", file, n]).toString()]));
 }
+
+describe("before real documents open (Security 0715 #2)", () => {
+  it("a real workspace can't add, change or keep anyone (deleting still works); the sample's made-up people are unaffected", async () => {
+    const ctx = await signIn("people-closed@example.com");
+    const kept = await addPerson(ctx, { name: "Jordan Lee", email: "jordan@northwind.example" });
+    const doc = await addDoc(ctx, "Mutual NDA");
+    const request = await addRequest(ctx, doc, "Dana Kim", "dana@bayside.example");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    await expect(addPerson(ctx, { name: "Sam Ortiz" })).rejects.toThrow(PEOPLE_CLOSED);
+    await expect(editPerson(ctx, kept, { name: "Jordan L." })).rejects.toThrow(PEOPLE_CLOSED);
+    await expect(keepSigner(ctx, request)).rejects.toThrow(PEOPLE_CLOSED);
+    await expect(keepSignerAction(form({ request }))).rejects.toThrow("redirect /app/people?error=closed");
+    expect(await addPersonAction({}, form({ name: "Sam Ortiz", email: "", company: "" }))).toMatchObject({ error: PEOPLE_CLOSED });
+    expect((await contactsOf(ctx.orgId)).map((c) => c.name)).toEqual(["Jordan Lee"]);
+    await deletePerson(ctx, kept);
+    expect(await contactsOf(ctx.orgId)).toEqual([]);
+
+    const sampleUser = await createLocalUser(null, true);
+    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [sampleUser]));
+    await asUser(sampleUser, (tx) => seedSampleWorkspace(tx, org.id, sampleUser));
+    await finishSignIn(sampleUser, { demo: true });
+    const sample = await requireWorkspace();
+    expect(await addPerson(sample, { name: "Made-up Person" })).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("the redesigned People page says so instead of offering a form that can only refuse; the earlier look keeps its form", async () => {
+    await signIn("people-closed-page@example.com");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    const html = await renderPage(PeoplePage, { searchParams: Promise.resolve({}) });
+    expect(textOf(html)).toContain(`The people you keep in touch with for documents will be listed here. ${PEOPLE_CLOSED}`);
+    expect(html).not.toContain('id="add-person-title"');
+    vi.stubEnv("SHIPSHAPE_UI", "v1");
+    expect(await renderPage(PeoplePage, { searchParams: Promise.resolve({}) })).toContain('id="add-person-title"');
+    vi.stubEnv("SHIPSHAPE_UI", "");
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    expect(await renderPage(PeoplePage, { searchParams: Promise.resolve({}) })).toContain('id="add-person-title"');
+  });
+});
 
 describe("the database's own rules (P3, P4)", () => {
   it("P3: refuses an over-length name, email or company, a control character, a malformed email and an unknown source, through db.root and asUser", async () => {
