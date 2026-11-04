@@ -76,6 +76,8 @@ describe("what a request names", () => {
     const text = "Send proof of insurance with $1,000,000 per occurrence; and a W-9";
     expect(askedDocuments(text).map((d) => d.quote)).toEqual(["Send proof of insurance with $1,000,000 per occurrence", "a W-9"]);
     for (const d of askedDocuments(REQUEST)) expect(REQUEST).toContain(d.quote);
+    // A list's bullets aren't part of the quote.
+    expect(askedDocuments("We need:\n- a completed W-9\n• your COI\n2) a signed NDA").map((d) => d.quote)).toEqual(["a completed W-9", "your COI", "a signed NDA"]);
   });
 
   it("keeps a long clause to its limit, around the words", () => {

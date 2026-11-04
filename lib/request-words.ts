@@ -89,10 +89,10 @@ export function clauseAround(text: string, start: number, end: number): string {
     a = Math.max(a, start - room);
     b = Math.min(b, a + QUOTE_MAX);
   }
-  let quote = text.slice(a, b).trim();
-  const lead = /^(?:and|or|plus|also|as well as)\s+/i.exec(quote);
-  if (lead) quote = quote.slice(lead[0].length);
-  return quote;
+  // A list's bullet ("- ", "• ", "2) ") and a joining word aren't part of what was asked for.
+  const quote = text.slice(a, b).trim();
+  const lead = /^(?:[-*•·]\s*|\d{1,2}\)\s+)?(?:(?:and|or|plus|also|as well as)\s+)?/i.exec(quote);
+  return quote.slice(lead?.[0].length ?? 0);
 }
 
 const tidy = (words: string) => {
