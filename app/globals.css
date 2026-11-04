@@ -743,6 +743,12 @@ body {
   --lg-glass: rgb(255 255 255 / 0.84);
   --lg-blur: 22px;
 }
+/* A dialog whose fade-in keeps filling (motion.css: `both`) has an opacity effect for good, and Chromium then frosts
+   only what's inside the dialog, which is nothing: the page showed through the 22px frost sharp (⌘K, 1440 still).
+   Under glass the entrance plays the same and then lets go. */
+.ui-v2[data-glass] dialog[open][class] {
+  animation-fill-mode: backwards;
+}
 /* Full: lists and cards in glass (12px), 0.8 white; the rows keep their hairlines. */
 .ui-v2 .glass-frame {
   position: relative;
