@@ -1,3 +1,4 @@
+import { dailyRunOverdue } from "@/lib/server/account";
 import { billingConfig, webhookConfigured } from "@/lib/server/billing-config";
 import { dbUp } from "@/lib/server/db";
 import { launchProblems } from "@/lib/server/launch-check";
@@ -13,12 +14,15 @@ let configOk: boolean | undefined;
  * a missing secret, not only on a database that doesn't answer. `billing` is the mode payments run
  * in, `checkout` whether new subscriptions can start (SHIPSHAPE_CHECKOUT_PAUSED), and `webhookConfigured`
  * whether a Stripe signing secret is set, so the live switch can be checked from outside (Security L4):
- * mode names and a boolean, never a key.
+ * mode names and a boolean, never a key. `dailyRun` is "overdue" when the daily run has fallen behind
+ * the privacy policy's "within two days" (dailyRunOverdue), "unknown" when the database didn't answer;
+ * it doesn't change `ok` or the status, which say whether the app can serve, and the uptime check reads it apart.
  */
 export async function GET() {
   const db = await dbUp();
   const config = (configOk ??= launchProblems(process.env).length === 0);
   const billing = billingConfig();
+  const overdue = db ? await dailyRunOverdue().catch(() => null) : null;
   return Response.json(
     {
       ok: db && config,
@@ -29,6 +33,7 @@ export async function GET() {
       billing: billing ? (billing.live ? "live" : "test") : "off",
       checkout: billing ? (billing.checkoutPaused ? "paused" : "open") : "off",
       webhookConfigured: webhookConfigured(),
+      dailyRun: overdue === null ? "unknown" : overdue ? "overdue" : "current",
     },
     { status: db && config ? 200 : 503, headers: { "Cache-Control": "no-store" } },
   );

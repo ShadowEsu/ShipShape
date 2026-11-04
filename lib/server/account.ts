@@ -389,10 +389,12 @@ export async function finishDeletions(until = Date.now() + DAILY_RUN_BUDGET_MS):
 
 /**
  * Sample visitors' sessions last 12 hours; their accounts go after this, with everything in them.
- * One day, and the daily run takes what's older: a sample is gone one to two days after it was
- * made, inside /privacy's "within two days" (W11-8).
+ * 22 hours, not a day (Security 2026-11-04 0745): Vercel starts the daily run anywhere in its hour,
+ * so two runs can be up to 24 h 59 min apart. A sample younger than 22 hours at one run is taken by
+ * the next, at most 22 h + 24 h 59 min = 46 h 59 min after it was made: inside /privacy's "within
+ * two days" (W11-8) on every working run. With a day it could reach 48 h 59 min.
  */
-const SAMPLE_KEPT_FOR = "1 day";
+const SAMPLE_KEPT_FOR = "22 hours";
 const SAMPLE_BATCH = 50;
 
 /**
@@ -435,6 +437,25 @@ export async function purgeSampleAccounts(until = Date.now() + DAILY_RUN_BUDGET_
     if (due.length < SAMPLE_BATCH) break;
   }
   return { purged, failed: tried - purged };
+}
+
+/**
+ * Whether the daily run has fallen behind the privacy policy's "within two days" (finish list B14; Security
+ * 2026-11-04 0745): a recorded deletion, or a sample account the purge would take (the same rule as
+ * purgeSampleAccounts), older than 48 hours. On a working run neither gets there (samples by 46 h 59 min,
+ * SAMPLE_KEPT_FOR; deletions by about 25 h, PENDING_AFTER), so "overdue" means the promise is broken now.
+ * For /api/health and the uptime check: one boolean, never an id or a count.
+ */
+export async function dailyRunOverdue(): Promise<boolean> {
+  const [row] = await asService((tx) =>
+    tx.query<{ overdue: boolean }>(
+      `select exists (select 1 from app.deletion_requests where requested_at < now() - interval '48 hours')
+           or exists (select 1 from auth.users u
+                      where u.is_anonymous and u.created_at < now() - interval '48 hours'
+                        and not exists (select 1 from app.members m join app.organizations o on o.id = m.org_id where m.user_id = u.id and not o.is_demo)) as overdue`,
+    ),
+  );
+  return row.overdue;
 }
 
 /**
