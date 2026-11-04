@@ -1,5 +1,5 @@
 import "server-only";
-import { samplePdf } from "@/lib/pdf/sample-pdf";
+import { sampleCertificate, sampleCityLicense, sampleContractorLicense, type SampleBusiness } from "@/lib/pdf/sample-papers";
 import type { ProfileKey } from "@/lib/profile-fields";
 import { templateById } from "@/lib/templates/catalog";
 import type { Facts, TemplateInfo } from "@/lib/templates/types";
@@ -85,15 +85,16 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
     p2_notice: "contracts@northwind.example",
   });
 
-  const certificates: { title: string; kind: "coi" | "license" | "permit"; issuer: string; issued: number; expires: number; rows: [string, string][]; note: string }[] = [
+  // Full-page papers drawn for the sample (lib/pdf/sample-papers.ts), each with the dates the documents carry.
+  const business: SampleBusiness = { legalName: f.legal_name, dba: f.dba, address: [f.address_line1, `${f.city}, ${f.state} ${f.postal_code}`], signer: f.signer_name };
+  const certificates: { title: string; kind: "coi" | "license" | "permit"; issuer: string; issued: number; expires: number; pdf: () => Promise<Uint8Array> }[] = [
     {
       title: "Certificate of liability insurance",
       kind: "coi",
       issuer: "Example Mutual Insurance (sample)",
       issued: -344,
       expires: 21,
-      note: "A made-up insurance certificate, the kind contractors send to every new client.",
-      rows: [["Insured", "Harbor Plumbing LLC"], ["Insurer", "Example Mutual Insurance (sample)"], ["Policy number", "SAMPLE-GL-0000001"], ["General liability", "$1,000,000 each occurrence"], ["Policy period", `${day(-344)} to ${day(21)}`]],
+      pdf: () => sampleCertificate(business, { issued: day(-344), from: day(-344), to: day(21) }),
     },
     {
       title: "Contractor license",
@@ -101,8 +102,7 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       issuer: "State licensing board (sample)",
       issued: -480,
       expires: 250,
-      note: "A made-up state contractor license.",
-      rows: [["Licensee", "Harbor Plumbing LLC"], ["Classification", "Plumbing (sample)"], ["License number", "SAMPLE-000000"], ["Expires", day(250)]],
+      pdf: () => sampleContractorLicense(business, { issued: day(-480), expires: day(250), number: "SAMPLE-000000" }),
     },
     {
       title: "City business license",
@@ -110,8 +110,7 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       issuer: "City of Springfield (sample)",
       issued: -377,
       expires: -12,
-      note: "A made-up city business license that lapsed, to show how ShipShape flags it.",
-      rows: [["Business", "Harbor Plumbing"], ["Account", "SAMPLE-BL-0000"], ["Valid through", day(-12)]],
+      pdf: () => sampleCityLicense(business, { from: day(-377), to: day(-12), account: "SAMPLE-BL-0000" }),
     },
   ];
   let certificate: string | undefined;
@@ -120,7 +119,7 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       tx,
       ctx,
       { title: `${c.title} (sample)`, kind: c.kind, issuer: c.issuer, issued_on: day(c.issued), expires_on: day(c.expires) },
-      { bytes: await samplePdf(c.title, c.rows, c.note), mime: "application/pdf" },
+      { bytes: await c.pdf(), mime: "application/pdf" },
       "sample",
     );
     if (c.kind === "coi") certificate = id;
