@@ -441,19 +441,25 @@ export async function deletionRecordAddress(userId: string): Promise<string | nu
     return null;
   }
   if (!cfg?.deletionRecord) return null;
-  return asService(async (tx) => {
-    const [me] = await tx.query<{ email: string }>(
-      "select u.email from auth.users u where u.id = $1 and u.email is not null and exists (select 1 from app.identities i where i.user_id = u.id and i.provider = 'cognito')",
-      [userId],
-    );
-    if (!me) return null;
-    const suppressed = await tx.query("select 1 from app.email_suppressions where address_hash = $1", [suppressionHash(me.email, hashKey())]);
-    const [counts] = await tx.query<{ total: number; mine: number }>(
-      "select count(*)::int as total, (count(*) filter (where lower(to_email) = lower($1)))::int as mine from app.outbox where claimed_at > now() - interval '1 day'",
-      [me.email],
-    );
-    return suppressed.length > 0 || counts.total >= DAILY_CAP || counts.mine >= ACCOUNT_DAILY_CAP ? null : me.email;
-  });
+  try {
+    return await asService(async (tx) => {
+      const [me] = await tx.query<{ email: string }>(
+        "select u.email from auth.users u where u.id = $1 and u.email is not null and exists (select 1 from app.identities i where i.user_id = u.id and i.provider = 'cognito')",
+        [userId],
+      );
+      if (!me) return null;
+      const suppressed = await tx.query("select 1 from app.email_suppressions where address_hash = $1", [suppressionHash(me.email, hashKey())]);
+      const [counts] = await tx.query<{ total: number; mine: number }>(
+        "select count(*)::int as total, (count(*) filter (where lower(to_email) = lower($1)))::int as mine from app.outbox where claimed_at > now() - interval '1 day'",
+        [me.email],
+      );
+      return suppressed.length > 0 || counts.total >= DAILY_CAP || counts.mine >= ACCOUNT_DAILY_CAP ? null : me.email;
+    });
+  } catch (e) {
+    // The record is optional; the deletion isn't. The error's name only (a query error may quote the address).
+    console.error(`mail: no deletion record, the address lookup failed (${e instanceof Error ? e.name.slice(0, 100) : "error"})`);
+    return null;
+  }
 }
 
 /**
