@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/waitlist/route";
+import { encodeSession, newSessionId } from "@/lib/server/session";
 import { freshDb, type TestDb } from "./support/db";
 
 let db: TestDb;
@@ -9,13 +10,25 @@ beforeAll(async () => {
   db = await freshDb();
 });
 
-const join = (body: unknown) =>
+const join = (body: unknown, cookie?: string) =>
   POST(
     new Request("http://shipshape.test/api/waitlist", {
       method: "POST",
-      headers: { origin: "http://shipshape.test", host: "shipshape.test", "sec-fetch-site": "same-origin", "x-forwarded-for": `198.51.100.${++ip}` },
+      headers: {
+        origin: "http://shipshape.test",
+        host: "shipshape.test",
+        "sec-fetch-site": "same-origin",
+        "x-forwarded-for": `198.51.100.${++ip}`,
+        ...(cookie ? { cookie } : {}),
+      },
       body: JSON.stringify(body),
     }),
+  );
+
+/** Every new sign-up counted for a source so far (0051), over all days. */
+const counted = async (source: "site" | "sample") =>
+  Number(
+    (await db.root((tx) => tx.query<{ n: string }>("select coalesce(sum(joined), 0)::text as n from app.waitlist_tally where source = $1", [source])))[0].n,
   );
 
 const row = async (email: string) =>
@@ -57,5 +70,29 @@ describe("waitlist", () => {
     const res = await from("busy10@example.com");
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ error: "Too many tries from this network. Wait up to an hour, then try again." });
+  });
+});
+
+describe("the sample-to-waitlist tally (ledger 461, spot 2b)", () => {
+  it("counts each new address once, by whether it came from inside a sample", async () => {
+    const before = [await counted("site"), await counted("sample")];
+    const sample = encodeSession({ userId: crypto.randomUUID(), demo: true, sessionId: newSessionId() });
+    const real = encodeSession({ userId: crypto.randomUUID(), demo: false, sessionId: newSessionId() });
+    expect((await join({ email: "tally-site@example.com" })).status).toBe(200);
+    expect((await join({ email: "tally-sample@example.com" }, `theme=calm; ss_session=${sample}`)).status).toBe(200);
+    expect((await join({ email: "tally-real@example.com" }, `ss_session=${real}`)).status).toBe(200);
+    // Already on the list: adding an interest isn't a new sign-up.
+    expect((await join({ email: "tally-sample@example.com", interest: "collect" }, `ss_session=${sample}`)).status).toBe(200);
+    // A sample cookie that isn't ShipShape's own (its payload changed, so its signature fails) counts as the site.
+    const forged = `${sample.startsWith("a") ? "b" : "a"}${sample.slice(1)}`;
+    expect((await join({ email: "tally-forged@example.com" }, `ss_session=${forged}`)).status).toBe(200);
+    expect([(await counted("site")) - before[0], (await counted("sample")) - before[1]]).toEqual([3, 1]);
+  });
+
+  it("keeps numbers only: a day, a source and a count", async () => {
+    const columns = await db.root((tx) =>
+      tx.query<{ column_name: string }>("select column_name from information_schema.columns where table_schema = 'app' and table_name = 'waitlist_tally' order by ordinal_position"),
+    );
+    expect(columns.map((c) => c.column_name)).toEqual(["day", "source", "joined"]);
   });
 });
