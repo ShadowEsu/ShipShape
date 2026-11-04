@@ -831,6 +831,13 @@ body {
     min-height: 40px;
   }
 }
+/* A pressing Glisse Button (SubmitButton passes `press`): motion.css's `.ui-v2 .press` (transition, 0,2,0) ties with
+   Glisse's `.lg-button:is(:active, [data-pressed])` (transition-duration: 0s, 0,2,0), so the order the two stylesheets
+   load in decided the press. Glisse's instant light-up, the one its stylesheet gives when it loads last (as it does),
+   now by specificity (Design spec §3: never by source order). */
+.ui-v2 .press.lg-button:is(:active, [data-pressed]) {
+  transition-duration: 0s;
+}
 /* Tabs that are links on Glisse's tab bar, from md up: 44px tall, as the hairline row (36px tabs in a 4px inset), each
    as wide as the longest label needs (GlassTabs sets --glass-tab-width). On the phone the row keeps its hairline tabs:
    Glisse's equal-width tabs don't fit beside the Kind and Order menus, and the list would drop a row. */
@@ -844,7 +851,7 @@ body {
     display: inline-flex;
   }
 }
-.ui-v2 .glass-tabs :is(.lg-tab, .lg-tab-copy) {
+.ui-v2 .glass-tabs.lg-tab-bar :is(.lg-tab, .lg-tab-copy) {
   gap: 6px;
   font-size: 13px;
 }
