@@ -186,7 +186,7 @@ aws rds modify-db-instance --region us-east-1 --db-instance-identifier shipshape
 
 3. Check the copy before production uses it: as the master, `npm run migrate` against it (a migration applied after the restore time is applied again), then in `psql` as the master, inside `begin; set local role shipshape_owner; … rollback;`, count a few rows you expect and run `select app.audit_verify('<org id>')` for an affected workspace. `shipshape_app`'s password lives inside the database, so production's `DATABASE_URL` works on the copy unchanged.
 4. Do every deletion again on the copy (Security MUST-R1). The copy holds rows the old instance no longer has, and those are exactly what was deleted after the restore time: accounts (by their owner or the daily run, sample accounts included), documents deleted for good (from `0048` on), files vendors sent that a workspace deleted, people deleted from People, and waitlist addresses removed on request. Their stored files are already gone from the bucket, so this removes rows only; a path the copy queues for removal is cleared by the next daily run (removal is idempotent).
-   1. List them. On each instance, as the master in `psql` inside `begin; set local role shipshape_owner; … rollback;` (old = `shipshape-prod`, copy = `shipshape-restore`), write the same six sorted files, `-old` from the old instance and `-copy` from the copy:
+   1. List them. Work in a folder only you can read under your home (`mkdir -m 700 ~/shipshape-restore && cd ~/shipshape-restore`), never `/tmp`: the files hold account ids and waitlist addresses. On each instance, as the master in `psql` inside `begin; set local role shipshape_owner; … rollback;` (old = `shipshape-prod`, copy = `shipshape-restore`), write the same six sorted files, `-old` from the old instance and `-copy` from the copy:
       ```sql
       \copy (select id from auth.users order by 1) to 'users-old.txt'
       \copy (select id from app.organizations order by 1) to 'orgs-old.txt'
@@ -223,7 +223,7 @@ aws rds wait db-instance-available --region us-east-1 --db-instance-identifier s
 ```
 
 6. Open `/api/health` (200, `"db": "up"`), then run `scripts/probe-aws.mjs` as at launch. Run the daily run once by hand (`curl -H "Authorization: Bearer $CRON_SECRET" <production>/api/cron/reminders`) so the queued paths clear. The stack's `MasterSecretArn` output now names the old instance's secret; the master's secret is the one `describe-db-instances` shows under `MasterUserSecret`.
-7. Delete `shipshape-prod-old` within 7 days (BOSS rule 1: no copy outlives them), as in Rollback step 2 with its new name, and the log group `/aws/rds/instance/shipshape-restore/postgresql`, which the copy wrote to before its rename.
+7. Delete `shipshape-prod-old` within 7 days (BOSS rule 1: no copy outlives them), as in Rollback step 2 with its new name, and the log group `/aws/rds/instance/shipshape-restore/postgresql`, which the copy wrote to before its rename. Delete the step 4 folder as soon as the swap is checked (`rm -rf ~/shipshape-restore`).
 
 ### Suspending an account
 
