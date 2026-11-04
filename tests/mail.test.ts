@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomUUID, sign, type KeyObject } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign, type KeyObject } from "node:crypto";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -606,6 +606,66 @@ describe("stop (Security 1058, K3)", () => {
   });
 });
 
+describe("the waitlist batch (Security 1058, B)", () => {
+  /** scripts/waitlist-open-batch.sql as psql runs it with -v batch_size=<size>. */
+  async function batch(size: number) {
+    const sql = (await readFile("scripts/waitlist-open-batch.sql", "utf8")).replaceAll(":'batch_size'", "$1");
+    const [marker] = await db.root((tx) => tx.query<{ row_count: number; list_sha256: string; body_sha256: string }>(sql, [String(size)]));
+    return marker;
+  }
+  const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
+  const onList = (address: string, interests: string[] = []) => db.root((tx) => tx.query("insert into app.waitlist (email, interests) values ($1, $2)", [address, interests]));
+
+  it("writes each address once, across batches, oldest first, in batches of at most 50; its marker is the row count, the list's sha256 and the reviewed text's sha256", async () => {
+    const owner = await account("batch-owner");
+    const org = await workspace(owner.id);
+    await db.root((tx) => tx.query("insert into app.vendors (org_id, name, email, requested) values ($1, 'Supplier', 'vendor-on-list@supplier.example', array['w9'])", [org]));
+    for (const [address, interests] of [
+      ["first@fans.example", []],
+      ["collector@fans.example", ["collect"]],
+      [owner.email, []],
+      ["vendor-on-list@supplier.example", []],
+      ["you@sample.example", []],
+      ["second@fans.example", []],
+    ] as const) {
+      await onList(address, [...interests]);
+    }
+    expect(await batch(1)).toEqual({ row_count: 1, list_sha256: sha256("first@fans.example"), body_sha256: sha256(WAITLIST_OPEN.body) });
+    expect(await batch(1)).toEqual({ row_count: 1, list_sha256: sha256("second@fans.example"), body_sha256: sha256(WAITLIST_OPEN.body) });
+    expect(await batch(10)).toMatchObject({ row_count: 0 });
+    const rows = await db.root((tx) => tx.query<{ to_email: string; subject: string; body: string; org_id: string | null }>("select to_email, subject, body, org_id from app.outbox where kind = 'waitlist_open' order by to_email"));
+    expect(rows).toEqual(["first@fans.example", "second@fans.example"].map((to_email) => ({ to_email, subject: WAITLIST_OPEN.subject, body: WAITLIST_OPEN.body, org_id: null })));
+    // The unique key, whatever writes the row.
+    await expect(queueWaitlist("first@fans.example")).rejects.toThrow(/outbox_waitlist_open_once/);
+
+    await db.root((tx) => tx.query("insert into app.waitlist (email, created_at) select 'many' || g || '@fans.example', now() + g * interval '1 second' from generate_series(1, 60) g"));
+    const big = await batch(500);
+    expect(big.row_count).toBe(50);
+    expect(big.list_sha256).toBe(sha256(Array.from({ length: 50 }, (_, i) => `many${i + 1}@fans.example`).sort().join("\n")));
+  });
+
+  it("at sending, each address must still be on the list with no Collect interest and belong to no account; the footer carries the postal address, and with none set nothing is sent", async () => {
+    stub(ALL_ON);
+    const ses = fakeSes();
+    for (const address of ["stays@fans.example", "leaves@fans.example", "collects@fans.example", "signs-up@fans.example"]) await onList(address);
+    expect(await batch(10)).toMatchObject({ row_count: 4 });
+    await db.root(async (tx) => {
+      await tx.query("delete from app.waitlist where email = 'leaves@fans.example'");
+      await tx.query("update app.waitlist set interests = array['collect'] where email = 'collects@fans.example'");
+    });
+    await db.user("signs-up@fans.example");
+
+    vi.stubEnv("SHIPSHAPE_POSTAL_ADDRESS", "");
+    await expect(sendQueuedMail()).rejects.toThrow("SHIPSHAPE_POSTAL_ADDRESS");
+    expect(ses.calls).toEqual([]);
+
+    vi.stubEnv("SHIPSHAPE_POSTAL_ADDRESS", "1 Main St, Springfield");
+    expect(await sendQueuedMail()).toEqual({ sent: 1, failed: 0, held: 0 });
+    expect(ses.to()).toEqual(["stays@fans.example"]);
+    expect(ses.calls[0].Content?.Simple?.Body?.Text?.Data).toMatch(/\nShipShape is operated by Unvibe, 1 Main St, Springfield$/);
+  });
+});
+
 describe("the deletion record (Security 1058, D-1)", () => {
   const COGNITO = { COGNITO_DOMAIN: "https://auth.example.test", COGNITO_USER_POOL_ID: "us-east-1_Test1", COGNITO_CLIENT_ID: "client123", COGNITO_CLIENT_SECRET: "client-secret" };
   beforeEach(() => {
@@ -893,6 +953,53 @@ describe("rollback", () => {
       expect(await migrate(conn, setup, upTo49)).toEqual(["0049_email_sending.sql"]);
       expect(await shape()).toEqual(after);
       expect(await migrate(conn, setup, upTo49)).toEqual([]);
+    } finally {
+      await pg.close();
+    }
+  });
+
+  it("0050 goes down with its down file, taking the new kinds' rows with it, and comes back up (PGlite)", async () => {
+    const pg = await PGlite.create();
+    try {
+      const step = (t: Pick<PGlite, "exec" | "query">): MigrationStep => ({
+        exec: async (s) => void (await t.exec(s)),
+        query: async (text, params) => (await t.query<Record<string, unknown>>(text, params)).rows,
+      });
+      const conn = { ...step(pg), transaction: (fn: (t: MigrationStep) => Promise<void>) => pg.transaction((t) => fn(step(t))) };
+      const all = (await readdir("supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
+      const files = await Promise.all(all.map(async (name) => ({ name, sql: await readFile(`supabase/migrations/${name}`, "utf8") })));
+      const setup = [await readFile("supabase/platform/plain-postgres.sql", "utf8")];
+      const shape = async () =>
+        (
+          await pg.query<{ c: string }>(
+            `select column_name || ':' || is_nullable as c from information_schema.columns where table_schema = 'app' and table_name = 'outbox'
+             union all select 'fn:' || proname from pg_proc where proname = 'queue_welcome'
+             union all select 'check:' || pg_get_constraintdef(oid) from pg_constraint where conname in ('outbox_kind_check', 'email_suppressions_reason_check')
+             order by 1`,
+          )
+        ).rows.map((r) => r.c);
+
+      const upTo49 = files.filter((f) => f.name <= "0049_email_sending.sql");
+      await migrate(conn, setup, upTo49);
+      const before = await shape();
+      const upTo50 = files.filter((f) => f.name <= "0050_email_kinds.sql");
+      expect(await migrate(conn, setup, upTo50)).toEqual(["0050_email_kinds.sql"]);
+      const after = await shape();
+      expect(after.filter((c) => !before.includes(c)).filter((c) => !c.startsWith("check:"))).toEqual(["address_sha256:YES", "fn:queue_welcome", "org_id:YES", "user_id:YES", "waitlist_email:YES"]);
+      await pg.exec(
+        "insert into app.waitlist (email) values ('fan@fans.example'); insert into app.outbox (to_email, subject, body, kind, waitlist_email, address_sha256) values ('fan@fans.example', 's', 'b', 'waitlist_open', 'fan@fans.example', encode(sha256(convert_to('fan@fans.example', 'UTF8')), 'hex')); insert into app.email_suppressions (address_hash, reason) values (repeat('a', 32), 'stop')",
+      );
+
+      const down = await readFile("supabase/rollback/0050_email_kinds.down.sql", "utf8");
+      await pg.transaction(async (t) => {
+        await t.exec("set local role shipshape_owner");
+        await t.exec(down);
+        await t.query("delete from meta.migrations where name = $1", ["0050_email_kinds.sql"]);
+      });
+      expect(await shape()).toEqual(before);
+
+      expect(await migrate(conn, setup, upTo50)).toEqual(["0050_email_kinds.sql"]);
+      expect(await shape()).toEqual(after);
     } finally {
       await pg.close();
     }
