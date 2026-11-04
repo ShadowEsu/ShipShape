@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 import { AI_RECIPIENT } from "@/lib/ai";
-import { TERMS_VERSION } from "@/lib/legal";
+import { BACKUP_DAYS, TERMS_VERSION } from "@/lib/legal";
 import { contactEmail } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
@@ -139,10 +139,15 @@ export default function PrivacyPage() {
           note goes with it. Copies other people already downloaded stay with them, and Stripe keeps payment records as the law requires.
         </li>
         <li>
+          <strong>Delete one document:</strong> an owner or admin can delete an archived document for good, with its versions, files and
+          signature requests, unless someone has signed it. It&apos;s gone from ShipShape straight away; History keeps its lines about
+          the document, without its title.
+        </li>
+        <li>
           <strong>Sample workspaces:</strong> a &ldquo;Try the sample&rdquo; visit makes a workspace of made-up data and no email
           address. It is deleted by itself within two days of being made, files included.
         </li>
-        <li>Deleted data can remain in database backups and earlier file versions for up to 7 days, then it&apos;s gone.</li>
+        <li>Deleted data can remain in database backups and earlier file versions for up to {BACKUP_DAYS} days, then it&apos;s gone.</li>
       </ul>
       <p>
         Depending on where you live (California, for example), you may have further rights to know, correct or delete your data. The

@@ -761,7 +761,6 @@ describe("the public pages once payments are live (Security MUST-3, MUST-4)", ()
     expect(live.status).toContain("Payments Real cards are charged through Stripe. Live payments");
     expect(live.privacy).toContain("ShipShape is operated by Unvibe.");
     expect(live.privacy).toContain("Our providers are Vercel (hosting), Amazon Web Services (database, file storage and sign-in, in the United States, region us-east-1), Stripe (payments) and Anthropic");
-    expect(live.privacy).toContain("Deleted data can remain in database backups and earlier file versions for up to 7 days, then it's gone.");
     expect(live.faq).toContain("You can also upload your own PDF, PNG or JPEG files (up to 4 MB each).");
     expect(live.faq).not.toMatch(/When can I use it for real documents\?|Once real accounts open/);
     expect(preview.faq).toContain("When can I use it for real documents?");

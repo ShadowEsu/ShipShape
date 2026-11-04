@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EmptyState, PageHeader, ValidityChip } from "@/components/app-ui";
+import { EmptyState, Notice, PageHeader, ValidityChip } from "@/components/app-ui";
 import { DOC_KINDS, DOC_SORTS, DOCUMENTS_PAGE_SIZE, docSort, pageDocuments } from "@/lib/server/documents";
 import { esignAvailable } from "@/lib/server/esign";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { FilterMenu, TabLinks } from "../filters";
 import { HairRow } from "../hair-row";
+import { DELETE_PROMISE } from "./messages";
 
 export const metadata: Metadata = { title: "Documents" };
 
-type ListParams = { q?: string; kind?: string; archived?: string; sort?: string };
+// `deleted`: Delete for good just finished (actions.ts deleteForGood); the list's own links drop it.
+type ListParams = { q?: string; kind?: string; archived?: string; sort?: string; deleted?: string };
 
 /** The list's address for another page, keeping the search, kind, archived filter and order as chosen. */
 function pageHref(sp: ListParams, page: number): string {
@@ -75,6 +77,11 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         // Redesigned app (Design calm v2): tabs All / Archived, with the kind and the order as two quiet menus. Searching is
         // the top bar's (⌘K: "Search all documents for …" opens this page with ?q=), and a search here says what it holds.
         <>
+          {sp.deleted === "1" && (
+            <div role="status">
+              <Notice tone="ok">{`Document deleted. ${DELETE_PROMISE}`}</Notice>
+            </div>
+          )}
           {sp.q && docs.length > 0 && (
             <p className="text-sm text-ink-2">
               {`Showing documents that match “${sp.q}”.`}{" "}

@@ -5,6 +5,7 @@ import path from "node:path";
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { productionAwsClient } from "./aws";
 import { safeEqual } from "./crypto";
+import { asService } from "./db";
 
 /**
  * Document files. Paths always start with the workspace id (`<org>/<document>/v<n>.<ext>`), and a
@@ -297,6 +298,17 @@ export async function putVersionFile(objectPath: string, bytes: Uint8Array, mime
     await s.remove([objectPath]);
     await s.put(objectPath, bytes, mime);
   }
+}
+
+/**
+ * Removes stored files whose rows are gone, then their entries in app.storage_cleanup (0028), where the deletion
+ * queued them in its own transaction: account deletions and Delete for good. Removal is idempotent, so a retry is
+ * safe; if it fails, the paths stay queued and the daily run (account.ts retryStorageCleanup) tries again.
+ */
+export async function removeQueued(paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  await blobStore().remove(paths);
+  await asService((tx) => tx.query("delete from app.storage_cleanup where path = any($1::text[])", [paths]));
 }
 
 /** Tests use a temporary directory. */

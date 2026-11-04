@@ -89,7 +89,7 @@ export class SignInFailed extends Error {
 // The sign-in cookie --------------------------------------------------------------------------------
 
 // `r`: where to land after the sign-in (an allow-listed choice, lib/return-to.ts); absent means Home.
-const Txn = z.object({ s: z.string(), v: z.string(), n: z.string(), t: z.string(), c: z.number().int(), r: z.enum(["export", "delete", "ein", "history"]).optional() });
+const Txn = z.object({ s: z.string(), v: z.string(), n: z.string(), t: z.string(), c: z.number().int(), r: z.enum(["export", "delete", "ein", "history", "documents"]).optional() });
 type SignInTxn = z.infer<typeof Txn>;
 
 const random = () => randomBytes(32).toString("base64url");

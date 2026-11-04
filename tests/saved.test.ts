@@ -166,7 +166,7 @@ describe("saving", () => {
     await save(ctx, "document", doc);
     await save(ctx, "link", link);
     await save(ctx, "document", kept);
-    await asUser(ctx.userId, (tx) => tx.query("delete from app.documents where id = $1", [doc]));
+    await db.root((tx) => tx.query("delete from app.documents where id = $1", [doc]));
     expect(await rowsFor(doc)).toEqual([]);
     await db.root((tx) => tx.query("delete from app.share_links where id = $1", [link]));
     expect(await rowsFor(link)).toEqual([]);
