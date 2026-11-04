@@ -11,10 +11,12 @@ import { RequestAnswer } from "./answer";
  * the tick on the left, as on Home (Design #23 S2), no card. "Read the request" is the page's one primary until an
  * answer shows; then the answer's own action leads and reading again is secondary (Design #23 S1). Same action, words
  * and consent behaviour in both looks. `ai`: whether the AI reads it; while it's off, the plain reader matches document
- * names, sends nothing, and so asks for no consent (ledger 461). The not-a-law-firm line shows either way.
+ * names, sends nothing, and so asks for no consent (ledger 461). The not-a-law-firm line shows either way. `pasted`: the
+ * request the field starts with (a sample's Start here).
  */
-export function AskForm({ v2 = false, ai }: { v2?: boolean; ai: boolean }) {
-  const [state, action, pending] = useActionState<AskState, FormData>(askAction, {});
+export function AskForm({ v2 = false, ai, pasted }: { v2?: boolean; ai: boolean; pasted?: string }) {
+  // The state carries what the field shows, so a pasted request starts in it.
+  const [state, action, pending] = useActionState<AskState, FormData>(askAction, { text: pasted });
   const items = state.items;
   const form = useRef<HTMLFormElement>(null);
   const textError = state.field === "text" ? state.error : undefined;

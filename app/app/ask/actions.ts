@@ -7,6 +7,7 @@ import { GateClosed } from "@/lib/server/flags";
 import { clientIp } from "@/lib/server/http";
 import { readRequestByNames, RequestInputError, type ReadBy, type RequestItem } from "@/lib/server/request-check";
 import { requireWorkspace } from "@/lib/server/session";
+import { markStart } from "@/lib/server/start-here";
 
 export interface AskState {
   error?: string;
@@ -32,9 +33,11 @@ export async function askAction(_prev: AskState, form: FormData): Promise<AskSta
   const consent = form.get("consent") === "yes";
   const network = clientIp(await headers());
   try {
-    if (!aiEnabled()) return { items: await readRequestByNames(ctx, text, network), by: "names", text };
-    const items = await readRequest(ctx, { text, consent }, network);
-    return { items, by: "ai", text };
+    const by = aiEnabled() ? "ai" : "names";
+    const items = by === "ai" ? await readRequest(ctx, { text, consent }, network) : await readRequestByNames(ctx, text, network);
+    // In a sample, a checked request is Start here's first step (lib/server/start-here.ts).
+    await markStart(ctx, 1);
+    return { items, by, text };
   } catch (e) {
     if (e instanceof RequestInputError) return { error: e.message, field: e.field, text, consent };
     if (e instanceof UserError || e instanceof GateClosed) return { error: e.message, text, consent };

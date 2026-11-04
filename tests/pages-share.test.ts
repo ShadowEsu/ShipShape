@@ -749,7 +749,7 @@ describe.each([
   it("with AI switched off: the same form checks by document names, with no tick and nothing said about Anthropic", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "");
     await signIn(`${ui || "v2"}-ask-off@example.com`);
-    const html = await renderPage(AskPage, {});
+    const html = await renderPage(AskPage, none());
     expect(html).toMatch(/<textarea[^>]*name="text"/);
     expect(html).not.toContain('name="consent"');
     expect(textOf(html)).not.toContain("Anthropic");
@@ -761,7 +761,7 @@ describe.each([
     vi.stubEnv("SHIPSHAPE_AI", "1");
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
     await signIn(`${ui || "v2"}-ask-on@example.com`);
-    const html = await renderPage(AskPage, {});
+    const html = await renderPage(AskPage, none());
     const text = textOf(html);
     expect(text).toContain("and nothing from your documents is sent. Anthropic says that by default it doesn't train on what its API receives.");
     expect(text).not.toContain("Anthropic doesn't train on it");
@@ -780,12 +780,26 @@ describe("What are they asking for?, redesigned only", () => {
     vi.stubEnv("SHIPSHAPE_AI", "1");
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
     await signIn("v2-ask-look@example.com");
-    const html = await renderPage(AskPage, {});
+    const html = await renderPage(AskPage, none());
     expect(html).toMatch(/^<div class="mx-auto max-w-\[720px\] space-y-6">/);
     expect(html).not.toMatch(/<form[^>]*class="card/);
     expect(/<textarea[^>]*>/.exec(html)?.[0]).toContain('class="request-well"');
     expect(html).toMatch(/<label class="group-row[^"]*"><input[^>]*name="consent"[^>]*\/><span[^>]*>Send the text above to Anthropic&#x27;s Claude[^<]*<\/span>/);
     expect(html).toMatch(/<button class="btn-accent press">Read the request<\/button>/);
+  });
+
+  it("a sample's Start here opens it with Northwind's request already pasted; a real workspace's form opens empty", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v2");
+    const field = async (searchParams: Promise<{ try?: string }>) => textOf(/<textarea[^>]*>([^<]*)<\/textarea>/.exec(await renderPage(AskPage, { searchParams }))?.[1] ?? "");
+    await signIn("v2-ask-try@example.com");
+    expect(await field(Promise.resolve({ try: "northwind" }))).toBe("");
+
+    const userId = await createLocalUser(null, true);
+    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    await finishSignIn(userId, { demo: true });
+    expect(await field(Promise.resolve({ try: "northwind" }))).toContain("a certificate of insurance naming Northwind Builders as additional insured");
+    expect(await field(Promise.resolve({}))).toBe("");
   });
 });
 
