@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { asService, asUser } from "@/lib/server/db";
-import { CALLBACK_PATH, cognitoConfig, SIGN_IN_COOKIE, SIGN_IN_SECONDS, startSignIn } from "@/lib/server/cognito";
+import { accountSignIn, CALLBACK_PATH, SIGN_IN_COOKIE, SIGN_IN_SECONDS, startSignIn } from "@/lib/server/cognito";
 import { runReminders } from "@/lib/server/deadlines";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { SAMPLE_SIGNIN_BUSY } from "@/lib/server/limits";
@@ -47,8 +47,8 @@ export async function signIn(_prev: SignInState, data: FormData): Promise<SignIn
   // Where a re-sign-in for export, delete or Show full EIN goes afterwards: an allow-listed choice, else Home (W9-12).
   const back = returnTo(data.get("next"));
   if (mode === "account") {
-    // To Cognito's sign-in page; /auth/callback finishes (and records the agreement ticked here).
-    const cognito = cognitoConfig(process.env);
+    // To Cognito's sign-in page; /auth/callback finishes (and records the agreement ticked here). Only once real documents open (C20).
+    const cognito = accountSignIn(process.env);
     if (!cognito) return { ...typed, error: "Accounts aren't open yet. Try the sample workspace instead." };
     const { cookie, url } = startSignIn(cognito, { returnTo: back });
     (await cookies()).set(SIGN_IN_COOKIE, cookie, {

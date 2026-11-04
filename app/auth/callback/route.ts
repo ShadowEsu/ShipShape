@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { CALLBACK_PATH, cognitoConfig, completeSignIn, SIGN_IN_COOKIE, SignInFailed } from "@/lib/server/cognito";
+import { accountSignIn, CALLBACK_PATH, completeSignIn, SIGN_IN_COOKIE, SignInFailed } from "@/lib/server/cognito";
 import { pgErrorCode } from "@/lib/server/db";
 import { clientIp, rateLimited } from "@/lib/server/http";
 import { finishSignIn } from "@/lib/server/session";
@@ -14,7 +14,8 @@ export async function GET(request: Request) {
   const jar = await cookies();
   const cookie = jar.get(SIGN_IN_COOKIE)?.value;
   jar.delete({ name: SIGN_IN_COOKIE, path: CALLBACK_PATH });
-  const cognito = cognitoConfig(process.env);
+  // No account is made or signed in before real documents open (C20), even by a sign-in started earlier.
+  const cognito = accountSignIn(process.env);
   if (!cognito) redirect("/signin");
 
   let to = "/app";

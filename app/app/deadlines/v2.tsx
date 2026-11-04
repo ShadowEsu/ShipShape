@@ -121,8 +121,8 @@ export function DeadlinesV2({
       <p className="max-w-2xl text-ink-2">
         Dates come from your documents&apos; expiry and renewal fields.{" "}
         {reminders
-          ? "ShipShape lists a reminder for owners and admins under Reminders sent 90, 30 and 7 days before, and on the day something lapses."
-          : "Add these dates to your calendar: the file includes alerts 30 and 7 days before. Reminders from ShipShape come with Pro."}
+          ? "Owners and admins get a reminder 90, 30 and 7 days before, and on the day something lapses. You'll find them under Reminders sent."
+          : "Add these dates to your calendar. The calendar file includes alerts 30 and 7 days before, while there's still time. Reminders from ShipShape come with Pro."}
       </p>
 
       {all.length === 0 ? (
@@ -151,7 +151,9 @@ export function DeadlinesV2({
           {quiet && !soon && (
             <p role="status" className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">
               Nothing expires in the next 90 days.{" "}
-              {reminders ? "A reminder for owners and admins lands under Reminders sent 90, 30 and 7 days before." : "Add these dates to your calendar: the file includes alerts 30 and 7 days before."}
+              {reminders
+                ? "Owners and admins get a reminder 90, 30 and 7 days before, under Reminders sent."
+                : "Add these dates to your calendar. The calendar file includes alerts 30 and 7 days before."}
             </p>
           )}
           <Group title="Lapsed" items={shown.filter((d) => d.days_left < 0)} tone="bad" />

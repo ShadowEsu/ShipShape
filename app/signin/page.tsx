@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Logo, NotLegalAdvice } from "@/components/ui";
-import { cognitoConfig, type SignInProblem } from "@/lib/server/cognito";
-import { realDocsEnabled } from "@/lib/server/flags";
+import { accountSignIn, type SignInProblem } from "@/lib/server/cognito";
 import { localSignInAllowed } from "@/lib/server/session";
 import { RETURN_TO, returnTo } from "@/lib/return-to";
 import { SignInForm } from "./form";
@@ -28,7 +27,7 @@ export default async function SignInPage({
   searchParams: Promise<{ deleted?: string; error?: string; signed_out?: string; next?: string }>;
 }) {
   const { deleted, error, signed_out, next } = await searchParams;
-  const accounts = cognitoConfig(process.env) !== null;
+  const accounts = accountSignIn(process.env) !== null;
   const message = problem(error);
   // A re-sign-in for export, delete or Show full EIN goes back to that section afterwards (an allow-listed choice, never a URL).
   const back = returnTo(next);
@@ -58,9 +57,7 @@ export default async function SignInPage({
               {back
                 ? `Sign in again to continue in ${RETURN_TO[back].where}.`
                 : accounts
-                  ? realDocsEnabled()
-                    ? "Sign in, or create an account with your email. You'll need an authenticator app for the two-step code. You can also explore a sample business with made-up documents."
-                    : "Create an account with your email now; you'll need an authenticator app for the two-step code. Real documents open after our security review. Until then, explore a sample business with made-up documents."
+                  ? "Sign in, or create an account with your email. You'll need an authenticator app for the two-step code. You can also explore a sample business with made-up documents."
                   : "Accounts for real documents open after our security review. Until then, explore a sample business with made-up documents."}
             </p>
           </div>

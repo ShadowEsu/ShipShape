@@ -509,8 +509,8 @@ describe("Deadlines", () => {
     const html = await renderPage(DeadlinesPage, none());
     expect(textOf(html)).toContain("No dates yet Expiry and renewal dates from your certificates, licenses and agreements show here, soonest first");
     expect(primary(html)).toEqual(["Add an expiry date"]);
-    expect(textOf(html)).toContain("Add these dates to your calendar: the file includes alerts 30 and 7 days before.");
-    expect(textOf(html)).not.toContain("ShipShape lists a reminder");
+    expect(textOf(html)).toContain("Add these dates to your calendar. The calendar file includes alerts 30 and 7 days before, while there's still time.");
+    expect(textOf(html)).not.toContain("Owners and admins get a reminder");
     expect(textOf(html)).toContain("Nothing here: on the Free plan ShipShape doesn't send reminders.");
   });
 
@@ -565,7 +565,7 @@ describe("Deadlines", () => {
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
     await finishSignIn(userId, { demo: true });
     const html = await renderPage(DeadlinesPage, none());
-    expect(textOf(html)).toContain("ShipShape lists a reminder for owners and admins under Reminders sent 90, 30 and 7 days before");
+    expect(textOf(html)).toContain("Owners and admins get a reminder 90, 30 and 7 days before, and on the day something lapses. You'll find them under Reminders sent.");
     // The sample workspace shows its signing codes too (0039).
     expect(textOf(html)).toContain("During the preview ShipShape doesn't send email; reminders and signing codes land here instead.");
   });

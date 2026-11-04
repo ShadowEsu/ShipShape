@@ -66,6 +66,15 @@ export function cognitoConfig(env: Env): CognitoConfig | null {
   return { domain: login.origin, clientId, clientSecret, issuer: `https://cognito-idp.${region}.amazonaws.com/${pool}`, redirectUri: `${app.origin}${CALLBACK_PATH}`, region, poolId: pool };
 }
 
+/**
+ * Account sign-in as the pages and routes offer it: only once real documents open (G3). Before that, /signin is
+ * sample-only whatever COGNITO_* holds (BOSS 4 Nov on Security C20: no accounts or email addresses collected for a
+ * product that can't serve them yet).
+ */
+export function accountSignIn(env: Env): CognitoConfig | null {
+  return env.SHIPSHAPE_REAL_DOCS === "1" ? cognitoConfig(env) : null;
+}
+
 /** Why a sign-in didn't finish; the sign-in page shows a fixed message for each. */
 export type SignInProblem = "expired" | "cancelled" | "failed" | "terms" | "taken" | "deleting" | "busy";
 

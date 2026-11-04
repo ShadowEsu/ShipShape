@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/site";
 import { AI_RECIPIENT, AI_TRAINING_SOURCE } from "@/lib/ai";
 import { PLANS } from "@/lib/plans";
-import { cognitoConfig } from "@/lib/server/cognito";
+import { accountSignIn } from "@/lib/server/cognito";
 import { contactEmail, realDocsEnabled } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
@@ -115,7 +115,7 @@ export default function FaqPage() {
         <p className="eyebrow">FAQ</p>
         <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Questions, answered plainly.</h1>
         <div className="mt-10 divide-y divide-line border-y border-line">
-          {faq(realDocsEnabled(), cognitoConfig(process.env) !== null).map(({ q, a }) => (
+          {faq(realDocsEnabled(), accountSignIn(process.env) !== null).map(({ q, a }) => (
             <details key={q} className="group py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium">
                 {q}

@@ -851,6 +851,28 @@ describe("signing in (/signin)", () => {
     await expect(signIn({}, form({ mode: "demo", terms: "on" }))).rejects.toThrow(/^redirect \/app$/);
   });
 
+  it("sample-only until real documents open (C20): with Cognito set up, no account sign-in is offered or started; with them open, both are", async () => {
+    for (const [key, value] of Object.entries({
+      COGNITO_DOMAIN: "https://auth.example.test",
+      COGNITO_USER_POOL_ID: "us-east-1_AbC123",
+      COGNITO_CLIENT_ID: "client-1",
+      COGNITO_CLIENT_SECRET: "secret-1",
+      SHIPSHAPE_APP_URL: "https://app.example.test",
+    }))
+      vi.stubEnv(key, value);
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    const closed = await renderPage(SignInPage, { searchParams: Promise.resolve({}) });
+    expect(closed).not.toContain('value="account"');
+    expect(textOf(closed)).toContain("Accounts for real documents open after our security review.");
+    expect(await signIn({}, form({ mode: "account", terms: "on" }))).toMatchObject({ error: "Accounts aren't open yet. Try the sample workspace instead." });
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    const open = await renderPage(SignInPage, { searchParams: Promise.resolve({}) });
+    expect(open).toContain('value="account"');
+    expect(textOf(open)).toContain("You'll need an authenticator app for the two-step code.");
+    await expect(signIn({}, form({ mode: "account", terms: "on" }))).rejects.toThrow(/^redirect https:\/\/auth\.example\.test\/oauth2\/authorize\?/);
+    vi.unstubAllEnvs();
+  });
+
   it("the sample's first reminders count from the visitor's own day, like its dates, not the UTC day (W10-2)", async () => {
     // A zone whose date differs from UTC's right now: the two are 25 hours apart, so one always does.
     const zone = ["Pacific/Kiritimati", "Pacific/Pago_Pago"].find((z) => todayIn(z) !== isoToday()) ?? "UTC";

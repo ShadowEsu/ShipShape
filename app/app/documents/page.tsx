@@ -157,9 +157,10 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             title={hasArchived ? "No current documents" : "No documents yet"}
             body={
               closed
-                ? "Your W-9, insurance certificate and licenses will live here, with the date each one runs out, every version, and its history. Adding and making real documents opens after our security review."
+                ? "Your W-9, insurance certificate and licenses will live here, with the date each one runs out, every version, and its history."
                 : "Your W-9, insurance certificate and licenses live here, with the date each one runs out, every version, and its history."
             }
+            note={closed ? "Adding and making real documents opens after our security review." : undefined}
             example={[
               "W-9 · Form W-9, signed Oct 2026 · No expiry date",
               "Insurance certificate · General liability 2026 · Expires soon · Mar 1, 2027",
