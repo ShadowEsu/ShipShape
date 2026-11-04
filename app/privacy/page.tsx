@@ -139,6 +139,11 @@ export default function PrivacyPage() {
           note goes with it. Copies other people already downloaded stay with them, and Stripe keeps payment records as the law requires.
         </li>
         <li>
+          <strong>Delete one document:</strong> an owner or admin can delete an archived document for good, with its versions, files and
+          signature requests, unless someone has signed it. It&apos;s gone from ShipShape straight away; History keeps its lines about
+          the document, without its title.
+        </li>
+        <li>
           <strong>Sample workspaces:</strong> a &ldquo;Try the sample&rdquo; visit makes a workspace of made-up data and no email
           address. It is deleted by itself within two days of being made, files included.
         </li>
