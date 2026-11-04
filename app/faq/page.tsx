@@ -60,6 +60,7 @@ const faq = (docs: boolean, accounts: boolean): { q: string; a: React.ReactNode 
         documents). Anthropic says that by default it doesn&apos;t train on what its API receives (
         <a href={AI_TRAINING_SOURCE.href} target="_blank" rel="noopener noreferrer" className="underline">
           {AI_TRAINING_SOURCE.label}
+          <span className="sr-only"> (opens in a new tab)</span>
         </a>
         , checked {AI_TRAINING_SOURCE.checked}). The answer is a draft you check, not legal advice.
       </>
@@ -101,7 +102,7 @@ const faq = (docs: boolean, accounts: boolean): { q: string; a: React.ReactNode 
     : [
         {
           q: "When can I use it for real documents?",
-          a: "After our security review and once the production database is in place. Until then you can try it in a sample workspace with a made-up business (uploading your own files and editing its facts open with real accounts), and join the waitlist on the home page to hear when accounts open.",
+          a: "After our security review, once our live servers are ready. Until then you can try it in a sample workspace with a made-up business (uploading your own files and editing its facts open with real accounts), and join the waitlist on the home page to hear when accounts open.",
         },
       ]),
 ];
@@ -113,11 +114,11 @@ export default function FaqPage() {
       <SiteHeader />
       <main id="main" className="mx-auto max-w-3xl px-5 pt-10 pb-20">
         <p className="eyebrow">FAQ</p>
-        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Questions, answered plainly.</h1>
+        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Common questions</h1>
         <div className="mt-10 divide-y divide-line border-y border-line">
           {faq(realDocsEnabled(), accountSignIn(process.env) !== null).map(({ q, a }) => (
             <details key={q} className="group py-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium [&::-webkit-details-marker]:hidden">
                 {q}
                 <span aria-hidden="true" className="text-ink-3 transition-transform group-open:rotate-45 motion-reduce:transition-none">
                   +

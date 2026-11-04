@@ -8,7 +8,7 @@ import { realDocsEnabled } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
   title: "Status",
-  description: "Whether ShipShape and its database are answering right now, and which features are on.",
+  description: "Whether ShipShape is working right now, and which features are on.",
   alternates: { canonical: "/status" },
 };
 
@@ -38,8 +38,11 @@ export default async function StatusPage() {
       <SiteHeader />
       <main id="main" className="mx-auto max-w-3xl px-5 pt-10 pb-20">
         <p className="eyebrow">Status</p>
-        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">{db ? "The app and its database are answering." : "ShipShape isn't working right now."}</h1>
-        <p className="mt-2 text-sm text-ink-3">Checked {fmtDateTime(checkedAt)} · revision {process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "local"}</p>
+        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">{db ? "ShipShape is working." : "ShipShape isn't working right now."}</h1>
+        <p className="mt-2 text-sm text-ink-3">
+          Checked {fmtDateTime(checkedAt)}
+          {process.env.VERCEL_GIT_COMMIT_SHA ? ` · version ${process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7)}` : ""}
+        </p>
         {!db && (
           <>
             <p className="mt-4 text-ink-2">The database isn&apos;t answering, so signing in and opening documents won&apos;t work. Check again in a few minutes.</p>

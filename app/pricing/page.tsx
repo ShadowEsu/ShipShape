@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 
 const ROWS: [feature: string, free: string, pro: string][] = [
   ["Active documents", `${free.documents}`, "No limit"],
-  ["Passport links open at once", `${free.passports}`, "No limit"],
+  ["Passport links open at a time", `${free.passports}`, "No limit"],
   // "in all" kept together (Design, wave 15): at 390 the cell wraps "100 MB / in all", never a lone "all".
   ["Files", `${megabytes(free.files)} in\u00a0all`, "No total limit"],
   ["Versions, history, search", "✓", "✓"],
@@ -26,6 +26,17 @@ const ROWS: [feature: string, free: string, pro: string][] = [
   ["Signature requests", "Not included", "Not yet"],
   ["Export and account deletion", "✓", "✓"],
 ];
+
+/** A ✓ reads as "check mark" to a screen reader; it hears "Included" instead. */
+function cell(value: string): React.ReactNode {
+  if (value !== "✓") return value;
+  return (
+    <>
+      <span aria-hidden="true">✓</span>
+      <span className="sr-only">Included</span>
+    </>
+  );
+}
 
 type Payments = ReturnType<typeof paymentsMode>;
 
@@ -112,7 +123,7 @@ export default function PricingPage() {
               current. Try it in the sample workspace. It isn&apos;t in a plan yet, so it isn&apos;t for sale.
             </p>
             <div className="mt-auto">
-              <WaitlistForm interest="collect" />
+              <WaitlistForm interest="collect" label="Your email" />
             </div>
           </section>
         </div>
@@ -141,8 +152,8 @@ export default function PricingPage() {
                     <th scope="row" className="px-4 py-3 font-normal">
                       {feature}
                     </th>
-                    <td className="px-4 py-3">{f}</td>
-                    <td className="px-4 py-3">{p}</td>
+                    <td className="px-4 py-3">{cell(f)}</td>
+                    <td className="px-4 py-3">{cell(p)}</td>
                   </tr>
                 ))}
               </tbody>

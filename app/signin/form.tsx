@@ -20,10 +20,13 @@ export function SignInForm({ allowEmail, accounts, next }: { allowEmail: boolean
   const [state, action] = useActionState<SignInState, FormData>(signIn, {});
   const email = useRef<HTMLInputElement>(null);
   const terms = useRef<HTMLInputElement>(null);
-  // The field an error is about takes focus, so the fix starts where the message is.
+  const problem = useRef<HTMLParagraphElement>(null);
+  // The field an error is about takes focus, so the fix starts where the message is; an error about no field takes it
+  // itself, because the pressed button was disabled while it worked and focus fell to the page.
   useEffect(() => {
     if (state.field === "email") email.current?.focus();
     if (state.field === "terms") terms.current?.focus();
+    if (state.error && !state.field) problem.current?.focus();
   }, [state]);
   const general = state.error && !state.field;
   return (
@@ -69,11 +72,11 @@ export function SignInForm({ allowEmail, accounts, next }: { allowEmail: boolean
           <span>
             I agree to the{" "}
             <Link href="/terms" className="underline" target="_blank">
-              Terms
+              Terms<span className="sr-only"> (opens in a new tab)</span>
             </Link>{" "}
             and{" "}
             <Link href="/privacy" className="underline" target="_blank">
-              Privacy Policy
+              Privacy Policy<span className="sr-only"> (opens in a new tab)</span>
             </Link>
             .
           </span>
@@ -85,7 +88,7 @@ export function SignInForm({ allowEmail, accounts, next }: { allowEmail: boolean
         )}
       </div>
       {general && (
-        <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
+        <p ref={problem} tabIndex={-1} role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
           {state.error}
         </p>
       )}
