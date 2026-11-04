@@ -3,10 +3,11 @@ import { verify } from "node:crypto";
 import { SendEmailCommand, SESv2Client, type SendEmailCommandInput } from "@aws-sdk/client-sesv2";
 import { z } from "zod";
 import { productionAwsClient } from "./aws";
-import { keyedHash } from "./crypto";
+import { hashKey } from "./crypto";
 import { asService } from "./db";
 import { PLANS } from "../plans";
 import { appUrl, contactEmail } from "./flags";
+import { suppressionHash } from "./suppression";
 
 /**
  * Email through Amazon SES (B12; Security 2026-11-04 0715, answer 5, and 1058, K1-K5). Off unless
@@ -213,8 +214,8 @@ export function footer(cfg: MailConfig, kind: QueuedKind): string {
     case "reminder":
       return `You're getting this because you're an owner or admin of this workspace on ShipShape. To stop reminders about this document, archive it or clear its dates in ShipShape. Questions: ${reply ? "reply to this email" : `write to ${s}`}.`;
     case "welcome":
-      return `You're getting this once, because this address created a ShipShape account. We don't send a welcome series. ${
-        reply ? `Questions: write to ${s}. To get no more email from ShipShape, reply "stop" or write to that address.` : `Questions, or to get no more email from ShipShape: write to ${s}.`
+      return `You're getting this once, because this address created a ShipShape account. We don't send a welcome series. Questions: write to ${s}. To get no more email from ShipShape, ${
+        reply ? `reply "stop" or write to that address.` : "write to that address."
       }`;
     case "waitlist_open":
       return `You're getting this because this address joined the waitlist on ShipShape's home page. We don't check addresses when people join, so if that wasn't you, ${
@@ -247,8 +248,6 @@ export function queuedEmail(cfg: MailConfig, m: { kind: QueuedKind; to_email: st
 }
 
 // Sending ---------------------------------------------------------------------------------------------
-
-const suppressionHash = (address: string) => keyedHash(address.trim().toLowerCase(), "email-suppression");
 
 /**
  * What may be emailed: unsent, unclaimed, under the attempt limit and recent (3 days: a kind turned on
@@ -324,7 +323,8 @@ export async function sendQueuedMail(until = Number.POSITIVE_INFINITY): Promise<
   const queue = await asService((tx) => tx.query<Queued>(QUEUE_SQL, [MAX_ATTEMPTS, DAILY_CAP, cfg.kinds]));
   const run: MailRun = { sent: 0, failed: 0, held: 0 };
   if (!queue.length) return run;
-  const hashes = queue.map((m) => suppressionHash(m.to_email));
+  const key = hashKey();
+  const hashes = queue.map((m) => suppressionHash(m.to_email, key));
   const suppressed = new Set(
     (await asService((tx) => tx.query<{ address_hash: string }>("select address_hash from app.email_suppressions where address_hash = any($1::text[])", [hashes]))).map(
       (r) => r.address_hash,
@@ -516,7 +516,8 @@ export async function handleSesNotification(raw: string, { fetchFn = fetch }: { 
         ? { reason: "complaint", recipients: event.complaint.complainedRecipients }
         : null;
   if (!suppress) return { status: 200, message: "ignored" };
-  const hashes = suppress.recipients.map((r) => suppressionHash(r.emailAddress));
+  const key = hashKey();
+  const hashes = suppress.recipients.map((r) => suppressionHash(r.emailAddress, key));
   await asService((tx) =>
     tx.query("insert into app.email_suppressions (address_hash, reason) select h, $2 from unnest($1::text[]) as h on conflict (address_hash) do nothing", [hashes, suppress.reason]),
   );

@@ -26,6 +26,8 @@ import {
 } from "@/lib/server/mail";
 import { migrate, type MigrationStep } from "@/lib/server/migrations";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { stopEmail } from "@/lib/server/suppression";
+import { hashKey } from "@/lib/server/crypto";
 import { freshDb, type TestDb } from "./support/db";
 
 // Email through SES (B12; Security 2026-11-04 0715, answer 5, and 1058, K1-K5), against a fake SES and a
@@ -556,6 +558,45 @@ describe("kinds (Security 1058, K1, K2, K5)", () => {
     );
     await queueWaitlist(`capped-${++n}@example.test`);
     expect(await sendQueuedMail()).toEqual({ sent: 0, failed: 0, held: 1 });
+  });
+});
+
+describe("stop (Security 1058, K3)", () => {
+  const stop = (address: string) => stopEmail((text, params) => asService((tx) => tx.query(text, params)), address, hashKey());
+
+  it("a stopped address gets nothing of any kind, however it's written; a second stop changes nothing, and a typo is refused", async () => {
+    stub(ALL_ON);
+    const ses = fakeSes();
+    const owner = await account("stopped");
+    const org = await workspace(owner.id);
+    const fan = `stopped-fan-${++n}@example.test`;
+    expect(await stop(` ${owner.email.toUpperCase()} `)).toBe(true);
+    expect(await stop(fan)).toBe(true);
+    expect(await stop(owner.email)).toBe(false);
+    await expect(stop("not an address")).rejects.toThrow("isn't an email address");
+    expect(await db.root((tx) => tx.query<{ reason: string }>("select reason from app.email_suppressions"))).toEqual([{ reason: "stop" }, { reason: "stop" }]);
+
+    await queue(org, owner.email);
+    await queueWelcome(org, owner.id, owner.email);
+    await queueWaitlist(fan);
+    expect(await sendQueuedMail()).toEqual({ sent: 0, failed: 0, held: 3 });
+    expect(ses.calls).toEqual([]);
+  });
+
+  it("a footer says 'reply' only when the sender is the support address; otherwise it says to write to it, and every kind's footer gives a way to stop", () => {
+    const kinds = ["reminder", "welcome", "waitlist_open"] as const;
+    const elsewhere = config(ALL_ON);
+    const inbox = config({ ...ALL_ON, SHIPSHAPE_EMAIL_FROM: SUPPORT.toUpperCase() });
+    expect([elsewhere.replyReaches, inbox.replyReaches]).toEqual([false, true]);
+    for (const kind of kinds) {
+      expect(footer(elsewhere, kind)).not.toMatch(/reply/i);
+      expect(footer(elsewhere, kind)).toContain(`write to ${SUPPORT}`);
+      expect(footer(inbox, kind)).toMatch(/reply/i);
+    }
+    // The ways to stop: a reminder's document archived or undated; the others, a "stop" to the support address.
+    expect(footer(elsewhere, "reminder")).toMatch(/To stop reminders about this document, archive it or clear its dates/);
+    expect(footer(elsewhere, "welcome")).toMatch(/To get no more email from ShipShape, write to that address\./);
+    expect(footer(elsewhere, "waitlist_open")).toMatch(/To come off the list, write to that address\./);
   });
 });
 

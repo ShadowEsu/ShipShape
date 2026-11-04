@@ -55,3 +55,6 @@ create policy outbox_read on app.outbox for select to authenticated using (
 -- The sender refuses a waitlist address that is any workspace's contact (as it does a vendor's or signer's): it
 -- reads the address column only.
 grant select (email) on app.contacts to service_role;
+
+alter table app.email_suppressions drop constraint email_suppressions_reason_check;
+alter table app.email_suppressions add constraint email_suppressions_reason_check check (reason in ('bounce', 'complaint', 'stop'));
