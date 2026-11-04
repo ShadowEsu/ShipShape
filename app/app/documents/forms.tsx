@@ -638,7 +638,8 @@ export function SignRequestForm({
           {demo && " To try it, open the link in this browser; the code lands under Deadlines → Reminders sent."}
         </p>
         <CopyLink id="sign-url" label="Signing link" url={url} />
-        <button type="button" className="text-sm text-ink-2 underline" onClick={() => setUrl(null)}>
+        {/* The redesigned page's is a 24px target (WCAG 2.5.8); the earlier page's as it was. */}
+        <button type="button" className={rows ? "inline-flex min-h-6 items-center text-sm text-ink-2 underline" : "text-sm text-ink-2 underline"} onClick={() => setUrl(null)}>
           Ask someone else
         </button>
       </div>
