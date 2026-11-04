@@ -102,7 +102,6 @@ export function DocumentV2(p: {
   return (
     <div className="mx-auto max-w-[720px] space-y-6">
       <HashLanding />
-      <StatusLanding status={doc.status} />
       <nav aria-label="Back" className="text-sm">
         <Link href="/app/documents" className="-my-2.5 inline-flex min-h-11 items-center text-ink-2 hover:text-ink">
           <span aria-hidden="true">←</span>&nbsp;Documents
@@ -146,6 +145,8 @@ export function DocumentV2(p: {
         </div>
       </div>
 
+      {/* Where the Archived block was: after Restore it says so here (Design 05:33); after Archive it's read out only. */}
+      <StatusLanding status={doc.status} />
       {active ? (
         // Full width is the phone rule; from 768px it's an auto-width pill at the left, above the actions (Design 14:40).
         <Link href={`/app/passport?docs=${doc.id}`} className="btn press w-full md:w-auto md:min-w-[200px]">
