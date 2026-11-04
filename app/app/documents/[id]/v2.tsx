@@ -135,7 +135,7 @@ export function DocumentV2(p: {
       */}
       <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl border border-line px-8 pt-6 md:h-64">
         <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md border border-b-0 border-[var(--line-2)] bg-paper p-5">
-          <p className="eyebrow">{DOC_KINDS[doc.kind]}</p>
+          <p className="doc-kind eyebrow">{DOC_KINDS[doc.kind]}</p>
           <p className="mt-2 line-clamp-3 text-lg leading-snug font-medium">{doc.title}</p>
           {latest && <p className="mt-3 font-mono text-xs text-ink-3">{FILE_TYPE[latest.mime]}</p>}
         </div>

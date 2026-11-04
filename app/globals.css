@@ -606,11 +606,15 @@ body {
 html:has(.ui-v2 .top-bar) {
   scroll-padding-top: 64px;
 }
-/* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text. */
-.ui-v2 .page-eyebrow {
+/* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text:
+   the page header's and the document card's kind line read as the public pages' .kicker (Design 11-04: sentence case,
+   sans, no tracking; text-sm font-medium text-ink-2). The earlier look and the shared pages keep .eyebrow. */
+.ui-v2 :is(.page-eyebrow, .doc-kind) {
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 500;
+  color: var(--ink-2);
   letter-spacing: 0;
   text-transform: none;
 }
