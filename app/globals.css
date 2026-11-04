@@ -418,10 +418,11 @@ body {
     content: "";
     @apply size-1.5 rounded-full bg-ink-3;
   }
-  /* The row whose detail is open beside the list (Sent). Below lg the detail isn't beside it, so no fill (Design #25 S3). */
+  /* The row whose detail is open beside the list (Sent). Below lg the detail isn't beside it, so no fill (Design #25 S3).
+     The fill alone is about 1.1:1 against the other rows, so an ink bar on its left edge says which one it is. */
   @media (width >= 64rem) {
     .ui-v2 .hair-row[aria-current="true"] {
-      @apply bg-tile;
+      @apply bg-tile shadow-[inset_2px_0_0_var(--ink)];
     }
   }
   /* Tabs that are links: grey words on a hairline, the current one ink with a 2px ink underline (Design calm v2). */
@@ -589,10 +590,21 @@ body {
 .ui-v2 #search-dialog form:focus-within {
   border-bottom-color: var(--ink);
 }
-/* The search result the arrow keys are on shows as the faint fill, as a list's active row, not a ring (Design S1, 3 Nov). */
+/* The search result the arrow keys are on shows as the faint fill, as a list's active row (Design S1, 3 Nov), with a 2px
+   ink ring drawn inside it: the fill alone is about 1.1:1 on white, too faint to find (WCAG 2.4.7). */
 .ui-v2 #search-dialog .search-row:focus-visible {
   outline: none;
   background: var(--tile);
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+/* Row links fill lists that clip their overflow (grouped and hairline lists, the sidebar's scroller): the ring goes inside
+   the row, or the clip cuts it off. */
+.ui-v2 :is(.group-row, .hair-row, .side-row, .search-row):focus-visible {
+  outline-offset: -2px;
+}
+/* A control the keyboard reaches stops clear of the sticky top bar (52px) instead of sitting under it (WCAG 2.4.11). */
+html:has(.ui-v2 .top-bar) {
+  scroll-padding-top: 64px;
 }
 /* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text. */
 .ui-v2 .page-eyebrow {

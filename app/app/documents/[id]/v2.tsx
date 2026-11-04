@@ -42,8 +42,9 @@ function History({ audit, moreAudit, zone }: { audit: AuditRow[]; moreAudit: boo
     <details className="group rounded-2xl border border-line">
       <summary className="flex min-h-13 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 font-medium [&::-webkit-details-marker]:hidden">
         {`History (${count})`}
-        {/* Down while closed, up while open: it opens here, it doesn't go anywhere. The summary carries the expanded state. */}
-        <span className="rotate-90 text-ink-3 transition-transform duration-[180ms] group-open:-rotate-90">
+        {/* Down while closed, up while open: it opens here, it doesn't go anywhere. The summary carries the expanded state.
+            disclosure-chevron: the turn, which stops under reduced motion (motion.css). */}
+        <span className="disclosure-chevron rotate-90 text-ink-3 group-open:-rotate-90">
           <Icon name="chevron" />
         </span>
       </summary>
