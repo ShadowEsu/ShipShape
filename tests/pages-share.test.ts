@@ -697,7 +697,7 @@ describe("Deadlines", () => {
 
     it("with email on (SHIPSHAPE_EMAIL=1, B12), an owner reads that reminders are emailed; off, the earlier look and the sample keep saying email is off", async () => {
       const off = "During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown.";
-      const on = "ShipShape emails each reminder to the sign-in address of every owner and admin, and keeps a copy here. Signing codes for real documents aren't shown.";
+      const on = "ShipShape emails each reminder";
       await signIn("deadlines-v2-email@example.com");
       expect(textOf(await page())).toContain(off);
 

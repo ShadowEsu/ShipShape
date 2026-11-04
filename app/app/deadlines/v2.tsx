@@ -174,7 +174,7 @@ export function DeadlinesV2({
             {demo
               ? "During the preview ShipShape doesn't send email; reminders and signing codes land here instead."
               : emailed
-                ? "ShipShape emails each reminder to the sign-in address of every owner and admin, and keeps a copy here. Signing codes for real documents aren't shown."
+                ? "ShipShape emails each reminder to every owner and admin at their sign-in address, and keeps a copy here. Signing codes for real documents aren't listed here."
                 : "During the preview, ShipShape doesn't send email: reminders land here instead, and signing codes for real documents aren't shown."}
           </p>
         )}
