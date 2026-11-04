@@ -66,6 +66,12 @@ export function paymentsLive(): boolean {
   return billingConfig()?.live === true;
 }
 
+/** What the public pages say about payments: switched off, Stripe's test mode, or live (each said as it is). */
+export function paymentsMode(): "off" | "test" | "live" {
+  const cfg = billingConfig();
+  return cfg === null ? "off" : cfg.live ? "live" : "test";
+}
+
 /** Whether a Stripe webhook signing secret is set (its form only), for the health check. */
 export function webhookConfigured(): boolean {
   return WEBHOOK_SECRET.test(process.env.STRIPE_WEBHOOK_SECRET ?? "");
