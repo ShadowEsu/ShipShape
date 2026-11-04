@@ -2,9 +2,10 @@
 
 import { useRef, useState } from "react";
 
+// No "we'll email you" while ShipShape can't send email (finish list A11; Privacy says it doesn't email the list yet).
 const COPY = {
-  accounts: { button: "Join the waitlist", busy: "Joining…", done: "You're on the list. We'll email you once when accounts open." },
-  collect: { button: "Tell me when it's for sale", busy: "Saving…", done: "Noted. We'll email you once if Collect goes on sale." },
+  accounts: { button: "Join the waitlist", busy: "Joining…", done: "You're on the list." },
+  collect: { button: "Tell me when it's for sale", busy: "Saving…", done: "Noted: you'd like to hear if Collect goes on sale." },
 } as const;
 
 /** Waitlist sign-up; `interest` records that the person wants to hear about one unsold feature. */
