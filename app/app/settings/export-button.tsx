@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { busyButton } from "@/components/submit-button";
 
 const STARTED_MS = 4000;
 
@@ -47,7 +48,7 @@ export function ExportButton() {
   return (
     <div className="space-y-2">
       <div className="inline-flex flex-col gap-1.5">
-        <button type="button" className="btn-ghost press" disabled={busy} onClick={run}>
+        <button type="button" className="btn-ghost press" {...busyButton(busy, run)}>
           {busy ? "Preparing your ZIP…" : phase === "started" ? "Download started" : "Download the export"}
         </button>
         {/* Always there, so the section doesn't move when it shows. */}

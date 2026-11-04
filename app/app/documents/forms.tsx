@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { changed, DiscardDialog, useLeaveGuard } from "@/components/leave-guard";
+import { busyButton } from "@/components/submit-button";
 import { MAX_UPLOAD_BYTES, UPLOAD_TOO_BIG } from "@/lib/upload-limit";
 import { addDocument, addVersion, askToSign, saveDetails, type FormState, type SignFormState } from "./actions";
 import { size } from "./[id]/shared";
@@ -198,7 +199,7 @@ export function DetailsForm({ id, values }: { id: string; values: DetailValues }
       <input type="hidden" name="id" value={id} />
       <DetailFields v={state.values ?? values} state={state} />
       <Status state={state} savedText="Saved. Reminders follow the new dates." />
-      <button className="btn-ghost" disabled={pending}>
+      <button className="btn-ghost" {...busyButton(pending)}>
         {pending ? "Saving…" : "Save details"}
       </button>
     </form>
@@ -377,7 +378,7 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
         // Docked at the foot of the phone's screen, 8px over the home indicator.
         // save-dock: while it shows, the page scrolls fields clear of it (globals.css).
         <div className="save-dock sticky bottom-[calc(8px+env(safe-area-inset-bottom))] z-10 md:static">
-          <button className="btn press w-full" disabled={pending}>
+          <button className="btn press w-full" {...busyButton(pending)}>
             {pending ? "Saving…" : "Save details"}
           </button>
         </div>
@@ -423,7 +424,7 @@ export function NewDocumentForm() {
       </div>
       <DetailFields v={state.values} state={state} />
       <Status state={state} savedText="" />
-      <button className="btn" disabled={pending}>
+      <button className="btn" {...busyButton(pending)}>
         {pending ? "Uploading…" : "Add to documents"}
       </button>
     </form>
@@ -522,7 +523,7 @@ export function NewDocumentFormV2() {
       <Status state={state} savedText="" />
       {/* Docked at the foot of the phone's screen, as Business facts' Save and confirm. */}
       <div className="save-dock sticky bottom-[calc(8px+env(safe-area-inset-bottom))] z-10 md:static">
-        <button className="btn press w-full md:w-auto" disabled={pending}>
+        <button className="btn press w-full md:w-auto" {...busyButton(pending)}>
           {pending ? "Uploading…" : "Add to documents"}
         </button>
       </div>
@@ -559,7 +560,7 @@ export function VersionForm({ id, warning }: { id: string; warning?: string }) {
       )}
       <FieldError state={state} name="file" />
       <Status state={state} savedText="New version added. Earlier versions stay in the history." />
-      <button className="btn-ghost" disabled={pending}>
+      <button className="btn-ghost" {...busyButton(pending)}>
         {pending ? "Uploading…" : "Add version"}
       </button>
     </form>
@@ -705,7 +706,7 @@ export function SignRequestForm({
           {state.error}
         </p>
       )}
-      <button className="btn-ghost" disabled={pending}>
+      <button className="btn-ghost" {...busyButton(pending)}>
         {pending ? "Making the link…" : "Make a signing link"}
       </button>
     </form>

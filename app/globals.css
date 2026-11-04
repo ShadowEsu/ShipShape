@@ -97,18 +97,19 @@ body {
 }
 
 @layer components {
-  /* Controls are 44px tall on phones (touch) and 40px from the sm breakpoint up. */
+  /* Controls are 44px tall on phones (touch) and 40px from the sm breakpoint up.
+     data-busy: a button whose form is sending, kept focusable (busyButton in submit-button.tsx), looks as a disabled one. */
   .btn {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-paper transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-paper transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-50 data-busy:cursor-not-allowed data-busy:opacity-50 sm:min-h-10;
   }
   .btn-accent {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-accent px-5 text-sm font-semibold text-accent-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-accent px-5 text-sm font-semibold text-accent-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 data-busy:cursor-not-allowed data-busy:opacity-50 sm:min-h-10;
   }
   .btn-ghost {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-line bg-paper px-5 text-sm font-semibold text-ink hover:bg-canvas disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-line bg-paper px-5 text-sm font-semibold text-ink hover:bg-canvas disabled:cursor-not-allowed disabled:opacity-50 data-busy:cursor-not-allowed data-busy:opacity-50 sm:min-h-10;
   }
   .btn-danger {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-bad px-5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-bad px-5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 data-busy:cursor-not-allowed data-busy:opacity-50 sm:min-h-10;
   }
   /* 16px text on phones: iOS Safari zooms the page into any field with smaller text.
      Focus shows as a 2px ring in the accent colour (18.9:1 on paper) offset from the field, in place of the outline. */

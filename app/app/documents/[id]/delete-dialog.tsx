@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
+import { busyButton } from "@/components/submit-button";
 import { deleteForGood, type DeleteDocumentState } from "../actions";
 import { DELETE_PROMISE } from "../messages";
 
@@ -55,7 +56,7 @@ export function DeleteForGood({ id, title }: { id: string; title: string }) {
               Cancel
             </button>
             {!state.reauth && (
-              <button className="btn-danger" disabled={pending} aria-disabled={pending}>
+              <button className="btn-danger" {...busyButton(pending)}>
                 {pending ? "Deleting…" : "Delete for good"}
               </button>
             )}
