@@ -6,6 +6,8 @@ import { sessionInHeader } from "@/lib/server/session";
 const Body = z.object({
   email: z.string().trim().toLowerCase().max(200).pipe(z.email()),
   interest: z.enum(["collect"]).optional(),
+  // Sent by the forms inside the sample workspace (WaitlistForm inSample), not by the site's.
+  from: z.enum(["sample"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -15,8 +17,10 @@ export async function POST(req: Request) {
   if (!parsed.success) return fail("Enter your email address, like you@business.com.");
   const interests = parsed.data.interest ? [parsed.data.interest] : [];
   // Same answer whether or not the address was already on the list; a second sign-up adds its interest.
-  // A new address also adds 1 to today's count for where it came from (0051): from inside a sample, or not.
-  const source = sessionInHeader(req.headers.get("cookie"))?.demo ? "sample" : "site";
+  // A new address also adds 1 to today's count for where it came from (0051): a form inside the sample workspace, which
+  // takes the form saying so and a valid sample session (the session alone would count the site's forms too), or not.
+  const fromSample = parsed.data.from === "sample" && sessionInHeader(req.headers.get("cookie"))?.demo === true;
+  const source = fromSample ? "sample" : "site";
   await asService(async (tx) => {
     const [row] = await tx.query<{ added: boolean }>(
       `insert into app.waitlist (email, interests) values ($1, $2) on conflict (email) do update

@@ -60,7 +60,7 @@ export function StartHere({ path }: { path: StartPath }) {
           >
             <span>That&apos;s ShipShape: the request in, the packet out, the dates watched. Real accounts aren&apos;t open yet.</span>
           </Celebrate>
-          <WaitlistForm label="Hear when real accounts open" />
+          <WaitlistForm label="Hear when real accounts open" inSample />
         </div>
       )}
     </section>

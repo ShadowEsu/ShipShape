@@ -74,19 +74,22 @@ describe("waitlist", () => {
 });
 
 describe("the sample-to-waitlist tally (ledger 461, spot 2b)", () => {
-  it("counts each new address once, by whether it came from inside a sample", async () => {
+  it("counts each new address once: sample only from a form inside a sample, with that sample's session", async () => {
     const before = [await counted("site"), await counted("sample")];
     const sample = encodeSession({ userId: crypto.randomUUID(), demo: true, sessionId: newSessionId() });
     const real = encodeSession({ userId: crypto.randomUUID(), demo: false, sessionId: newSessionId() });
     expect((await join({ email: "tally-site@example.com" })).status).toBe(200);
-    expect((await join({ email: "tally-sample@example.com" }, `theme=calm; ss_session=${sample}`)).status).toBe(200);
-    expect((await join({ email: "tally-real@example.com" }, `ss_session=${real}`)).status).toBe(200);
-    // Already on the list: adding an interest isn't a new sign-up.
-    expect((await join({ email: "tally-sample@example.com", interest: "collect" }, `ss_session=${sample}`)).status).toBe(200);
-    // A sample cookie that isn't ShipShape's own (its payload changed, so its signature fails) counts as the site.
+    expect((await join({ email: "tally-sample@example.com", from: "sample" }, `theme=calm; ss_session=${sample}`)).status).toBe(200);
+    // The site's own form, in a browser with a sample open in another tab: the site's.
+    expect((await join({ email: "tally-site-form@example.com" }, `ss_session=${sample}`)).status).toBe(200);
+    // Saying "sample" without a sample session (none, an account's, or one whose signature fails): the site's.
+    expect((await join({ email: "tally-no-session@example.com", from: "sample" })).status).toBe(200);
+    expect((await join({ email: "tally-real@example.com", from: "sample" }, `ss_session=${real}`)).status).toBe(200);
     const forged = `${sample.startsWith("a") ? "b" : "a"}${sample.slice(1)}`;
-    expect((await join({ email: "tally-forged@example.com" }, `ss_session=${forged}`)).status).toBe(200);
-    expect([(await counted("site")) - before[0], (await counted("sample")) - before[1]]).toEqual([3, 1]);
+    expect((await join({ email: "tally-forged@example.com", from: "sample" }, `ss_session=${forged}`)).status).toBe(200);
+    // Already on the list: adding an interest isn't a new sign-up.
+    expect((await join({ email: "tally-sample@example.com", interest: "collect", from: "sample" }, `ss_session=${sample}`)).status).toBe(200);
+    expect([(await counted("site")) - before[0], (await counted("sample")) - before[1]]).toEqual([5, 1]);
   });
 
   it("keeps numbers only: a day, a source and a count", async () => {
