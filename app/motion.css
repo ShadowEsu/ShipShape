@@ -376,9 +376,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* A static skeleton, the mark standing still, every row in place, no pop and no burst. */
+  /* A static skeleton, the mark standing still, every row in place, no pop and no burst. The skeleton and the mark
+     still wait their 200ms and 600ms, then appear at once (1ms, no fade), so a fast load flashes nothing here either. */
   .ui-v2 .skeleton,
-  .ui-v2 .brand-loader,
+  .ui-v2 .brand-loader {
+    animation-duration: 1ms;
+  }
   .ui-v2 .brand-loader svg,
   .ui-v2 .m-arrive > *,
   .ui-v2 .celebrate-check {

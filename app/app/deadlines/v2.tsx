@@ -6,21 +6,16 @@ import { DOC_KINDS } from "@/lib/server/documents";
 import { fmtDay, timeOf } from "@/lib/today";
 import { HairRow, StateChip } from "../hair-row";
 import { Celebrate, CountUp } from "../motion-moments";
+import { whenParts } from "./when";
 
-/** when(d), with the days counting up (motion spec §4: days left on deadlines); the words are the same. */
+/** when(d) with its days counting up (motion spec §4: days left on deadlines); the words come from the same parts. */
 function When({ d }: { d: Deadline }) {
-  const days = Math.abs(d.days_left);
-  const unit = days === 1 ? "day" : "days";
-  if (d.days_left < 0)
-    return (
-      <>
-        <CountUp value={days} /> {unit} ago
-      </>
-    );
-  if (d.days_left === 0) return "today";
+  const { before, n, after } = whenParts(d);
   return (
     <>
-      in <CountUp value={days} /> {unit}
+      {before}
+      {n !== null && <CountUp value={n} />}
+      {after}
     </>
   );
 }

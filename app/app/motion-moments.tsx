@@ -5,8 +5,9 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 /**
  * The motion moments that need a script (Design's shared spec, 4 Nov, §2-§3): count-ups, staggered arrival and
  * celebrations; the shimmer and the branded loader are CSS only (app/motion.css). Every one renders its final state in
- * the server HTML, does nothing under reduced motion, never delays content, and ends at once on a click, key, wheel
- * or touch.
+ * the server HTML and does nothing under reduced motion; a count-up or a celebration ends at once on a click, key,
+ * wheel or touch (spec §3.3). None waits for anything: a list's rows are already in the page when they rise (spec §2:
+ * the 8th starts 490ms after the 1st, and all are in place by 840ms).
  */
 
 const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -143,12 +144,28 @@ const subscribeStorage = (onChange: () => void) => {
   window.addEventListener("storage", onChange);
   return () => window.removeEventListener("storage", onChange);
 };
+// Where this browser's storage is off or refused (Firefox's dom.storage.enabled, some policies), celebrations stay on
+// and nothing is remembered, rather than the page failing.
+function readKey(key: string): string | null {
+  try {
+    return window.localStorage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+function writeKey(key: string, value: string) {
+  try {
+    window.localStorage?.setItem(key, value);
+  } catch {
+    // Storage off or full: nothing kept.
+  }
+}
 
 /** Whether celebrations are on here: a switch for Settings that reads and writes this browser's setting. */
 export function CelebrationSwitch() {
   const on = useSyncExternalStore(
     subscribeStorage,
-    () => localStorage.getItem(CELEBRATE_KEY) !== "off",
+    () => readKey(CELEBRATE_KEY) !== "off",
     () => true,
   );
   const [, rerender] = useState(0);
@@ -163,7 +180,7 @@ export function CelebrationSwitch() {
         role="switch"
         checked={on}
         onChange={(e) => {
-          localStorage.setItem(CELEBRATE_KEY, e.target.checked ? "on" : "off");
+          writeKey(CELEBRATE_KEY, e.target.checked ? "on" : "off");
           rerender((n) => n + 1);
         }}
         className="size-5 shrink-0 accent-[var(--accent)]"
@@ -176,23 +193,26 @@ const BURST = 8;
 
 /**
  * A real win, once a day per trigger (spec §2, celebration): the check pops and 8 small shapes burst from it and fade
- * in 900ms, around it and no further than 48px. Off in Settings, under reduced motion, or when already seen today, the
- * check is just there.
+ * in 900ms, around it and no further than 48px. Off in Settings, under reduced motion, or when already seen today (the
+ * person's own calendar day, as everywhere in the app), the check is just there.
  */
 export function Celebrate({ trigger, children }: { trigger: CelebrationTrigger; children: React.ReactNode }) {
   const [burst, setBurst] = useState(false);
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString("en-CA");
     const key = `ss-celebrated-${trigger}`;
-    if (still() || localStorage.getItem(CELEBRATE_KEY) === "off" || localStorage.getItem(key) === today) return;
+    if (still() || readKey(CELEBRATE_KEY) === "off" || readKey(key) === today) return;
     setBurst(true);
-    // Seen once it has played or been skipped, so a page left mid-burst plays it next time.
+    // Seen once it has played or been skipped, so a page left mid-burst plays it next time. Whichever ends it first,
+    // the timer or a skip, takes the other away.
     const end = () => {
-      localStorage.setItem(key, today);
+      clearTimeout(t);
+      for (const type of SKIP) window.removeEventListener(type, end, true);
+      writeKey(key, today);
       setBurst(false);
     };
     const t = setTimeout(end, 900);
-    for (const type of SKIP) window.addEventListener(type, end, { capture: true, passive: true, once: true });
+    for (const type of SKIP) window.addEventListener(type, end, { capture: true, passive: true });
     return () => {
       clearTimeout(t);
       for (const type of SKIP) window.removeEventListener(type, end, true);
