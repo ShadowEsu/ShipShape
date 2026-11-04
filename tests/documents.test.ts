@@ -855,7 +855,7 @@ describe("workspace name", () => {
     vi.unstubAllEnvs();
   });
 
-  it("can't be changed by a member, in a sample workspace, or to an empty, multi-line, overlong, ShipShape or address name (RN-2, RN-3)", async () => {
+  it("can't be changed by a member, in a sample workspace, or to an empty, multi-line, control or bidi, overlong, ShipShape or address name (RN-2, RN-3, Security 0715 #3)", async () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     const ctx = await workspace("rename-owner@example.com", "real");
     const memberId = await db.user("rename-member@example.com");
@@ -863,7 +863,8 @@ describe("workspace name", () => {
     await expect(renameWorkspace({ ...ctx, userId: memberId, role: "member" }, "Taken Over")).rejects.toBeInstanceOf(UserError);
     await expect(renameWorkspace(sample, "Real Co")).rejects.toBeInstanceOf(GateClosed);
     const lookalikes = ["ShipShape Support", "Ship-Shape Co", "Ship.Shape", "ShipShapeSupport", "MyShipShape", "ShipShapes", "Acme https://acme.example", "help@acme.example"];
-    for (const bad of ["   ", "Harbor\nSupply", "x".repeat(121), 42, ...lookalikes]) {
+    const hidden = ["Harbor\u0007Supply", "Harbor\u202eoC ylppuS", "\u2066Harbor\u2069", "Harbor\u200fSupply"];
+    for (const bad of ["   ", "Harbor\nSupply", "x".repeat(81), 42, ...hidden, ...lookalikes]) {
       await expect(renameWorkspace(ctx, bad)).rejects.toBeInstanceOf(UserError);
     }
     const names = await db.root((tx) => tx.query<{ name: string }>("select name from app.organizations where id = any($1)", [[ctx.orgId, sample.orgId]]));
@@ -872,11 +873,19 @@ describe("workspace name", () => {
     vi.unstubAllEnvs();
   });
 
-  it("may contain 'ship' and 'shape' inside other words", async () => {
+  it("may contain 'ship' and 'shape' inside other words, and runs to 80 characters", async () => {
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
     const ctx = await workspace("relationship@example.com", "real");
     expect(await renameWorkspace(ctx, "Relationship Shaper Co")).toBe("Relationship Shaper Co");
     expect(await renameWorkspace(ctx, "Friendship Shapes")).toBe("Friendship Shapes");
+    expect(await renameWorkspace(ctx, "x".repeat(80))).toBe("x".repeat(80));
+    vi.unstubAllEnvs();
+  });
+
+  it("is open before real documents are (Security 0715 #3): a real workspace gets its own name before G3", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
+    const ctx = await workspace("rename-early@example.com", "real");
+    expect(await renameWorkspace(ctx, "Harbor Plumbing LLC")).toBe("Harbor Plumbing LLC");
     vi.unstubAllEnvs();
   });
 });
