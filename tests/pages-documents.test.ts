@@ -1035,6 +1035,21 @@ describe("a document's page", () => {
     expect(actionsOf(html).filter((a) => a.label === "Choose one to archive")).toEqual([{ tag: "a", label: "Choose one to archive", href: "/app/documents" }]);
   });
 
+  it("redesigned: archive and restore have somewhere for focus to land, the Archived block or the heading (tabIndex -1), and a status that's always there to say which; the earlier page as it was", async () => {
+    const ctx = await signIn("doc-archive-landing@example.com");
+    const id = await uploadDocument(ctx, { title: "Old permit", kind: "permit" }, PDF);
+    const active = await documentPage(id, {});
+    expect(active).toMatch(/<h1 id="document-title" tabindex="-1" class="page-title"[^>]*>Old permit<\/h1>/);
+    // Empty on a first load: it speaks only once the page changes status while open.
+    expect(active).toContain('<p role="status" class="sr-only"></p>');
+    await setArchived(ctx, id, true);
+    expect(await documentPage(id, {})).toMatch(/<div id="archived" tabindex="-1" class="space-y-2 rounded-2xl border border-line p-4"><form/);
+    vi.stubEnv("SHIPSHAPE_UI", "v1");
+    const v1 = await documentPage(id, {});
+    expect(v1).not.toContain('id="archived"');
+    expect(v1).not.toContain('id="document-title"');
+  });
+
   it("withdrawing a signature request asks first: the question names the signer, with Withdraw the request and Cancel", async () => {
     const ctx = await signIn("doc-withdraw@example.com");
     const pdf = await PDFDocument.create();

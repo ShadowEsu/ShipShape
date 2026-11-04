@@ -17,8 +17,9 @@ import { archive } from "../actions";
 import { DetailsListForm, SignRequestForm, VersionForm } from "../forms";
 import { archiveQuestion, versionWarning } from "../messages";
 import { DeleteForGood } from "./delete-dialog";
-import { fieldSources, size } from "./shared";
+import { ARCHIVED_ID, fieldSources, size, TITLE_ID } from "./shared";
 import { SignatureRequests } from "./signatures";
+import { StatusLanding } from "./status-landing";
 
 /** The kinds that get signed: only these offer "Ask to sign" (Design, 02 Nov), here and on a person's page in People. */
 export const SIGNED_KINDS: ReadonlySet<DocKind> = new Set<DocKind>(["nda", "agreement"]);
@@ -101,6 +102,7 @@ export function DocumentV2(p: {
   return (
     <div className="mx-auto max-w-[720px] space-y-6">
       <HashLanding />
+      <StatusLanding status={doc.status} />
       <nav aria-label="Back" className="text-sm">
         <Link href="/app/documents" className="-my-2.5 inline-flex min-h-11 items-center text-ink-2 hover:text-ink">
           <span aria-hidden="true">←</span>&nbsp;Documents
@@ -110,7 +112,10 @@ export function DocumentV2(p: {
       <header>
         {/* The documents list's row title morphs into this one (Design spec 2026-11-02 §6.1). */}
         <ViewTransition name={`doc-${doc.id}`} share="v2-morph" default="none">
-          <h1 className="page-title">{doc.title}</h1>
+          {/* tabIndex -1: Restore lands focus here (StatusLanding). */}
+          <h1 id={TITLE_ID} tabIndex={-1} className="page-title">
+            {doc.title}
+          </h1>
         </ViewTransition>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-2">
           {/* A changed state (new dates saved, a new version) crossfades in place, the old label out and up, the new one in (§6.3). */}
@@ -147,7 +152,8 @@ export function DocumentV2(p: {
           Share in a link
         </Link>
       ) : (
-        <div className="space-y-2 rounded-2xl border border-line p-4">
+        // tabIndex -1: Archive (in More) lands focus here (StatusLanding).
+        <div id={ARCHIVED_ID} tabIndex={-1} className="space-y-2 rounded-2xl border border-line p-4">
           <form action={archive} className="flex items-center justify-between gap-3">
             <input type="hidden" name="id" value={doc.id} />
             <input type="hidden" name="archived" value="0" />
