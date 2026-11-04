@@ -107,12 +107,20 @@ export function setMailSenderForTests(s: MailSender | undefined) {
   mailSender = s;
 }
 
-/** The request for one reminder: a plain-text body only, through the configuration set. */
+/**
+ * Why the person gets the email and how to stop it (Security 2026-11-04 #35, SHOULD), in every reminder's
+ * text. Both ways are real today: a reminder is about one document's date, and an archived document or one
+ * with no dates gets none (deadlines.ts); a reply reaches the sender address, which is the support inbox.
+ */
+export const REMINDER_FOOTER =
+  "You're getting this because you're an owner or admin of this workspace on ShipShape. To stop reminders about this document, archive it or clear its dates in ShipShape. Questions: reply to this email.";
+
+/** The request for one reminder: a plain-text body only (the reminder, then REMINDER_FOOTER), through the configuration set. */
 export function reminderEmail(cfg: MailConfig, m: { to_email: string; subject: string; body: string }): SendEmailCommandInput {
   return {
     FromEmailAddress: cfg.from,
     Destination: { ToAddresses: [m.to_email] },
-    Content: { Simple: { Subject: { Data: m.subject, Charset: "UTF-8" }, Body: { Text: { Data: m.body, Charset: "UTF-8" } } } },
+    Content: { Simple: { Subject: { Data: m.subject, Charset: "UTF-8" }, Body: { Text: { Data: `${m.body}\n\n--\n${REMINDER_FOOTER}`, Charset: "UTF-8" } } } },
     ConfigurationSetName: CONFIGURATION_SET,
   };
 }

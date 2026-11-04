@@ -16,6 +16,7 @@ import {
   handleSesNotification,
   mailConfig,
   MAX_ATTEMPTS,
+  REMINDER_FOOTER,
   sendReminderMail,
   setMailSenderForTests,
   type MailSender,
@@ -175,7 +176,7 @@ describe("sending (SHIPSHAPE_EMAIL=1)", () => {
     expect(ses.to().sort()).toEqual([owner.email.toUpperCase(), admin.email].sort());
   });
 
-  it("asks SES for a plain-text message through the configuration set: no HTML part, no tracking, nothing else", async () => {
+  it("asks SES for a plain-text message through the configuration set, ending with why it came and how to stop it: no HTML part, no tracking, nothing else", async () => {
     const ses = fakeSes();
     const owner = await account("shape");
     const id = await queue(await workspace(owner.id), owner.email);
@@ -187,7 +188,7 @@ describe("sending (SHIPSHAPE_EMAIL=1)", () => {
         Content: {
           Simple: {
             Subject: { Data: "Permit expires in 7 days", Charset: "UTF-8" },
-            Body: { Text: { Data: "Permit expires in 7 days (Nov 10, 2026).", Charset: "UTF-8" } },
+            Body: { Text: { Data: `Permit expires in 7 days (Nov 10, 2026).\n\n--\n${REMINDER_FOOTER}`, Charset: "UTF-8" } },
           },
         },
         ConfigurationSetName: "shipshape-mail",
