@@ -150,6 +150,83 @@ Afterwards:
 
 The redesigned app is the default. If it breaks somewhere in production, set `SHIPSHAPE_UI` to exactly `v1` (lowercase, nothing else) in Vercel's Production environment and redeploy in the day's slot: every page renders the earlier look, with the same data, actions and routes. Any other value, or no value, is the redesigned app. To return to it, delete the variable and redeploy.
 
+## Running production
+
+### Watching it
+
+`.github/workflows/uptime.yml` asks production's `/api/health` every 15 minutes, twice a minute apart before it calls a failure. It passes on 200 with `"ok": true`, `"db": "up"`, `"config": "ok"` and `"dailyRun": "current"`. A failed run is the alert: GitHub emails whoever last changed the workflow's schedule. It is off until the repository variable `SHIPSHAPE_PROD_URL` holds production's `https://` address (Settings → Secrets and variables → Actions → Variables; no secret is needed), and GitHub runs schedules only from the default branch, so it starts once `rebuild` is the default branch (or merged into it). Run it by hand from the Actions tab (`workflow_dispatch`) after setting the variable.
+
+`"dailyRun": "overdue"` means the daily run (`/api/cron/reminders`, 15:00 UTC, `vercel.json`) has fallen behind the privacy policy's "within two days": a recorded account deletion, or a sample account the purge would take, is over 49 hours old (`dailyRunOverdue` in `lib/server/account.ts`; the extra hour is the cron's, which Vercel may start anywhere in its hour). It doesn't change `ok` or the status code. The run answers 500 when any of its jobs failed and logs `cron: <job> failed (<error name>)` without the error's message; Vercel lists each run under the project's Cron Jobs. A failed run leaves its work for the next day, and one failed day can already put a deletion past two days, so read the log the first day it fails.
+
+### The AI action (after Security's G4)
+
+Off in production until Security's G4 GO and BOSS's budget say otherwise. To turn it on, add in Vercel, Production only: `SHIPSHAPE_AI` = `1` (exactly) and `ANTHROPIC_API_KEY` (sensitive, server-only, never `NEXT_PUBLIC_`), then redeploy in the day's slot. `aiEnabled()` (`lib/server/ai.ts`) needs both; `ANTHROPIC_API_KEY_FILE` works only outside production. Spending is capped in the database whatever the key allows (`AI_CAPS`: $8 a calendar month, a fifth of it a day, the sample workspaces a fifth of the month). To turn it off, delete `SHIPSHAPE_AI` and redeploy: the action says it's off, and nothing else changes.
+
+### Restoring the database to a point in time
+
+RDS keeps 7 days of point-in-time backups (`BackupRetentionPeriod: 7`). A restore makes a new instance; production keeps running on the old one until the swap, and anything written after the restore time exists only on the old one (export what you need from it first). us-east-1, as the account owner; the subnet group, security group and parameter group names are in the `shipshape-database` stack's resources.
+
+```sh
+aws rds describe-db-instances --region us-east-1 --db-instance-identifier shipshape-prod \
+  --query 'DBInstances[0].[EarliestRestorableTime,LatestRestorableTime]'
+
+# 1. A copy as it was at the chosen time (UTC). Encryption and its key come from the source.
+aws rds restore-db-instance-to-point-in-time --region us-east-1 \
+  --source-db-instance-identifier shipshape-prod --target-db-instance-identifier shipshape-restore \
+  --restore-time 2026-01-01T00:00:00Z \
+  --db-instance-class db.t4g.micro --no-multi-az --storage-type gp3 --publicly-accessible \
+  --db-subnet-group-name <DatabaseSubnets> --vpc-security-group-ids <DatabaseSecurityGroup> \
+  --db-parameter-group-name <DatabaseParameters> \
+  --deletion-protection --copy-tags-to-snapshot --enable-cloudwatch-logs-exports postgresql
+aws rds wait db-instance-available --region us-east-1 --db-instance-identifier shipshape-restore
+
+# 2. Its own master password in Secrets Manager (the restore can't set that for Postgres).
+aws rds modify-db-instance --region us-east-1 --db-instance-identifier shipshape-restore --manage-master-user-password --apply-immediately
+```
+
+3. Check the copy before production uses it: as the master, `npm run migrate` against it (a migration applied after the restore time is applied again), then in `psql` as the master, inside `begin; set local role shipshape_owner; … rollback;`, count a few rows you expect and run `select app.audit_verify('<org id>')` for an affected workspace. `shipshape_app`'s password lives inside the database, so production's `DATABASE_URL` works on the copy unchanged.
+4. Swap. Production is down from the first rename until the second finishes (a few minutes). The second gives the copy the old name, so its address, `DATABASE_URL`, the log group and the stack's `InstanceIdentifier` are the same as before:
+
+```sh
+aws rds modify-db-instance --region us-east-1 --db-instance-identifier shipshape-prod --new-db-instance-identifier shipshape-prod-old --apply-immediately
+aws rds wait db-instance-available --region us-east-1 --db-instance-identifier shipshape-prod-old
+aws rds modify-db-instance --region us-east-1 --db-instance-identifier shipshape-restore --new-db-instance-identifier shipshape-prod --apply-immediately
+aws rds wait db-instance-available --region us-east-1 --db-instance-identifier shipshape-prod
+```
+
+5. Open `/api/health` (200, `"db": "up"`), then run `scripts/probe-aws.mjs` as at launch. The stack's `MasterSecretArn` output now names the old instance's secret; the master's secret is the one `describe-db-instances` shows under `MasterUserSecret`.
+6. Delete `shipshape-prod-old` within 7 days (BOSS rule 1: no copy outlives them), as in Rollback step 2 with its new name, and the log group `/aws/rds/instance/shipshape-restore/postgresql`, which the copy wrote to before its rename.
+
+### Suspending an account
+
+For an account that breaks the terms or puts others at risk (Terms, "The service"). It stops new sign-ins and ends every session at once; nothing is deleted, and the workspace's passport links keep working unless you also turn them off. Find the person's ids, as the master in `psql`, acting as the owner role (it owns every table, so it reads every row):
+
+```sql
+begin; set local role shipshape_owner;
+select u.id, i.subject from auth.users u join app.identities i on i.user_id = u.id where u.email = '<address>';
+rollback;
+```
+
+Then, in this order, so no new session starts while the old ones end:
+
+```sh
+# 1. Cognito: no new sign-in, and its own tokens revoked. The pool's user name is looked up by the sub.
+name=$(aws cognito-idp list-users --region us-east-1 --user-pool-id <UserPoolId> --filter 'sub = "<subject>"' --query 'Users[0].Username' --output text)
+aws cognito-idp admin-disable-user --region us-east-1 --user-pool-id <UserPoolId> --username "$name"
+aws cognito-idp admin-user-global-sign-out --region us-east-1 --user-pool-id <UserPoolId> --username "$name"
+```
+
+```sql
+-- 2. ShipShape's own sessions: the watermark refuses every older cookie (0029), and each live row is marked signed out (0036).
+begin; set local role shipshape_owner;
+insert into app.session_revocations (user_id, valid_after) values ('<id>', now())
+on conflict (user_id) do update set valid_after = greatest(app.session_revocations.valid_after, excluded.valid_after);
+update app.sessions set revoked_at = now() where user_id = '<id>' and revoked_at is null;
+commit;
+```
+
+Tell the person why where you can (the Terms promise it), from the support address. To lift it: `aws cognito-idp admin-enable-user` with the same name; they sign in again as usual. A paid subscription keeps running while suspended: cancel or refund it in Stripe's dashboard if the suspension is final (the webhook moves the workspace to Free).
+
 ## Rollback
 
 Deleting a stack never deletes data. The key, bucket, pool, database and log group have `DeletionPolicy: Retain`, so they stay behind:

@@ -438,6 +438,24 @@ export async function purgeSampleAccounts(until = Date.now() + DAILY_RUN_BUDGET_
 }
 
 /**
+ * Whether the daily run has fallen behind the privacy policy's "within two days" (finish list B14): a recorded
+ * deletion, or a sample account the purge would take (the same rule as purgeSampleAccounts), older than 49 hours.
+ * The extra hour is the cron's: Vercel may start the daily run anywhere in its hour, so a sample can reach two days
+ * and some minutes on a working run. For /api/health and the uptime check: one boolean, never an id or a count.
+ */
+export async function dailyRunOverdue(): Promise<boolean> {
+  const [row] = await asService((tx) =>
+    tx.query<{ overdue: boolean }>(
+      `select exists (select 1 from app.deletion_requests where requested_at < now() - interval '49 hours')
+           or exists (select 1 from auth.users u
+                      where u.is_anonymous and u.created_at < now() - interval '49 hours'
+                        and not exists (select 1 from app.members m join app.organizations o on o.id = m.org_id where m.user_id = u.id and not o.is_demo)) as overdue`,
+    ),
+  );
+  return row.overdue;
+}
+
+/**
  * The rest of a recorded deletion, once `handled` (the workspaces whose billing was stopped) is
  * known. The Cognito user goes before the rows: nobody can sign back in to an emptied account, and
  * a Cognito user that's already gone counts as deleted, so this can run again. The database refuses
