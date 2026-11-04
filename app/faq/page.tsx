@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/site";
 import { AI_RECIPIENT, AI_TRAINING_SOURCE } from "@/lib/ai";
-import { PLANS } from "@/lib/plans";
+import { megabytes, PLANS } from "@/lib/plans";
 import { accountSignIn } from "@/lib/server/cognito";
 import { contactEmail, realDocsEnabled } from "@/lib/server/flags";
 
@@ -79,7 +79,7 @@ const faq = (docs: boolean, accounts: boolean): { q: string; a: React.ReactNode 
     q: "What does it cost?",
     a: (
       <>
-        Free covers {PLANS.free.documents} active documents and {PLANS.free.passports} open passport link. Pro is ${PLANS.pro.price} a
+        Free covers {PLANS.free.documents} active documents, {megabytes(PLANS.free.files)} of files and {PLANS.free.passports} open passport link. Pro is ${PLANS.pro.price} a
         month with no limits, plus deadline reminders on your Deadlines page. ShipShape doesn&apos;t send email yet. See{" "}
         <Link href="/pricing" className="underline">
           pricing

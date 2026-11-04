@@ -1,21 +1,21 @@
 import { SiteFooter, SiteHeader } from "@/components/site";
-import { paymentsLive } from "@/lib/server/billing-config";
+import { paymentsMode } from "@/lib/server/billing-config";
 import { realDocsEnabled } from "@/lib/server/flags";
 
 /** Layout for /terms and /privacy: a preview note while the service isn't fully open, and a readable measure inside the site's header and footer. */
 export function LegalPage({ title, version, children }: { title: string; version: string; children: React.ReactNode }) {
   const docs = realDocsEnabled();
-  const live = paymentsLive();
+  const payments = paymentsMode();
   return (
     <>
       <SiteHeader />
       <main id="main" className="mx-auto max-w-2xl px-5 pt-6 pb-16">
         {/* What isn't open yet, said where the terms are read. Live payments need real documents, so live means fully open
             and the note goes (Security L6: no test-mode line once payments are live). */}
-        {!live && (
+        {payments !== "live" && (
           <p role="note" className="rounded-lg border border-warn/30 bg-warn-soft px-4 py-3 text-sm text-warn">
             ShipShape is in preview. {!docs && "Only sample workspaces with made-up documents are open. "}
-            Payments run in Stripe&apos;s test mode: no real money moves.
+            {payments === "test" ? "Payments run in Stripe's test mode: no real money moves." : "Payments are switched off: no real money moves."}
           </p>
         )}
         <h1 className="mt-8 font-serif text-4xl font-semibold tracking-tight">{title}</h1>

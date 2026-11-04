@@ -74,7 +74,8 @@ export default function PrivacyPage() {
           <strong>Waitlist:</strong> the email address you gave us, and whether you asked to hear about Collect, only to tell you when
           ShipShape opens or, if you asked, when Collect goes on sale. Deleting your account also removes the waitlist entry for your
           account&apos;s email address. To come off the list any other time, write to us at the address below. We don&apos;t check that an
-          address belongs to whoever typed it, so our first email asks you to confirm, and we delete addresses nobody confirms.
+          address belongs to whoever typed it. ShipShape doesn&apos;t email the list yet; if an address on it isn&apos;t yours, write to
+          us and we&apos;ll delete it.
         </li>
         <li>
           <strong>Service records:</strong> each AI read you agreed to and what it cost; your sign-in provider&apos;s account ID; and
@@ -95,8 +96,10 @@ export default function PrivacyPage() {
         <li>Our hosting and database providers, which run the app and store your data for us.</li>
         <li>Stripe, for payments on the Pro plan.</li>
         <li>
-          An email provider, once ShipShape sends email (reminders and signing codes). ShipShape doesn&apos;t send email yet;
-          reminders appear inside the app instead, and signing codes only in the sample workspace.
+          Amazon Web Services&apos; sign-in service (Amazon Cognito), which sends the codes for creating an account and resetting a
+          password from Amazon&apos;s own address, no-reply@verificationemail.com. ShipShape itself doesn&apos;t send email yet:
+          reminders appear inside the app instead, and signing codes only in the sample workspace. Once it does, an email provider
+          will send them, and this page will name it.
         </li>
         <li>
           {AI_RECIPIENT}, only when you choose an AI action and tick the box for that action. Today there is one, &ldquo;What are they

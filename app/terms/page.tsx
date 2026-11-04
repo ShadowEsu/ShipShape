@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 import { TERMS_VERSION } from "@/lib/legal";
-import { PLANS } from "@/lib/plans";
-import { paymentsLive } from "@/lib/server/billing-config";
+import { megabytes, PLANS } from "@/lib/plans";
+import { paymentsMode } from "@/lib/server/billing-config";
 import { contactEmail } from "@/lib/server/flags";
 
 export const metadata: Metadata = {
@@ -14,13 +14,14 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   const { free, pro } = PLANS;
-  const live = paymentsLive();
+  const payments = paymentsMode();
   const contact = contactEmail();
   return (
     <LegalPage title="Terms of service" version={TERMS_VERSION}>
       <p>
-        These terms cover your use of ShipShape, an app for storing, filling, sharing and signing business paperwork. By creating a
-        workspace you agree to them. ShipShape is operated by Unvibe.
+        These terms cover your use of ShipShape, an app for storing, filling, sharing and signing business paperwork. Signing works in
+        the sample workspace today, and for your own documents once ShipShape sends email. By creating a workspace you agree to these
+        terms. ShipShape is operated by Unvibe.
       </p>
 
       <h2>ShipShape is software, not a law firm</h2>
@@ -61,11 +62,12 @@ export default function TermsPage() {
       </ul>
 
       <h2>Plans and payments</h2>
-      {!live && <p>During the preview, payments run in Stripe&apos;s test mode: no real money moves.</p>}
+      {payments === "test" && <p>During the preview, payments run in Stripe&apos;s test mode: no real money moves.</p>}
+      {payments === "off" && <p>During the preview, payments are switched off: no real money moves.</p>}
       <ul>
         <li>
-          <strong>{free.name}</strong> costs nothing and includes {free.documents} active documents and {free.passports} passport link
-          open at a time.
+          <strong>{free.name}</strong> costs nothing and includes {free.documents} active documents, {megabytes(free.files)} of files
+          (every version counts, archived documents included) and {free.passports} passport link open at a time.
         </li>
         <li>
           <strong>{pro.name}</strong> costs ${pro.price} a month, billed monthly by Stripe until you cancel. It removes those limits and
