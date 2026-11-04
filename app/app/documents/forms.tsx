@@ -206,12 +206,23 @@ export function DetailsForm({ id, values }: { id: string; values: DetailValues }
   );
 }
 
-/** A grouped-list row: the label, the field (children), and the field's error under it. `htmlFor` when the field's id isn't its name. */
-function FieldRow({ name, htmlFor, label, state, children }: { name: string; htmlFor?: string; label: string; state: FieldState; children: React.ReactNode }) {
+/**
+ * A grouped-list row: the label, the field (children), and the field's error under it. `htmlFor` when the field's id isn't
+ * its name. `required`: "(required)" after the label, as the fill form shows, since the row's placeholder says only "Add";
+ * hidden from screen readers, which hear the field's own `required`.
+ */
+function FieldRow({ name, htmlFor, label, required, state, children }: { name: string; htmlFor?: string; label: string; required?: boolean; state: FieldState; children: React.ReactNode }) {
   return (
     <li>
       <div className="field-row">
-        <label htmlFor={htmlFor ?? name}>{label}</label>
+        <label htmlFor={htmlFor ?? name}>
+          {label}
+          {required && (
+            <span aria-hidden="true" className="text-ink-3">
+              {" (required)"}
+            </span>
+          )}
+        </label>
         {children}
       </div>
       {state.field === name && (
@@ -293,7 +304,7 @@ const ISSUER_HINT: Record<string, string> = {
 function DetailRows({ v, state, kind }: { v: Partial<DetailValues>; state: FormState; kind: string }) {
   return (
     <>
-      <FieldRow name="title" label="Title" state={state}>
+      <FieldRow name="title" label="Title" required state={state}>
         <input id="title" name="title" required maxLength={200} defaultValue={v.title} className="row-field" placeholder="Add" {...invalid(state, "title")} />
       </FieldRow>
       <FieldRow name="kind" label="Kind" state={state}>
@@ -676,10 +687,10 @@ export function SignRequestForm({
       <input type="hidden" name="id" value={id} />
       {rows ? (
         <ul className="group-list plain">
-          <FieldRow name="signer_name" htmlFor="signer-name" label="Signer's name" state={state}>
+          <FieldRow name="signer_name" htmlFor="signer-name" label="Signer's name" required state={state}>
             {name}
           </FieldRow>
-          <FieldRow name="signer_email" htmlFor="signer-email" label="Signer's email" state={state}>
+          <FieldRow name="signer_email" htmlFor="signer-email" label="Signer's email" required state={state}>
             {email}
           </FieldRow>
           <FieldRow name="days" htmlFor="sign-days" label="Open for" state={state}>

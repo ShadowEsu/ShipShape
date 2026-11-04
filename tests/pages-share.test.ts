@@ -352,6 +352,10 @@ describe("Passport", () => {
       expect(textOf(html)).toContain(`7 days 30 days 90 days Stops working on ${fmtDay(plusDays(todayIn("UTC"), 30))}. You can turn it off sooner.`);
       expect(textOf(html)).toContain("Who can open it Anyone who has the link can view and download the documents you tick");
       expect([...html.matchAll(/<button class="btn press"[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual(["Make the link"]);
+      // "Who is it for?" says it's required, as the fill form does; the placeholder is only an example. The earlier form as it was.
+      expect(html).toContain('<label for="label">Who is it for?<span aria-hidden="true" class="text-ink-3"> (required)</span></label>');
+      vi.stubEnv("SHIPSHAPE_UI", "v1");
+      expect(await renderPage(PassportPage, none())).not.toContain("(required)");
     });
 
     it("a link's page keeps every fact: until when it works, its documents (each opening its page), who opened it, and Turn off at the foot", async () => {
@@ -388,6 +392,10 @@ describe.each([
     // The field it focuses is on the page; the form's own button stays the one primary action.
     expect(html).toContain('id="vendor-name"');
     expect(primary(html)).toEqual(["Add vendor"]);
+    // The redesigned form's Vendor row says it's required, as the fill form does; the earlier form as it was. Both keep `required`.
+    if (ui === "v1") expect(html).not.toContain("(required)");
+    else expect(html).toContain('<label for="vendor-name">Vendor<span aria-hidden="true" class="text-ink-3"> (required)</span></label>');
+    expect(/<input [^>]*id="vendor-name"[^>]*>/.exec(html)?.[0]).toContain('required=""');
   });
 
   it("with only archived vendors: the empty state says 'active', and the button doesn't call the next one the first (W10-11)", async () => {

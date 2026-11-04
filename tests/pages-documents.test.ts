@@ -940,6 +940,11 @@ describe.each([
     expect([...html.matchAll(/<button\b[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["Add to documents"]);
     expect(textOf(html)).toContain("PDF, PNG or JPEG, up to 4 MB.");
     expect(textOf(html)).toContain("Files are stored privately for your workspace.");
+    // The redesigned rows' placeholder only says "Add", so the required Title says so as the fill form does (hidden from
+    // screen readers, which hear `required`); the earlier form is as it was. Both keep `required`.
+    if (ui === "v1") expect(html).not.toContain("(required)");
+    else expect(html).toContain('<label for="title">Title<span aria-hidden="true" class="text-ink-3"> (required)</span></label>');
+    expect(/<input [^>]*name="title"[^>]*>/.exec(html)?.[0]).toContain('required=""');
 
     const userId = await createLocalUser(null, true);
     const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
@@ -1238,9 +1243,10 @@ describe("a document's page", () => {
       expect(html).toContain('href="#signer-name"');
       const signatures = html.slice(html.indexOf('<section id="signatures"'));
       const rows = /<ul class="group-list plain">([\s\S]*?)<\/ul>/.exec(signatures)?.[1] ?? "";
-      expect([...rows.matchAll(/<label for="([^"]*)">([^<]*)<\/label>/g)].map((m) => `${m[1]} ${textOf(m[2])}`)).toEqual([
-        "signer-name Signer's name",
-        "signer-email Signer's email",
+      // Name and email say "(required)", as the fill form does: their placeholders don't.
+      expect([...rows.matchAll(/<label for="([^"]*)">([\s\S]*?)<\/label>/g)].map((m) => `${m[1]} ${textOf(m[2])}`)).toEqual([
+        "signer-name Signer's name (required)",
+        "signer-email Signer's email (required)",
         "sign-days Open for",
       ]);
       expect(/<input [^>]*id="signer-name"[^>]*>/.exec(html)?.[0]).toContain('class="row-field');

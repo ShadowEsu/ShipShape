@@ -116,7 +116,13 @@ export function NewVendorFormV2({ kinds }: { kinds: { key: string; label: string
       <div>
         <ul className="group-list plain">
           <li className="field-row">
-            <label htmlFor="vendor-name">Vendor</label>
+            {/* "(required)" as the fill form shows it: the placeholder is only an example. Screen readers hear `required`. */}
+            <label htmlFor="vendor-name">
+              Vendor
+              <span aria-hidden="true" className="text-ink-3">
+                {" (required)"}
+              </span>
+            </label>
             <input
               id="vendor-name"
               name="name"

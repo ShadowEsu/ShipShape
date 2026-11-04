@@ -149,7 +149,13 @@ function NewPassportFormV2({ onDone, ...props }: PassportFormProps & { onDone: (
           <div>
             <ul className="group-list plain">
               <li className="field-row">
-                <label htmlFor="label">Who is it for?</label>
+                {/* "(required)" as the fill form shows it: the placeholder is only an example. Screen readers hear `required`. */}
+                <label htmlFor="label">
+                  Who is it for?
+                  <span aria-hidden="true" className="text-ink-3">
+                    {" (required)"}
+                  </span>
+                </label>
                 <input
                   id="label"
                   name="label"
