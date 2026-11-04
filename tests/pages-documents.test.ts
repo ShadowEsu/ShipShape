@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { PDFDocument } from "pdf-lib";
 import DocumentPage from "@/app/app/documents/[id]/page";
 import { addDocument, addVersion, saveDetails } from "@/app/app/documents/actions";
+import { fileRowDescribedBy } from "@/app/app/documents/forms";
 import NewDocumentPage from "@/app/app/documents/new/page";
 import DocumentsPage from "@/app/app/documents/page";
 import { saveFacts, saveTaxId } from "@/app/app/facts/actions";
@@ -969,6 +970,19 @@ describe("Add a document, redesigned only", () => {
     expect(emptyDates(html)).toEqual({ issued_on: true, expires_on: true, renews_on: true });
     expect(html.match(/<span aria-hidden="true" class="date-add">Add<\/span>/g)).toHaveLength(3);
     expect(html).toMatch(/<div class="save-dock sticky[^"]*"><button class="btn press w-full md:w-auto">Add to documents<\/button>/);
+  });
+
+  it("the file control is described by the chosen file's name once there is one, then the size hint, then any error", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v2");
+    await signIn("v2-add-file-name@example.com");
+    // Nothing chosen on the server's render: the hint alone, and no name to point at.
+    const html = await renderPage(NewDocumentPage, {});
+    expect(/<input [^>]*name="file"[^>]*>/.exec(html)?.[0]).toContain('aria-describedby="file-hint"');
+    expect(html).not.toContain('id="file-name"');
+    // Chosen (the name span, id file-name, shows): its name is read with "File Change".
+    expect(fileRowDescribedBy(true, false)).toBe("file-name file-hint");
+    expect(fileRowDescribedBy(true, true)).toBe("file-name file-hint file-error");
+    expect(fileRowDescribedBy(false, true)).toBe("file-hint file-error");
   });
 });
 

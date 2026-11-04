@@ -435,6 +435,14 @@ export function NewDocumentForm() {
 const chosenSize = (n: number) => (n > 1024 * 1024 ? `${(Math.ceil(n / 104857.6) / 10).toFixed(1)}\u00A0MB` : size(n));
 
 /**
+ * What the file row's input is described by: the chosen file's name once there is one (its name stays "File Change", so
+ * without this the file isn't read out), the size hint, and the error when there is one.
+ */
+export function fileRowDescribedBy(chosen: boolean, error: boolean): string {
+  return [chosen && "file-name", "file-hint", error && "file-error"].filter(Boolean).join(" ");
+}
+
+/**
  * The file as a grouped-list row (Design 02 Nov): "Choose a file", then the chosen file's name and size with "Change".
  * One control: the real file input, out of sight but focusable (its focus ring shows on the visible button), named by
  * the row's label and the visible button ("File Choose a file", "File Change", so a spoken "Choose a file" finds it);
@@ -469,13 +477,15 @@ function FileRow({ state }: { state: FormState }) {
             className="peer sr-only"
             aria-labelledby="file-label file-action"
             aria-invalid={error || undefined}
-            aria-describedby={error ? "file-hint file-error" : "file-hint"}
+            aria-describedby={fileRowDescribedBy(file !== null, error)}
           />
           {file ? (
             <>
               {/* A long name truncates; its size always shows. */}
               <span className="flex min-w-0 items-baseline gap-1">
-                <span className="min-w-0 truncate">{file.name}</span>
+                <span id="file-name" className="min-w-0 truncate">
+                  {file.name}
+                </span>
                 <span className="shrink-0 text-ink-3">· {chosenSize(file.size)}</span>
               </span>
               <label id="file-action" htmlFor="file" className={`shrink-0 cursor-pointer rounded text-sm text-ink underline ${ring}`}>
