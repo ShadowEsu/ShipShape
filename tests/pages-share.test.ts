@@ -884,19 +884,15 @@ describe.each([
     expect(textOf(html)).toContain("Payments are switched off right now, so the plan can't change.");
   });
 
-  it("while real documents are closed, the workspace name is read-only with a notice, and Save name is refused with a message, not a crash (W9-1)", async () => {
-    const ctx = await signIn(mail("settings-gate"));
+  it("while real documents are closed, an owner can still name the workspace (Security 0715 #3), with no 'opens after' notice", async () => {
+    await signIn(mail("settings-gate"));
     vi.stubEnv("SHIPSHAPE_REAL_DOCS", "");
     const html = await settings();
-    expect(actionsOf(html).map((a) => a.label)).not.toContain("Save name");
-    expect(textOf(html)).toContain(`Name ${ctx.name}`);
-    expect(textOf(html)).toContain("Naming the workspace opens after our security review.");
-    expect(await renameMyWorkspace({}, form({ name: "Harbor Plumbing" }))).toEqual({
-      error: "Real documents aren't open yet. They open after our security review.",
-      name: "Harbor Plumbing",
-    });
-    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
-    expect(actionsOf(await settings()).map((a) => a.label)).toContain("Save name");
+    expect(actionsOf(html).map((a) => a.label)).toContain("Save name");
+    expect(html).toContain('maxLength="80"');
+    expect(textOf(html)).not.toContain("Naming the workspace opens after our security review.");
+    expect(await renameMyWorkspace({}, form({ name: "Harbor Plumbing" }))).toEqual({ saved: true });
+    expect(await renameMyWorkspace({}, form({ name: "x".repeat(81) }))).toEqual({ error: "Use 80 characters or fewer.", name: "x".repeat(81) });
   });
 
   it("the export card lists what the ZIP holds, and Sign out everywhere no longer promises a password change (W9-11, W9-13)", async () => {
