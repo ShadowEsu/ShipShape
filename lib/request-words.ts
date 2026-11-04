@@ -21,10 +21,11 @@ export const QUOTE_MAX = 200;
  * "license bond" is a bond and not a license. `name`: a fixed label; otherwise the matched words are the label. Group
  * 1, when a rule has one, is the qualifier ("contractor" in "contractor license"): a bare "license" later in the same
  * request is the same document, not a second one. `verb`: the words around a bare match that make it the verb or a
- * phrase, not the document ("permit us to", "please permit", "in agreement").
+ * phrase, not the document ("permit us to", "please permit", "in agreement"); a determiner or possessive just before
+ * it (NOUN_BEFORE) makes it the document whatever follows ("your permit this week", "the signed contract with").
  */
 const RULES: { kind: DocKind; test: RegExp; name?: string; verb?: { before?: RegExp; after?: RegExp } }[] = [
-  { kind: "nda", test: /\b(mutual\s+)?(?:ndas?|non-?disclosure(?:\s+agreements?)?|confidentiality\s+agreements?)\b/gi },
+  { kind: "nda", test: /\b(mutual\s+)?(?:(?:ndas?|non-?disclosure)(?:\s+agreements?)?|confidentiality\s+agreements?)\b/gi },
   { kind: "w9", test: /\b(?:irs\s+)?(?:form\s+)?w-?\s?9s?\b/gi, name: "Form W-9" },
   {
     kind: "tax",
@@ -64,6 +65,8 @@ const RULES: { kind: DocKind; test: RegExp; name?: string; verb?: { before?: Reg
     verb: { before: /\b(?:in|by|under|per|reach|reached|come\s+to|we|they|you|to)\s+$/i, after: /^\s+(?:with|out|that)\b/i },
   },
 ];
+
+const NOUN_BEFORE = /\b(?:the|a|an|your|our|their|his|her|its|my|this|these|those|signed|executed|current|valid|updated)\s+$/i;
 
 interface Hit {
   kind: DocKind;
@@ -114,7 +117,7 @@ export function askedDocuments(text: string): AskedDocument[] {
       if (claimed.some(([a, b]) => start < b && end > a)) continue;
       // 40 characters either side hold the words that decide it, and keep the test cheap on a long paste.
       const [before, after] = [text.slice(Math.max(0, start - 40), start), text.slice(end, end + 40)];
-      if (!qualified && (rule.verb?.before?.test(before) || rule.verb?.after?.test(after))) continue;
+      if (!qualified && !NOUN_BEFORE.test(before) && (rule.verb?.before?.test(before) || rule.verb?.after?.test(after))) continue;
       claimed.push([start, end]);
       hits.push({ kind: rule.kind, label: rule.name ?? tidy(m[0]), qualified, start, end });
     }

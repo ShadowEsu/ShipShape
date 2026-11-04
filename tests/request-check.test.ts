@@ -38,6 +38,8 @@ describe("what a request names", () => {
       ["registration", "Certificate of good standing"],
       ["agreement", "Master services agreement"],
     ]);
+    // "NDA agreement" is one document, not an NDA and an agreement.
+    expect(kinds("Please sign our NDA agreement.")).toEqual([["nda", "NDA agreement"]]);
   });
 
   it("names a workers' comp certificate as its own document, not as the general liability certificate", () => {
@@ -66,6 +68,17 @@ describe("what a request names", () => {
       ["agreement", "Agreement"],
       ["agreement", "Contract"],
     ]);
+  });
+
+  it("takes a word after your, the or signed as the document, whatever follows it", () => {
+    expect(kinds("Please send your permit this week.")).toEqual([["permit", "Permit"]]);
+    expect(kinds("Please return the signed contract with your W-9.")).toEqual([
+      ["agreement", "Contract"],
+      ["w9", "Form W-9"],
+    ]);
+    expect(kinds("Sign the agreement that we sent.")).toEqual([["agreement", "Agreement"]]);
+    // Still the verb: no determiner before it.
+    expect(askedDocuments("Please permit the crew to park. We contract with three firms.")).toEqual([]);
   });
 
   it("finds nothing in text that names no document", () => {
@@ -152,6 +165,13 @@ describe("checking a request by names", () => {
     await addDoc(ctx, "Certificate of liability insurance", "coi", 200);
     const [item] = await readRequestByNames(ctx, "Please send your workers' comp certificate before Monday.", "net-6");
     expect([item.state, item.matches]).toEqual(["unmatched", []]);
+  });
+
+  it("finds a workers' comp certificate however its title shortens or spells the name", async () => {
+    const ctx = await workspace();
+    await addDoc(ctx, "Worker's comp certificate 2026", "other", 200);
+    const [item] = await readRequestByNames(ctx, "Please send your workers' compensation certificate before Monday.", "net-7");
+    expect([item.state, item.matches.map((m) => m.title)]).toEqual(["ready", ["Worker's comp certificate 2026"]]);
   });
 
   it("refuses text too short or too long for the text field, as the AI does", async () => {

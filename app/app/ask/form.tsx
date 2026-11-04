@@ -61,6 +61,13 @@ export function AskForm({ v2 = false, ai }: { v2?: boolean; ai: boolean }) {
         {ai && <AskConsent v2={v2} defaultChecked={state.consent} error={consentError} />}
         {/* Beside the tick that sends the request, as on Home's box (Security MUST-L1, L5), and on its own without AI. */}
         <p className="text-[13px] leading-[19px] text-ink-2">{NOT_A_LAW_FIRM}</p>
+        {/* After that line, where it was before the tick moved into AskConsent, so the earlier look stays as it was. Shown
+            without the tick too: AI turned on after this page was drawn still gets a message, not a silent submit. */}
+        {consentError && (
+          <p id="consent-error" className="text-sm text-bad">
+            {consentError}
+          </p>
+        )}
         {formError && (
           <p role="alert" tabIndex={-1} className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
             {formError}
@@ -118,11 +125,6 @@ function AskConsent({ v2, defaultChecked, error }: { v2: boolean; defaultChecked
         </a>
         , checked {AI_TRAINING_SOURCE.checked}.
       </p>
-      {error && (
-        <p id="consent-error" className="text-sm text-bad">
-          {error}
-        </p>
-      )}
     </>
   );
 }

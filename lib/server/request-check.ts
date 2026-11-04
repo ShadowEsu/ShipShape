@@ -55,7 +55,17 @@ const VALIDITY_ORDER: Record<Validity, number> = { ok: 0, none: 1, expiring: 2, 
 
 // Words too common in document names to tell two documents apart.
 const FILLER = new Set(["the", "and", "for", "your", "our", "copy", "form", "completed", "signed", "sample", "naming", "with", "from", "certificate", "proof"]);
-const nameWords = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !FILLER.has(w)));
+// Titles shorten workers' compensation to "comp".
+const ALIASES = new Map([["comp", "compensation"]]);
+/** A name's telling words. One final s goes, so "Worker's" and "Workers'", "license" and "licenses" agree. */
+const nameWords = (s: string) =>
+  new Set(
+    s
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .map((w) => ALIASES.get(w) ?? (w.length > 3 ? w.replace(/s$/, "") : w))
+      .filter((w) => w.length > 2 && !FILLER.has(w)),
+  );
 const normalise = (s: string) => s.toLowerCase().replace(/[\s"“”'‘’]+/g, " ").trim();
 
 /**
