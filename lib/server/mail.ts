@@ -5,7 +5,9 @@ import { z } from "zod";
 import { productionAwsClient } from "./aws";
 import { hashKey } from "./crypto";
 import { asService } from "./db";
+import { BACKUP_DAYS } from "../legal";
 import { PLANS } from "../plans";
+import { fmtDay, isoToday } from "../today";
 import { appUrl, contactEmail } from "./flags";
 import { suppressionHash } from "./suppression";
 
@@ -395,6 +397,81 @@ async function claimRow(m: Queued): Promise<"claimed" | "taken" | "over_account_
     );
     return claimed.length ? "claimed" : "taken";
   });
+}
+
+// The account deletion record (Security 1058, D-1) -------------------------------------------------------
+
+/** Whether the deletion went through now, or was left for the daily run to finish (deleteAccount). */
+export type DeletionOutcome = "finished" | "still_finishing";
+
+/**
+ * Draft D, with Security's footer line. It never says it is the signal that someone else deleted the
+ * account: someone holding the session and the address gets it too (Security D, "known limit").
+ */
+export function deletionRecordText(cfg: MailConfig, outcome: DeletionOutcome, deletedOn: string): MailText & { footer: string } {
+  return {
+    subject: "Record of your ShipShape account deletion",
+    body: [
+      outcome === "finished"
+        ? `You deleted your ShipShape account on ${deletedOn}. This email is your record.`
+        : `You asked to delete your ShipShape account on ${deletedOn}. Part of it is still finishing; ShipShape completes it by itself within 2 days.`,
+      "Deleted with it:\n- every workspace where you were the only owner, with its documents, files, business facts and history;\n- those workspaces' passport links and signature requests, so the links stop working;\n- your membership of workspaces with another owner (their documents stay with them);\n- your sign-in, and your waitlist entry if you had one.",
+      `Copies people already downloaded stay with them. Deleted data can remain in backups for up to ${BACKUP_DAYS} days, then it's gone. We can't bring a workspace back.`,
+      `If you didn't do this, write to ${cfg.support} so we can find out how it happened.`,
+      "The ShipShape team",
+    ].join("\n\n"),
+    footer: `You're getting this because this address belonged to the ShipShape account ${outcome === "finished" ? "that was just deleted" : "you just asked to delete"}. ShipShape sends nothing else to this address unless you create a new account.`,
+  };
+}
+
+/**
+ * The address the deletion record goes to, read before the sign-in (and with it the address) is deleted:
+ * the account's own address, verified by its Cognito identity, whatever the person's role. Null while the
+ * record is off, for an account with no Cognito identity (a sample visitor, a local account), and for an
+ * address the same pipe as every kind refuses: on the suppression list, or at the per-address or overall cap
+ * (counted now, before the deletion takes the person's own reminders with their workspaces; the record has
+ * no row of its own, so it can't add to the count). The caller keeps it in memory only, for
+ * sendDeletionRecord: never in a table, the outbox or a log line.
+ */
+export async function deletionRecordAddress(userId: string): Promise<string | null> {
+  let cfg: MailConfig | null;
+  try {
+    cfg = mailConfig(process.env);
+  } catch {
+    return null;
+  }
+  if (!cfg?.deletionRecord) return null;
+  return asService(async (tx) => {
+    const [me] = await tx.query<{ email: string }>(
+      "select u.email from auth.users u where u.id = $1 and u.email is not null and exists (select 1 from app.identities i where i.user_id = u.id and i.provider = 'cognito')",
+      [userId],
+    );
+    if (!me) return null;
+    const suppressed = await tx.query("select 1 from app.email_suppressions where address_hash = $1", [suppressionHash(me.email, hashKey())]);
+    const [counts] = await tx.query<{ total: number; mine: number }>(
+      "select count(*)::int as total, (count(*) filter (where lower(to_email) = lower($1)))::int as mine from app.outbox where claimed_at > now() - interval '1 day'",
+      [me.email],
+    );
+    return suppressed.length > 0 || counts.total >= DAILY_CAP || counts.mine >= ACCOUNT_DAILY_CAP ? null : me.email;
+  });
+}
+
+/**
+ * Sends the deletion record to `to` (deletionRecordAddress's), once: no retry, nothing stored, through the
+ * same sender, configuration set and plain text as every kind. A failure is logged by the error's name
+ * only, and the sign-in page's notice stays the record. Never throws: the deletion is done.
+ */
+export async function sendDeletionRecord(to: string, outcome: DeletionOutcome): Promise<void> {
+  try {
+    const cfg = mailConfig(process.env);
+    if (!cfg?.deletionRecord) return;
+    mailSender ??= sesSender(sesClient(cfg, process.env));
+    const text = deletionRecordText(cfg, outcome, fmtDay(isoToday()));
+    await mailSender.send(textEmail(cfg, to, text.subject, text.body, text.footer));
+  } catch (e) {
+    // The error's name only: SES's message may quote the address.
+    console.error(`mail: the deletion record wasn't sent (${e instanceof Error ? e.name.slice(0, 100) : "error"})`);
+  }
 }
 
 // Bounces and complaints ------------------------------------------------------------------------------

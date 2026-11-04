@@ -23,11 +23,17 @@ import {
   WELCOME,
   type MailConfig,
   type MailSender,
+  deletionRecordAddress,
+  sendDeletionRecord,
 } from "@/lib/server/mail";
 import { migrate, type MigrationStep } from "@/lib/server/migrations";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { stopEmail } from "@/lib/server/suppression";
 import { hashKey } from "@/lib/server/crypto";
+import { deleteAccount } from "@/lib/server/account";
+import { setSignInAdminForTests } from "@/lib/server/cognito";
+import { UserError } from "@/lib/server/errors";
+import { fmtDay, isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 
 // Email through SES (B12; Security 2026-11-04 0715, answer 5, and 1058, K1-K5), against a fake SES and a
@@ -597,6 +603,116 @@ describe("stop (Security 1058, K3)", () => {
     expect(footer(elsewhere, "reminder")).toMatch(/To stop reminders about this document, archive it or clear its dates/);
     expect(footer(elsewhere, "welcome")).toMatch(/To get no more email from ShipShape, write to that address\./);
     expect(footer(elsewhere, "waitlist_open")).toMatch(/To come off the list, write to that address\./);
+  });
+});
+
+describe("the deletion record (Security 1058, D-1)", () => {
+  const COGNITO = { COGNITO_DOMAIN: "https://auth.example.test", COGNITO_USER_POOL_ID: "us-east-1_Test1", COGNITO_CLIENT_ID: "client123", COGNITO_CLIENT_SECRET: "client-secret" };
+  beforeEach(() => {
+    stub({ ...ALL_ON, ...COGNITO });
+    setSignInAdminForTests({ deleteUser: async () => {} });
+  });
+  afterEach(() => setSignInAdminForTests(undefined));
+  const ctxFor = (userId: string, orgId: string, role: "owner" | "member") => ({ userId, orgId, role, demo: false, name: "Mail Co", authAt: Math.floor(Date.now() / 1000), today: isoToday() });
+  const text = (c: SendEmailCommandInput) => c.Content?.Simple?.Body?.Text?.Data ?? "";
+
+  it("goes once, after the deletion, to the deleting person's verified address, owner or member; nothing keeps the address", async () => {
+    const logs = [vi.spyOn(console, "error"), vi.spyOn(console, "log"), vi.spyOn(console, "warn")];
+    const ses = fakeSes();
+    const owner = await account("deleting-owner");
+    const org = await workspace(owner.id);
+    const member = await account("deleting-member");
+    const other = await account("staying-owner");
+    const theirs = await workspace(other.id);
+    await join(theirs, member.id, "member");
+
+    await deleteAccount(ctxFor(owner.id, org, "owner"));
+    await deleteAccount(ctxFor(member.id, theirs, "member"));
+    expect(ses.to()).toEqual([owner.email, member.email]);
+    const [record] = ses.calls;
+    expect(record).toMatchObject({ FromEmailAddress: FROM, ConfigurationSetName: CONFIGURATION_SET, Content: { Simple: { Subject: { Data: "Record of your ShipShape account deletion" } } } });
+    expect(Object.keys(record.Content?.Simple?.Body ?? {})).toEqual(["Text"]);
+    expect(text(record)).toMatch(new RegExp(`^You deleted your ShipShape account on ${fmtDay(isoToday())}\\. This email is your record\\.`));
+    expect(text(record)).toContain(`If you didn't do this, write to ${SUPPORT}`);
+    expect(text(record)).toMatch(/ShipShape sends nothing else to this address unless you create a new account\.$/);
+    expect(text(record)).not.toMatch(/someone else|last email/i);
+
+    // In memory only: no outbox row, no table, no log line holds it.
+    for (const email of [owner.email, member.email]) {
+      expect(await db.root((tx) => tx.query("select 1 from app.outbox where lower(to_email) = lower($1)", [email]))).toEqual([]);
+      expect(await db.root((tx) => tx.query("select 1 from auth.users where lower(email) = lower($1)", [email]))).toEqual([]);
+      for (const spy of logs) expect(spy.mock.calls.flat().some((a) => String(a).includes(email))).toBe(false);
+    }
+  });
+
+  it("left for the daily run, it says the deletion is still finishing; it's sent once and never again by the run", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const ses = fakeSes();
+    const owner = await account("unfinished");
+    const org = await workspace(owner.id);
+    await db.root((tx) => tx.query("alter function app.delete_my_account(uuid[]) rename to delete_my_account_unavailable"));
+    let error: unknown;
+    try {
+      error = await deleteAccount(ctxFor(owner.id, org, "owner")).catch((e: unknown) => e);
+    } finally {
+      await db.root((tx) => tx.query("alter function app.delete_my_account_unavailable(uuid[]) rename to delete_my_account"));
+    }
+    expect(error).toBeInstanceOf(UserError);
+    expect(ses.to()).toEqual([owner.email]);
+    expect(text(ses.calls[0])).toMatch(new RegExp(`^You asked to delete your ShipShape account on ${fmtDay(isoToday())}\\. Part of it is still finishing; ShipShape completes it by itself within 2 days\\.`));
+    // The queue never has a copy to send again.
+    expect(await sendQueuedMail()).toEqual({ sent: 0, failed: 0, held: 0 });
+    expect(ses.calls).toHaveLength(1);
+  });
+
+  it("isn't sent while its flag is off, to a suppressed address, over the caps, or to an account with no Cognito identity; a failed send is one try, logged without the address, and the deletion stands", async () => {
+    const ses = fakeSes();
+    const deleted = async (name: string, { cognito = true } = {}) => {
+      const who = await account(name, { cognito });
+      const org = await workspace(who.id);
+      return { who, org, run: () => deleteAccount(ctxFor(who.id, org, "owner")) };
+    };
+
+    const off = await deleted("record-off");
+    vi.stubEnv("SHIPSHAPE_EMAIL_DELETION", "");
+    // Off, the address isn't even read, and nothing is sent to one passed in.
+    expect(await deletionRecordAddress(off.who.id)).toBeNull();
+    await sendDeletionRecord(off.who.email, "finished");
+    await off.run();
+    vi.stubEnv("SHIPSHAPE_EMAIL_DELETION", "1");
+
+    const stopped = await deleted("record-stopped");
+    await stopEmail((t, p) => asService((tx) => tx.query(t, p)), stopped.who.email, hashKey());
+    await stopped.run();
+
+    // Its own reminders today, in the workspace the deletion then removes: they count, as they did before it.
+    const busy = await deleted("record-busy");
+    await db.root((tx) =>
+      tx.query("insert into app.outbox (org_id, to_email, subject, body, claimed_at, sent_at, attempts) select $1, $2, 's', 'b', now(), now(), 1 from generate_series(1, $3::int)", [
+        busy.org,
+        busy.who.email,
+        ACCOUNT_DAILY_CAP,
+      ]),
+    );
+    await busy.run();
+
+    const local = await deleted("record-local", { cognito: false });
+    await local.run();
+    expect(ses.calls).toEqual([]);
+
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    let tries = 0;
+    const failing = await deleted("record-fails");
+    setMailSenderForTests({
+      async send() {
+        tries++;
+        throw sesError("MessageRejected", `Email address is not verified: ${failing.who.email}`);
+      },
+    });
+    await expect(failing.run()).resolves.toBeUndefined();
+    expect(tries).toBe(1);
+    expect(errors.mock.calls.map((c) => String(c[0]))).toEqual(["mail: the deletion record wasn't sent (MessageRejected)"]);
+    expect(await db.root((tx) => tx.query("select 1 from auth.users where id = $1", [failing.who.id]))).toEqual([]);
   });
 });
 
