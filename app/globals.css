@@ -710,10 +710,6 @@ body {
  * (spec §3): every surface that carries text keeps at least 0.78 white, and the quiet colours are the app's own.
  */
 .ui-v2[data-glass] {
-  /* A stacking context, so the full level's wash (z-index -1) paints over the shell's paper; by z-index, not isolation,
-     which WebKit treats as a backdrop root for every glass surface inside (Design glass spec §3 rule 3, 4 Nov 05:4x). */
-  position: relative;
-  z-index: 0;
   /* Glisse's light theme in ShipShape's ink: labels in ink, quiet labels in ink-2, the focus ring in the accent. */
   --lg-foreground: var(--ink);
   --lg-muted: var(--ink-2);
@@ -768,32 +764,7 @@ body {
   background-color: transparent;
 }
 
-/* Full: two soft washes of the Home orb's lavender and sky (12%), fixed behind the page, for the glass to bend. */
-.ui-v2 .glass-wash {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-  pointer-events: none;
-}
-.ui-v2 .glass-wash > span {
-  position: absolute;
-  width: 70vmax;
-  height: 70vmax;
-  border-radius: 50%;
-  filter: blur(120px);
-}
-.ui-v2 .glass-wash > span:first-child {
-  top: -25vmax;
-  right: -20vmax;
-  background: rgb(201 184 255 / 0.12);
-}
-.ui-v2 .glass-wash > span:last-child {
-  bottom: -30vmax;
-  left: -20vmax;
-  background: rgb(142 197 255 / 0.12);
-}
-/* Consent and legal ticks never sit on the wash: their rows are solid paper (spec §1, Design 4 Nov). */
+/* Consent and legal ticks never sit on glass: their rows are solid paper (spec §1, Design 4 Nov). */
 .ui-v2[data-glass="full"] label:has(input[type="checkbox"]) {
   background-color: var(--paper);
 }
@@ -886,15 +857,21 @@ body {
 }
 
 /* Full, with SHIPSHAPE_GLASS_TABBAR=1: Glisse's tab bar floats over the phone's foot; the page and a docked Save stop
-   clear of it (12px gap, 60px bar). Selected and not are both ink, told apart by the lens (Glisse's blue is 3.3:1). */
+   clear of it (12px gap, 60px bar). Selected and not are both ink, told apart by the lens (Glisse's blue is 3.3:1).
+   Phones only (760px and under): wider, the sidebar is the navigation and the bar would only cover rows (Design, 4 Nov). */
 .ui-v2 .phone-tab-bar {
-  position: fixed;
-  inset-inline: 0;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  z-index: 30;
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
+  display: none;
+}
+@media (max-width: 760px) {
+  .ui-v2 .phone-tab-bar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 30;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+  }
 }
 .ui-v2 .phone-tab-bar > .lg-tab-bar {
   --lg-tab-selected: var(--ink);
@@ -902,7 +879,7 @@ body {
   pointer-events: auto;
 }
 /* The page's column, not main, ends 72px higher, so main's own box stays as it was. */
-@media (max-width: 767px) {
+@media (max-width: 760px) {
   .ui-v2[data-tab-bar] div:has(> main) {
     padding-bottom: calc(72px + env(safe-area-inset-bottom));
   }
@@ -939,9 +916,6 @@ body {
   .ui-v2[data-glass] .lg-segmented-thumb {
     box-shadow: inset 0 0 0 1px var(--ink);
   }
-  .ui-v2 .glass-wash {
-    display: none;
-  }
 }
 @media (forced-colors: active) {
   .ui-v2[data-glass] :is(.lg-glass, .btn-ghost, .round-icon, .tool-square, .search-button, .filter-menu > summary, .filter-menu > ul) {
@@ -950,9 +924,6 @@ body {
     background-image: none !important;
     outline: 1px solid CanvasText;
     outline-offset: -1px;
-  }
-  .ui-v2 .glass-wash {
-    display: none;
   }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {

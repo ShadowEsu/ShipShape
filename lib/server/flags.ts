@@ -47,7 +47,7 @@ export type GlassLevel = "off" | "subtle" | "full";
 
 /**
  * SHIPSHAPE_GLASS=subtle puts glass on the floating layer only (top bar, sheets, menus, Glisse's controls);
- * SHIPSHAPE_GLASS=full adds glass lists over a soft wash. Anything else is off. A look, never a gate.
+ * SHIPSHAPE_GLASS=full adds the glass sidebar and lists on the plain page. Anything else is off. A look, never a gate.
  */
 export function glassLevel(env: Env = process.env): GlassLevel {
   const level = env.SHIPSHAPE_GLASS;

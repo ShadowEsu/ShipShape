@@ -15,8 +15,8 @@ import { AccountSheet, PhoneTabBar, SideNav, TopBar } from "./nav-v2";
  * bar alone, with the menu and search. The shell itself never animates.
  *
  * Glass (SHIPSHAPE_GLASS, Design glass spec 4 Nov): subtle glazes the floating layer (top bar, sheets, menus) and uses
- * Glisse's controls; full adds the sidebar and lists over two soft washes fixed behind the page, and optionally
- * Glisse's tab bar on the phone. Off renders the shell exactly as before.
+ * Glisse's controls; full adds the sidebar and lists on the plain page (no wash: Design's verdict, 4 Nov), and
+ * optionally Glisse's tab bar on phones. Off renders the shell exactly as before.
  */
 export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: boolean; children: React.ReactNode }) {
   const lapsed = (await lapsedCount(ws)) > 0;
@@ -31,12 +31,6 @@ export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: b
   return (
     <GlassProvider level={glass}>
       <div className="ui-v2 min-h-dvh bg-paper md:flex" data-glass={glass === "off" ? undefined : glass} data-tab-bar={tabBar ? "" : undefined}>
-        {glass === "full" && (
-          <div aria-hidden="true" className="glass-wash">
-            <span />
-            <span />
-          </div>
-        )}
         <aside aria-label="Workspace" className="side hidden md:sticky md:top-0 md:flex md:h-dvh md:w-[236px] md:shrink-0 md:flex-col">
           <GlassPane from="full" />
           <div className="px-2 pt-1 pb-3.5">
