@@ -42,9 +42,9 @@ export function VendorV2({
   return (
     <div className="mx-auto max-w-[720px] space-y-8">
       <div className="space-y-3">
-        <nav className="text-sm">
+        <nav aria-label="Back" className="text-sm">
           <Link href="/app/collect" className="-my-2.5 inline-flex min-h-11 items-center text-ink-2 hover:text-ink">
-            ← All vendors
+            <span aria-hidden="true">←</span>&nbsp;All vendors
           </Link>
         </nav>
         <PageHeader eyebrow="Collect" title={vendor.name}>
@@ -120,7 +120,7 @@ export function VendorV2({
                   </span>
                 </span>
                 <span className="flex flex-wrap items-center gap-2">
-                  <a href={`/app/collect/file/${f.id}`} className="btn-ghost press">
+                  <a href={`/app/collect/file/${f.id}`} aria-label={`Download ${f.filename}`} className="btn-ghost press">
                     Download
                   </a>
                   {!member && <DeleteVendorFileForm fileId={f.id} filename={f.filename} v2 />}

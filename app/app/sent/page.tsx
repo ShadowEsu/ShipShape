@@ -76,6 +76,8 @@ export default async function SentPage({ searchParams }: { searchParams: Promise
 
   return (
     <div className="space-y-6">
+      {/* Below lg a detail shows without the page's header, so the page keeps its one h1 for screen readers. */}
+      {asked && detail && <h1 className="sr-only lg:hidden">Sent</h1>}
       <div className={asked && detail ? "hidden lg:block" : undefined}>
         <PageHeader eyebrow="Sent" title="Sent">
           <Link href="/app/passport" className="btn">

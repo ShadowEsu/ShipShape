@@ -20,9 +20,9 @@ export function PassportLinkV2({ p, zone, formError, saved }: { p: PassportDetai
   const expired = new Date(p.link.expires_at).getTime() < Date.now();
   return (
     <div className="mx-auto max-w-[720px] space-y-6">
-      <nav className="text-sm">
+      <nav aria-label="Back" className="text-sm">
         <Link href="/app/passport" className="inline-flex min-h-6 items-center text-ink-2 hover:underline">
-          ← Passport
+          <span aria-hidden="true">←</span>&nbsp;Passport
         </Link>
       </nav>
       <PageHeader eyebrow="Passport link" title={p.link.label}>

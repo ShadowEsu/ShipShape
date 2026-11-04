@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { manageBilling, upgrade, type BillingState } from "./actions";
+import { useFocusFirstError } from "./forms";
 
 function ActionError({ state, id }: { state: BillingState; id: string }) {
   if (!state.error) return null;
@@ -15,8 +16,10 @@ function ActionError({ state, id }: { state: BillingState; id: string }) {
 
 export function UpgradeForm({ price, tax }: { price: number; tax: boolean }) {
   const [state, action, pending] = useActionState<BillingState, FormData>(upgrade, {});
+  // A refused "I agree" is announced (role=alert); the box to tick also takes focus.
+  const form = useFocusFirstError(state);
   return (
-    <form action={action} className="space-y-3">
+    <form ref={form} action={action} className="space-y-3">
       <label className="flex items-start gap-3 text-sm">
         <input
           type="checkbox"

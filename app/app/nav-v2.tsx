@@ -304,7 +304,20 @@ export function TopBar({ tools, contact, lapsed, account }: { tools: readonly Se
   return (
     <>
       <header className="top-bar">
-        <button type="button" aria-haspopup="dialog" aria-controls="nav-drawer" onClick={() => drawer.current?.showModal()} className="top-icon md:hidden" aria-label="Menu">
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-controls="nav-drawer"
+          onClick={() => {
+            const d = drawer.current;
+            if (!d) return;
+            d.showModal();
+            // The menu starts on the page you're on (or Close), not on the logo above the menu items.
+            (d.querySelector<HTMLElement>('a[aria-current="page"]') ?? d.querySelector<HTMLElement>('button[aria-label="Close"]'))?.focus();
+          }}
+          className="top-icon md:hidden"
+          aria-label="Menu"
+        >
           <Icon name="menu" />
         </button>
         <p className="hidden truncate text-sm font-medium text-ink md:block">{titleFor(path)}</p>

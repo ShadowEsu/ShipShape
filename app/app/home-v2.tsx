@@ -127,7 +127,8 @@ function SectionHead({ id, title, all }: { id: string; title: string; all: strin
         {title}
       </h2>
       {all && (
-        <Link href={all} className="text-[13px] text-ink-3 hover:text-ink">
+        // Three "View all" links on one page: each says which list it opens, starting with the words it shows.
+        <Link href={all} aria-label={`View all ${title.toLowerCase()}`} className="text-[13px] text-ink-3 hover:text-ink">
           View all
         </Link>
       )}

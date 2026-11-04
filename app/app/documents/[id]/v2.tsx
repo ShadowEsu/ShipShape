@@ -101,9 +101,9 @@ export function DocumentV2(p: {
   return (
     <div className="mx-auto max-w-[720px] space-y-6">
       <HashLanding />
-      <nav className="text-sm">
+      <nav aria-label="Back" className="text-sm">
         <Link href="/app/documents" className="-my-2.5 inline-flex min-h-11 items-center text-ink-2 hover:text-ink">
-          ← Documents
+          <span aria-hidden="true">←</span>&nbsp;Documents
         </Link>
       </nav>
 
@@ -278,7 +278,12 @@ export function DocumentV2(p: {
                   {v.sha256.slice(0, 12)}
                 </span>
               </span>
-              <a href={file(v.version, "download")} data-stays className="inline-flex min-h-11 shrink-0 items-center text-ink-2 underline">
+              <a
+                href={file(v.version, "download")}
+                data-stays
+                aria-label={`Download version ${v.version}`}
+                className="inline-flex min-h-11 shrink-0 items-center text-ink-2 underline"
+              >
                 Download
               </a>
             </li>

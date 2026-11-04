@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
 import { deleteMyAccount, renameMyWorkspace, type DeleteState, type RenameState } from "./actions";
 
-/** After a refused submit, the thing to fix gets focus. */
-function useFocusFirstError(state: object) {
+/** After a refused submit, the thing to fix gets focus. Billing's Upgrade uses it too. */
+export function useFocusFirstError(state: object) {
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
     form.current?.querySelector<HTMLElement>('[aria-invalid="true"], [role="alert"]')?.focus();
