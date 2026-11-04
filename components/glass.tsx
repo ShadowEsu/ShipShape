@@ -23,8 +23,9 @@ export function useGlass(): GlassLevel {
 const shows = (level: GlassLevel, from: "subtle" | "full") => level === "full" || (level === "subtle" && from === "subtle");
 
 /**
- * Glisse's glass laid behind a surface's own content (its parent is positioned and isolated): the surface keeps its
- * markup, roles and size, and only its fill changes. Nothing at all when the level doesn't reach it.
+ * Glisse's glass laid behind a surface's own content (its parent is positioned and a stacking context, never isolated: the
+ * pane frosts what's behind the surface): the surface keeps its markup, roles and size, and only its fill changes.
+ * Nothing at all when the level doesn't reach it.
  */
 export function GlassPane({ from = "subtle" }: { from?: "subtle" | "full" }) {
   const level = useGlass();

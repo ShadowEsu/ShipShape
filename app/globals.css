@@ -727,8 +727,10 @@ body {
   border-radius: inherit;
   pointer-events: none;
 }
+/* The pane sits in its surface's stacking context, never an isolated one (Design spec §3: nothing on the way up that could
+   bound what the pane frosts). The bar and the sidebar are sticky and a modal dialog is in the top layer, so each already
+   has one; the full-level frame takes z-index 0. */
 .ui-v2[data-glass] :is(.top-bar, .side, dialog, .glass-frame):has(> .glass-pane) {
-  isolation: isolate;
   background-color: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -752,6 +754,7 @@ body {
 /* Full: lists and cards in glass (12px), 0.8 white; the rows keep their hairlines. */
 .ui-v2 .glass-frame {
   position: relative;
+  z-index: 0;
   border-radius: 14px;
 }
 .ui-v2 .glass-frame > .glass-pane {
@@ -816,6 +819,12 @@ body {
   box-shadow:
     inset 0 0 0 0.5px rgb(0 0 0 / 0.1),
     0 8px 24px var(--lg-shadow);
+}
+/* A glass control that dims (disabled, or its form sending: opacity 0.35 or 0.5) drops its frost while dim: opacity
+   under 1 on the element that frosts makes WebKit tint it without the blur (Design spec §3). Its fill and edge stay. */
+.ui-v2[data-glass] :is(.lg-glass:disabled, .lg-glass:has(input:disabled), .btn-ghost:disabled) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Glisse's Button at the app's sizes: 44px on the phone (touch), 40px from md up, 14px medium. */
