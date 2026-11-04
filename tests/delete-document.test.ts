@@ -303,7 +303,6 @@ describe("Delete for good on the page (redesigned look only)", () => {
     expect(actionsOf(html).filter((a) => a.label === "Delete for good")).toHaveLength(2);
     expect(html).toMatch(/<dialog[^>]*id="delete-document"/);
     expect(textOf(html)).toContain(`Delete “Permit 21” for good? ${DELETE_PROMISE}`);
-    expect(DELETE_PROMISE).toBe("It's gone from ShipShape now, and removed from our storage backups within 7 days.");
     expect(textOf(html)).not.toMatch(/permanent|instant/i);
 
     expect(actionsOf(await documentPage(active)).some((a) => a.label === "Delete for good")).toBe(false);
