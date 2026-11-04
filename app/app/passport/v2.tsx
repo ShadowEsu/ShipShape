@@ -52,7 +52,7 @@ export function PassportV2({
 }) {
   const yours = (
     <section aria-labelledby="links-title" className="space-y-3">
-      <h2 id="links-title" className="section-title">
+      <h2 id="links-title" tabIndex={-1} className="section-title">
         Your links
       </h2>
       {links.length === 0 ? (

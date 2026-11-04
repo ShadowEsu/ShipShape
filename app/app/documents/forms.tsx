@@ -31,8 +31,11 @@ export interface DetailValues {
   renews_on: string | null;
 }
 
-/** The line under a form: an error not about one field, or what was saved (the server's own line when it sends one). Field errors show under their field. */
-function Status({ state, savedText }: { state: FormState; savedText: string }) {
+/**
+ * The line under a form: an error not about one field, or what was saved (the server's own line when it sends one). Field errors show under their field.
+ * `savedRef`: the saved line can take focus, for a form whose focused button goes away once it has saved.
+ */
+function Status({ state, savedText, savedRef }: { state: FormState; savedText: string; savedRef?: RefObject<HTMLParagraphElement | null> }) {
   if (state.error && !state.field)
     return (
       <div role="alert" className="space-y-2 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
@@ -47,7 +50,7 @@ function Status({ state, savedText }: { state: FormState; savedText: string }) {
   if (state.saved)
     return (
       // saved-line: the redesigned app fades it in; it stays (Design spec §6.5: a fading message is lost to a screen reader).
-      <p role="status" className="saved-line text-sm text-ok">
+      <p ref={savedRef} tabIndex={savedRef ? -1 : undefined} role="status" className="saved-line text-sm text-ok">
         {state.savedText ?? savedText}
       </p>
     );
@@ -336,10 +339,20 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
   const [kind, setKind] = useState(values.kind);
   const router = useRouter();
   useFocusField(state, state.field);
+  const saved = useRef<HTMLParagraphElement>(null);
+  // Set when a save comes back good: the focused Save button goes with the dock, so the Saved line takes focus.
+  const justSaved = useRef(false);
   // A result came back and React put the fields back to their defaults (the saved values, or the ones sent back with an error).
   useEffect(() => {
     setDirty(form.current ? changed(form.current) : false);
+    justSaved.current = Boolean(state.saved);
   }, [state]);
+  // The Saved line shows a render later (once the fields read as unchanged); only then, and only if focus was lost with the button.
+  useEffect(() => {
+    if (!justSaved.current || !saved.current) return;
+    justSaved.current = false;
+    if (document.activeElement === document.body || !document.activeElement) saved.current.focus();
+  });
   // A refused save hasn't saved what was sent, even though the fields now show it as their defaults.
   const unsaved = dirty || Boolean(state.error);
   const [leaving, ask] = useLeaveGuard(unsaved);
@@ -359,7 +372,7 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
       <ul className="group-list plain">
         <DetailRows v={v} state={state} kind={kind} />
       </ul>
-      {(state.error || !dirty) && <Status state={state} savedText="Saved. Reminders follow the new dates." />}
+      {(state.error || !dirty) && <Status state={state} savedText="Saved. Reminders follow the new dates." savedRef={saved} />}
       {(unsaved || pending) && (
         // Docked at the foot of the phone's screen, 8px over the home indicator.
         // save-dock: while it shows, the page scrolls fields clear of it (globals.css).
@@ -574,16 +587,23 @@ export function SignRequestForm({
   const [state, action, pending] = useActionState<SignFormState, FormData>(askToSign, {});
   const [url, setUrl] = useState<string | null>(null);
   const created = state.created;
+  const ready = useRef<HTMLHeadingElement>(null);
   useFocusField(state, state.field && SIGN_IDS[state.field]);
 
   useEffect(() => {
     if (created) setUrl(`${window.location.origin}/s/${created.id}#${created.token}`);
   }, [created]);
+  // The form (and its focused button) is replaced by the link, shown only once: its heading takes focus so it's read out.
+  useEffect(() => {
+    if (url) ready.current?.focus();
+  }, [url]);
 
   if (url && created) {
     return (
       <div className="space-y-3">
-        <p className="text-sm font-medium">Signing link ready</p>
+        <h3 ref={ready} tabIndex={-1} className="text-sm font-medium">
+          Signing link ready
+        </h3>
         <p className="text-sm text-ink-2">
           The signer gets ShipShape&apos;s own copy of this document: form fields and notes drawn in as they show on screen, and nothing that can run.{" "}
           <a href={`/app/documents/${id}/file?request=${created.id}`} className="underline">

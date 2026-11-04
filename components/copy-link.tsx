@@ -9,12 +9,17 @@ const COPIED_MS = 1600;
 /**
  * A secret link shown once: read-only field plus a copy button. In the redesigned app (`v2`) the button's label flips
  * to a check and "Copied" (the chip's crossfade, §6.3), holds 1.6s, then flips back, so a second copy reads as one.
+ * `focus`: the button takes focus when it appears, for a link that replaced the form (and the button) that made it.
  */
-export function CopyLink({ id, label, url, v2 = false }: { id: string; label: string; url: string; v2?: boolean }) {
+export function CopyLink({ id, label, url, v2 = false, focus = false }: { id: string; label: string; url: string; v2?: boolean; focus?: boolean }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const input = useRef<HTMLInputElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const back = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(back.current), []);
+  useEffect(() => {
+    if (focus) button.current?.focus();
+  }, [focus]);
   const copied = state === "copied";
   return (
     <div className="space-y-2">
@@ -24,6 +29,7 @@ export function CopyLink({ id, label, url, v2 = false }: { id: string; label: st
         </label>
         <input ref={input} id={id} readOnly value={url} className="input flex-1 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
         <button
+          ref={button}
           type="button"
           className={v2 ? "btn press min-w-36" : "btn"}
           onClick={async () => {

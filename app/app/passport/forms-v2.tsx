@@ -20,10 +20,13 @@ function FieldError({ id, error }: { id: string; error?: string }) {
   );
 }
 
-/** What was made, what happens next, the one thing to do (copy it), and Done. The same words as PassportReady. */
+/**
+ * What was made, what happens next, the one thing to do (copy it), and Done. The same words as PassportReady. No live
+ * region: Copy link takes focus when it arrives, which reads it out without saying the whole panel twice.
+ */
 function Ready({ label, documents, days, url, onDone }: { label: string; documents: number; days: number; url: string; onDone: () => void }) {
   return (
-    <div className="space-y-4" role="status">
+    <div className="space-y-4">
       <h2 id="ready-title" className="section-title">
         Your link for {label} is ready
       </h2>
@@ -255,9 +258,16 @@ function NewPassportFormV2({ onDone, ...props }: PassportFormProps & { onDone: (
   );
 }
 
-/** The new-link form; each Done starts a fresh one (nothing ticked, nothing typed), as the link it made is now listed. */
+/**
+ * The new-link form; each Done starts a fresh one (nothing ticked, nothing typed), as the link it made is now listed.
+ * Done (or closing the sheet) removes the control that had focus, so focus goes to Your links, where the new link now
+ * shows, or to the fresh form's first field.
+ */
 export function NewLinkV2(props: PassportFormProps) {
   const [round, setRound] = useState(0);
+  useEffect(() => {
+    if (round) (document.getElementById("links-title") ?? document.getElementById("label"))?.focus();
+  }, [round]);
   return (
     <NewPassportFormV2
       key={round}

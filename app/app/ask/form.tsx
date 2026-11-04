@@ -20,9 +20,12 @@ export function AskForm({ v2 = false }: { v2?: boolean }) {
   const consentError = state.field === "consent" ? state.error : undefined;
   const formError = state.field ? undefined : state.error;
 
-  // After a refused read, the thing to fix gets focus.
+  // After a refused read, the thing to fix gets focus; after a good one, the answer's heading does (the button that had
+  // focus is disabled while reading, and the answer arrives whole, so a live region could miss it).
   useEffect(() => {
-    form.current?.querySelector<HTMLElement>('[aria-invalid="true"], [role="alert"]')?.focus();
+    const fix = form.current?.querySelector<HTMLElement>('[aria-invalid="true"], [role="alert"]');
+    if (fix) fix.focus();
+    else if (state.items) document.getElementById("result-title")?.focus();
   }, [state]);
 
   return (
@@ -112,7 +115,7 @@ export function AskForm({ v2 = false }: { v2?: boolean }) {
       </form>
 
       {items && (
-        <section aria-labelledby="result-title" aria-live="polite">
+        <section aria-labelledby="result-title">
           <RequestAnswer items={items} titleId="result-title" v2={v2} />
         </section>
       )}

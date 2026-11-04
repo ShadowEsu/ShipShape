@@ -181,9 +181,10 @@ export function NewVendorFormV2({ kinds }: { kinds: { key: string; label: string
 
 /**
  * The end of making an upload link: what was made, what happens next, and the one thing to do (copy it). In the
- * redesigned app it arrives (§6.5) and Copy turns to a check.
+ * redesigned app it arrives (§6.5) and Copy turns to a check. `focus`: Copy link takes focus, as the form that made the
+ * link (and its focused button) is gone.
  */
-export function VendorLinkReady({ vendorName, days, url, v2 }: { vendorName: string; days: number; url: string; v2?: boolean }) {
+export function VendorLinkReady({ vendorName, days, url, v2, focus }: { vendorName: string; days: number; url: string; v2?: boolean; focus?: boolean }) {
   return (
     <div className={v2 ? "arrive space-y-3" : "space-y-3"} role="status">
       <h2 className="font-semibold">Upload link for {vendorName} is ready</h2>
@@ -191,7 +192,7 @@ export function VendorLinkReady({ vendorName, days, url, v2 }: { vendorName: str
         It works for {days} days. Copy it and send it to {vendorName} yourself: ShipShape keeps only a fingerprint of it and can&apos;t show
         it again. The files they send land under Files received.
       </p>
-      <CopyLink id="collect-url" label="Upload link" url={url} v2={v2} />
+      <CopyLink id="collect-url" label="Upload link" url={url} v2={v2} focus={focus} />
     </div>
   );
 }
@@ -205,7 +206,7 @@ export function VendorLinkForm({ vendorId, vendorName, days, v2 }: { vendorId: s
     if (state.link) setUrl(`${window.location.origin}/c/${state.link.id}#${state.link.token}`);
   }, [state.link]);
 
-  if (url && state.link) return <VendorLinkReady vendorName={vendorName} days={state.link.days} url={url} v2={v2} />;
+  if (url && state.link) return <VendorLinkReady vendorName={vendorName} days={state.link.days} url={url} v2={v2} focus />;
   return (
     <form ref={form} action={action} className="space-y-4" noValidate>
       <input type="hidden" name="vendor" value={vendorId} />
