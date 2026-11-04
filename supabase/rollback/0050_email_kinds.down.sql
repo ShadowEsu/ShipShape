@@ -1,14 +1,11 @@
 -- Undoes 0050_email_kinds.sql. Not a migration: the runner reads supabase/migrations only, never this folder.
 -- Run it as shipshape_owner, then delete 0050's row from meta.migrations, in one transaction (infra/README.md,
 -- "Undoing a migration"). Turn the welcome and waitlist kinds off first (SHIPSHAPE_EMAIL_WELCOME and
--- SHIPSHAPE_EMAIL_WAITLIST unset, redeployed). The welcome and waitlist rows go (0049's outbox takes neither), and
--- so do 'stop' suppressions (0049's list takes bounces and complaints only): write those addresses down as hashes
--- elsewhere first if they must survive the rollback.
+-- SHIPSHAPE_EMAIL_WAITLIST unset, redeployed). The welcome and waitlist rows go (0049's outbox takes neither).
+-- Every 'stop' suppression stays, and so does the reason check that allows it (Security S-R1): a stop is a
+-- person's request, reminders keep going after a rollback, and 0049's code only reads the list.
 drop function app.queue_welcome(uuid, text, text);
 delete from app.outbox where kind in ('welcome', 'waitlist_open');
-delete from app.email_suppressions where reason = 'stop';
-alter table app.email_suppressions drop constraint email_suppressions_reason_check;
-alter table app.email_suppressions add constraint email_suppressions_reason_check check (reason in ('bounce', 'complaint'));
 revoke select (email) on app.contacts from service_role;
 
 drop policy outbox_read on app.outbox;

@@ -28,7 +28,7 @@ import {
 } from "@/lib/server/mail";
 import { migrate, type MigrationStep } from "@/lib/server/migrations";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
-import { stopEmail } from "@/lib/server/suppression";
+import { stopAndForget, stopEmail } from "@/lib/server/suppression";
 import { hashKey } from "@/lib/server/crypto";
 import { deleteAccount } from "@/lib/server/account";
 import { setSignInAdminForTests } from "@/lib/server/cognito";
@@ -589,6 +589,23 @@ describe("stop (Security 1058, K3)", () => {
     expect(ses.calls).toEqual([]);
   });
 
+  it("the operator's stop (scripts/email-stop.ts, as shipshape_owner) also deletes the waitlist entry, so 'come off the list' is true (Security S-W1)", async () => {
+    stub(ALL_ON);
+    const ses = fakeSes();
+    const fan = `leaving-fan-${++n}@example.test`;
+    await queueWaitlist(fan);
+    const asOwner = (address: string) =>
+      db.root(async (tx) => {
+        await tx.query("set local role shipshape_owner");
+        return stopAndForget((text, params) => tx.query(text, params), address, hashKey());
+      });
+    expect(await asOwner(` ${fan.toUpperCase()} `)).toEqual({ added: true, waitlistRemoved: true });
+    expect(await db.root((tx) => tx.query("select 1 from app.waitlist where email = $1", [fan]))).toEqual([]);
+    expect(await asOwner(fan)).toEqual({ added: false, waitlistRemoved: false });
+    expect(await sendQueuedMail()).toMatchObject({ sent: 0 });
+    expect(ses.calls).toEqual([]);
+  });
+
   it("a footer says 'reply' only when the sender is the support address; otherwise it says to write to it, and every kind's footer gives a way to stop", () => {
     const kinds = ["reminder", "welcome", "waitlist_open"] as const;
     const elsewhere = config(ALL_ON);
@@ -958,7 +975,7 @@ describe("rollback", () => {
     }
   });
 
-  it("0050 goes down with its down file, taking the new kinds' rows with it, and comes back up (PGlite)", async () => {
+  it("0050 goes down with its down file, taking the new kinds' rows with it but keeping every stop, and comes back up (PGlite)", async () => {
     const pg = await PGlite.create();
     try {
       const step = (t: Pick<PGlite, "exec" | "query">): MigrationStep => ({
@@ -996,7 +1013,13 @@ describe("rollback", () => {
         await t.exec(down);
         await t.query("delete from meta.migrations where name = $1", ["0050_email_kinds.sql"]);
       });
-      expect(await shape()).toEqual(before);
+      // Everything back to 0049's shape except the suppression list's reason check, which still allows 'stop', and the
+      // stop itself, which survives (Security S-R1).
+      const keptCheck = after.filter((c) => c.startsWith("check:") && c.includes("'stop'"));
+      expect(keptCheck).toHaveLength(1);
+      expect((await shape()).sort()).toEqual([...before.filter((c) => !(c.startsWith("check:") && c.includes("'bounce'"))), ...keptCheck].sort());
+      expect((await pg.query<{ reason: string }>("select reason from app.email_suppressions")).rows).toEqual([{ reason: "stop" }]);
+      expect((await pg.query("select 1 from app.outbox where kind in ('welcome', 'waitlist_open')")).rows).toEqual([]);
 
       expect(await migrate(conn, setup, upTo50)).toEqual(["0050_email_kinds.sql"]);
       expect(await shape()).toEqual(after);

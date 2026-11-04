@@ -196,7 +196,7 @@ To turn it off: delete `SHIPSHAPE_EMAIL` and redeploy (sending stops at once); t
 
 Built and off: the welcome (C), the account deletion record (D-1) and the waitlist's "accounts are open" note (B). Signing codes (E) stay closed. Each kind has its own flag, exactly `1` or unset, and does nothing without `SHIPSHAPE_EMAIL=1` too. Every kind goes through the same sender, configuration set, plain text, suppression list and shared caps (`lib/server/mail.ts`).
 
-Before any kind turns on, "stop" must work: when someone replies "stop" or writes asking for no more email, run `node scripts/email-stop.ts` with `MIGRATE_DATABASE_URL`, `DATABASE_CA_CERT` and production's `SHIPSHAPE_HASH_KEY` set for that run, and type the address on stdin. It adds the address's keyed hash to `app.email_suppressions` (reason `stop`); nothing of any kind is emailed to it again.
+Before any kind turns on, "stop" must work: when someone replies "stop", or writes asking for no more email or to come off the waitlist, run `node scripts/email-stop.ts` with `MIGRATE_DATABASE_URL`, `DATABASE_CA_CERT` and production's `SHIPSHAPE_HASH_KEY` set for that run, and type the address on stdin. In one transaction as `shipshape_owner` it adds the address's keyed hash to `app.email_suppressions` (reason `stop`), so nothing of any kind is emailed to it again, and deletes its `app.waitlist` entry, so the waitlist note's "come off the list" and "we'll delete it" are true (Security S-W1). It prints what it did ("Waitlist entry removed." or "No waitlist entry."), never the address.
 
 For each kind, in this order: Security reads that kind's code; Preston says yes for that kind; the same release adds its privacy words (K4, below), dates the privacy policy and bumps `TERMS_VERSION`, and Security reads that diff; then set its flag in Vercel, Production only, and redeploy. To turn a kind off, delete its flag and redeploy.
 
@@ -397,7 +397,7 @@ The next `npm run migrate` applies it again. Undo only the newest applied migrat
 
 `0049_email_sending.down.sql` (reminder email) drops `app.email_suppressions` and the outbox's sending columns (`claimed_at`, `sent_at`, `attempts`, `last_error`, `ses_message_id`). Turn email off first: the sender reads them. The outbox rows stay. `tests/mail.test.ts` proves down then up for 0049 on PGlite.
 
-`0050_email_kinds.down.sql` (the welcome and waitlist kinds) drops `app.queue_welcome`, deletes the welcome and waitlist rows and the `stop` suppressions, and puts back 0049's outbox (no `user_id`, `waitlist_email` or `address_sha256`, `org_id` required) and 0039's read policy. Turn `SHIPSHAPE_EMAIL_WELCOME` and `SHIPSHAPE_EMAIL_WAITLIST` off first. `tests/mail.test.ts` proves down then up for 0050 on PGlite.
+`0050_email_kinds.down.sql` (the welcome and waitlist kinds) drops `app.queue_welcome`, deletes the welcome and waitlist rows, and puts back 0049's outbox (no `user_id`, `waitlist_email` or `address_sha256`, `org_id` required) and 0039's read policy. Every `stop` suppression stays, with the reason check that allows it (Security S-R1): a stop is a person's request, and reminders keep going after a rollback. Turn `SHIPSHAPE_EMAIL_WELCOME` and `SHIPSHAPE_EMAIL_WAITLIST` off first. `tests/mail.test.ts` proves down (stops kept) then up for 0050 on PGlite.
 
 ## Not in these templates (operator or the account owner, at M6)
 

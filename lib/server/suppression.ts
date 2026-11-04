@@ -29,3 +29,14 @@ export async function stopEmail(run: RunSql, address: string, key: string): Prom
   ]);
   return added.length > 0;
 }
+
+/**
+ * The operator's whole "stop" (Security S-W1): the suppression entry, and the address's waitlist entry deleted, so
+ * the waitlist note's "come off the list" and "we'll delete it" are both true. Run it as shipshape_owner, in one
+ * transaction (scripts/email-stop.ts): the app's roles can't delete from the waitlist.
+ */
+export async function stopAndForget(run: RunSql, address: string, key: string): Promise<{ added: boolean; waitlistRemoved: boolean }> {
+  const added = await stopEmail(run, address, key);
+  const removed = await run("delete from app.waitlist where email = $1 returning 1", [address.trim().toLowerCase()]);
+  return { added, waitlistRemoved: removed.length > 0 };
+}
