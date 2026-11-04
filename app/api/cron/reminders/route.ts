@@ -3,7 +3,7 @@ import { safeEqual } from "@/lib/server/crypto";
 import { purgeOutbox, runReminders } from "@/lib/server/deadlines";
 import { cronSecret } from "@/lib/server/flags";
 import { fail, purgeRateHits } from "@/lib/server/http";
-import { sendReminderMail } from "@/lib/server/mail";
+import { sendQueuedMail } from "@/lib/server/mail";
 import { purgeSessions } from "@/lib/server/session";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export const maxDuration = 60;
  * deleting session rows that ended over 30 days ago (Design row 34), and deleting
  * outbox reminders over 90 days old and signing-code messages over 1 day old (the privacy policy
  * says so; Security 2026-11-01 0749). Where email is on (SHIPSHAPE_EMAIL=1, lib/server/mail.ts), the
- * reminders just written are then emailed. The scheduler (vercel.json) sends
+ * reminders just written, and the queued email of each other kind that is on, are then emailed. The scheduler (vercel.json) sends
  * `Authorization: Bearer $CRON_SECRET`; nothing else may run it.
  */
 export async function GET(req: Request) {
@@ -36,8 +36,8 @@ export async function GET(req: Request) {
   const reminders = runReminders();
   // Email goes after the reminders are written, whether or not each was: rows already in the outbox still go out.
   const mailing = reminders.then(
-    () => sendReminderMail(until),
-    () => sendReminderMail(until),
+    () => sendQueuedMail(until),
+    () => sendQueuedMail(until),
   );
   const [sent, mailed, cleared, deletions, samples, sessions, outbox] = await Promise.allSettled([reminders, mailing, purgeRateHits(), finishDeletions(until), purgeSampleAccounts(until), purgeSessions(), purgeOutbox()]);
   const [files, swept] = await Promise.allSettled([retryStorageCleanup(until), sweepDeletedWorkspaces(until)]);

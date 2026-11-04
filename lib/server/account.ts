@@ -8,6 +8,7 @@ import { downloadName } from "./documents";
 import { UserError } from "./errors";
 import { loadProfile, NeedsRecentSignIn, type Ctx } from "./profile";
 import { recentEnough } from "./session";
+import { deletionRecordAddress, sendDeletionRecord } from "./mail";
 import { blobStore, ObjectMissing, removeQueued } from "./storage";
 import { zip } from "./zip";
 
@@ -331,10 +332,14 @@ const PENDING_AFTER = "15 minutes";
  * stopped nothing is deleted. Then the request is recorded in a transaction of its own (Security
  * CG-3), so from here on the deletion finishes even if the person never comes back: whatever
  * doesn't finish now, the daily run finishes (finishDeletions).
+ * Where the deletion record is on (SHIPSHAPE_EMAIL_DELETION=1; Security 1058, D-1), the account's verified
+ * address is read before the sign-in goes and held here only, and the record is emailed once: when the
+ * deletion finishes, or, when it's left for the daily run, saying it is still finishing.
  */
 export async function deleteAccount(ctx: Ctx): Promise<void> {
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to delete your account.");
   const handled = await cancelSubscriptionsBeforeDeletion(ctx.userId);
+  const recordTo = await deletionRecordAddress(ctx.userId);
   await asService((tx) =>
     tx.query("insert into app.deletion_requests (user_id) values ($1) on conflict (user_id) do update set requested_at = now()", [ctx.userId]),
   );
@@ -342,10 +347,12 @@ export async function deleteAccount(ctx: Ctx): Promise<void> {
     await finishDeletion(ctx.userId, handled);
   } catch (e) {
     console.error(`account deletion: didn't finish, left for the daily run (${e instanceof Error ? e.name : "unknown"})`);
+    if (recordTo) await sendDeletionRecord(recordTo, "still_finishing");
     throw new UserError(
       "Deleting your account didn't finish just now. It will finish by itself within two days, so there's nothing more you need to do; pressing Delete my account again finishes it now.",
     );
   }
+  if (recordTo) await sendDeletionRecord(recordTo, "finished");
 }
 
 /** The person asked to delete their account and it hasn't finished yet: the app says so on every page (Security CG-I1). */

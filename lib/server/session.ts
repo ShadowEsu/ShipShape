@@ -6,6 +6,7 @@ import { TERMS_VERSION } from "@/lib/legal";
 import { isTimeZone, todayIn, TZ_COOKIE } from "@/lib/today";
 import { asService, asUser } from "./db";
 import { safeEqual } from "./crypto";
+import { WELCOME } from "./mail";
 import { uaFamily } from "./ua";
 
 /**
@@ -256,7 +257,10 @@ export const DEFAULT_WORKSPACE_NAME = "My business";
  * The last step of every sign-in: ends the session this browser's old cookie named (a re-sign-in
  * must not leave a phantom "this browser" row live for 12 hours, W9-3), records the Terms and Privacy
  * agreement, makes sure there's a workspace, makes the session's row (named by the browser's
- * User-Agent, which isn't kept) and starts the session with its id.
+ * User-Agent, which isn't kept) and starts the session with its id. A first workspace made here queues
+ * the welcome in the same transaction (app.queue_welcome: once per person, real Cognito accounts only;
+ * sent only where SHIPSHAPE_EMAIL_WELCOME=1, lib/server/mail.ts); someone who already belongs to a
+ * workspace gets none.
  */
 export async function finishSignIn(userId: string, { demo, authAt, userAgent }: { demo: boolean; authAt?: number; userAgent?: string | null }) {
   await endCookieSession();
@@ -266,7 +270,10 @@ export async function finishSignIn(userId: string, { demo, authAt, userAgent }: 
     // Two sign-ins finishing at once must not make two workspaces: the second waits for the first's commit (review #26).
     await tx.query("select pg_advisory_xact_lock(hashtextextended('workspace:' || $1, 0))", [userId]);
     const [has] = await tx.query("select 1 from app.members where user_id = $1", [userId]);
-    if (!has) await tx.query("select app.create_workspace($1)", [DEFAULT_WORKSPACE_NAME]);
+    if (!has) {
+      const [org] = await tx.query<{ id: string }>("select app.create_workspace($1) as id", [DEFAULT_WORKSPACE_NAME]);
+      await tx.query("select app.queue_welcome($1, $2, $3)", [org.id, WELCOME.subject, WELCOME.body]);
+    }
     await tx.query("select app.start_session($1, $2)", [sessionId, uaFamily(userAgent)]);
   });
   await startSession({ userId, demo, authAt, sessionId });
