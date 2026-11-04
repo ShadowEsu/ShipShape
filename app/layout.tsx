@@ -7,14 +7,12 @@ import { siteVerification } from "@/lib/server/seo";
 import "./globals.css";
 
 // Newsreader comes as the static weights the site uses, not the variable files: roman 600 (every
-// serif heading is font-semibold), italic 600 (the home headline's <em>) and italic 400 (the typed
-// signature). Each loader asks Google for one weight, which serves a static file; two weights in one
-// call get the variable file (latin italic: 63 KB).
+// serif heading is font-semibold) and italic 400 (the typed signature). Each loader asks Google for
+// one weight, which serves a static file; two weights in one call get the variable file.
 const newsreader = Newsreader({ subsets: ["latin"], weight: "600", variable: "--font-newsreader", display: "swap" });
-// The italic faces aren't preloaded, so a page downloads one only when it shows that italic. All
-// faces share the family name Newsreader; these variable classes only keep the loaders in use, and
-// text reaches the faces through `font-serif italic` (plus its weight).
-const newsreaderItalic = Newsreader({ subsets: ["latin"], weight: "600", style: "italic", variable: "--font-newsreader-italic", display: "swap", preload: false });
+// The italic face isn't preloaded, so a page downloads it only when it shows a typed signature. Both
+// faces share the family name Newsreader; the variable class only keeps the loader in use, and text
+// reaches the face through `font-serif italic font-normal`.
 const newsreaderItalic400 = Newsreader({ subsets: ["latin"], weight: "400", style: "italic", variable: "--font-newsreader-italic-400", display: "swap", preload: false });
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
@@ -41,7 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // A prerendered page has no nonce, and the strict CSP would block all of its JavaScript.
   await connection();
   return (
-    <html lang="en" className={`${newsreader.variable} ${newsreaderItalic.variable} ${newsreaderItalic400.variable} ${geist.variable} ${geistMono.variable}`}>
+    <html lang="en" className={`${newsreader.variable} ${newsreaderItalic400.variable} ${geist.variable} ${geistMono.variable}`}>
       <body>
         <a
           href="#main"

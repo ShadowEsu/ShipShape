@@ -51,7 +51,7 @@ const STEPS: { title: string; body: string }[] = [
   { title: "Keep", body: "Every document in one place, with each version, its dates and a history of who opened or shared it." },
   { title: "Fill", body: "Confirm your business facts once. ShipShape fills the official IRS W-9 and the Common Paper Mutual NDA from them, and shows where every field came from." },
   { title: "Share", body: "One link holds exactly the documents you pick. It lasts 7, 30 or 90 days, as you choose, shows each time it's opened and what was downloaded, and turns off in a click." },
-  { title: "Stay current", body: "Expiry and renewal dates become deadlines and a calendar file with alerts; on Pro, reminders 90, 30 and 7 days ahead on your Deadlines page." },
+  { title: "Stay current", body: "Expiry and renewal dates become deadlines and a calendar file with alerts; on Pro, reminders 90, 30 and 7 days ahead, shown to owners and admins on the Deadlines page." },
 ];
 
 /** What works today, what waits on setup and what's planned, worded for whether real documents and live payments are open (Security MUST-4). */
@@ -93,11 +93,11 @@ function SamplePassport() {
   return (
     <figure className="rounded-3xl border border-line bg-paper p-5 shadow-[0_20px_60px_-30px_rgb(0_0_0/0.35)] sm:p-6">
       <figcaption className="flex items-center justify-between gap-3">
-        <span className="eyebrow">Passport link</span>
+        <span className="kicker">Passport link</span>
         <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink-2">Sample</span>
       </figcaption>
       <p className="mt-3 font-serif text-2xl font-semibold">Harbor Plumbing LLC</p>
-      <p className="text-sm text-ink-2">Shared with Northwind Builders · works until Dec 1</p>
+      <p className="text-sm text-ink-2">Shared with Northwind Builders until Dec 1</p>
       <ul className="mt-5 divide-y divide-line rounded-2xl border border-line">
         {rows.map(([doc, state, tone]) => (
           <li key={doc} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
@@ -126,10 +126,8 @@ export default function Home() {
       <main id="main">
         <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pt-10 pb-20 lg:grid-cols-[1.1fr_1fr] lg:pt-16">
           <div className="space-y-6">
-            <p className="eyebrow">Business paperwork, in one place</p>
-            <h1 className="font-serif text-5xl leading-[0.95] font-semibold tracking-tight sm:text-7xl">
-              Every form. <em className="text-accent">One link.</em>
-            </h1>
+            <p className="kicker">Business paperwork, in one place</p>
+            <h1 className="font-serif text-5xl leading-[0.95] font-semibold tracking-tight sm:text-7xl">Every form. One link.</h1>
             <p className="max-w-xl text-lg text-ink-2">{PITCH}</p>
             {/* The two buttons need ~356px in Geist, but its fallback font fits them in 350: at 390 wide they
                 wrapped only when Geist loaded, shifting the page (CLS 0.1). Stack them below 400px from the start. */}
@@ -153,9 +151,9 @@ export default function Home() {
         <section className="border-y border-line bg-paper">
           <div className="mx-auto max-w-6xl px-5 py-16">
             <h2 className="max-w-2xl font-serif text-3xl font-semibold tracking-tight sm:text-4xl">Every new customer asks for the same papers.</h2>
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
+            <ul className="mt-8 divide-y divide-line rounded-2xl border border-line md:grid md:grid-cols-3 md:divide-x md:divide-y-0">
               {WHO.map((w) => (
-                <div key={w.who} className="rounded-2xl border border-line p-5">
+                <li key={w.who} className="p-5">
                   <h3 className="font-semibold">{w.who}</h3>
                   <p className="mt-2 text-base text-ink-2 sm:text-sm">{w.asks}</p>
                   {w.page && (
@@ -163,30 +161,28 @@ export default function Home() {
                       {w.page.label}
                     </Link>
                   )}
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
             <p className="mt-6 max-w-2xl text-ink-2">Today that&apos;s email attachments, &ldquo;can you resend the new certificate?&rdquo;, and expired documents nobody noticed.</p>
           </div>
         </section>
 
         <section id="how" className="mx-auto max-w-6xl scroll-mt-6 px-5 py-20">
-          <p className="eyebrow">How it works</p>
-          <h2 className="mt-2 font-serif text-3xl font-semibold tracking-tight sm:text-4xl">Keep, fill, share, stay current.</h2>
-          <ol className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map((s, i) => (
+          <h2 className="font-serif text-3xl font-semibold tracking-tight sm:text-4xl">Keep, fill, share, stay current.</h2>
+          <ul className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((s) => (
               <li key={s.title} className="space-y-2">
-                <span className="font-mono text-sm text-ink-3">0{i + 1}</span>
                 <h3 className="text-lg font-semibold">{s.title}</h3>
                 <p className="text-base text-ink-2 sm:text-sm">{s.body}</p>
               </li>
             ))}
-          </ol>
+          </ul>
         </section>
 
         <section className="border-y border-line bg-paper">
           <div className="mx-auto max-w-6xl px-5 py-20">
-            <p className="eyebrow">Where things stand</p>
+            <p className="kicker">Where things stand</p>
             <h2 className="mt-2 font-serif text-3xl font-semibold tracking-tight sm:text-4xl">What works today, and what doesn&apos;t yet.</h2>
             <ul className="mt-8 grid gap-3 md:grid-cols-2">
               {capabilities(docs, live).map((c) => (
@@ -205,7 +201,7 @@ export default function Home() {
 
         <section className="mx-auto grid max-w-6xl gap-10 px-5 py-20 lg:grid-cols-2">
           <div>
-            <p className="eyebrow">Built to be trusted with tax forms</p>
+            <p className="kicker">Built to be trusted with tax forms</p>
             <h2 className="mt-2 font-serif text-3xl font-semibold tracking-tight">Software, not a law firm.</h2>
             <p className="mt-4 text-ink-2">
               ShipShape fills facts into official and openly licensed documents and tells you where each one comes from. It never writes

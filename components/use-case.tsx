@@ -40,7 +40,7 @@ export function UseCasePage({
     <>
       <SiteHeader />
       <main id="main" className="mx-auto max-w-4xl px-5 pt-10 pb-20">
-        <p className="eyebrow">{eyebrow}</p>
+        <p className="kicker">{eyebrow}</p>
         <h1 className="mt-2 max-w-3xl font-serif text-4xl font-semibold tracking-tight sm:text-5xl">{title}</h1>
         <p className="mt-4 max-w-2xl text-lg text-ink-2">{lede}</p>
         <div className="mt-6 flex flex-col items-start gap-3 min-[400px]:flex-row min-[400px]:flex-wrap min-[400px]:items-center">

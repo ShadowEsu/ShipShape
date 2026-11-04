@@ -71,11 +71,11 @@ export function SignInForm({ allowEmail, accounts, next }: { allowEmail: boolean
           />
           <span>
             I agree to the{" "}
-            <Link href="/terms" className="underline" target="_blank">
+            <Link href="/terms" className="underline" target="_blank" rel="noopener noreferrer">
               Terms<span className="sr-only"> (opens in a new tab)</span>
             </Link>{" "}
             and{" "}
-            <Link href="/privacy" className="underline" target="_blank">
+            <Link href="/privacy" className="underline" target="_blank" rel="noopener noreferrer">
               Privacy Policy<span className="sr-only"> (opens in a new tab)</span>
             </Link>
             .

@@ -113,8 +113,7 @@ export default function FaqPage() {
     <>
       <SiteHeader />
       <main id="main" className="mx-auto max-w-3xl px-5 pt-10 pb-20">
-        <p className="eyebrow">FAQ</p>
-        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Common questions</h1>
+        <h1 className="font-serif text-4xl font-semibold tracking-tight sm:text-5xl">Common questions</h1>
         <div className="mt-10 divide-y divide-line border-y border-line">
           {faq(realDocsEnabled(), accountSignIn(process.env) !== null).map(({ q, a }) => (
             <details key={q} className="group py-4">

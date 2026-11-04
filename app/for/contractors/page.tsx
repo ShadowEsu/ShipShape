@@ -37,7 +37,7 @@ function asks(docs: boolean): Ask[] {
     },
     {
       title: "Reminders before a certificate lapses",
-      body: "Every plan gets a calendar file with alerts 30 and 7 days before each date. On Pro, reminders 90, 30 and 7 days ahead also show on your Deadlines page.",
+      body: "Every plan gets a calendar file with alerts 30 and 7 days before each date. On Pro, reminders 90, 30 and 7 days ahead are also shown to owners and admins on the Deadlines page.",
       status: "Works today",
     },
     docs

@@ -37,8 +37,7 @@ export default async function StatusPage() {
     <>
       <SiteHeader />
       <main id="main" className="mx-auto max-w-3xl px-5 pt-10 pb-20">
-        <p className="eyebrow">Status</p>
-        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">{db ? "ShipShape is working." : "ShipShape isn't working right now."}</h1>
+        <h1 className="font-serif text-4xl font-semibold tracking-tight">{db ? "ShipShape is working." : "ShipShape isn't working right now."}</h1>
         <p className="mt-2 text-sm text-ink-3">
           Checked {fmtDateTime(checkedAt)}
           {process.env.VERCEL_GIT_COMMIT_SHA ? ` · version ${process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7)}` : ""}
