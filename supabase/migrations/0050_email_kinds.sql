@@ -52,6 +52,28 @@ create policy outbox_read on app.outbox for select to authenticated using (
   and (kind <> 'esign_code' or exists (select 1 from app.organizations o where o.id = outbox.org_id and o.is_demo))
 );
 
+-- The welcome for the signed-in person's first workspace, `org`: written only when they are its sole owner, it is
+-- their only workspace, it is real (not a sample), they sign in through Cognito (a verified email) and aren't being
+-- deleted; at most once per person. The address is read here from auth.users, never taken as input; the text is
+-- the app's (the sender refuses any other).
+create function app.queue_welcome(org uuid, mail_subject text, mail_body text) returns void
+language sql security definer set search_path = '' as $$
+  insert into app.outbox (org_id, to_email, subject, body, kind, user_id)
+  select org, u.email, mail_subject, mail_body, 'welcome', u.id
+  from auth.users u
+  join app.organizations o on o.id = org and not o.is_demo
+  where u.id = (select auth.uid())
+    and u.email is not null
+    and exists (select 1 from app.identities i where i.user_id = u.id and i.provider = 'cognito')
+    and exists (select 1 from app.members m where m.org_id = org and m.user_id = u.id and m.role = 'owner')
+    and not exists (select 1 from app.members m where m.org_id = org and m.user_id <> u.id)
+    and not exists (select 1 from app.members m where m.user_id = u.id and m.org_id <> org)
+    and not exists (select 1 from app.deletion_requests r where r.user_id = u.id)
+  on conflict do nothing
+$$;
+revoke execute on function app.queue_welcome(uuid, text, text) from public, anon;
+grant execute on function app.queue_welcome(uuid, text, text) to authenticated;
+
 -- The sender refuses a waitlist address that is any workspace's contact (as it does a vendor's or signer's): it
 -- reads the address column only.
 grant select (email) on app.contacts to service_role;
