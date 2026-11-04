@@ -1,6 +1,7 @@
 "use client";
 
 import { type RefObject, useEffect, useRef, useState } from "react";
+import { GlassPane } from "@/components/glass";
 
 /** Whether any field differs from what the form was drawn with: a field's default is the saved value. */
 export function changed(form: HTMLFormElement): boolean {
@@ -47,6 +48,7 @@ export function useLeaveGuard(on: boolean): [string | null, RefObject<HTMLDialog
 export function DiscardDialog({ ask, body, onDiscard }: { ask: RefObject<HTMLDialogElement | null>; body: string; onDiscard: () => void }) {
   return (
     <dialog ref={ask} aria-labelledby="discard-title" className="m-auto w-[min(92vw,360px)] rounded-2xl bg-paper p-5 text-ink backdrop:bg-black/30">
+      <GlassPane />
       <h2 id="discard-title" className="text-lg font-semibold">
         Discard changes?
       </h2>

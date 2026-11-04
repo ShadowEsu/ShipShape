@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/app-ui";
+import { GlassFrame } from "@/components/glass";
 import { Icon } from "@/components/icons";
 import { uiV2 } from "@/lib/server/flags";
 import { PEOPLE_BUSY, PEOPLE_FULL } from "@/lib/server/limits";
@@ -48,11 +49,13 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
           body="Add a person below with their name, and an email and company if you like. On a document's page you can also tap Keep in People beside a signer."
         />
       ) : v2 ? (
-        <ul className="hair-list">
-          {people.map((p) => (
-            <HairRow key={p.id} href={`/app/people/${p.id}`} icon="people" title={p.name} line={personLine(p)} />
-          ))}
-        </ul>
+        <GlassFrame>
+          <ul className="hair-list">
+            {people.map((p) => (
+              <HairRow key={p.id} href={`/app/people/${p.id}`} icon="people" title={p.name} line={personLine(p)} />
+            ))}
+          </ul>
+        </GlassFrame>
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
           {people.map((p) => (

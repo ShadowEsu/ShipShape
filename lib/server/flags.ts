@@ -42,6 +42,23 @@ export function uiV2(): boolean {
 
 type Env = Record<string, string | undefined>;
 
+/** How much Liquid Glass (Glisse) the app wears (Design glass spec, 4 Nov). Off is the app as it was. */
+export type GlassLevel = "off" | "subtle" | "full";
+
+/**
+ * SHIPSHAPE_GLASS=subtle puts glass on the floating layer only (top bar, sheets, menus, Glisse's controls);
+ * SHIPSHAPE_GLASS=full adds glass lists over a soft wash. Anything else is off. A look, never a gate.
+ */
+export function glassLevel(env: Env = process.env): GlassLevel {
+  const level = env.SHIPSHAPE_GLASS;
+  return level === "subtle" || level === "full" ? level : "off";
+}
+
+/** Full glass plus Glisse's tab bar along the phone's foot (SHIPSHAPE_GLASS_TABBAR=1); the menu drawer stays. */
+export function glassTabBar(env: Env = process.env): boolean {
+  return glassLevel(env) === "full" && env.SHIPSHAPE_GLASS_TABBAR === "1";
+}
+
 /** The address people write to: privacy requests and reporting a page (CONTACT_EMAIL). Null while unset or not an address. */
 export function contactEmail(env: Env = process.env): string | null {
   const address = env.CONTACT_EMAIL?.trim() ?? "";

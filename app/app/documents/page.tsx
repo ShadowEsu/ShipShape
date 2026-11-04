@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, ValidityChip } from "@/components/app-ui";
+import { GlassFrame } from "@/components/glass";
 import { DOC_KINDS, DOC_SORTS, DOCUMENTS_PAGE_SIZE, docSort, pageDocuments } from "@/lib/server/documents";
 import { esignAvailable } from "@/lib/server/esign";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
@@ -170,19 +171,21 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         )
       ) : v2 ? (
         // Hairline rows, as Home's Recent (Design calm v2); the title morphs into the document page's title (spec §6.1).
-        <ul className="hair-list">
-          {docs.map((d) => (
-            <HairRow
-              key={d.id}
-              href={`/app/documents/${d.id}`}
-              icon="documents"
-              title={d.title}
-              morph={`doc-${d.id}`}
-              line={d.issuer || d.counterparty ? `${DOC_KINDS[d.kind]} · ${d.issuer ?? d.counterparty}` : DOC_KINDS[d.kind]}
-              chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
-            />
-          ))}
-        </ul>
+        <GlassFrame>
+          <ul className="hair-list">
+            {docs.map((d) => (
+              <HairRow
+                key={d.id}
+                href={`/app/documents/${d.id}`}
+                icon="documents"
+                title={d.title}
+                morph={`doc-${d.id}`}
+                line={d.issuer || d.counterparty ? `${DOC_KINDS[d.kind]} · ${d.issuer ?? d.counterparty}` : DOC_KINDS[d.kind]}
+                chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
+              />
+            ))}
+          </ul>
+        </GlassFrame>
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
           {docs.map((d) => (

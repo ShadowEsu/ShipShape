@@ -213,7 +213,7 @@ export function VendorLinkForm({ vendorId, vendorName, days, v2 }: { vendorId: s
         {v2 ? (
           <>
             <legend className="mb-2 px-1 text-[13px] text-ink-3">The link stops working after</legend>
-            <DaysChoice days={days} defaultDays={days[1]} />
+            <DaysChoice days={days} defaultDays={days[1]} label="The link stops working after" />
           </>
         ) : (
           <>

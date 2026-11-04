@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { GlassTabs, useGlass } from "@/components/glass";
 import { Icon } from "@/components/icons";
 
 export interface TabLink {
@@ -8,8 +11,24 @@ export interface TabLink {
   current: boolean;
 }
 
-/** A row of tabs that are links: the current one is marked for everyone (aria-current) and underlined (Design calm v2). */
+/**
+ * A row of tabs that are links: the current one is marked for everyone (aria-current) and underlined (Design calm v2).
+ * Under glass, the same links on Glisse's tab bar.
+ */
 export function TabLinks({ label, tabs }: { label: string; tabs: TabLink[] }) {
+  const glass = useGlass();
+  if (glass !== "off") {
+    const items = tabs.map((t) => ({
+      href: t.href,
+      label: (
+        <>
+          {t.text}
+          {t.count !== undefined && <span className="tab-count">{t.count}</span>}
+        </>
+      ),
+    }));
+    return <GlassTabs label={label} tabs={items} current={tabs.find((t) => t.current)?.href ?? null} />;
+  }
   return (
     <nav aria-label={label} className="tab-row">
       {tabs.map((t) => (

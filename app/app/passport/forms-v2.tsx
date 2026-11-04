@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { DaysChoice } from "@/components/days-choice";
+import { GlassPane } from "@/components/glass";
 import { Icon } from "@/components/icons";
 import { fmtDay, plusDays } from "@/lib/today";
 import { type PassportFormProps, usePassportForm, WhoCanOpen } from "./forms";
@@ -201,7 +202,14 @@ function NewPassportFormV2({ onDone, ...props }: PassportFormProps & { onDone: (
             aria-describedby={[days.includes(chosen) ? "days-end" : null, errors.days ? "days-error" : null].filter(Boolean).join(" ") || undefined}
           >
             <legend className="mb-2 px-1 text-[13px] text-ink-3">The link stops working after</legend>
-            <DaysChoice days={days} defaultDays={startDays} onPick={setPicked} invalid={!!errors.days} describedBy={errors.days ? "days-error" : undefined} />
+            <DaysChoice
+              days={days}
+              defaultDays={startDays}
+              label="The link stops working after"
+              onPick={setPicked}
+              invalid={!!errors.days}
+              describedBy={errors.days ? "days-error" : undefined}
+            />
             {/* The server counts the days from the moment the link is made; the day shown is in the viewer's zone, as on Your links. */}
             {days.includes(chosen) && (
               <p id="days-end" className="mt-2 px-1 text-sm text-ink-2">
@@ -245,6 +253,7 @@ function NewPassportFormV2({ onDone, ...props }: PassportFormProps & { onDone: (
           className="sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30"
           onClose={onDone}
         >
+          <GlassPane />
           <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-line" aria-hidden="true" />
           <div className="px-4 pt-3 pb-5">
             <Ready label={made.label} documents={made.documents} days={made.days} url={url} onDone={() => dialog.current?.close()} />

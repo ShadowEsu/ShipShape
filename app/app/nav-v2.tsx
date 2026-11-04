@@ -1,8 +1,10 @@
 "use client";
 
+import { TabBar } from "glisse";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { GlassPane } from "@/components/glass";
 import { Icon, type IconName } from "@/components/icons";
 import { Logo } from "@/components/ui";
 import { SearchDialog, type SearchTool } from "./search-v2";
@@ -114,6 +116,7 @@ function Sheet({ id, title, open, menu, children }: { id: string; title: string;
         if (e.target === e.currentTarget || (e.target instanceof Element && e.target.closest("a[href]"))) e.currentTarget.close();
       }}
     >
+      <GlassPane />
       <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-line md:hidden" aria-hidden="true" />
       {/* A menu needs no heading or close button: Escape, a click outside and its own rows close it. */}
       <div className={`flex items-center justify-between px-4 pt-2 pb-1 ${menu ? "md:hidden" : ""}`}>
@@ -248,6 +251,7 @@ function NavDrawer({ open, lapsed, account }: { open: React.RefObject<HTMLDialog
         if (e.target === e.currentTarget || (e.target instanceof Element && e.target.closest("a[href]"))) e.currentTarget.close();
       }}
     >
+      <GlassPane />
       <div className="flex items-center justify-between py-1 pr-1 pl-4">
         <Logo href="/app" />
         <button type="button" onClick={() => open.current?.close()} className="grid size-11 place-items-center rounded-full text-ink-2" aria-label="Close">
@@ -290,6 +294,7 @@ export function TopBar({ tools, contact, lapsed, account }: { tools: readonly Se
   return (
     <>
       <header className="top-bar">
+        <GlassPane />
         <button type="button" aria-haspopup="dialog" aria-controls="nav-drawer" onClick={() => drawer.current?.showModal()} className="top-icon md:hidden" aria-label="Menu">
           <Icon name="menu" />
         </button>
@@ -319,5 +324,28 @@ export function TopBar({ tools, contact, lapsed, account }: { tools: readonly Se
       <SearchDialog open={search} tools={tools} />
       <NavDrawer open={drawer} lapsed={lapsed} account={account} />
     </>
+  );
+}
+
+// The phone's tab bar under full glass: the four places people go most; the menu keeps everything else.
+const TABS: readonly Item[] = [
+  ["/app", "Home", "home"],
+  ["/app/documents", "Documents", "documents"],
+  ["/app/passport", "Passport", "passport"],
+  ["/app/deadlines", "Deadlines", "deadlines"],
+];
+
+/** Glisse's tab bar along the phone's foot (full glass, SHIPSHAPE_GLASS_TABBAR=1): links, the current page's selected. */
+export function PhoneTabBar() {
+  const path = usePathname();
+  return (
+    <div className="phone-tab-bar md:hidden">
+      <TabBar
+        aria-label="Main"
+        link={Link}
+        items={TABS.map(([href, label, icon]) => ({ value: href, label, href, icon: <Icon name={icon} size={22} /> }))}
+        value={TABS.find(([href]) => isActive(path, href))?.[0] ?? null}
+      />
+    </div>
   );
 }

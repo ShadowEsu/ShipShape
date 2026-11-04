@@ -1,8 +1,10 @@
 "use client";
 
+import { SearchField } from "glisse";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { GlassPane, useGlass } from "@/components/glass";
 import { Icon, type IconName } from "@/components/icons";
 import { searchAction, searchPeopleAction, type SearchHit } from "./search-actions";
 
@@ -25,6 +27,7 @@ const PAUSE_MS = 150;
 export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialogElement | null>; tools: readonly SearchTool[] }) {
   const router = useRouter();
   const path = usePathname();
+  const glass = useGlass() !== "off";
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<{ q: string; rows: SearchHit[]; people: SearchHit[] }>({ q: "", rows: [], people: [] });
   const [pending, startTransition] = useTransition();
@@ -80,28 +83,46 @@ export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialog
       onClose={() => setQ("")}
       onKeyDown={move}
     >
+      <GlassPane />
       <form
         role="search"
-        className="flex items-center gap-2 border-b border-line pl-4"
+        className={`flex items-center gap-2 border-b border-line ${glass ? "py-2 pl-3" : "pl-4"}`}
         onSubmit={(e) => {
           e.preventDefault();
           const first = list.current?.querySelector<HTMLAnchorElement>("a[data-hit]");
           if (first) router.push(first.getAttribute("href") ?? "/app");
         }}
       >
-        <Icon name="search" size={18} className="shrink-0 text-ink-3" />
-        <input
-          id="search-field"
-          type="search"
-          autoComplete="off"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          maxLength={100}
-          aria-label="Search documents, people and tools"
-          aria-describedby="search-status"
-          placeholder="Search documents, people and tools"
-          className="min-h-13 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3"
-        />
+        {glass ? (
+          // Glisse's search field: its magnifier, a glass capsule and a Clear button once there's text.
+          <SearchField
+            id="search-field"
+            autoComplete="off"
+            value={q}
+            onValueChange={setQ}
+            maxLength={100}
+            aria-label="Search documents, people and tools"
+            aria-describedby="search-status"
+            placeholder="Search documents, people and tools"
+            className="search-glass"
+          />
+        ) : (
+          <>
+            <Icon name="search" size={18} className="shrink-0 text-ink-3" />
+            <input
+              id="search-field"
+              type="search"
+              autoComplete="off"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              maxLength={100}
+              aria-label="Search documents, people and tools"
+              aria-describedby="search-status"
+              placeholder="Search documents, people and tools"
+              className="min-h-13 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3"
+            />
+          </>
+        )}
         <button type="button" onClick={() => open.current?.close()} className="grid size-11 shrink-0 place-items-center text-ink-3" aria-label="Close">
           <Icon name="close" size={18} />
         </button>

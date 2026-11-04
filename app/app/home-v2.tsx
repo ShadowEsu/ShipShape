@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ValidityChip } from "@/components/app-ui";
+import { GlassFrame } from "@/components/glass";
 import { Icon } from "@/components/icons";
 import { DOC_KINDS, type DocRow } from "@/lib/server/documents";
 import type { WaitingSignature, WaitingVendor } from "@/lib/server/home";
@@ -41,18 +42,20 @@ export function HomeV2(props: {
         {recent.length === 0 ? (
           <p className="quiet-empty">The documents you add or make show up here.</p>
         ) : (
-          <ul className="hair-list">
-            {recent.map((d) => (
-              <HairRow
-                key={d.id}
-                href={`/app/documents/${d.id}`}
-                icon="documents"
-                title={d.title}
-                line={d.issuer ? `${DOC_KINDS[d.kind]} · ${d.issuer}` : DOC_KINDS[d.kind]}
-                chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
-              />
-            ))}
-          </ul>
+          <GlassFrame>
+            <ul className="hair-list">
+              {recent.map((d) => (
+                <HairRow
+                  key={d.id}
+                  href={`/app/documents/${d.id}`}
+                  icon="documents"
+                  title={d.title}
+                  line={d.issuer ? `${DOC_KINDS[d.kind]} · ${d.issuer}` : DOC_KINDS[d.kind]}
+                  chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
+                />
+              ))}
+            </ul>
+          </GlassFrame>
         )}
       </section>
 
@@ -63,37 +66,41 @@ export function HomeV2(props: {
           {nothingWaiting ? (
             <p className="quiet-empty">Signature requests nobody has signed yet, and vendors who still owe you a document, show up here.</p>
           ) : (
-            <ul className="hair-list">
-              {waiting.signatures.map((s) => (
-                <HairRow
-                  key={s.id}
-                  href={`/app/documents/${s.documentId}`}
-                  icon="sign"
-                  title={s.title}
-                  line={`${s.signerName} · sent ${s.sentOn}`}
-                  chip={<span className="dot-chip">Not signed yet</span>}
-                />
-              ))}
-              {waiting.vendors.map((v) => (
-                <HairRow key={v.id} href={`/app/collect/${v.id}`} icon="collect" title={v.name} line={`Collect · ${v.outstanding.join(", ")}`} chip={<span className="dot-chip">Waiting</span>} />
-              ))}
-            </ul>
+            <GlassFrame>
+              <ul className="hair-list">
+                {waiting.signatures.map((s) => (
+                  <HairRow
+                    key={s.id}
+                    href={`/app/documents/${s.documentId}`}
+                    icon="sign"
+                    title={s.title}
+                    line={`${s.signerName} · sent ${s.sentOn}`}
+                    chip={<span className="dot-chip">Not signed yet</span>}
+                  />
+                ))}
+                {waiting.vendors.map((v) => (
+                  <HairRow key={v.id} href={`/app/collect/${v.id}`} icon="collect" title={v.name} line={`Collect · ${v.outstanding.join(", ")}`} chip={<span className="dot-chip">Waiting</span>} />
+                ))}
+              </ul>
+            </GlassFrame>
           )}
         </section>
         {saved.length > 0 && (
           <section aria-labelledby="saved-title" className="min-w-0">
             <SectionHead id="saved-title" title="Saved" all="/app/saved" />
-            <ul className="hair-list">
-              {saved.map((r) => (
-                <HairRow
-                  key={`${r.kind}-${r.id}`}
-                  href={r.href}
-                  icon={r.kind === "document" ? "documents" : "passport"}
-                  title={r.kind === "document" ? r.title : r.label}
-                  line={savedLine(r, zone)}
-                />
-              ))}
-            </ul>
+            <GlassFrame>
+              <ul className="hair-list">
+                {saved.map((r) => (
+                  <HairRow
+                    key={`${r.kind}-${r.id}`}
+                    href={r.href}
+                    icon={r.kind === "document" ? "documents" : "passport"}
+                    title={r.kind === "document" ? r.title : r.label}
+                    line={savedLine(r, zone)}
+                  />
+                ))}
+              </ul>
+            </GlassFrame>
           </section>
         )}
       </div>

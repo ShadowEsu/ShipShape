@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
+import { headers } from "next/headers";
 import { connection } from "next/server";
 import { TimeZoneCookie } from "@/components/time-zone-cookie";
 import { appUrl } from "@/lib/server/flags";
@@ -40,8 +41,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Every page renders per request so Next.js can stamp the proxy's CSP nonce on its scripts.
   // A prerendered page has no nonce, and the strict CSP would block all of its JavaScript.
   await connection();
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+  // data-theme="light": the app is light only, so Glisse keeps its light glass when the system is dark.
   return (
-    <html lang="en" className={`${newsreader.variable} ${newsreaderItalic.variable} ${newsreaderItalic400.variable} ${geist.variable} ${geistMono.variable}`}>
+    <html
+      lang="en"
+      data-theme="light"
+      className={`${newsreader.variable} ${newsreaderItalic.variable} ${newsreaderItalic400.variable} ${geist.variable} ${geistMono.variable}`}
+    >
+      <head>
+        {/* Glisse's styles come in the app's own stylesheet (components/glass.tsx imports them). Loading Glisse adds them
+            again as an inline <style id="glisse-styles"> unless one is already here, and the CSP would block that one:
+            this empty, nonce'd marker is the one it finds (Security's glisse 0.5.0 review, 4 Nov). */}
+        <style id="glisse-styles" nonce={nonce} />
+      </head>
       <body>
         <a
           href="#main"

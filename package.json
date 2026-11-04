@@ -22,6 +22,7 @@
     "@aws-sdk/client-s3": "3.1161.0",
     "@electric-sql/pglite": "0.5.13",
     "@vercel/oidc-aws-credentials-provider": "3.3.17",
+    "glisse": "0.5.0",
     "next": "16.4.3",
     "pdf-lib": "1.17.1",
     "postgres": "4.0.0",
