@@ -160,7 +160,7 @@ Nothing here is live. Reminder email (B12) stays off until all three are there: 
 
 On, the daily run emails each reminder it wrote (`lib/server/mail.ts`):
 - once, plain text only, through the configuration set `shipshape-mail` (no open or click tracking; SES itself suppresses addresses that bounce or complain);
-- only reminders, never signing codes, and only to the account address of an owner or admin of the workspace who signed up through Cognito, never a vendor's or signer's address;
+- each kind to its own recipients only (`QUEUE_SQL`): reminders to the account address of an owner or admin of the workspace who signed up through Cognito; never signing codes, and never a vendor's, signer's or sample visitor's address (the other kinds, below, are off until each is turned on);
 - at most 10 per account and 200 in all per 24 hours, and none over 3 days old;
 - never to an address on the app's suppression list (`app.email_suppressions`, filled from SES's bounce and complaint notifications, which `POST /api/mail/events` takes only from `shipshape-mail-events` with a valid SNS signature). A failed send is retried by the next two daily runs.
 
@@ -185,12 +185,35 @@ aws cloudformation deploy --region us-east-1 --stack-name shipshape-app-role --t
   --parameter-overrides SenderAddress=<the sender address> SenderIdentityArn=<mail IdentityArn>
 ```
 
-5. **First, the words (Security MUST-SES1, #35):** the release that sets `SHIPSHAPE_EMAIL=1` also changes the privacy policy's "Who else handles your data" email line and the related copy (Pricing, Terms, FAQ, Deadlines: "ShipShape doesn't send email yet") to say that reminder emails go through Amazon SES, what they hold (the document's title and date), to whom (owners and admins of the workspace, at their sign-in address) and how to stop them (archive the document or clear its dates; the email says so too, `REMINDER_FOOTER`), and it bumps `TERMS_VERSION`. Security reads that diff before the variable is set. Then run `npm run migrate` against production (0049 adds the outbox's sending columns and the suppression list), and set in Vercel, Production only: `SHIPSHAPE_EMAIL=1`, `SHIPSHAPE_EMAIL_FROM=<the sender address>` and `SHIPSHAPE_SES_EVENTS_TOPIC_ARN=<mail EventsTopicArn>` (`AWS_REGION` is already there). Redeploy. `/api/health` answers 503 with `"config": "missing"` if any of them is missing or invalid.
+5. **First, the words (Security MUST-SES1, #35):** the release that sets `SHIPSHAPE_EMAIL=1` also changes the privacy policy's "Who else handles your data" email line, its "The reminders and signing codes ShipShape would have emailed" line (what's kept), and the related copy (Home's capability list and its Stay current step, Pricing, Status's Email row, Terms, FAQ, Deadlines in both looks: v2 and the `SHIPSHAPE_UI=v1` page's "ShipShape doesn't send email yet") to say that reminder emails go through Amazon SES, what they hold (the document's title and date), to whom (owners and admins of the workspace, at their sign-in address) and how to stop them (archive the document or clear its dates; the email says so too, `footer` in `lib/server/mail.ts`), and it bumps `TERMS_VERSION`. Security reads that diff before the variable is set. Then run `npm run migrate` against production (0049 adds the outbox's sending columns and the suppression list; 0050 the other kinds' columns), and set in Vercel, Production only: `SHIPSHAPE_EMAIL=1`, `SHIPSHAPE_EMAIL_FROM=<the sender address>` and `SHIPSHAPE_SES_EVENTS_TOPIC_ARN=<mail EventsTopicArn>` (`AWS_REGION` and `CONTACT_EMAIL`, the support address every footer names, are already there). Every footer says "reply" only when `SHIPSHAPE_EMAIL_FROM` is `CONTACT_EMAIL` (the monitored inbox); otherwise it says "write to" `CONTACT_EMAIL`. Redeploy. `/api/health` answers 503 with `"config": "missing"` if any of them is missing or invalid.
 6. Confirm the topic's subscription: it was pending since step 1 (the endpoint answered 404 while email was off). In the SNS console, open `shipshape-mail-events`, select the subscription and choose "Request confirmation"; the app confirms it itself. `aws sns list-subscriptions-by-topic --region us-east-1 --topic-arn <EventsTopicArn>` then shows a subscription ARN, not `PendingConfirmation`.
 7. Run `scripts/probe-aws.mjs` again with `PROBE_SES_SENDER` and `PROBE_SES_IDENTITY_ARN` set too: the role must allow `ses:SendEmail` exactly as `app-role.yaml` writes it.
 8. Sign-up codes from the sender too (a separate decision, only after step 3: in the sandbox Cognito couldn't email anyone): redeploy `shipshape-signin` with `CodesFrom="ShipShape <the sender address>" CodesIdentityArn=<mail IdentityArn>`, and in the same release change the privacy policy's sender to the address (Security answer 6). The session needs `iam:CreateServiceLinkedRole`: Cognito makes its service-linked role for SES.
 
 To turn it off: delete `SHIPSHAPE_EMAIL` and redeploy (sending stops at once); then redeploy `shipshape-app-role` and `shipshape-signin` with the four email parameters empty (`SenderAddress= SenderIdentityArn=`, `CodesFrom= CodesIdentityArn=`), and delete the `shipshape-mail` stack (the identity, configuration set, topic and subscription go with it; nothing is retained). SES costs $0.10 per 1,000 emails; the topic's HTTPS deliveries cost pennies.
+
+### The other kinds (Security 2026-11-04 1058): each off until its own turn-on
+
+Built and off: the welcome (C), the account deletion record (D-1) and the waitlist's "accounts are open" note (B). Signing codes (E) stay closed. Each kind has its own flag, exactly `1` or unset, and does nothing without `SHIPSHAPE_EMAIL=1` too. Every kind goes through the same sender, configuration set, plain text, suppression list and shared caps (`lib/server/mail.ts`).
+
+Before any kind turns on, "stop" must work: when someone replies "stop", or writes asking for no more email or to come off the waitlist, run `node scripts/email-stop.ts` with `MIGRATE_DATABASE_URL`, `DATABASE_CA_CERT` and production's `SHIPSHAPE_HASH_KEY` set for that run, and type the address on stdin. In one transaction as `shipshape_owner` it adds the address's keyed hash to `app.email_suppressions` (reason `stop`), so nothing of any kind is emailed to it again, and deletes its `app.waitlist` entry, so the waitlist note's "come off the list" and "we'll delete it" are true (Security S-W1). It prints what it did ("Waitlist entry removed." or "No waitlist entry."), never the address.
+
+For each kind, in this order: Security reads that kind's code; Preston says yes for that kind; the same release adds its privacy words (K4, below), dates the privacy policy and bumps `TERMS_VERSION`, and Security reads that diff; then set its flag in Vercel, Production only, and redeploy. To turn a kind off, delete its flag and redeploy.
+
+| Kind | Flag | Also needs | Privacy words to add at turn-on (K4) |
+| --- | --- | --- | --- |
+| Welcome (C) | `SHIPSHAPE_EMAIL_WELCOME=1` | `SHIPSHAPE_APP_URL`. Re-check Draft C's cited lines (Free limits, Home's steps) on the deployed SHA; it says "We don't send a welcome series", so none may be added | One welcome email after you create an account, to your account's address. |
+| Deletion record (D-1) | `SHIPSHAPE_EMAIL_DELETION=1` | Nothing else. Its copy never says it's the signal that someone else deleted the account | When you delete your account, we send one email to its address to confirm it. The address isn't kept for that. |
+| Waitlist note (B) | `SHIPSHAPE_EMAIL_WAITLIST=1`, only for a batch's send | `SHIPSHAPE_APP_URL` and `SHIPSHAPE_POSTAL_ADDRESS` (P-E, one line, in the footer; the sender refuses to run without it) | One email to the waitlist when accounts open, to the address you gave; Collect sign-ups get only Collect's note. |
+
+The privacy words name every kind that is on (reminders, the welcome, the deletion record, the waitlist note) and what each is sent to.
+
+**B, each batch** (a marked one-off; the list is never exported):
+1. MUSTs before the first batch: the postal address is set; "Pro is $15 a month" (`lib/plans.ts`, the note's text) is re-checked against Money's sign-off and the live Stripe price; accounts are open in production (`SHIPSHAPE_REAL_DOCS=1`, `/signin` offers accounts).
+2. With `SHIPSHAPE_EMAIL_WAITLIST` unset, as the master: `psql "$MIGRATE_DATABASE_URL" -v ON_ERROR_STOP=1 -v batch_size=25 -f scripts/waitlist-open-batch.sql` (at most 50; Cognito's own sender codes about 50 sign-ups a day). It prints the marker: `row_count`, `list_sha256` (the sha256 of the batch's lowercased addresses, sorted, joined by newlines, computed in SQL) and `body_sha256` (the note's text).
+3. Send the marker to Security for their mark and to Preston for his yes for this batch. Then set `SHIPSHAPE_EMAIL_WAITLIST=1`, redeploy, and let the daily run send it (it re-checks every address: still on the waitlist, no Collect interest, no account, not suppressed); then delete the flag and redeploy.
+4. After the batch, read its bounce and complaint rates (SES console, the configuration set's metrics). **If complaints are above 0.1%, stop: no further batch.**
+5. Rows not sent within 3 days are never sent. Before the next batch, as the master: `delete from app.outbox where kind = 'waitlist_open' and claimed_at is null and sent_at is null;`. An address gets the note once across batches (`outbox_waitlist_open_once`).
 
 ## Running production
 
@@ -373,6 +396,8 @@ The next `npm run migrate` applies it again. Undo only the newest applied migrat
 `0048_delete_document.down.sql` (Delete for good) drops `app.delete_document`, puts back 0039's `esign_issue_code` and the outbox without `document_id`, and gives signed-in owners and admins their direct delete on `app.documents` back (0001's grant and policy). Documents already deleted stay deleted, with their History rows; files still queued in `app.storage_cleanup` stay queued for the daily run. `tests/delete-document.test.ts` proves down then up for 0048 on PGlite.
 
 `0049_email_sending.down.sql` (reminder email) drops `app.email_suppressions` and the outbox's sending columns (`claimed_at`, `sent_at`, `attempts`, `last_error`, `ses_message_id`). Turn email off first: the sender reads them. The outbox rows stay. `tests/mail.test.ts` proves down then up for 0049 on PGlite.
+
+`0050_email_kinds.down.sql` (the welcome and waitlist kinds) drops `app.queue_welcome`, deletes the welcome and waitlist rows, and puts back 0049's outbox (no `user_id`, `waitlist_email` or `address_sha256`, `org_id` required) and 0039's read policy. Every `stop` suppression stays, with the reason check that allows it (Security S-R1): a stop is a person's request, and reminders keep going after a rollback. Turn `SHIPSHAPE_EMAIL_WELCOME` and `SHIPSHAPE_EMAIL_WAITLIST` off first. `tests/mail.test.ts` proves down (stops kept) then up for 0050 on PGlite.
 
 ## Not in these templates (operator or the account owner, at M6)
 

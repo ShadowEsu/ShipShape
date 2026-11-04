@@ -2,10 +2,12 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { asService, asUser } from "@/lib/server/db";
 import { sameOrigin } from "@/lib/server/http";
+import { WELCOME } from "@/lib/server/mail";
 import {
   authIsRecent,
   createLocalUser,
   decodeSession,
+  DEFAULT_WORKSPACE_NAME,
   encodeSession,
   endAllSessions,
   endOneSession,
@@ -214,6 +216,49 @@ describe("signing in and out", () => {
     await Promise.all([1, 2, 3].map(() => asService((tx) => tx.query("select pg_sleep(0.1)"))));
     await Promise.all([finishSignIn(userId, { demo: false }), finishSignIn(userId, { demo: false })]);
     expect(await rows("select 1 from app.members where user_id = $1", userId)).toBe(1);
+  });
+
+  it("a Cognito account's first sign-in queues one welcome with its new workspace; never again, never a local account, never someone who already belongs to a workspace (Security 1058, C)", async () => {
+    const cognito = async (email: string) => {
+      const userId = await createLocalUser(email, false);
+      await db.root((tx) => tx.query("insert into app.identities (provider, subject, user_id) values ('cognito', $1, $2)", [crypto.randomUUID(), userId]));
+      return userId;
+    };
+    const welcomes = (userId: string) =>
+      db.root((tx) =>
+        tx.query<{ org_id: string; to_email: string; subject: string; body: string }>("select org_id, to_email, subject, body from app.outbox where kind = 'welcome' and user_id = $1", [userId]),
+      );
+
+    const first = await cognito("welcome-first@example.com");
+    await finishSignIn(first, { demo: false });
+    const { orgId } = await requireWorkspace();
+    expect(await welcomes(first)).toEqual([{ org_id: orgId, to_email: "welcome-first@example.com", subject: WELCOME.subject, body: WELCOME.body }]);
+    await finishSignIn(first, { demo: false });
+    expect(await welcomes(first)).toHaveLength(1);
+    // Once per person, whatever calls it again (the unique key on the person's welcome).
+    const queueWelcome = (userId: string, org: string) => asUser(userId, (tx) => tx.query("select app.queue_welcome($1, $2, $3)", [org, WELCOME.subject, WELCOME.body]));
+    await queueWelcome(first, orgId);
+    expect(await welcomes(first)).toHaveLength(1);
+    // The name it says the workspace has is the one it gets.
+    expect(WELCOME.body).toContain(`It's called "${DEFAULT_WORKSPACE_NAME}" until you rename it`);
+
+    const local = await createLocalUser("welcome-local@example.com", false);
+    await finishSignIn(local, { demo: false });
+    expect(await welcomes(local)).toEqual([]);
+
+    // Added to the first person's workspace before signing in: they join it, and no workspace or welcome is made.
+    const joiner = await cognito("welcome-joiner@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'owner')", [orgId, joiner]));
+    await finishSignIn(joiner, { demo: false });
+    expect(await welcomes(joiner)).toEqual([]);
+    expect(await rows("select 1 from app.members where user_id = $1", joiner)).toBe(1);
+
+    // app.queue_welcome itself refuses anything but its caller's own sole, only, real workspace.
+    await queueWelcome(joiner, orgId);
+    const [sample] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [joiner]));
+    await db.root((tx) => tx.query("delete from app.members where user_id = $1 and org_id = $2", [joiner, orgId]));
+    await queueWelcome(joiner, sample.id);
+    expect(await welcomes(joiner)).toEqual([]);
   });
 
   it("sends the cookie only over HTTPS in production", async () => {
