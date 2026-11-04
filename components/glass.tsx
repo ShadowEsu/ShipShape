@@ -45,8 +45,14 @@ export function GlassFrame({ children }: { children: React.ReactNode }) {
 
 export interface GlassTab {
   href: string;
+  /** The words, for the tab's width. */
+  text: string;
   label: React.ReactNode;
 }
+
+// Glisse's tabs are all one width, so each is as wide as the longest label needs: about 7.4px a character at 13px
+// (Geist), plus 22px of air. Never under 64px.
+const tabWidth = (tabs: readonly GlassTab[]) => `${Math.max(64, Math.ceil(Math.max(...tabs.map((t) => t.text.length)) * 7.4 + 22))}px`;
 
 /**
  * A row of tabs that are links, as Glisse's tab bar: still links in a navigation landmark (the current one marked
@@ -57,6 +63,7 @@ export function GlassTabs({ label, tabs, current }: { label: string; tabs: reado
     <TabBar
       aria-label={label}
       className="glass-tabs"
+      style={{ "--glass-tab-width": tabWidth(tabs) }}
       link={Link}
       items={tabs.map((t) => ({ value: t.href, label: t.label, href: t.href }))}
       value={current}

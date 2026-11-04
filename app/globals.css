@@ -825,9 +825,18 @@ body {
     min-height: 40px;
   }
 }
-/* Tabs that are links on Glisse's tab bar: up to 96px a tab, narrower when five share a phone's width. */
+/* Tabs that are links on Glisse's tab bar, from md up: 44px tall, as the hairline row (36px tabs in a 4px inset), each
+   as wide as the longest label needs (GlassTabs sets --glass-tab-width). On the phone the row keeps its hairline tabs:
+   Glisse's equal-width tabs don't fit beside the Kind and Order menus, and the list would drop a row. */
 .ui-v2 .glass-tabs.lg-tab-bar {
-  --lg-tab-width: min(96px, calc((100vw - 2.5rem) / var(--lg-tabs)));
+  --lg-tab-width: var(--glass-tab-width, 88px);
+  --lg-tab-height: 36px;
+  display: none;
+}
+@media (width >= 48rem) {
+  .ui-v2 .glass-tabs.lg-tab-bar {
+    display: inline-flex;
+  }
 }
 .ui-v2 .glass-tabs :is(.lg-tab, .lg-tab-copy) {
   gap: 6px;
@@ -859,9 +868,10 @@ body {
   --lg-glass: rgb(255 255 255 / 0.8);
   pointer-events: auto;
 }
+/* The page's column, not main, ends 72px higher, so main's own box stays as it was. */
 @media (max-width: 767px) {
-  .ui-v2[data-tab-bar] main {
-    padding-bottom: calc(4rem + 72px + env(safe-area-inset-bottom));
+  .ui-v2[data-tab-bar] div:has(> main) {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
   }
   .ui-v2[data-tab-bar] .save-dock {
     bottom: calc(80px + env(safe-area-inset-bottom));

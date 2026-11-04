@@ -13,24 +13,12 @@ export interface TabLink {
 
 /**
  * A row of tabs that are links: the current one is marked for everyone (aria-current) and underlined (Design calm v2).
- * Under glass, the same links on Glisse's tab bar.
+ * Under glass, from md up the same links on Glisse's tab bar; the phone keeps this row (globals.css, `.glass-tabs`).
  */
 export function TabLinks({ label, tabs }: { label: string; tabs: TabLink[] }) {
   const glass = useGlass();
-  if (glass !== "off") {
-    const items = tabs.map((t) => ({
-      href: t.href,
-      label: (
-        <>
-          {t.text}
-          {t.count !== undefined && <span className="tab-count">{t.count}</span>}
-        </>
-      ),
-    }));
-    return <GlassTabs label={label} tabs={items} current={tabs.find((t) => t.current)?.href ?? null} />;
-  }
-  return (
-    <nav aria-label={label} className="tab-row">
+  const row = (
+    <nav aria-label={label} className={glass === "off" ? "tab-row" : "tab-row md:hidden"}>
       {tabs.map((t) => (
         <Link key={t.href} href={t.href} aria-current={t.current ? "page" : undefined} className="tab">
           {t.text}
@@ -38,6 +26,23 @@ export function TabLinks({ label, tabs }: { label: string; tabs: TabLink[] }) {
         </Link>
       ))}
     </nav>
+  );
+  if (glass === "off") return row;
+  const items = tabs.map((t) => ({
+    href: t.href,
+    text: t.count === undefined ? t.text : `${t.text} ${t.count}`,
+    label: (
+      <>
+        {t.text}
+        {t.count !== undefined && <span className="tab-count">{t.count}</span>}
+      </>
+    ),
+  }));
+  return (
+    <>
+      <GlassTabs label={label} tabs={items} current={tabs.find((t) => t.current)?.href ?? null} />
+      {row}
+    </>
   );
 }
 

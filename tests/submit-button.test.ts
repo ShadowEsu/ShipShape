@@ -11,7 +11,7 @@ vi.mock("react-dom", async (original) => ({ ...(await original<typeof import("re
 
 async function render(level: GlassLevel = "off", className?: string): Promise<string> {
   const button = createElement(SubmitButton, { pendingLabel: "Signing out…", label: "Sign out Chrome on an iPhone", className, children: "Sign out" });
-  const { prelude } = await prerender(createElement(GlassProvider, { level }, button));
+  const { prelude } = await prerender(createElement(GlassProvider, { level, children: button }));
   return new Response(prelude).text();
 }
 
