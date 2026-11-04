@@ -143,7 +143,6 @@ function reminderText(r: DueReminder): { subject: string; body: string } {
   const body = [
     `${r.title} ${r.days_left >= 0 ? ahead : passed} ${when}.`,
     "Renew it, then upload the new version in ShipShape so your passport links share the current one.",
-    "You get this reminder because you're an owner or admin of the workspace.",
   ].join("\n\n");
   return { subject, body };
 }

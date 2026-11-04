@@ -3,25 +3,38 @@ import { verify } from "node:crypto";
 import { SendEmailCommand, SESv2Client, type SendEmailCommandInput } from "@aws-sdk/client-sesv2";
 import { z } from "zod";
 import { productionAwsClient } from "./aws";
-import { keyedHash } from "./crypto";
+import { hashKey } from "./crypto";
 import { asService } from "./db";
+import { BACKUP_DAYS } from "../legal";
+import { PLANS } from "../plans";
+import { fmtDay, isoToday } from "../today";
+import { appUrl, contactEmail } from "./flags";
+import { suppressionHash } from "./suppression";
 
 /**
- * Reminder email through Amazon SES (B12; Security 2026-11-04 0715, answer 5). Off unless
+ * Email through Amazon SES (B12; Security 2026-11-04 0715, answer 5, and 1058, K1-K5). Off unless
  * SHIPSHAPE_EMAIL=1 and the sender's settings are valid (mailConfig); off, nothing here runs and the
- * outbox stays the only place reminders land.
- *
- * - Only reminders (never signing codes), only to the account address of an owner or admin of the
- *   row's workspace who signed in through Cognito (whose ID token said email_verified), in a real
- *   workspace, with no deletion pending. A vendor's or signer's address is never sent to.
+ * outbox stays the only place reminders land. The kinds, each with its own recipient rule (QUEUE_SQL) and
+ * each but reminders behind its own flag as well, off by default (K5):
+ * - 'reminder' (SHIPSHAPE_EMAIL=1): to the account address of an owner or admin of the row's workspace.
+ * - 'welcome' (SHIPSHAPE_EMAIL_WELCOME=1): once per person, to the account address of the sole owner of the
+ *   new workspace their first sign-in made.
+ * - 'waitlist_open' (SHIPSHAPE_EMAIL_WAITLIST=1): once per address, to a waitlist address with no Collect
+ *   interest that belongs to no account, from a reviewed batch (scripts/waitlist-open-batch.sql).
+ * - The deletion record (SHIPSHAPE_EMAIL_DELETION=1, sendDeletionRecord): sent directly from the delete
+ *   action to the deleting person's verified address, held in memory only; never queued.
+ * Signing codes ('esign_code') are not on the list and are never emailed. The account kinds need a Cognito
+ * identity (whose ID token said email_verified) in a real workspace with no deletion pending; a vendor's,
+ * signer's or sample visitor's address never qualifies for any kind.
  * - Plain text only: no HTML part, so no tracking pixel or rewritten link; the configuration set
  *   (infra/mail.yaml) has no open or click tracking either, and suppresses bounces and complaints.
- * - Caps per account address and overall, per rolling 24 hours; a suppression list the app fills from
- *   SES's bounce and complaint notifications (handleSesNotification) and checks before every send.
+ * - Caps per address and overall, per rolling 24 hours, shared by every kind; a suppression list the app
+ *   fills from SES's bounce and complaint notifications (handleSesNotification) and from "stop" requests
+ *   (suppressAddress, scripts/email-stop.ts), checked before every send of every kind.
  * - Each row is claimed before SES is called and marked sent after, so it goes out at most once
  *   (0049_email_sending.sql); a failed send is retried by the next daily run, up to MAX_ATTEMPTS.
- * The app role may call ses:SendEmail only, from the one sender, through the one identity and
- * configuration set (infra/app-role.yaml).
+ * The app role may call ses:SendEmail only (never SendBulkEmail), from the one sender, through the one
+ * identity and configuration set (infra/app-role.yaml).
  */
 
 type Env = Record<string, string | undefined>;
@@ -43,16 +56,41 @@ export const MAX_ATTEMPTS = 3;
 // SES says to stop for now: the rest of the run would fail the same way, so they wait for tomorrow.
 const STOP_ERRORS: Record<string, true> = { TooManyRequestsException: true, LimitExceededException: true, SendingPausedException: true, AccountSuspendedException: true };
 
+/** The kinds the sender takes from the outbox: the one allow-list (Security K1). Signing codes are not on it. */
+export const QUEUED_KINDS = ["reminder", "welcome", "waitlist_open"] as const;
+export type QueuedKind = (typeof QUEUED_KINDS)[number];
+
+/** Each kind's own flag (Security K5): exactly "1" turns it on, and only with SHIPSHAPE_EMAIL=1 too. Reminders need SHIPSHAPE_EMAIL=1 alone (#35). */
+export const KIND_FLAGS = { welcome: "SHIPSHAPE_EMAIL_WELCOME", waitlist_open: "SHIPSHAPE_EMAIL_WAITLIST", deletion: "SHIPSHAPE_EMAIL_DELETION" } as const;
+
 export interface MailConfig {
   /** The verified sender, e.g. reminders@example.com (app-role.yaml's SenderAddress). */
   from: string;
   region: string;
   /** infra/mail.yaml's SNS topic for bounces and complaints: the only one whose notifications count. */
   topicArn: string;
+  /** CONTACT_EMAIL, the support address: every footer says to write to it (Security K3). */
+  support: string;
+  /** The sender is the support address, so a reply reaches the monitored inbox: only then may a footer say "reply" (Security K3, F2). */
+  replyReaches: boolean;
+  /** The queued kinds that are on. */
+  kinds: QueuedKind[];
+  /** The deletion record (sendDeletionRecord) is on. */
+  deletionRecord: boolean;
+  /** SHIPSHAPE_APP_URL's origin: the welcome's and the waitlist note's link. Set whenever either is on. */
+  appUrl: string | null;
+  /** SHIPSHAPE_POSTAL_ADDRESS (P-E), in the waitlist note's footer. Set whenever that kind is on. */
+  postalAddress: string | null;
 }
 
 const REGION = /^[a-z]{2}(?:-[a-z]+)+-\d+$/;
 const TOPIC_ARN = /^arn:aws:sns:([a-z]{2}(?:-[a-z]+)+-\d+):\d{12}:[A-Za-z0-9_-]{1,256}$/;
+
+function kindOn(env: Env, name: string): boolean {
+  const value = env[name] ?? "";
+  if (value !== "" && value !== "1") throw new Error(`${name} must be 1 or unset`);
+  return value === "1";
+}
 
 /** Email sending's settings, or null while it's off (SHIPSHAPE_EMAIL isn't exactly "1"). On with a setting missing or invalid throws. */
 export function mailConfig(env: Env): MailConfig | null {
@@ -64,7 +102,27 @@ export function mailConfig(env: Env): MailConfig | null {
   if (!REGION.test(region)) throw new Error("Email sending (SHIPSHAPE_EMAIL=1) needs AWS_REGION");
   const topicRegion = TOPIC_ARN.exec(topicArn)?.[1];
   if (topicRegion !== region) throw new Error("Email sending (SHIPSHAPE_EMAIL=1) needs SHIPSHAPE_SES_EVENTS_TOPIC_ARN, an SNS topic ARN in AWS_REGION (infra/mail.yaml's EventsTopicArn)");
-  return { from, region, topicArn };
+  const support = contactEmail(env);
+  if (!support) throw new Error("Email sending (SHIPSHAPE_EMAIL=1) needs CONTACT_EMAIL, the support address every email's footer names");
+  const welcome = kindOn(env, KIND_FLAGS.welcome);
+  const waitlist = kindOn(env, KIND_FLAGS.waitlist_open);
+  const deletionRecord = kindOn(env, KIND_FLAGS.deletion);
+  const url = appUrl(env)?.origin ?? null;
+  if ((welcome || waitlist) && !url) throw new Error(`${welcome ? KIND_FLAGS.welcome : KIND_FLAGS.waitlist_open}=1 needs SHIPSHAPE_APP_URL, the address the email links to`);
+  const postal = env.SHIPSHAPE_POSTAL_ADDRESS?.trim() ?? "";
+  // Security B: the waitlist note refuses to send while the postal address is empty.
+  if (waitlist && (!postal || postal.length > 200 || /\p{Cc}/u.test(postal))) throw new Error(`${KIND_FLAGS.waitlist_open}=1 needs SHIPSHAPE_POSTAL_ADDRESS, the postal address its footer carries (one line)`);
+  return {
+    from,
+    region,
+    topicArn,
+    support,
+    replyReaches: from.toLowerCase() === support.toLowerCase(),
+    kinds: QUEUED_KINDS.filter((k) => k === "reminder" || (k === "welcome" ? welcome : waitlist)),
+    deletionRecord,
+    appUrl: url,
+    postalAddress: waitlist ? postal : null,
+  };
 }
 
 /** For pages: whether reminders are emailed. A broken setting counts as off (the launch check refuses it in production). */
@@ -107,53 +165,141 @@ export function setMailSenderForTests(s: MailSender | undefined) {
   mailSender = s;
 }
 
-/**
- * Why the person gets the email and how to stop it (Security 2026-11-04 #35, SHOULD), in every reminder's
- * text. Both ways are real today: a reminder is about one document's date, and an archived document or one
- * with no dates gets none (deadlines.ts); a reply reaches the sender address, which is the support inbox.
- */
-export const REMINDER_FOOTER =
-  "You're getting this because you're an owner or admin of this workspace on ShipShape. To stop reminders about this document, archive it or clear its dates in ShipShape. Questions: reply to this email.";
+// The texts ----------------------------------------------------------------------------------------------
+// Plan 2026-11-04 §3, Drafts B, C and D, with Security 1058's footers. Plain text; {app_url} is filled in at
+// sending (the outbox keeps the reviewed text as it is, so a batch's body sha256 is the text's own).
 
-/** The request for one reminder: a plain-text body only (the reminder, then REMINDER_FOOTER), through the configuration set. */
-export function reminderEmail(cfg: MailConfig, m: { to_email: string; subject: string; body: string }): SendEmailCommandInput {
+export interface MailText {
+  subject: string;
+  body: string;
+}
+
+const free = PLANS.free;
+
+/** Draft C: the welcome, once, after the first sign-in made the person's workspace (session.ts finishSignIn). */
+export const WELCOME: MailText = {
+  subject: "Your ShipShape workspace is ready",
+  body: [
+    `You created a ShipShape account, and your workspace is ready. It's called "My business" until you rename it; people you share with see that name on your links.`,
+    "Home lists your next steps. 3 of them:",
+    "- Name your workspace in Settings.\n- Confirm your business facts: name, address, EIN. Typed once, used everywhere.\n- Fill a W-9. ShipShape fills the official IRS form from those facts.",
+    `Free holds ${free.documents} active documents and ${free.passports} open passport link. Settings has an export of everything as one ZIP file, and account deletion.`,
+    "Open your workspace: {app_url}/app",
+    "The ShipShape team",
+  ].join("\n\n"),
+};
+
+/** Draft B: the waitlist's "accounts are open" note, once per address (scripts/waitlist-open-batch.sql holds the same text). */
+export const WAITLIST_OPEN: MailText = {
+  subject: "ShipShape accounts are open",
+  body: [
+    "You joined the ShipShape waitlist to hear when real accounts open. They're open now.",
+    "With an account you can keep your W-9, insurance certificates, licenses and agreements in one place, fill the official IRS W-9 from business facts you confirm once, and share the documents you pick through one link that lasts 7, 30 or 90 days.",
+    `Free holds ${free.documents} active documents and ${free.passports} open link. Pro is $${PLANS.pro.price} a month.`,
+    "To sign up you need an email address, a password and an authenticator app on your phone for the two-step code.",
+    "Create your account: {app_url}/signin",
+    "This is the only email the waitlist gets about accounts opening.",
+    "The ShipShape team",
+  ].join("\n\n"),
+};
+
+/**
+ * Why the person gets the email and how to stop it (Security #35 SHOULD; 1058 K3), at the end of every email.
+ * "Reply" only when a reply reaches the support inbox (the sender is CONTACT_EMAIL); otherwise "write to" it.
+ * A reminder stops when its document is archived or loses its dates (deadlines.ts); a "stop" puts the address
+ * on the suppression list (scripts/email-stop.ts), which every kind checks before sending.
+ */
+export function footer(cfg: MailConfig, kind: QueuedKind): string {
+  const s = cfg.support;
+  const reply = cfg.replyReaches;
+  switch (kind) {
+    case "reminder":
+      return `You're getting this because you're an owner or admin of this workspace on ShipShape. To stop reminders about this document, archive it or clear its dates in ShipShape. Questions: ${reply ? "reply to this email" : `write to ${s}`}.`;
+    case "welcome":
+      return `You're getting this once, because this address created a ShipShape account. We don't send a welcome series. Questions: write to ${s}. To get no more email from ShipShape, ${
+        reply ? `reply "stop" or write to that address.` : "write to that address."
+      }`;
+    case "waitlist_open":
+      return `You're getting this because this address joined the waitlist on ShipShape's home page. We don't check addresses when people join, so if that wasn't you, ${
+        reply ? `reply and we'll delete it. To come off the list, reply "stop" or write to ${s}.` : `write to ${s} and we'll delete it. To come off the list, write to that address.`
+      }\nShipShape is operated by Unvibe, ${cfg.postalAddress ?? ""}`;
+  }
+}
+
+/** One plain-text message through the configuration set: the text, then the footer. Nothing else: no HTML part, no headers, no tracking. */
+function textEmail(cfg: MailConfig, to: string, subject: string, body: string, foot: string): SendEmailCommandInput {
   return {
     FromEmailAddress: cfg.from,
-    Destination: { ToAddresses: [m.to_email] },
-    Content: { Simple: { Subject: { Data: m.subject, Charset: "UTF-8" }, Body: { Text: { Data: `${m.body}\n\n--\n${REMINDER_FOOTER}`, Charset: "UTF-8" } } } },
+    Destination: { ToAddresses: [to] },
+    Content: { Simple: { Subject: { Data: subject, Charset: "UTF-8" }, Body: { Text: { Data: `${body}\n\n--\n${foot}`, Charset: "UTF-8" } } } },
     ConfigurationSetName: CONFIGURATION_SET,
   };
 }
 
-// Sending ---------------------------------------------------------------------------------------------
-
-const suppressionHash = (address: string) => keyedHash(address.trim().toLowerCase(), "email-suppression");
+const REVIEWED: Record<Exclude<QueuedKind, "reminder">, MailText> = { welcome: WELCOME, waitlist_open: WAITLIST_OPEN };
 
 /**
- * Reminders that may be emailed: unsent, unclaimed, under the attempt limit and recent; in a real
- * workspace; addressed to the account address of one of its owners or admins who signs in through
- * Cognito (verified email; a sample visitor never has a Cognito identity) and isn't being deleted.
+ * The request for one queued row. A reminder is its own text (deadlines.ts writes it); a welcome or waitlist
+ * note must be exactly its reviewed text, or it isn't sent at all (null).
+ */
+export function queuedEmail(cfg: MailConfig, m: { kind: QueuedKind; to_email: string; subject: string; body: string }): SendEmailCommandInput | null {
+  if (m.kind === "reminder") return textEmail(cfg, m.to_email, m.subject, m.body, footer(cfg, m.kind));
+  const text = REVIEWED[m.kind];
+  if (m.subject !== text.subject || m.body !== text.body || !cfg.appUrl || (m.kind === "waitlist_open" && !cfg.postalAddress)) return null;
+  return textEmail(cfg, m.to_email, text.subject, text.body.replaceAll("{app_url}", cfg.appUrl), footer(cfg, m.kind));
+}
+
+// Sending ---------------------------------------------------------------------------------------------
+
+/**
+ * What may be emailed: unsent, unclaimed, under the attempt limit and recent (3 days: a kind turned on
+ * later never mails out a backlog), of a kind on the allow-list and turned on ($3), and meeting that
+ * kind's own recipient rule (Security K1):
+ * - reminder: the account address of an owner or admin of the row's real workspace;
+ * - welcome: the account address of the row's own person, owner of the row's real workspace;
+ * - waitlist_open: an address still on the waitlist with no Collect interest, that belongs to no account
+ *   and is no workspace's vendor, contact or signer, nor a sample's made-up address (@sample.example, deadlines.ts).
+ * Account addresses must sign in through Cognito (a verified email; a sample visitor never has a Cognito
+ * identity, nor an address) and not be being deleted.
  */
 const QUEUE_SQL = `
-  select m.id, m.to_email, m.subject, m.body
+  select m.id, m.kind, m.to_email, m.subject, m.body
   from app.outbox m
-  join app.organizations o on o.id = m.org_id
-  where m.kind = 'reminder' and m.sent_at is null and m.claimed_at is null and m.attempts < $1
+  left join app.organizations o on o.id = m.org_id
+  where m.kind in ('reminder', 'welcome', 'waitlist_open') and m.kind = any($3::text[])
+    and m.sent_at is null and m.claimed_at is null and m.attempts < $1
     and m.created_at > now() - interval '3 days'
-    and not o.is_demo
-    and exists (
-      select 1
-      from auth.users u
-      join app.identities i on i.user_id = u.id and i.provider = 'cognito'
-      join app.members mb on mb.user_id = u.id and mb.org_id = m.org_id and mb.role in ('owner', 'admin')
-      where lower(u.email) = lower(m.to_email)
-        and not exists (select 1 from app.deletion_requests r where r.user_id = u.id)
+    and (
+      (m.kind = 'reminder' and not o.is_demo and exists (
+        select 1
+        from auth.users u
+        join app.identities i on i.user_id = u.id and i.provider = 'cognito'
+        join app.members mb on mb.user_id = u.id and mb.org_id = m.org_id and mb.role in ('owner', 'admin')
+        where lower(u.email) = lower(m.to_email)
+          and not exists (select 1 from app.deletion_requests r where r.user_id = u.id)
+      ))
+      or (m.kind = 'welcome' and not o.is_demo and exists (
+        select 1
+        from auth.users u
+        join app.identities i on i.user_id = u.id and i.provider = 'cognito'
+        join app.members mb on mb.user_id = u.id and mb.org_id = m.org_id and mb.role = 'owner'
+        where u.id = m.user_id and lower(u.email) = lower(m.to_email)
+          and not exists (select 1 from app.deletion_requests r where r.user_id = u.id)
+      ))
+      or (m.kind = 'waitlist_open' and m.org_id is null
+        and exists (select 1 from app.waitlist w where w.email = m.waitlist_email and w.email = lower(m.to_email) and not ('collect' = any(w.interests)))
+        and split_part(lower(m.to_email), '@', 2) <> 'sample.example'
+        and not exists (select 1 from auth.users u where lower(u.email) = lower(m.to_email))
+        and not exists (select 1 from app.vendors v where lower(v.email) = lower(m.to_email))
+        and not exists (select 1 from app.contacts c where lower(c.email) = lower(m.to_email))
+        and not exists (select 1 from app.signature_requests s where lower(s.signer_email) = lower(m.to_email)))
     )
   order by m.created_at, m.id
   limit $2`;
 
 interface Queued {
   id: string;
+  kind: QueuedKind;
   to_email: string;
   subject: string;
   body: string;
@@ -167,18 +313,20 @@ export interface MailRun {
 }
 
 /**
- * Emails the reminders waiting in the outbox (the daily run, after runReminders). Null while email is
- * off. Stops at `until` (the daily run's budget); what's left waits for the next run.
+ * Emails what waits in the outbox (the daily run, after runReminders): every kind that is on, under the
+ * same caps. Null while email is off. Stops at `until` (the daily run's budget); what's left waits for
+ * the next run.
  */
-export async function sendReminderMail(until = Number.POSITIVE_INFINITY): Promise<MailRun | null> {
+export async function sendQueuedMail(until = Number.POSITIVE_INFINITY): Promise<MailRun | null> {
   const cfg = mailConfig(process.env);
   if (!cfg) return null;
   mailSender ??= sesSender(sesClient(cfg, process.env));
   const ses = mailSender;
-  const queue = await asService((tx) => tx.query<Queued>(QUEUE_SQL, [MAX_ATTEMPTS, DAILY_CAP]));
+  const queue = await asService((tx) => tx.query<Queued>(QUEUE_SQL, [MAX_ATTEMPTS, DAILY_CAP, cfg.kinds]));
   const run: MailRun = { sent: 0, failed: 0, held: 0 };
   if (!queue.length) return run;
-  const hashes = queue.map((m) => suppressionHash(m.to_email));
+  const key = hashKey();
+  const hashes = queue.map((m) => suppressionHash(m.to_email, key));
   const suppressed = new Set(
     (await asService((tx) => tx.query<{ address_hash: string }>("select address_hash from app.email_suppressions where address_hash = any($1::text[])", [hashes]))).map(
       (r) => r.address_hash,
@@ -193,6 +341,12 @@ export async function sendReminderMail(until = Number.POSITIVE_INFINITY): Promis
       run.held++;
       continue;
     }
+    const request = queuedEmail(cfg, m);
+    if (!request) {
+      run.failed++;
+      console.error(`mail: ${m.id} not sent (not the reviewed text)`);
+      continue;
+    }
     const claim = await claimRow(m);
     if (claim === "over_daily_cap") {
       run.held += queue.length - i;
@@ -204,7 +358,7 @@ export async function sendReminderMail(until = Number.POSITIVE_INFINITY): Promis
     }
     let messageId: string | undefined;
     try {
-      messageId = await ses.send(reminderEmail(cfg, m));
+      messageId = await ses.send(request);
     } catch (e) {
       const name = e instanceof Error ? e.name.slice(0, 100) : "error";
       run.failed++;
@@ -243,6 +397,87 @@ async function claimRow(m: Queued): Promise<"claimed" | "taken" | "over_account_
     );
     return claimed.length ? "claimed" : "taken";
   });
+}
+
+// The account deletion record (Security 1058, D-1) -------------------------------------------------------
+
+/** Whether the deletion went through now, or was left for the daily run to finish (deleteAccount). */
+export type DeletionOutcome = "finished" | "still_finishing";
+
+/**
+ * Draft D, with Security's footer line. It never says it is the signal that someone else deleted the
+ * account: someone holding the session and the address gets it too (Security D, "known limit").
+ */
+export function deletionRecordText(cfg: MailConfig, outcome: DeletionOutcome, deletedOn: string): MailText & { footer: string } {
+  return {
+    subject: "Record of your ShipShape account deletion",
+    body: [
+      outcome === "finished"
+        ? `You deleted your ShipShape account on ${deletedOn}. This email is your record.`
+        : `You asked to delete your ShipShape account on ${deletedOn}. Part of it is still finishing; ShipShape completes it by itself within 2 days.`,
+      "Deleted with it:\n- every workspace where you were the only owner, with its documents, files, business facts and history;\n- those workspaces' passport links and signature requests, so the links stop working;\n- your membership of workspaces with another owner (their documents stay with them);\n- your sign-in, and your waitlist entry if you had one.",
+      `Copies people already downloaded stay with them. Deleted data can remain in backups for up to ${BACKUP_DAYS} days, then it's gone. We can't bring a workspace back.`,
+      `If you didn't do this, write to ${cfg.support} so we can find out how it happened.`,
+      "The ShipShape team",
+    ].join("\n\n"),
+    footer: `You're getting this because this address belonged to the ShipShape account ${outcome === "finished" ? "that was just deleted" : "you just asked to delete"}. ShipShape sends nothing else to this address unless you create a new account.`,
+  };
+}
+
+/**
+ * The address the deletion record goes to, read before the sign-in (and with it the address) is deleted:
+ * the account's own address, verified by its Cognito identity, whatever the person's role. Null while the
+ * record is off, for an account with no Cognito identity (a sample visitor, a local account), and for an
+ * address the same pipe as every kind refuses: on the suppression list, or at the per-address or overall cap
+ * (counted now, before the deletion takes the person's own reminders with their workspaces; the record has
+ * no row of its own, so it can't add to the count). The caller keeps it in memory only, for
+ * sendDeletionRecord: never in a table, the outbox or a log line.
+ */
+export async function deletionRecordAddress(userId: string): Promise<string | null> {
+  let cfg: MailConfig | null;
+  try {
+    cfg = mailConfig(process.env);
+  } catch {
+    return null;
+  }
+  if (!cfg?.deletionRecord) return null;
+  try {
+    return await asService(async (tx) => {
+      const [me] = await tx.query<{ email: string }>(
+        "select u.email from auth.users u where u.id = $1 and u.email is not null and exists (select 1 from app.identities i where i.user_id = u.id and i.provider = 'cognito')",
+        [userId],
+      );
+      if (!me) return null;
+      const suppressed = await tx.query("select 1 from app.email_suppressions where address_hash = $1", [suppressionHash(me.email, hashKey())]);
+      const [counts] = await tx.query<{ total: number; mine: number }>(
+        "select count(*)::int as total, (count(*) filter (where lower(to_email) = lower($1)))::int as mine from app.outbox where claimed_at > now() - interval '1 day'",
+        [me.email],
+      );
+      return suppressed.length > 0 || counts.total >= DAILY_CAP || counts.mine >= ACCOUNT_DAILY_CAP ? null : me.email;
+    });
+  } catch (e) {
+    // The record is optional; the deletion isn't. The error's name only (a query error may quote the address).
+    console.error(`mail: no deletion record, the address lookup failed (${e instanceof Error ? e.name.slice(0, 100) : "error"})`);
+    return null;
+  }
+}
+
+/**
+ * Sends the deletion record to `to` (deletionRecordAddress's), once: no retry, nothing stored, through the
+ * same sender, configuration set and plain text as every kind. A failure is logged by the error's name
+ * only, and the sign-in page's notice stays the record. Never throws: the deletion is done.
+ */
+export async function sendDeletionRecord(to: string, outcome: DeletionOutcome): Promise<void> {
+  try {
+    const cfg = mailConfig(process.env);
+    if (!cfg?.deletionRecord) return;
+    mailSender ??= sesSender(sesClient(cfg, process.env));
+    const text = deletionRecordText(cfg, outcome, fmtDay(isoToday()));
+    await mailSender.send(textEmail(cfg, to, text.subject, text.body, text.footer));
+  } catch (e) {
+    // The error's name only: SES's message may quote the address.
+    console.error(`mail: the deletion record wasn't sent (${e instanceof Error ? e.name.slice(0, 100) : "error"})`);
+  }
 }
 
 // Bounces and complaints ------------------------------------------------------------------------------
@@ -364,7 +599,8 @@ export async function handleSesNotification(raw: string, { fetchFn = fetch }: { 
         ? { reason: "complaint", recipients: event.complaint.complainedRecipients }
         : null;
   if (!suppress) return { status: 200, message: "ignored" };
-  const hashes = suppress.recipients.map((r) => suppressionHash(r.emailAddress));
+  const key = hashKey();
+  const hashes = suppress.recipients.map((r) => suppressionHash(r.emailAddress, key));
   await asService((tx) =>
     tx.query("insert into app.email_suppressions (address_hash, reason) select h, $2 from unnest($1::text[]) as h on conflict (address_hash) do nothing", [hashes, suppress.reason]),
   );
