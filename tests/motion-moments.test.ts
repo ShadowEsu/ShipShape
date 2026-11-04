@@ -13,10 +13,10 @@ describe("motion moments in the server HTML (spec §3.4)", () => {
   });
 
   it("a list arrives on its first load, and a celebration starts as the plain check", async () => {
-    expect(await html(createElement(Arrive, { list: "t", className: "hair-list" }, createElement("li", null, "a")))).toBe(
+    expect(await html(createElement(Arrive, { list: "t", className: "hair-list", children: createElement("li", null, "a") }))).toBe(
       '<ul class="hair-list m-arrive"><li>a</li></ul>',
     );
-    const check = await html(createElement(Celebrate, { trigger: "check-all" }, "✓"));
+    const check = await html(createElement(Celebrate, { trigger: "check-all", children: "✓" }));
     expect(check).not.toContain("celebrate-burst");
     expect(check).not.toContain("celebrate-check");
   });
