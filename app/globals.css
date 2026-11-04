@@ -146,6 +146,12 @@ body {
   .ui-v2 .btn-ghost {
     @apply border-[var(--line-2)] hover:bg-tile;
   }
+  /* A sending button (data-busy: busyButton in components/submit-button.tsx) keeps its colours. Its label already says
+     it's busy ("Saving…") and it keeps focus, so it's read, not dimmed: 50% made white on #878787, 3.59:1 (Design,
+     4 Nov). The pointer shows progress, not "not allowed": it isn't disabled. */
+  .ui-v2 :is(.btn, .btn-accent, .btn-ghost, .btn-danger)[data-busy] {
+    @apply cursor-progress opacity-100;
+  }
   /* The phone's one big button: the whole row under the title, a 44px pill. */
   .ui-v2 .btn-block {
     @apply w-full sm:w-auto;
