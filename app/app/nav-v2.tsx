@@ -3,46 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { Icon, type IconName } from "@/components/icons";
+import { NAV_GROUPS as GROUPS } from "@/components/app-sections";
+import { Icon } from "@/components/icons";
 import { Logo } from "@/components/ui";
 import { SearchDialog, type SearchTool } from "./search-v2";
-
-type Item = readonly [href: string, label: string, icon: IconName];
-
-/**
- * The sidebar (Design calm v2, look A): Home, then flat rows under small grey group labels, then Settings. Only pages
- * that exist are listed.
- */
-const GROUPS: readonly { label: string | null; items: readonly Item[] }[] = [
-  { label: null, items: [["/app", "Home", "home"]] },
-  {
-    label: "Work",
-    items: [
-      ["/app/documents", "Documents", "documents"],
-      ["/app/saved", "Saved", "bookmark"],
-      ["/app/signed", "Signed copies", "sign"],
-      ["/app/sent", "Sent", "send"],
-      ["/app/make", "Templates", "page"],
-    ],
-  },
-  {
-    label: "Track",
-    items: [
-      ["/app/history", "History", "history"],
-      ["/app/deadlines", "Deadlines", "deadlines"],
-      ["/app/passport", "Passport", "passport"],
-    ],
-  },
-  {
-    label: "Business",
-    items: [
-      ["/app/facts", "Business facts", "facts"],
-      ["/app/collect", "Collect", "collect"],
-      ["/app/people", "People", "people"],
-    ],
-  },
-  { label: null, items: [["/app/settings", "Settings", "settings"]] },
-];
 
 // The top bar's title: the sidebar's name for the page, or the tool's own name for pages outside the sidebar.
 const TITLES: readonly (readonly [href: string, title: string])[] = [
