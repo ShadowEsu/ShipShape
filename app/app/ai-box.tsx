@@ -35,6 +35,7 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
   const [check, runCheck, pending] = useActionState<AskState, FormData>(askAction, {});
   const [slow, setSlow] = useState(false);
   const result = useRef<HTMLElement>(null);
+  const form = useRef<HTMLFormElement>(null);
 
   // While a check runs (about 2 s), the button says what's happening, in two stages.
   useEffect(() => {
@@ -45,10 +46,13 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
       setSlow(false);
     };
   }, [pending]);
-  // A new answer (or a refused check) takes focus, so it's read out and the keyboard lands on its action.
+  // A new answer takes focus, so it's read out and the keyboard lands on its action. A refused check (consent not
+  // ticked, text too short) draws no answer, so focus goes to the field it marked instead of being lost.
   useEffect(() => {
-    result.current?.focus();
-  }, [answer, check]);
+    if (pending) return;
+    const invalid = form.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+    (invalid ?? result.current)?.focus();
+  }, [answer, check, pending]);
 
   const toolFor = (d: Destination): Answer => {
     const tool = tools.find((t) => t.id === d.tool);
@@ -82,6 +86,7 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
       stage={slow ? "Matching your documents…" : "Reading the request…"}
       round={round}
       resultRef={result}
+      formRef={form}
     />
   );
 }
@@ -101,6 +106,7 @@ export function AiBoxView({
   stage = "",
   round = 0,
   resultRef,
+  formRef,
 }: {
   text: string;
   aiOn: boolean;
@@ -112,6 +118,7 @@ export function AiBoxView({
   stage?: string;
   round?: number;
   resultRef?: Ref<HTMLElement>;
+  formRef?: Ref<HTMLFormElement>;
 }) {
   const ids = useId();
   const mode = modeOf(text, aiOn);
@@ -124,7 +131,7 @@ export function AiBoxView({
 
   return (
     <div className="mx-auto w-full max-w-[640px] space-y-3">
-      <form action={onSubmit}>
+      <form ref={formRef} action={onSubmit}>
         {/* One line that grows with what's typed (field-sizing), with no mic: the box finds a tool or checks a request. */}
         <div className="prompt">
           <span className="prompt-orb" aria-hidden="true" />
@@ -159,11 +166,10 @@ export function AiBoxView({
         {mode === "ai-off" && <p className="mt-2 px-2 text-[13px] text-ink-2">AI is off right now, so it can&apos;t check a request. Pick a tool below.</p>}
         {checking && <RequestConsent id={ids} defaultChecked={check.consent} error={consentError} />}
       </form>
-      {pending && answer?.kind === "check" && (
-        <p role="status" className="text-center text-sm text-ink-2">
-          {stage}
-        </p>
-      )}
+      {/* Always mounted, so the stage is announced when it appears (a live region added with its text can be missed). */}
+      <p className={pending && answer?.kind === "check" ? "text-center text-sm text-ink-2" : "sr-only"} role="status">
+        {pending && answer?.kind === "check" ? stage : ""}
+      </p>
 
       {answer && !pending && !textError && !consentError && (
         <section key={round} ref={resultRef} tabIndex={-1} aria-label="Answer" className="arrive card space-y-4 outline-none">
