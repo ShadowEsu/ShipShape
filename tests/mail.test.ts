@@ -315,6 +315,10 @@ describe("sending (SHIPSHAPE_EMAIL=1)", () => {
     expect(ses.calls).toHaveLength(1);
     expect(ses.calls[0].Destination?.ToAddresses).toEqual([owner.email]);
     expect(ses.calls[0].Content?.Simple?.Subject?.Data).toBe("Liquor permit expires in 7 days");
+    // Exactly one "why you got this" line (Security F1): REMINDER_FOOTER's, which also says how to stop.
+    const text = ses.calls[0].Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(text.endsWith(`\n\n--\n${REMINDER_FOOTER}`)).toBe(true);
+    expect(text.match(/because/gi)).toHaveLength(1);
   });
 
   it("a failed send fails the daily run, so it shows; the next run sends it", async () => {
