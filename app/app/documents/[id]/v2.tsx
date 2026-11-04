@@ -17,8 +17,9 @@ import { archive } from "../actions";
 import { DetailsListForm, SignRequestForm, VersionForm } from "../forms";
 import { archiveQuestion, versionWarning } from "../messages";
 import { DeleteForGood } from "./delete-dialog";
-import { fieldSources, size } from "./shared";
+import { ARCHIVED_ID, fieldSources, size, TITLE_ID } from "./shared";
 import { SignatureRequests } from "./signatures";
+import { StatusLanding } from "./status-landing";
 
 /** The kinds that get signed: only these offer "Ask to sign" (Design, 02 Nov), here and on a person's page in People. */
 export const SIGNED_KINDS: ReadonlySet<DocKind> = new Set<DocKind>(["nda", "agreement"]);
@@ -42,8 +43,9 @@ function History({ audit, moreAudit, zone }: { audit: AuditRow[]; moreAudit: boo
     <details className="group rounded-2xl border border-line">
       <summary className="flex min-h-13 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 font-medium [&::-webkit-details-marker]:hidden">
         {`History (${count})`}
-        {/* Down while closed, up while open: it opens here, it doesn't go anywhere. The summary carries the expanded state. */}
-        <span className="rotate-90 text-ink-3 transition-transform duration-[180ms] group-open:-rotate-90">
+        {/* Down while closed, up while open: it opens here, it doesn't go anywhere. The summary carries the expanded state.
+            disclosure-chevron: the turn, which stops under reduced motion (motion.css). */}
+        <span className="disclosure-chevron rotate-90 text-ink-3 group-open:-rotate-90">
           <Icon name="chevron" />
         </span>
       </summary>
@@ -100,16 +102,19 @@ export function DocumentV2(p: {
   return (
     <div className="mx-auto max-w-[720px] space-y-6">
       <HashLanding />
-      <nav className="text-sm">
+      <nav aria-label="Back" className="text-sm">
         <Link href="/app/documents" className="-my-2.5 inline-flex min-h-11 items-center text-ink-2 hover:text-ink">
-          ← Documents
+          <span aria-hidden="true">←</span>&nbsp;Documents
         </Link>
       </nav>
 
       <header>
         {/* The documents list's row title morphs into this one (Design spec 2026-11-02 §6.1). */}
         <ViewTransition name={`doc-${doc.id}`} share="v2-morph" default="none">
-          <h1 className="page-title">{doc.title}</h1>
+          {/* tabIndex -1: Restore lands focus here (StatusLanding). */}
+          <h1 id={TITLE_ID} tabIndex={-1} className="page-title">
+            {doc.title}
+          </h1>
         </ViewTransition>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-2">
           {/* A changed state (new dates saved, a new version) crossfades in place, the old label out and up, the new one in (§6.3). */}
@@ -134,19 +139,22 @@ export function DocumentV2(p: {
       */}
       <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl border border-line px-8 pt-6 md:h-64">
         <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md border border-b-0 border-[var(--line-2)] bg-paper p-5">
-          <p className="eyebrow">{DOC_KINDS[doc.kind]}</p>
+          <p className="doc-kind eyebrow">{DOC_KINDS[doc.kind]}</p>
           <p className="mt-2 line-clamp-3 text-lg leading-snug font-medium">{doc.title}</p>
           {latest && <p className="mt-3 font-mono text-xs text-ink-3">{FILE_TYPE[latest.mime]}</p>}
         </div>
       </div>
 
+      {/* Where the Archived block was: after Restore it says so here (Design 05:33); after Archive it's read out only. */}
+      <StatusLanding status={doc.status} />
       {active ? (
         // Full width is the phone rule; from 768px it's an auto-width pill at the left, above the actions (Design 14:40).
         <Link href={`/app/passport?docs=${doc.id}`} className="btn press w-full md:w-auto md:min-w-[200px]">
           Share in a link
         </Link>
       ) : (
-        <div className="space-y-2 rounded-2xl border border-line p-4">
+        // tabIndex -1: Archive (in More) lands focus here (StatusLanding).
+        <div id={ARCHIVED_ID} tabIndex={-1} className="space-y-2 rounded-2xl border border-line p-4">
           <form action={archive} className="flex items-center justify-between gap-3">
             <input type="hidden" name="id" value={doc.id} />
             <input type="hidden" name="archived" value="0" />
@@ -277,7 +285,12 @@ export function DocumentV2(p: {
                   {v.sha256.slice(0, 12)}
                 </span>
               </span>
-              <a href={file(v.version, "download")} data-stays className="inline-flex min-h-11 shrink-0 items-center text-ink-2 underline">
+              <a
+                href={file(v.version, "download")}
+                data-stays
+                aria-label={`Download version ${v.version}`}
+                className="inline-flex min-h-11 shrink-0 items-center text-ink-2 underline"
+              >
                 Download
               </a>
             </li>

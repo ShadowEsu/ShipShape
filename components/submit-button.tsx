@@ -2,6 +2,23 @@
 
 import { useFormStatus } from "react-dom";
 
+/**
+ * A button's props while its form is sending (`busy`): it can't be pressed again, yet stays focusable, so focus stays on
+ * it and its sending text ("Saving…") is read. A disabled button would drop focus to the page. A press (or Enter in a
+ * field, which presses the form's first button) is cancelled instead; `data-busy` gives it the disabled look
+ * (globals.css). `onClick` runs only while not busy.
+ */
+export function busyButton(busy: boolean, onClick?: () => void) {
+  return {
+    "aria-disabled": busy || undefined,
+    "data-busy": busy || undefined,
+    onClick: (e: { preventDefault(): void }) => {
+      if (busy) e.preventDefault();
+      else onClick?.();
+    },
+  };
+}
+
 /** A plain form's submit button: while the form is sending it says so and can't be pressed again. */
 export function SubmitButton({
   children,
@@ -17,7 +34,7 @@ export function SubmitButton({
 }) {
   const { pending } = useFormStatus();
   return (
-    <button className={className} disabled={pending} aria-disabled={pending} aria-label={pending ? undefined : label}>
+    <button className={className} {...busyButton(pending)} aria-label={pending ? undefined : label}>
       {pending ? pendingLabel : children}
     </button>
   );

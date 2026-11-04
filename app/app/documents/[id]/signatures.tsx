@@ -35,8 +35,14 @@ export function SignatureRequests({
     <ul className="divide-y divide-line text-sm">
       {requests.map((r) => {
         const lapsed = r.status === "pending" && Date.parse(r.expires_at) <= now;
+        const inPeople = kept?.has(r.signer_email.toLowerCase()) ?? false;
         return (
           <li key={r.id} className="space-y-1 py-2">
+            {/* Always mounted: Withdraw and Keep in People go once they've worked, so the row says what changed. A line
+                already filled when the page loads isn't read out; one that fills after the action is. */}
+            <p role="status" className="sr-only">
+              {r.status === "revoked" ? `Request to ${r.signer_name} withdrawn` : inPeople ? `${r.signer_name} kept in People` : ""}
+            </p>
             <p className={v2 ? "flex items-start justify-between gap-2" : "flex justify-between gap-2"}>
               <span className={v2 ? "min-w-0 font-medium [overflow-wrap:anywhere]" : "min-w-0 truncate font-medium"}>{r.signer_name}</span>
               {v2 ? (
@@ -71,7 +77,7 @@ export function SignatureRequests({
                   />
                 )}
                 {kept &&
-                  (kept.has(r.signer_email.toLowerCase()) ? (
+                  (inPeople ? (
                     <span className="inline-flex min-h-6 items-center text-xs text-ink-3">In People</span>
                   ) : (
                     <form action={keepSignerAction}>

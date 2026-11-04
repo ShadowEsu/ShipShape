@@ -46,11 +46,18 @@ export function useLeaveGuard(on: boolean): [string | null, RefObject<HTMLDialog
 /** The guard's question: what isn't saved (`body`), Keep editing (focused), or Discard, which `onDiscard` carries out. */
 export function DiscardDialog({ ask, body, onDiscard }: { ask: RefObject<HTMLDialogElement | null>; body: string; onDiscard: () => void }) {
   return (
-    <dialog ref={ask} aria-labelledby="discard-title" className="m-auto w-[min(92vw,360px)] rounded-2xl bg-paper p-5 text-ink backdrop:bg-black/30">
+    <dialog
+      ref={ask}
+      aria-labelledby="discard-title"
+      aria-describedby="discard-body"
+      className="m-auto w-[min(92vw,360px)] rounded-2xl bg-paper p-5 text-ink backdrop:bg-black/30"
+    >
       <h2 id="discard-title" className="text-lg font-semibold">
         Discard changes?
       </h2>
-      <p className="mt-1 text-sm text-ink-2">{body}</p>
+      <p id="discard-body" className="mt-1 text-sm text-ink-2">
+        {body}
+      </p>
       <div className="mt-4 flex justify-end gap-2">
         <button type="button" autoFocus className="btn-ghost" onClick={() => ask.current?.close()}>
           Keep editing

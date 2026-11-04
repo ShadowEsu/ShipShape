@@ -115,11 +115,12 @@
   animation: v2-chip-in var(--dur-fast) var(--ease-inout) both;
 }
 
-/* Press: 0.97 while held, released on the spring. Hover and focus never move anything. */
+/* Press: 0.97 while held, released on the spring. Hover and focus never move anything. A sending button (data-busy) is
+   as a disabled one: it doesn't press. */
 .ui-v2 .press {
   transition: transform var(--dur-press) var(--ease-spring);
 }
-.ui-v2 .press:active:not(:disabled) {
+.ui-v2 .press:active:not(:disabled, [data-busy]) {
   transform: scale(0.97);
   transition-timing-function: var(--ease-out);
 }
@@ -185,7 +186,7 @@
     animation-delay: 0s;
   }
   .ui-v2 .press,
-  .ui-v2 .press:active:not(:disabled) {
+  .ui-v2 .press:active:not(:disabled, [data-busy]) {
     transform: none;
     transition: none;
   }

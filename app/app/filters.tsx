@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Icon } from "@/components/icons";
+import { FilterDetails } from "./filter-details";
 
 export interface TabLink {
   href: string;
@@ -24,12 +25,13 @@ export function TabLinks({ label, tabs }: { label: string; tabs: TabLink[] }) {
 
 /**
  * A small menu of choices that are links (a disclosure, so it works without script): its button shows the current
- * choice, and its name says what it chooses. Keyed by the choice, so it closes once one is followed.
+ * choice, and its name says what it chooses. Keyed by the choice, so it closes once one is followed; Escape, or focus
+ * or a press moving outside it, closes it too (FilterDetails).
  */
 export function FilterMenu({ label, options }: { label: string; options: TabLink[] }) {
   const current = options.find((o) => o.current)?.text ?? options[0]?.text ?? "";
   return (
-    <details key={current} className="filter-menu">
+    <FilterDetails key={current} className="filter-menu">
       <summary aria-label={`${label}: ${current}`}>
         {current}
         <span className="rotate-90 text-ink-3">
@@ -45,6 +47,6 @@ export function FilterMenu({ label, options }: { label: string; options: TabLink
           </li>
         ))}
       </ul>
-    </details>
+    </FilterDetails>
   );
 }

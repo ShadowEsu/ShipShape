@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fmtDay, type Validity } from "@/lib/today";
+import { SECTION_NAMES } from "./app-sections";
 import { Icon, type IconName } from "./icons";
 
 /** A page's title and its actions. The redesigned app (`.ui-v2`) restyles it through the page-* classes (app/globals.css). */
@@ -7,8 +8,9 @@ export function PageHeader({ eyebrow, title, children }: { eyebrow?: string; tit
   return (
     <header className="page-header flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
-        {/* page-eyebrow-repeat: the redesigned app hides an eyebrow that only repeats the title (Design, 02 Nov). */}
-        {eyebrow && <p className={`page-eyebrow eyebrow mb-1${eyebrow === title ? " page-eyebrow-repeat" : ""}`}>{eyebrow}</p>}
+        {/* page-eyebrow-repeat: the redesigned app hides an eyebrow that only repeats the title (Design, 02 Nov) or the
+            section name its sidebar and top bar already show (Design, 04 Nov). The earlier look shows every eyebrow. */}
+        {eyebrow && <p className={`page-eyebrow eyebrow mb-1${eyebrow === title || SECTION_NAMES.has(eyebrow) ? " page-eyebrow-repeat" : ""}`}>{eyebrow}</p>}
         <h1 className="page-title font-serif text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
       </div>
       {children && <div className="page-actions flex flex-wrap gap-2">{children}</div>}

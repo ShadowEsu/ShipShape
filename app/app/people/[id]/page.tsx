@@ -36,9 +36,9 @@ export default async function PersonPage({ params, searchParams }: { params: Pro
   const list = v2 ? "group-list plain" : "divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper";
   return (
     <div className={v2 ? "mx-auto max-w-[720px] space-y-8" : "max-w-3xl space-y-8"}>
-      <nav className="text-sm">
+      <nav aria-label="Back" className="text-sm">
         <Link href="/app/people" className="-my-2.5 inline-flex min-h-11 items-center text-ink-2 hover:text-ink">
-          ← People
+          <span aria-hidden="true">←</span>&nbsp;People
         </Link>
       </nav>
       <div className="space-y-2">

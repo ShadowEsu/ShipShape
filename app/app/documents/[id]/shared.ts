@@ -33,6 +33,10 @@ const SOURCE: Record<string, string> = {
 // A non-breaking space keeps "1 KB" on one line at 390 wide (Design).
 export const size = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}\u00A0MB` : `${Math.max(1, Math.round(n / 1024))}\u00A0KB`);
 
+/** The redesigned page's Archived block and heading: after Archive or Restore, focus lands on one of them (StatusLanding). */
+export const ARCHIVED_ID = "archived";
+export const TITLE_ID = "document-title";
+
 /**
  * Each filled field with the label the form showed, in the form's order: the stored record's keys
  * come back from jsonb sorted by length, and a key like `tin_kind` means nothing on its own.

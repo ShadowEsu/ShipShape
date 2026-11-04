@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { ConfirmForm } from "@/components/confirm-form";
 import { CopyLink } from "@/components/copy-link";
 import { DaysChoice } from "@/components/days-choice";
 import { addVendorAction, deleteVendorFileAction, makeVendorLink, type CollectFormState } from "./actions";
@@ -115,7 +116,13 @@ export function NewVendorFormV2({ kinds }: { kinds: { key: string; label: string
       <div>
         <ul className="group-list plain">
           <li className="field-row">
-            <label htmlFor="vendor-name">Vendor</label>
+            {/* "(required)" as the fill form shows it: the placeholder is only an example. Screen readers hear `required`. */}
+            <label htmlFor="vendor-name">
+              Vendor
+              <span aria-hidden="true" className="text-ink-3">
+                {" (required)"}
+              </span>
+            </label>
             <input
               id="vendor-name"
               name="name"
@@ -181,9 +188,10 @@ export function NewVendorFormV2({ kinds }: { kinds: { key: string; label: string
 
 /**
  * The end of making an upload link: what was made, what happens next, and the one thing to do (copy it). In the
- * redesigned app it arrives (§6.5) and Copy turns to a check.
+ * redesigned app it arrives (§6.5) and Copy turns to a check. `focus`: Copy link takes focus, as the form that made the
+ * link (and its focused button) is gone.
  */
-export function VendorLinkReady({ vendorName, days, url, v2 }: { vendorName: string; days: number; url: string; v2?: boolean }) {
+export function VendorLinkReady({ vendorName, days, url, v2, focus }: { vendorName: string; days: number; url: string; v2?: boolean; focus?: boolean }) {
   return (
     <div className={v2 ? "arrive space-y-3" : "space-y-3"} role="status">
       <h2 className="font-semibold">Upload link for {vendorName} is ready</h2>
@@ -191,7 +199,7 @@ export function VendorLinkReady({ vendorName, days, url, v2 }: { vendorName: str
         It works for {days} days. Copy it and send it to {vendorName} yourself: ShipShape keeps only a fingerprint of it and can&apos;t show
         it again. The files they send land under Files received.
       </p>
-      <CopyLink id="collect-url" label="Upload link" url={url} v2={v2} />
+      <CopyLink id="collect-url" label="Upload link" url={url} v2={v2} focus={focus} />
     </div>
   );
 }
@@ -205,7 +213,7 @@ export function VendorLinkForm({ vendorId, vendorName, days, v2 }: { vendorId: s
     if (state.link) setUrl(`${window.location.origin}/c/${state.link.id}#${state.link.token}`);
   }, [state.link]);
 
-  if (url && state.link) return <VendorLinkReady vendorName={vendorName} days={state.link.days} url={url} v2={v2} />;
+  if (url && state.link) return <VendorLinkReady vendorName={vendorName} days={state.link.days} url={url} v2={v2} focus />;
   return (
     <form ref={form} action={action} className="space-y-4" noValidate>
       <input type="hidden" name="vendor" value={vendorId} />
@@ -237,11 +245,32 @@ export function VendorLinkForm({ vendorId, vendorName, days, v2 }: { vendorId: s
   );
 }
 
-/** Delete asks once more in place: the file and its stored copy go for good. */
-export function DeleteVendorFileForm({ fileId, filename }: { fileId: string; filename: string }) {
+/**
+ * Delete asks once more in place: the file and its stored copy go for good. Redesigned (`v2`), it's the app's
+ * ConfirmForm, which names the file and moves focus to the question and back; the current look keeps its own.
+ */
+export function DeleteVendorFileForm({ fileId, filename, v2 = false }: { fileId: string; filename: string; v2?: boolean }) {
   const [state, action, pending] = useActionState<CollectFormState, FormData>(deleteVendorFileAction, {});
   const [confirming, setConfirming] = useState(false);
 
+  if (v2) {
+    return (
+      <div className="space-y-2">
+        <ConfirmForm
+          action={action}
+          fields={{ id: fileId }}
+          trigger="Delete"
+          triggerLabel={`Delete ${filename}`}
+          question={`Delete ${filename} for good?`}
+          confirm="Delete file"
+          cancel="Keep"
+          destructive
+          pendingLabel="Deleting…"
+        />
+        <FormError error={state.error} />
+      </div>
+    );
+  }
   if (!confirming) {
     return (
       <button type="button" className="btn-ghost" onClick={() => setConfirming(true)} aria-label={`Delete ${filename}`}>

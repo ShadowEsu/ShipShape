@@ -72,7 +72,7 @@ export function RequestAnswer({ items, titleId, v2 = true }: { items: readonly R
   const count = `${items.length} ${items.length === 1 ? "document" : "documents"}`;
   return (
     <div className="space-y-4">
-      <h2 id={titleId} className={v2 ? "section-title" : "font-serif text-2xl font-semibold"}>
+      <h2 id={titleId} tabIndex={-1} className={v2 ? "section-title" : "font-serif text-2xl font-semibold"}>
         {items.length === 0 ? "The request doesn't ask for any documents" : `The request asks for ${count}`}
       </h2>
       {items.length === 0 ? (

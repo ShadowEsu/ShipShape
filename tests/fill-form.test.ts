@@ -84,7 +84,10 @@ describe("the W-9's EIN step", () => {
     const html = await render({ tin_kind: "ein", ein: "••-•••6789" });
     expect(html).not.toMatch(/<input[^>]*id="f-ein"/);
     expect(html).not.toContain('name="save_ein"');
-    expect(html).toMatch(/<p[^>]*aria-labelledby="f-ein-label"[^>]*>••-•••6789<\/p>/);
+    // A label applies to an <output> (it didn't to the <p> with aria-labelledby this was): the value is read with its name.
+    expect(html).toMatch(/<label id="f-ein-label" for="f-ein-value" class="label">[\s\S]*?EIN[\s\S]*?<\/label>/);
+    expect(html).toMatch(/<output id="f-ein-value" class="block font-mono text-sm"[^>]*>••-•••6789<\/output>/);
+    expect(html).not.toContain('aria-labelledby="f-ein-label"');
   });
 
   it("for someone who can't change Business facts (a member, a sample workspace) the field is there but the save box isn't", async () => {

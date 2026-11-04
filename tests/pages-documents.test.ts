@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { PDFDocument } from "pdf-lib";
 import DocumentPage from "@/app/app/documents/[id]/page";
 import { addDocument, addVersion, saveDetails } from "@/app/app/documents/actions";
+import { fileRowDescribedBy } from "@/app/app/documents/forms";
 import NewDocumentPage from "@/app/app/documents/new/page";
 import DocumentsPage from "@/app/app/documents/page";
 import { saveFacts, saveTaxId } from "@/app/app/facts/actions";
@@ -635,27 +636,32 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
 
 describe("the app's frame, redesigned", () => {
   const shell = (ws: Ctx, deleting = false) => renderPage(ShellV2, { ws, deleting, children: null });
-  /** The sidebar's rows, with a ● where the lapsed dot is. */
+  /** The sidebar's rows, with the lapsed count's badge as [N]. */
   const sidebar = (html: string) => {
     const aside = html.slice(html.indexOf('<aside aria-label="Workspace"'), html.indexOf("</aside>"));
-    return [...aside.matchAll(/<a [^>]*class="side-row"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => textOf(m[1].replace(/<span class="side-dot"[^>]*><\/span>/, " ● ")));
+    return [...aside.matchAll(/<a [^>]*class="side-row"[^>]*>([\s\S]*?)<\/a>/g)].map((m) =>
+      textOf(m[1].replace(/<span class="side-count" aria-hidden="true" title="(\d+) lapsed">(\d+)<\/span>/, (_, t, n) => (t === n ? ` [${n}] ` : " [title differs] "))),
+    );
   };
 
-  it("groups the pages that exist, and dots Deadlines only while a document has lapsed", async () => {
+  it("groups the pages that exist, and counts lapsed documents on Deadlines only while there are any: a visible number, its word on hover, and read with the row", async () => {
     const ctx = await signIn("shell-v2@example.com");
     const rows = ["Home", "Work", "Documents", "Saved", "Signed copies", "Sent", "Templates", "Track", "History", "Deadlines", "Passport", "Business", "Business facts", "Collect", "People", "Settings"];
     const html = await shell(ctx);
     expect(textOf(html.slice(html.indexOf('<nav aria-label="App"'), html.indexOf("</nav>")))).toBe(rows.join(" "));
-    expect(sidebar(html)).not.toContain("Deadlines ● , something has lapsed");
-    // Expiring today is still current today ("Expires soon"), so no dot until the day after.
+    expect(sidebar(html)).toContain("Deadlines");
+    expect(html).not.toContain("side-count");
+    // Expiring today is still current today ("Expires soon"), so no count until the day after.
     await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Last day', 'permit', $2::date)", [ctx.orgId, ctx.today]));
-    expect(sidebar(await shell(ctx))).not.toContain("Deadlines ● , something has lapsed");
+    expect(await shell(ctx)).not.toContain("side-count");
     await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Old permit', 'permit', $2::date - 1)", [ctx.orgId, ctx.today]));
-    expect(sidebar(await shell(ctx))).toContain("Deadlines ● , something has lapsed");
-    // Archived, it no longer counts.
+    expect(sidebar(await shell(ctx))).toContain("Deadlines [1] , 1 lapsed");
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Old license', 'license', $2::date - 30)", [ctx.orgId, ctx.today]));
+    expect(sidebar(await shell(ctx))).toContain("Deadlines [2] , 2 lapsed");
+    // Archived, they no longer count.
     await db.root((tx) => tx.query("update app.documents set status = 'archived' where org_id = $1", [ctx.orgId]));
     expect(sidebar(await shell(ctx))).toContain("Deadlines");
-    expect(sidebar(await shell(ctx))).not.toContain("Deadlines ● , something has lapsed");
+    expect(await shell(ctx)).not.toContain("side-count");
   });
 
   it("a sample carries Security's strip word for word, and the account row is the workspace and its role, never a person", async () => {
@@ -939,6 +945,11 @@ describe.each([
     expect([...html.matchAll(/<button\b[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["Add to documents"]);
     expect(textOf(html)).toContain("PDF, PNG or JPEG, up to 4 MB.");
     expect(textOf(html)).toContain("Files are stored privately for your workspace.");
+    // The redesigned rows' placeholder only says "Add", so the required Title says so as the fill form does (hidden from
+    // screen readers, which hear `required`); the earlier form is as it was. Both keep `required`.
+    if (ui === "v1") expect(html).not.toContain("(required)");
+    else expect(html).toContain('<label for="title">Title<span aria-hidden="true" class="text-ink-3"> (required)</span></label>');
+    expect(/<input [^>]*name="title"[^>]*>/.exec(html)?.[0]).toContain('required=""');
 
     const userId = await createLocalUser(null, true);
     const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)') as id", [userId]));
@@ -969,6 +980,19 @@ describe("Add a document, redesigned only", () => {
     expect(emptyDates(html)).toEqual({ issued_on: true, expires_on: true, renews_on: true });
     expect(html.match(/<span aria-hidden="true" class="date-add">Add<\/span>/g)).toHaveLength(3);
     expect(html).toMatch(/<div class="save-dock sticky[^"]*"><button class="btn press w-full md:w-auto">Add to documents<\/button>/);
+  });
+
+  it("the file control is described by the chosen file's name once there is one, then the size hint, then any error", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v2");
+    await signIn("v2-add-file-name@example.com");
+    // Nothing chosen on the server's render: the hint alone, and no name to point at.
+    const html = await renderPage(NewDocumentPage, {});
+    expect(/<input [^>]*name="file"[^>]*>/.exec(html)?.[0]).toContain('aria-describedby="file-hint"');
+    expect(html).not.toContain('id="file-name"');
+    // Chosen (the name span, id file-name, shows): its name is read with "File Change".
+    expect(fileRowDescribedBy(true, false)).toBe("file-name file-hint");
+    expect(fileRowDescribedBy(true, true)).toBe("file-name file-hint file-error");
+    expect(fileRowDescribedBy(false, true)).toBe("file-hint file-error");
   });
 });
 
@@ -1033,6 +1057,21 @@ describe("a document's page", () => {
     const html = await documentPage(id, { error: "limit" });
     expect(textOf(html)).toContain("The Free plan holds 10 active documents, so this one stays archived. Archive another one, then restore this one.");
     expect(actionsOf(html).filter((a) => a.label === "Choose one to archive")).toEqual([{ tag: "a", label: "Choose one to archive", href: "/app/documents" }]);
+  });
+
+  it("redesigned: archive and restore have somewhere for focus to land, the Archived block or the heading (tabIndex -1), and a status that's always there to say which; the earlier page as it was", async () => {
+    const ctx = await signIn("doc-archive-landing@example.com");
+    const id = await uploadDocument(ctx, { title: "Old permit", kind: "permit" }, PDF);
+    const active = await documentPage(id, {});
+    expect(active).toMatch(/<h1 id="document-title" tabindex="-1" class="page-title"[^>]*>Old permit<\/h1>/);
+    // Empty on a first load: it speaks only once the page changes status while open.
+    expect(active).toContain('<p role="status" class="sr-only"></p>');
+    await setArchived(ctx, id, true);
+    expect(await documentPage(id, {})).toMatch(/<div id="archived" tabindex="-1" class="space-y-2 rounded-2xl border border-line p-4"><form/);
+    vi.stubEnv("SHIPSHAPE_UI", "v1");
+    const v1 = await documentPage(id, {});
+    expect(v1).not.toContain('id="archived"');
+    expect(v1).not.toContain('id="document-title"');
   });
 
   it("withdrawing a signature request asks first: the question names the signer, with Withdraw the request and Cancel", async () => {
@@ -1209,9 +1248,10 @@ describe("a document's page", () => {
       expect(html).toContain('href="#signer-name"');
       const signatures = html.slice(html.indexOf('<section id="signatures"'));
       const rows = /<ul class="group-list plain">([\s\S]*?)<\/ul>/.exec(signatures)?.[1] ?? "";
-      expect([...rows.matchAll(/<label for="([^"]*)">([^<]*)<\/label>/g)].map((m) => `${m[1]} ${textOf(m[2])}`)).toEqual([
-        "signer-name Signer's name",
-        "signer-email Signer's email",
+      // Name and email say "(required)", as the fill form does: their placeholders don't.
+      expect([...rows.matchAll(/<label for="([^"]*)">([\s\S]*?)<\/label>/g)].map((m) => `${m[1]} ${textOf(m[2])}`)).toEqual([
+        "signer-name Signer's name (required)",
+        "signer-email Signer's email (required)",
         "sign-days Open for",
       ]);
       expect(/<input [^>]*id="signer-name"[^>]*>/.exec(html)?.[0]).toContain('class="row-field');

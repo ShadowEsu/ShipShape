@@ -197,7 +197,7 @@ export async function recentDocuments(ctx: Ctx): Promise<DocRow[]> {
 // Lapsed as the lists say it ("Expired"): the expiry date is before the viewer's day.
 const LAPSED_SQL = `select count(*)::int as n from app.documents d where d.org_id = $2 and d.status = 'active' and d.expires_on < $1::date`;
 
-/** How many active documents have lapsed on the viewer's day: the sidebar's dot on Deadlines while it isn't 0. */
+/** How many active documents have lapsed on the viewer's day: the count on the sidebar's Deadlines while it isn't 0. */
 export async function lapsedCount(ctx: Ctx): Promise<number> {
   const [row] = await asUser(ctx.userId, (tx) => tx.query<{ n: number }>(LAPSED_SQL, [ctx.today, ctx.orgId]));
   return row?.n ?? 0;

@@ -452,15 +452,16 @@ function Field({
     );
   }
   if (f.kind === "secret" && f.fact === "ein" && initial) {
-    // Saved in Business facts: shown masked, as a labelled value (no input to type into).
+    // Saved in Business facts: shown masked, as a labelled value (no input to type into). A label applies to an <output>
+    // (aria-labelledby on a plain <p> isn't read); block, as the <p> it replaces.
     return (
       <div id={id}>
-        <p id={`${id}-label`} className="label">
+        <label id={`${id}-label`} htmlFor={`${id}-value`} className="label">
           {label}
-        </p>
-        <p className="font-mono text-sm" aria-labelledby={`${id}-label`} aria-describedby={describedBy}>
+        </label>
+        <output id={`${id}-value`} className="block font-mono text-sm" aria-describedby={describedBy}>
           {value}
-        </p>
+        </output>
         <Help id={id} hint="From your business facts. The full number goes only into the PDF." error={error} />
       </div>
     );

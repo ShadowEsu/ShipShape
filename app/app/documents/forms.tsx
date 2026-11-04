@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import { CopyLink } from "@/components/copy-link";
 import { changed, DiscardDialog, useLeaveGuard } from "@/components/leave-guard";
+import { busyButton } from "@/components/submit-button";
 import { MAX_UPLOAD_BYTES, UPLOAD_TOO_BIG } from "@/lib/upload-limit";
 import { addDocument, addVersion, askToSign, saveDetails, type FormState, type SignFormState } from "./actions";
 import { size } from "./[id]/shared";
@@ -31,8 +32,11 @@ export interface DetailValues {
   renews_on: string | null;
 }
 
-/** The line under a form: an error not about one field, or what was saved (the server's own line when it sends one). Field errors show under their field. */
-function Status({ state, savedText }: { state: FormState; savedText: string }) {
+/**
+ * The line under a form: an error not about one field, or what was saved (the server's own line when it sends one). Field errors show under their field.
+ * `savedRef`: the saved line can take focus, for a form whose focused button goes away once it has saved.
+ */
+function Status({ state, savedText, savedRef }: { state: FormState; savedText: string; savedRef?: RefObject<HTMLParagraphElement | null> }) {
   if (state.error && !state.field)
     return (
       <div role="alert" className="space-y-2 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
@@ -47,7 +51,7 @@ function Status({ state, savedText }: { state: FormState; savedText: string }) {
   if (state.saved)
     return (
       // saved-line: the redesigned app fades it in; it stays (Design spec §6.5: a fading message is lost to a screen reader).
-      <p role="status" className="saved-line text-sm text-ok">
+      <p ref={savedRef} tabIndex={savedRef ? -1 : undefined} role="status" className="saved-line text-sm text-ok">
         {state.savedText ?? savedText}
       </p>
     );
@@ -195,19 +199,30 @@ export function DetailsForm({ id, values }: { id: string; values: DetailValues }
       <input type="hidden" name="id" value={id} />
       <DetailFields v={state.values ?? values} state={state} />
       <Status state={state} savedText="Saved. Reminders follow the new dates." />
-      <button className="btn-ghost" disabled={pending}>
+      <button className="btn-ghost" {...busyButton(pending)}>
         {pending ? "Saving…" : "Save details"}
       </button>
     </form>
   );
 }
 
-/** A grouped-list row: the label, the field (children), and the field's error under it. `htmlFor` when the field's id isn't its name. */
-function FieldRow({ name, htmlFor, label, state, children }: { name: string; htmlFor?: string; label: string; state: FieldState; children: React.ReactNode }) {
+/**
+ * A grouped-list row: the label, the field (children), and the field's error under it. `htmlFor` when the field's id isn't
+ * its name. `required`: "(required)" after the label, as the fill form shows, since the row's placeholder says only "Add";
+ * hidden from screen readers, which hear the field's own `required`.
+ */
+function FieldRow({ name, htmlFor, label, required, state, children }: { name: string; htmlFor?: string; label: string; required?: boolean; state: FieldState; children: React.ReactNode }) {
   return (
     <li>
       <div className="field-row">
-        <label htmlFor={htmlFor ?? name}>{label}</label>
+        <label htmlFor={htmlFor ?? name}>
+          {label}
+          {required && (
+            <span aria-hidden="true" className="text-ink-3">
+              {" (required)"}
+            </span>
+          )}
+        </label>
         {children}
       </div>
       {state.field === name && (
@@ -289,7 +304,7 @@ const ISSUER_HINT: Record<string, string> = {
 function DetailRows({ v, state, kind }: { v: Partial<DetailValues>; state: FormState; kind: string }) {
   return (
     <>
-      <FieldRow name="title" label="Title" state={state}>
+      <FieldRow name="title" label="Title" required state={state}>
         <input id="title" name="title" required maxLength={200} defaultValue={v.title} className="row-field" placeholder="Add" {...invalid(state, "title")} />
       </FieldRow>
       <FieldRow name="kind" label="Kind" state={state}>
@@ -336,10 +351,20 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
   const [kind, setKind] = useState(values.kind);
   const router = useRouter();
   useFocusField(state, state.field);
+  const saved = useRef<HTMLParagraphElement>(null);
+  // Set when a save comes back good: the focused Save button goes with the dock, so the Saved line takes focus.
+  const justSaved = useRef(false);
   // A result came back and React put the fields back to their defaults (the saved values, or the ones sent back with an error).
   useEffect(() => {
     setDirty(form.current ? changed(form.current) : false);
+    justSaved.current = Boolean(state.saved);
   }, [state]);
+  // The Saved line shows a render later (once the fields read as unchanged); only then, and only if focus was lost with the button.
+  useEffect(() => {
+    if (!justSaved.current || !saved.current) return;
+    justSaved.current = false;
+    if (document.activeElement === document.body || !document.activeElement) saved.current.focus();
+  });
   // A refused save hasn't saved what was sent, even though the fields now show it as their defaults.
   const unsaved = dirty || Boolean(state.error);
   const [leaving, ask] = useLeaveGuard(unsaved);
@@ -359,12 +384,12 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
       <ul className="group-list plain">
         <DetailRows v={v} state={state} kind={kind} />
       </ul>
-      {(state.error || !dirty) && <Status state={state} savedText="Saved. Reminders follow the new dates." />}
+      {(state.error || !dirty) && <Status state={state} savedText="Saved. Reminders follow the new dates." savedRef={saved} />}
       {(unsaved || pending) && (
         // Docked at the foot of the phone's screen, 8px over the home indicator.
         // save-dock: while it shows, the page scrolls fields clear of it (globals.css).
         <div className="save-dock sticky bottom-[calc(8px+env(safe-area-inset-bottom))] z-10 md:static">
-          <button className="btn press w-full" disabled={pending}>
+          <button className="btn press w-full" {...busyButton(pending)}>
             {pending ? "Saving…" : "Save details"}
           </button>
         </div>
@@ -410,7 +435,7 @@ export function NewDocumentForm() {
       </div>
       <DetailFields v={state.values} state={state} />
       <Status state={state} savedText="" />
-      <button className="btn" disabled={pending}>
+      <button className="btn" {...busyButton(pending)}>
         {pending ? "Uploading…" : "Add to documents"}
       </button>
     </form>
@@ -419,6 +444,14 @@ export function NewDocumentForm() {
 
 /** A chosen file's size, rounded up: a file just over the 4 MB limit never reads "4.0 MB" beside the refusal. */
 const chosenSize = (n: number) => (n > 1024 * 1024 ? `${(Math.ceil(n / 104857.6) / 10).toFixed(1)}\u00A0MB` : size(n));
+
+/**
+ * What the file row's input is described by: the chosen file's name once there is one (its name stays "File Change", so
+ * without this the file isn't read out), the size hint, and the error when there is one.
+ */
+export function fileRowDescribedBy(chosen: boolean, error: boolean): string {
+  return [chosen && "file-name", "file-hint", error && "file-error"].filter(Boolean).join(" ");
+}
 
 /**
  * The file as a grouped-list row (Design 02 Nov): "Choose a file", then the chosen file's name and size with "Change".
@@ -455,13 +488,15 @@ function FileRow({ state }: { state: FormState }) {
             className="peer sr-only"
             aria-labelledby="file-label file-action"
             aria-invalid={error || undefined}
-            aria-describedby={error ? "file-hint file-error" : "file-hint"}
+            aria-describedby={fileRowDescribedBy(file !== null, error)}
           />
           {file ? (
             <>
               {/* A long name truncates; its size always shows. */}
               <span className="flex min-w-0 items-baseline gap-1">
-                <span className="min-w-0 truncate">{file.name}</span>
+                <span id="file-name" className="min-w-0 truncate">
+                  {file.name}
+                </span>
                 <span className="shrink-0 text-ink-3">· {chosenSize(file.size)}</span>
               </span>
               <label id="file-action" htmlFor="file" className={`shrink-0 cursor-pointer rounded text-sm text-ink underline ${ring}`}>
@@ -509,7 +544,7 @@ export function NewDocumentFormV2() {
       <Status state={state} savedText="" />
       {/* Docked at the foot of the phone's screen, as Business facts' Save and confirm. */}
       <div className="save-dock sticky bottom-[calc(8px+env(safe-area-inset-bottom))] z-10 md:static">
-        <button className="btn press w-full md:w-auto" disabled={pending}>
+        <button className="btn press w-full md:w-auto" {...busyButton(pending)}>
           {pending ? "Uploading…" : "Add to documents"}
         </button>
       </div>
@@ -546,7 +581,7 @@ export function VersionForm({ id, warning }: { id: string; warning?: string }) {
       )}
       <FieldError state={state} name="file" />
       <Status state={state} savedText="New version added. Earlier versions stay in the history." />
-      <button className="btn-ghost" disabled={pending}>
+      <button className="btn-ghost" {...busyButton(pending)}>
         {pending ? "Uploading…" : "Add version"}
       </button>
     </form>
@@ -574,16 +609,23 @@ export function SignRequestForm({
   const [state, action, pending] = useActionState<SignFormState, FormData>(askToSign, {});
   const [url, setUrl] = useState<string | null>(null);
   const created = state.created;
+  const ready = useRef<HTMLHeadingElement>(null);
   useFocusField(state, state.field && SIGN_IDS[state.field]);
 
   useEffect(() => {
     if (created) setUrl(`${window.location.origin}/s/${created.id}#${created.token}`);
   }, [created]);
+  // The form (and its focused button) is replaced by the link, shown only once: its heading takes focus so it's read out.
+  useEffect(() => {
+    if (url) ready.current?.focus();
+  }, [url]);
 
   if (url && created) {
     return (
       <div className="space-y-3">
-        <p className="text-sm font-medium">Signing link ready</p>
+        <h3 ref={ready} tabIndex={-1} className="text-sm font-medium">
+          Signing link ready
+        </h3>
         <p className="text-sm text-ink-2">
           The signer gets ShipShape&apos;s own copy of this document: form fields and notes drawn in as they show on screen, and nothing that can run.{" "}
           <a href={`/app/documents/${id}/file?request=${created.id}`} className="underline">
@@ -596,7 +638,8 @@ export function SignRequestForm({
           {demo && " To try it, open the link in this browser; the code lands under Deadlines → Reminders sent."}
         </p>
         <CopyLink id="sign-url" label="Signing link" url={url} />
-        <button type="button" className="text-sm text-ink-2 underline" onClick={() => setUrl(null)}>
+        {/* The redesigned page's is a 24px target (WCAG 2.5.8); the earlier page's as it was. */}
+        <button type="button" className={rows ? "inline-flex min-h-6 items-center text-sm text-ink-2 underline" : "text-sm text-ink-2 underline"} onClick={() => setUrl(null)}>
           Ask someone else
         </button>
       </div>
@@ -645,10 +688,10 @@ export function SignRequestForm({
       <input type="hidden" name="id" value={id} />
       {rows ? (
         <ul className="group-list plain">
-          <FieldRow name="signer_name" htmlFor="signer-name" label="Signer's name" state={state}>
+          <FieldRow name="signer_name" htmlFor="signer-name" label="Signer's name" required state={state}>
             {name}
           </FieldRow>
-          <FieldRow name="signer_email" htmlFor="signer-email" label="Signer's email" state={state}>
+          <FieldRow name="signer_email" htmlFor="signer-email" label="Signer's email" required state={state}>
             {email}
           </FieldRow>
           <FieldRow name="days" htmlFor="sign-days" label="Open for" state={state}>
@@ -685,7 +728,7 @@ export function SignRequestForm({
           {state.error}
         </p>
       )}
-      <button className="btn-ghost" disabled={pending}>
+      <button className="btn-ghost" {...busyButton(pending)}>
         {pending ? "Making the link…" : "Make a signing link"}
       </button>
     </form>
