@@ -98,6 +98,11 @@ beforeAll(async () => {
   }
   // People (0046): a contact A keeps, after the setup's history rows above.
   await asUser(a, (tx) => tx.query("insert into app.contacts (org_id, name, email, source, created_by) values ($1, 'Sam Signer', 'sam@example.com', 'typed', $2)", [orgA, a]));
+  // Slack (0052): A's workspace is connected (the secrets as ciphertext-shaped stand-ins), with one post waiting.
+  await asService(async (tx) => {
+    await tx.query("insert into app.slack_connections (org_id, webhook_url_enc, access_token_enc, channel, team_id, team_name, connected_by) values ($1, 'v1.a', 'v1.b', '#general', 'T123', 'A Team', $2)", [orgA, a]);
+    await tx.query("insert into app.slack_posts (org_id, document_id, body) values ($1, $2, 'A reminder')", [orgA, docA]);
+  });
 });
 
 // Every table in schema app, with the column that ties a row to a workspace (null: not tenant data).
@@ -136,6 +141,9 @@ const TABLES: Record<string, string | null> = {
   contacts: "org_id", // People (0046): who may change which, the cap and the checks are in people.test.ts
   email_suppressions: null, // server only: addresses SES said bounced or complained (0049), checked below
   waitlist_tally: null, // server only: new waitlist sign-ups counted per day and source (0051), checked below
+  slack_connections: "org_id", // Slack (0052): who may add or remove it, and the secret columns no one signed in reads, are in slack.test.ts
+  slack_posts: null, // server only: reminders waiting to be posted to Slack (0052), checked in slack.test.ts
+  slack_states_used: null, // server only: "Add to Slack" states already taken (0052), checked in slack.test.ts
 };
 
 describe("row level security", () => {
