@@ -17,6 +17,7 @@ import { PITCH, STEPS, TRUST, WHO, capabilities } from "./home-content";
 const TOUR: TourScene[] = [
   {
     title: "Paste the ask",
+    short: "Paste",
     body: "Their email or checklist, as sent.",
     page: "Check a request",
     alt: "Check a request in the sample: Northwind Builders' message pasted in, asking for a W-9 and a signed NDA.",
@@ -25,6 +26,7 @@ const TOUR: TourScene[] = [
   },
   {
     title: "See what you have",
+    short: "Check",
     body: "You have it, Expires soon, Expired, or Not in your documents.",
     page: "Check a request",
     alt: "The answer in the sample: the request asks for 2 documents, found by matching document names, not by AI. Form W-9: You have it. NDA: You have it.",
@@ -33,6 +35,7 @@ const TOUR: TourScene[] = [
   },
   {
     title: "Send one link",
+    short: "Send",
     body: "It stops after 7, 30 or 90 days, and you see each time it's opened.",
     page: "Passport",
     alt: "Passport in the sample: the link Northwind Builders onboarding (sample), 3 documents, opened 3 times, Working.",

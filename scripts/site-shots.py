@@ -19,9 +19,10 @@ WINDOW = (0, 0, 2880, 1800)
 
 # name: (still, (left, top, right, bottom), output width or None to keep the crop's own width)
 SHOTS = {
-    # The tour (components/site-tour.tsx). Desktop: the whole 1440 window, shown at 960 CSS px.
+    # The tour (components/site-tour.tsx). Desktop: the whole 1440 window, shown at 960 CSS px. Each scene's own
+    # content starts at the top: the answer is check-result-top (film_take.py), its title just under the top bar.
     "tour-ask": (f"{FRAMES}/check-answered-1440.png", WINDOW, 1920),
-    "tour-answer": (f"{FRAMES}/check-result-1440.png", WINDOW, 1920),
+    "tour-answer": ("site-a-58/frames/check-result-top-1440.png", WINDOW, 1920),
     "tour-link": (f"{FRAMES}/passport-1440.png", WINDOW, 1920),
     # Phone: the one pane that matters, 366 CSS px wide, so it shows at about 1:1 in a 390 screen (Design MUST 2: the
     # app's text at 12px or more). The request and its box; the answer's heading and rows; the link.

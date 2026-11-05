@@ -595,6 +595,18 @@ html:has(.sq-header) {
 .site-quiet .sq-tour-steps li[data-on] b {
   color: #ffffff;
 }
+/* Below 480px the three titles don't fit one row: each pill keeps its number and one word (the line under says more). */
+.site-quiet .sq-tour-step-short {
+  display: none;
+}
+@media (max-width: 479px) {
+  .site-quiet .sq-tour-step-long {
+    display: none;
+  }
+  .site-quiet .sq-tour-step-short {
+    display: inline;
+  }
+}
 /* Two lines held for every scene's line, so the steps don't move when a longer one wraps (the 390 tour). */
 .site-quiet .sq-tour-line {
   min-height: 3em;

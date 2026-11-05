@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 
 export type TourScene = {
   title: string;
+  /** The step's one word for phones narrower than 480px, where the three titles don't fit one row. */
+  short: string;
   body: string;
   /** The app page the scene shows, written in the window's bar. */
   page: string;
@@ -100,7 +102,8 @@ export function SiteTour({ scenes }: { scenes: TourScene[] }) {
             {scenes.map((scene, i) => (
               <li key={scene.title} data-on={i === on ? "" : undefined}>
                 <b>{i + 1}</b>
-                {scene.title}
+                <span className="sq-tour-step-long">{scene.title}</span>
+                <span className="sq-tour-step-short">{scene.short}</span>
               </li>
             ))}
           </ol>
