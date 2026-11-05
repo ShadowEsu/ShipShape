@@ -261,8 +261,9 @@ body {
   .ui-v2 .date-row {
     @apply relative ml-auto flex;
   }
+  /* An empty date's "Add": read as the field's hint, so ink-2 (4.5:1 at least; axe 4.12 color-contrast). */
   .ui-v2 .date-add {
-    @apply pointer-events-none absolute inset-y-0 right-2 hidden items-center text-base text-ink-3;
+    @apply pointer-events-none absolute inset-y-0 right-2 hidden items-center text-base text-ink-2;
   }
   .ui-v2 .date-row[data-empty]:not(:focus-within) > .date-add {
     @apply flex;
@@ -355,11 +356,12 @@ body {
   .ui-v2 .top-link {
     @apply items-center rounded-lg px-2.5 py-1.5 text-[13px] whitespace-nowrap text-ink-2 transition-colors duration-[150ms] hover:bg-tile hover:text-ink;
   }
+  /* The search button's words and its key hint are text to read (the button's name), not a placeholder: ink-2. */
   .ui-v2 .search-button {
-    @apply h-[34px] items-center gap-2 rounded-lg border border-line bg-paper px-2.5 text-left text-[13.5px] text-ink-3 transition-colors duration-[150ms] hover:border-field md:w-[200px] lg:w-[340px];
+    @apply h-[34px] items-center gap-2 rounded-lg border border-line bg-paper px-2.5 text-left text-[13.5px] text-ink-2 transition-colors duration-[150ms] hover:border-field md:w-[200px] lg:w-[340px];
   }
   .ui-v2 .search-kbd {
-    @apply ml-auto rounded-md border border-[var(--line-2)] px-1.5 font-sans text-[11.5px] leading-4 text-ink-3;
+    @apply ml-auto rounded-md border border-[var(--line-2)] px-1.5 font-sans text-[11.5px] leading-4 text-ink-2;
   }
   .ui-v2 .search-row {
     @apply flex min-h-11 items-center gap-3 rounded-lg px-2 py-1 text-sm text-ink transition-colors duration-[150ms] hover:bg-tile focus-visible:bg-tile;
@@ -398,9 +400,10 @@ body {
   .ui-v2 .tool:hover .tool-square {
     @apply bg-tile;
   }
-  /* A closed tool: a dashed square and a grey icon; its name and tooltip say why. */
+  /* A closed tool: a dashed square and a grey icon; its name and tooltip say why. The name stays ink-2: the tool is
+     still a link (to why it's closed), so its words are text to read. */
   .ui-v2 .tool.closed {
-    @apply text-ink-3;
+    @apply text-ink-2;
   }
   .ui-v2 .tool.closed .tool-square {
     @apply border-dashed border-[#bdbdb8] text-ink-3;
@@ -847,11 +850,14 @@ html:has(.ui-v2 .top-bar) {
     gap: 4px;
     font-size: 11px;
     line-height: 13px;
-    color: var(--ink-3);
+    /* Labels are text to read: ink-2, not ink-3 (axe color-contrast). ink-2 to ink alone is 2.9:1, under WCAG 1.4.1's
+       3:1 for a colour-only cue, so the current tab is also set in 600. */
+    color: var(--ink-2);
     transition: color var(--q-state) var(--q-ease);
   }
   .ui-v2 .tab-item[aria-current="page"] {
     color: var(--ink);
+    font-weight: 600;
   }
   .ui-v2 .tab-item:focus-visible {
     outline-offset: -2px;

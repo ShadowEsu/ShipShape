@@ -45,7 +45,7 @@ export function HomeV1({ docs, live, ai }: { docs: boolean; live: boolean; ai: b
         <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 pt-10 pb-20 lg:grid-cols-[1.1fr_1fr] lg:pt-16">
           <div className="space-y-6">
             <p className="kicker">Business paperwork, in one place</p>
-            <h1 className="font-serif text-5xl leading-[0.95] font-semibold tracking-tight sm:text-7xl">Every form. One link.</h1>
+            <h1 className="font-serif text-5xl leading-[0.95] font-semibold tracking-tight sm:text-7xl">Every document. One link.</h1>
             <p className="max-w-xl text-lg text-ink-2">{PITCH}</p>
             {/* The two buttons need ~356px in Geist, but its fallback font fits them in 350: at 390 wide they
                 wrapped only when Geist loaded, shifting the page (CLS 0.1). Stack them below 400px from the start. */}
