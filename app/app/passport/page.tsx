@@ -46,7 +46,9 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
         and you see each time it&apos;s opened.
       </p>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      {/* grid-cols-1 below lg: an implicit column grows to its widest unbreakable line (a truncated link label is still one
+          line), which ran 48px off a 390 screen. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="card">
           <h2 className="mb-4 font-semibold">New link</h2>
           <NewPassportForm
