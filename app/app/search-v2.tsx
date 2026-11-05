@@ -73,7 +73,7 @@ export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialog
       ref={open}
       id="search-dialog"
       aria-label="Search"
-      className="search-dialog fixed inset-x-0 top-0 m-0 w-full max-w-none bg-paper p-0 text-ink backdrop:bg-black/20 md:top-[12vh] md:mx-auto md:w-[560px] md:rounded-2xl md:border md:border-line md:shadow-[0_24px_60px_-24px_rgb(0_0_0/0.35)]"
+      className="search-dialog fixed inset-x-0 top-0 m-0 w-full max-w-none bg-paper p-0 text-ink backdrop:bg-black/20 md:top-[20vh] md:mx-auto md:w-[640px] md:rounded-xl md:border md:border-line md:shadow-[var(--pop)]"
       onClick={(e) => {
         if (e.target === e.currentTarget || (e.target instanceof Element && e.target.closest("a[href]"))) e.currentTarget.close();
       }}

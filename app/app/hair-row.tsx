@@ -31,7 +31,7 @@ export function HairRow({
     <li>
       <Link href={href} className="hair-row" aria-current={current ? "true" : undefined}>
         <span className="hair-icon row-icon">
-          <Icon name={icon} size={17} />
+          <Icon name={icon} size={18} />
         </span>
         <span className="hair-text">
           <span className="hair-title">

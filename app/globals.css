@@ -118,6 +118,8 @@
   --color-side: var(--side);
   --color-sep: var(--sep);
   --color-brand: var(--brand);
+  --color-fill: var(--fill);
+  --color-fill-2: var(--fill-2);
 }
 
 html {
@@ -175,16 +177,21 @@ body {
   }
 }
 
-/* The app's controls (Design calm v2): pills of 44px on the phone (touch) and 40px from md up, 14px medium type. */
+/* The app's controls (Quiet §4): pills, 36px (44px on the phone, under 600px), 14/500 type. Primary is ink with white
+   type; secondary is an inset 1px line with ink type; quiet is text only, underlined on hover. */
 @layer components {
   .ui-v2 .btn,
   .ui-v2 .btn-accent,
   .ui-v2 .btn-ghost,
-  .ui-v2 .btn-danger {
-    @apply min-h-11 text-[14px] font-medium md:min-h-10;
+  .ui-v2 .btn-danger,
+  .ui-v2 .btn-quiet {
+    @apply min-h-11 px-4 text-[14px] font-medium min-[600px]:min-h-9;
   }
   .ui-v2 .btn-ghost {
-    @apply border-[var(--line-2)] hover:bg-tile;
+    @apply border-0 bg-paper text-ink shadow-[inset_0_0_0_1px_var(--line)] hover:bg-fill;
+  }
+  .ui-v2 .btn-quiet {
+    @apply inline-flex items-center justify-center gap-2 rounded-full text-ink hover:underline;
   }
   /* A sending button (data-busy: busyButton in components/submit-button.tsx) keeps its colours. Its label already says
      it's busy ("Saving…") and it keeps focus, so it's read, not dimmed: 50% made white on #878787, 3.59:1 (Design,
@@ -214,7 +221,7 @@ body {
     @apply absolute top-0 right-0 left-[60px] border-t border-sep;
   }
   .ui-v2 .group-row {
-    @apply flex min-h-15 items-center gap-3 px-4 py-2.5 transition-colors duration-[180ms];
+    @apply flex min-h-13 items-center gap-3 px-4 py-2 transition-colors duration-[150ms];
   }
   .ui-v2 a.group-row:hover {
     @apply bg-tile;
@@ -303,7 +310,8 @@ body {
     @apply grid size-[34px] shrink-0 place-items-center rounded-lg border border-line bg-paper text-ink-2;
   }
 
-  /* The shell (Design calm v2). The sidebar: flat rows under small grey labels, the active row's faint fill. */
+  /* The shell (Quiet §4). The sidebar: --fill, 34px rows with an 18px line icon and a 14.5px label; the active one is
+     --fill-2 with the accent's tick on its left edge. */
   .ui-v2 .side {
     @apply border-r border-line bg-side px-2.5 py-3.5;
   }
@@ -311,30 +319,30 @@ body {
     @apply px-2.5 pt-4 pb-1 text-[13px] leading-[1.4] font-medium text-ink-2;
   }
   .ui-v2 .side-row {
-    @apply flex min-h-8 items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors duration-[180ms] hover:bg-tile;
+    @apply flex min-h-[34px] items-center gap-2.5 rounded-lg px-2.5 text-[14.5px] text-ink-2 transition-colors duration-[150ms] hover:bg-fill-2;
   }
   .ui-v2 .side-row[aria-current="page"] {
-    @apply bg-tile font-medium text-ink;
+    @apply bg-fill-2 font-medium text-ink shadow-[inset_2px_0_0_var(--brand)];
   }
   .ui-v2 .side-icon {
     @apply shrink-0 text-ink-2;
   }
   .ui-v2 .side-row[aria-current="page"] .side-icon {
-    @apply text-brand;
+    @apply text-ink;
   }
-  /* Deadlines' count of lapsed documents: a small red badge, its number legible at 11px (#b42318 on #fef3f2, 6:1). */
+  /* Deadlines' count of lapsed documents (Quiet §1): one quiet number after the label, no bubble. */
   .ui-v2 .side-count {
-    @apply ml-auto grid h-[18px] min-w-[18px] place-items-center rounded-full bg-bad-soft px-1.5 text-[11px] leading-none font-semibold text-bad tabular-nums;
+    @apply ml-auto text-[13px] leading-none font-normal text-ink-2 tabular-nums;
   }
   /* In the phone's menu every row is a 44px target. */
   .ui-v2 .drawer .side-row {
     @apply min-h-11 text-[15px];
   }
   .ui-v2 .account-row {
-    @apply flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-[180ms] hover:bg-tile;
+    @apply flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-[150ms] hover:bg-fill-2;
   }
   .ui-v2 .account-tile {
-    @apply grid size-7 shrink-0 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-paper;
+    @apply grid size-[26px] shrink-0 place-items-center rounded-full bg-ink text-[10px] font-semibold text-paper;
   }
   .ui-v2 .sample-strip {
     @apply px-4 py-[7px] text-center text-[12.5px] leading-[18px];
@@ -343,7 +351,7 @@ body {
   }
   /* The top bar: on the phone the menu, the logo and search; from md up the page's name, search, Help and Feedback. */
   .ui-v2 .top-bar {
-    @apply sticky top-0 z-20 grid h-13 grid-cols-[44px_1fr_44px] items-center border-b border-line bg-paper/90 px-1.5 backdrop-blur-xl md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-3 md:px-5;
+    @apply sticky top-0 z-20 grid h-13 grid-cols-[44px_1fr_44px] items-center border-b border-line bg-paper px-1.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-3 md:px-5;
   }
   .ui-v2 .top-icon {
     @apply grid size-11 place-items-center rounded-full text-ink-2;
@@ -370,19 +378,16 @@ body {
     @apply text-center text-[28px] leading-[1.12] font-semibold tracking-[-0.025em] text-balance text-ink min-[600px]:text-[32px];
     font-family: var(--sans-display);
   }
+  /* The ask box (Quiet §4): 56px, 16px corners, white with the one elevation, a 40px round ink send button. */
   .ui-v2 .prompt {
-    @apply mt-6 flex min-h-14 w-full items-start gap-3 rounded-2xl border border-[var(--line-2)] bg-paper py-[9px] pr-[9px] pl-3.5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors duration-[180ms];
-  }
-  .ui-v2 .prompt-orb {
-    @apply mt-[6px] size-[26px] shrink-0 rounded-full;
-    background: radial-gradient(circle at 30% 30%, #c9b8ff, #8ec5ff 45%, #ffb4c8 80%);
+    @apply mt-6 flex min-h-14 w-full items-start gap-3 rounded-2xl border border-line bg-paper py-2 pr-2 pl-5 shadow-[var(--pop)] transition-colors duration-[150ms];
   }
   .ui-v2 .prompt-field {
-    @apply max-h-48 min-h-[38px] min-w-0 flex-1 resize-none bg-transparent py-[7px] text-base leading-6 text-ink outline-none placeholder:text-ink-3 sm:text-[15px];
+    @apply max-h-48 min-h-10 min-w-0 flex-1 resize-none bg-transparent py-2 text-base leading-6 text-ink outline-none placeholder:text-ink-3;
     field-sizing: content;
   }
   .ui-v2 .prompt-send {
-    @apply grid size-[38px] shrink-0 place-items-center rounded-full bg-ink text-paper transition-colors duration-[180ms] disabled:cursor-not-allowed disabled:bg-tile disabled:text-ink-3;
+    @apply grid size-10 shrink-0 place-items-center rounded-full bg-ink text-paper transition-colors duration-[150ms] disabled:cursor-not-allowed disabled:bg-fill disabled:text-ink-3;
   }
   .ui-v2 .tool-row {
     @apply mt-10 grid w-full grid-cols-5 gap-x-2 gap-y-4 lg:flex lg:w-auto lg:justify-center lg:gap-3.5;
@@ -407,19 +412,25 @@ body {
   .ui-v2 .home-section-title {
     @apply text-[18px] leading-[1.3] font-semibold tracking-[-0.01em] text-ink min-[600px]:text-[20px];
   }
-  /* The list is the container: a row's layout follows the list's width, not the screen's, so a list in a half column
-     (Home's Waiting beside Saved) wraps as on the phone instead of cutting its titles. */
+  /* A list is a titled group (Quiet §4): no card around it, 52px rows, a 1px line between them. The list is the
+     container: a row's layout follows the list's width, not the screen's, so a list in a half column wraps as on the
+     phone instead of cutting its titles. The rows' own 12px sides hang outside the column, so their text lines up with
+     the title above. */
   .ui-v2 .hair-list {
     container-type: inline-size;
-    @apply overflow-hidden rounded-xl border border-line bg-paper;
+    @apply -mx-3;
   }
   .ui-v2 .hair-list > li + li {
     @apply border-t border-line;
   }
-  /* Narrow list: icon | title and meta (wrapping), then the chip under them. From 36rem: icon | text | chip | chevron, one line each. */
+  /* Narrow list: icon | title and meta (wrapping), then the state under them. From 36rem: icon | text | state | chevron, one line each. */
   .ui-v2 .hair-row {
-    @apply grid min-h-[58px] grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 transition-colors duration-[180ms] hover:bg-[#fafaf8] @xl:grid-cols-[auto_minmax(0,1fr)_auto_auto];
+    @apply grid min-h-13 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2 transition-colors duration-[150ms] hover:bg-fill @xl:grid-cols-[auto_minmax(0,1fr)_auto_auto];
     grid-template-areas: "icon text" "icon chip";
+  }
+  /* The row's leading icon: an 18px line icon, no square around it. */
+  .ui-v2 .hair-row > .row-icon {
+    @apply size-[18px] border-0 bg-transparent;
   }
   .ui-v2 .hair-icon {
     grid-area: icon;
@@ -459,15 +470,16 @@ body {
     }
   }
   .ui-v2 .quiet-empty {
-    @apply rounded-xl border border-line px-4 py-4 text-[15px] text-ink-2;
+    @apply py-3 text-[15px] text-ink-2;
   }
-  /* A state as a dot and a word in a hairline pill (Design calm v2). Grey: waiting on someone. */
+  /* A state as a dot and a word (Quiet §1): an 8px dot, then the word in ink-2 at 13px; no pill. Hollow: waiting on
+     someone, or next. The coloured states are .validity-chip's (below). */
   .ui-v2 .dot-chip {
-    @apply inline-flex h-6 items-center gap-1.5 rounded-full border border-[var(--line-2)] bg-paper px-2.5 text-xs whitespace-nowrap text-ink-2;
+    @apply inline-flex items-center gap-2 text-[13px] leading-[1.4] whitespace-nowrap text-ink-2;
   }
   .ui-v2 .dot-chip::before {
     content: "";
-    @apply size-1.5 rounded-full bg-ink-3;
+    @apply size-2 shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_var(--ink-3)];
   }
   /* The row whose detail is open beside the list (Sent). Below lg the detail isn't beside it, so no fill (Design #25 S3).
      The fill alone is about 1.1:1 against the other rows, so an ink bar on its left edge says which one it is. */
@@ -587,37 +599,44 @@ body {
     font-size: 32px;
   }
 }
-/* A state chip as a dot and a word in a hairline pill (Design calm v2); the dot carries the colour, the word the state. */
+/* A state (Quiet §1): an 8px dot, then the word in ink-2 at 13px. No pill, no fill, no icon: the dot carries the
+   colour, the word the state. Collect's "Missing" ring, Check's square "Not found" tag and Make's mono label are the
+   earlier look's; here they are the same dot and word. */
 .ui-v2 .validity-chip {
-  height: 24px;
-  gap: 6px;
-  padding: 0 9px;
-  border: 1px solid var(--line-2);
-  background: var(--paper);
-  color: var(--ink-2);
-  font-weight: 400;
-  /* Collect's "Missing" pill rings itself in the earlier look, and Check's "Not found" flag is a square tag there; here
-     the hairline pill is the one outline. */
-  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  height: auto;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
   box-shadow: none;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 .ui-v2 .validity-chip::before {
   content: "";
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   flex: none;
   border-radius: 50%;
   background: var(--ok);
 }
 .ui-v2 .validity-chip[data-validity="expiring"]::before {
-  background: var(--warn);
+  background: var(--wait);
 }
 .ui-v2 .validity-chip[data-validity="expired"]::before {
   background: var(--bad);
 }
-/* "Check this one yourself" on a checked request: no state to colour. */
+/* No state to colour ("Check this one yourself", a fact from Business facts): the hollow dot. */
 .ui-v2 .validity-chip[data-validity="none"]::before {
-  background: var(--ink-3);
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
 }
 .ui-v2 .validity-chip > .validity-icon {
   display: none;

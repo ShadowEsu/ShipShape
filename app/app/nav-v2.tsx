@@ -78,7 +78,7 @@ function Sheet({ id, title, open, menu, children }: { id: string; title: string;
       ref={open}
       id={id}
       aria-labelledby={`${id}-title`}
-      className={`sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:shadow-[0_12px_40px_-12px_rgb(0_0_0/0.3)] ${wide}`}
+      className={`sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-2xl bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:shadow-[var(--pop)] ${wide}`}
       onClick={(e) => {
         // A click on the backdrop lands on the dialog element itself; a link to a #fragment on this page doesn't change the path.
         if (e.target === e.currentTarget || (e.target instanceof Element && e.target.closest("a[href]"))) e.currentTarget.close();
