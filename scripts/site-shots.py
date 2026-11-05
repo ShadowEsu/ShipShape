@@ -1,9 +1,10 @@
 """The home page's product screenshots (app/home-quiet.tsx): crops of the app's own stills, saved as WebP in public/site/.
 
-Each crop is sized to where the page shows it, at 2x. The boxes are pixel boxes in the stills (Chrome, device scale 2),
-measured on the 4 Nov set; after the app's look changes, take new stills and measure the boxes again.
+Each crop is sized to where the page shows it, at 2x. The boxes are pixel boxes in the stills (Chrome, device scale 2):
+the papers from the 4 Nov set, the tour and Deadlines from the 5 Nov film's sample stills (the Quiet app, a fresh
+sample). After the app's look changes, take new stills and measure the boxes again.
 
-    /home/preston/shipshape-work.noindex/py/bin/python scripts/site-shots.py [stills folder]
+    /home/preston/shipshape-work.noindex/py/bin/python scripts/site-shots.py [folder holding both still sets]
 """
 
 import sys
@@ -11,22 +12,29 @@ from pathlib import Path
 
 from PIL import Image, features
 
-STILLS = Path(sys.argv[1] if len(sys.argv) > 1 else "/home/preston/boss-handoff/agents/shipshape/stills-2026-11-04")
+STILLS = Path(sys.argv[1] if len(sys.argv) > 1 else "/home/preston/boss-handoff/agents/shipshape")
 OUT = Path(__file__).resolve().parent.parent / "public" / "site"
+FRAMES = "film-2026-11-05/frames"
+WINDOW = (0, 0, 2880, 1800)
 
 # name: (still, (left, top, right, bottom), output width or None to keep the crop's own width)
 SHOTS = {
-    # Check a request's answer for Northwind's sample request: the heading and the first 3 of its 6 rows.
-    # Hero, 472 CSS px wide on desktop and 318 on a 390 phone.
-    "check-answer": ("stack-stack-6e5eff3/43-check-answer-1440.png", (908, 1429, 2444, 2219), 944),
-    "check-answer-sm": ("stack-stack-6e5eff3/43-check-answer-390.png", (16, 1703, 764, 2765), 636),
-    # Passport's "Your links" card after the link is made: 976 CSS px on desktop, 318 on a phone.
-    "passport-links": ("stack-stack-6e5eff3/44-passport-made-1440.png", (700, 576, 2652, 846), None),
-    "passport-links-sm": ("stack-stack-6e5eff3/44-passport-made-390.png", (16, 708, 764, 1106), 636),
+    # The tour (components/site-tour.tsx). Desktop: the whole 1440 window, shown at 960 CSS px.
+    "tour-ask": (f"{FRAMES}/check-answered-1440.png", WINDOW, 1920),
+    "tour-answer": (f"{FRAMES}/check-result-1440.png", WINDOW, 1920),
+    "tour-link": (f"{FRAMES}/passport-1440.png", WINDOW, 1920),
+    # Phone: the one pane that matters, 366 CSS px wide, so it shows at about 1:1 in a 390 screen (Design MUST 2: the
+    # app's text at 12px or more). The request and its box; the answer's heading and rows; the link.
+    "tour-ask-sm": (f"{FRAMES}/check-answered-390.png", (24, 629, 756, 1469), None),
+    "tour-answer-sm": (f"{FRAMES}/check-result-390.png", (24, 215, 756, 1146), None),
+    "tour-link-sm": (f"{FRAMES}/passport-390.png", (24, 285, 756, 866), None),
+    # Deadlines: the whole window on desktop; on a phone, Lapsed and Next 30 days.
+    "deadlines": (f"{FRAMES}/deadlines-1440.png", WINDOW, 1920),
+    "deadlines-sm": (f"{FRAMES}/deadlines-390.png", (24, 823, 756, 1335), None),
     # The whole first page in the document sheet (390 wide, where the sheet shows all of it), inside its border: 325 CSS px.
-    "paper-nda": ("papers-papers-8e3aff3/47-sheet-nda-390.png", (40, 738, 740, 1648), 650),
-    "paper-w9": ("papers-papers-8e3aff3/47-sheet-w9-390.png", (40, 738, 740, 1648), 650),
-    "paper-coi": ("papers-papers-8e3aff3/47-sheet-coi-390.png", (40, 738, 740, 1648), 650),
+    "paper-nda": ("stills-2026-11-04/papers-papers-8e3aff3/47-sheet-nda-390.png", (40, 738, 740, 1648), 650),
+    "paper-w9": ("stills-2026-11-04/papers-papers-8e3aff3/47-sheet-w9-390.png", (40, 738, 740, 1648), 650),
+    "paper-coi": ("stills-2026-11-04/papers-papers-8e3aff3/47-sheet-coi-390.png", (40, 738, 740, 1648), 650),
 }
 
 
