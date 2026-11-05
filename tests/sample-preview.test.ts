@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import DocumentPage from "@/app/app/documents/[id]/page";
+import AppHome from "@/app/app/page";
 import { usDate } from "@/lib/pdf/sample-papers";
 import { asService, asUser } from "@/lib/server/db";
 import type { VersionRow } from "@/lib/server/documents";
@@ -214,6 +215,25 @@ describe("a sample paper's first page", () => {
     const html = await renderPage(DocumentPage, { params: Promise.resolve({ id: w9.id }), searchParams: Promise.resolve({}) });
     expect(html).not.toContain("/sample/w9-");
     expect(html).not.toContain("Show the first page");
+  });
+
+  it("on Home, a sample's 3 newest papers are their first pages, and a real workspace's are title rows that read no file", async () => {
+    vi.stubEnv("SHIPSHAPE_REAL_DOCS", "1");
+    await signInSample();
+    const papers = (html: string) => html.slice(html.indexOf('id="papers-title"'), html.indexOf("</section>", html.indexOf('id="papers-title"')));
+    const sample = papers(await renderPage(AppHome, {}));
+    const thumbs = [...sample.matchAll(/<a [^>]*href="\/app\/documents\/[^"]+"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1]);
+    expect(thumbs).toHaveLength(3);
+    for (const t of thumbs) expect(t).toMatch(/viewBox="0 0 612 792"|<img src="\/sample\/w9-1-top\.webp"/);
+    expect(sample).not.toContain("hair-row");
+
+    const userId = await createLocalUser("home-papers-real@example.com", false);
+    await finishSignIn(userId, { demo: false });
+    const real = await requireWorkspace();
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind) values ($1, 'Lease', 'agreement'), ($1, 'Permit', 'permit')", [real.orgId]));
+    const rows = papers(await renderPage(AppHome, {}));
+    expect([...rows.matchAll(/class="hair-title">([^<]*)</g)].map((m) => m[1]).sort()).toEqual(["Lease", "Permit"]);
+    expect(rows).not.toMatch(/<svg viewBox="0 0 612|<img /);
   });
 });
 

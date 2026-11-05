@@ -24,7 +24,6 @@ export type IconName =
   | "download"
   | "tick"
   | "page"
-  | "menu"
   | "bookmark"
   | "people"
   | "history";
@@ -126,7 +125,6 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M14.5 3.5V8H19M9.5 13h6M9.5 16.5h4" />
     </>
   ),
-  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   bookmark: <path d="M7 3.5h10a1 1 0 0 1 1 1v16l-6-4.25-6 4.25v-16a1 1 0 0 1 1-1Z" />,
   people: (
     <>

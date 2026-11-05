@@ -185,7 +185,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
           </EmptyState>
         )
       ) : v2 ? (
-        // Hairline rows, as Home's Recent (Design calm v2); the title morphs into the document page's title (spec §6.1).
+        // 52px rows, as Home's (Quiet); the title morphs into the document page's title (spec §6.1).
         // The rows rise in on the list's first load in a visit, not on a search, filter or return (motion spec §2).
         <Arrive list="documents" className="hair-list">
           {docs.map((d) => (
