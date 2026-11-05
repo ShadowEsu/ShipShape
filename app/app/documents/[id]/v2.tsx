@@ -4,8 +4,10 @@ import { Notice, ValidityChip } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { HashLanding } from "@/components/hash-landing";
 import { Icon } from "@/components/icons";
+import { PaperSvg } from "@/components/paper-svg";
 import { SubmitButton } from "@/components/submit-button";
 import { historyLabel } from "@/lib/history";
+import { LETTER, type PaperMark } from "@/lib/pdf/surface";
 import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, type AuditRow, type DocKind, type DocRow, type VersionRow } from "@/lib/server/documents";
 import { SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
 import { timeOf } from "@/lib/today";
@@ -17,6 +19,7 @@ import { archive } from "../actions";
 import { DetailsListForm, SignRequestForm, VersionForm } from "../forms";
 import { archiveQuestion, versionWarning } from "../messages";
 import { DeleteForGood } from "./delete-dialog";
+import { PagePreview } from "./page-preview";
 import { ARCHIVED_ID, fieldSources, size, TITLE_ID } from "./shared";
 import { SignatureRequests } from "./signatures";
 import { StatusLanding } from "./status-landing";
@@ -93,6 +96,8 @@ export function DocumentV2(p: {
   kept: ReadonlySet<string>;
   /** An owner or admin (Security D3): an archived document offers Delete for good. */
   canDelete: boolean;
+  /** A sample's drawn paper (lib/server/sample.ts samplePaperPreview): its first page, drawn from the values kept with it. */
+  preview: readonly PaperMark[] | null;
 }) {
   const { doc, versions, template, zone } = p;
   const latest = versions[0];
@@ -133,17 +138,21 @@ export function DocumentV2(p: {
       {p.notices}
 
       {/*
-        The first page's place. A paper card for every file: a real preview would read the file, and every read is a
-        history entry (Security, 20261102-1109). The 3:4 page sits in a fixed crop, so a preview can take its place without
-        moving anything.
+        The first page's place. A sample's drawn paper shows its page, drawn from the values kept with its version (spot 5b);
+        every other file gets a paper card: a real preview would read the file, and every read is a history entry (Security,
+        20261102-1109). The 3:4 page sits in a fixed crop, so either fills it without moving anything.
       */}
-      <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl border border-line px-8 pt-6 md:h-64">
-        <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md border border-b-0 border-[var(--line-2)] bg-paper p-5">
-          <p className="doc-kind eyebrow">{DOC_KINDS[doc.kind]}</p>
-          <p className="mt-2 line-clamp-3 text-lg leading-snug font-medium">{doc.title}</p>
-          {latest && <p className="mt-3 font-mono text-xs text-ink-3">{FILE_TYPE[latest.mime]}</p>}
+      {p.preview ? (
+        <PagePreview title={doc.title} page={<PaperSvg marks={p.preview} width={LETTER.w} height={LETTER.h} className="block h-auto w-full" />} />
+      ) : (
+        <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl border border-line px-8 pt-6 md:h-64">
+          <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md border border-b-0 border-[var(--line-2)] bg-paper p-5">
+            <p className="doc-kind eyebrow">{DOC_KINDS[doc.kind]}</p>
+            <p className="mt-2 line-clamp-3 text-lg leading-snug font-medium">{doc.title}</p>
+            {latest && <p className="mt-3 font-mono text-xs text-ink-3">{FILE_TYPE[latest.mime]}</p>}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Where the Archived block was: after Restore it says so here (Design 05:33); after Archive it's read out only. */}
       <StatusLanding status={doc.status} />
