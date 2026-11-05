@@ -735,6 +735,17 @@ describe("reminders to Slack (the daily run)", () => {
     expect(slack.posts()).toEqual([]);
     expect(c.slack.posts()).toEqual([]);
   });
+
+  it("a connection that left Pro posts again by itself once the workspace is back on Pro (Settings says it will)", async () => {
+    const { slack, ctx } = await connectedPro("run-back@example.com");
+    await lapse(ctx);
+    await runReminders(undefined, ctx.orgId);
+    expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 0 });
+    await pro(ctx);
+    await runReminders(undefined, ctx.orgId);
+    expect(await sendSlackPosts()).toEqual({ sent: 1, failed: 0, held: 0, broken: 0 });
+    expect(textOf(slack.posts()[0])).toContain("Liability certificate");
+  });
 });
 
 /** Settings as the redesigned app draws it, and the Slack section's part of it ("" when there's none). */
@@ -814,6 +825,13 @@ describe("Settings' Slack row", () => {
       expect(paused.actions.filter((a) => a.tag === "a")).toEqual([]);
       expect(paused.forms).toBe(1);
     }
+    // Kept, so it starts again on Pro by itself; one Slack already said is gone doesn't, and says Reconnect instead.
+    expect(htmlText((await settings()).section)).not.toMatch(/Reconnect/);
+    await db.root((tx) => tx.query("update app.slack_connections set broken_at = now() where org_id = $1", [owner.orgId]));
+    const gone = await settings();
+    expect(htmlText(gone.section)).toMatch(/Paused/);
+    expect(htmlText(gone.section)).toMatch(/Reconnect/);
+    expect(gone.actions.filter((a) => a.tag === "a")).toEqual([]);
   });
 
   it("isn't there at all while Slack isn't configured, in a sample, or in the earlier look", async () => {

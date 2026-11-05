@@ -342,11 +342,14 @@ const SLACK_SAYS: Record<SlackOutcome, { ok: boolean; text: string }> = {
 function SlackSection({ slack, outcome }: { slack: SlackRow; outcome: SlackOutcome | undefined }) {
   const c = slack.connection;
   const says = outcome && SLACK_SAYS[outcome];
+  // Off Pro the connection is kept, so the daily run posts again by itself once the workspace is back on Pro; one
+  // that Slack had already said is gone needs Reconnect then (Design 11-05, wording; Security owns "start again").
+  const paused = c && (c.broken ? "Reconnect on Pro to post reminders again." : "Reminders start again when you're back on Pro.");
   const detail = c
-    ? `${c.channel} in ${c.team}${slack.pro ? "" : ". Paused: reminders post on Pro only."}`
+    ? `${c.channel} in ${c.team}${slack.pro ? "" : `. ${paused}`}`
     : slack.pro
       ? "Post deadline reminders to a Slack channel"
-      : "Deadline reminders in a Slack channel come with Pro";
+      : "Deadline reminders in a Slack channel come with Pro.";
   return (
     <section id="slack" aria-labelledby="slack-title" className="space-y-3">
       <h2 id="slack-title" tabIndex={-1} className="section-title">
