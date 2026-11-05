@@ -41,6 +41,40 @@ const SAMPLE_FACTS: Record<ProfileKey, string> = {
   signer_title: "Managing member",
 };
 
+const FACTS: Facts = { values: SAMPLE_FACTS, ein: SAMPLE_EIN, einLast4: SAMPLE_EIN.slice(-4) };
+
+function template(id: string): TemplateInfo {
+  const t = templateById(id);
+  if (!t) throw new Error(`no template ${id}`);
+  return t;
+}
+
+/** The request the sample's W-9 answers, signed. */
+const W9_REQUEST = { requester: "Northwind Builders (sample)", sign: "on" };
+
+/** The sample's W-9 file: signed on `today`, or with the date left blank (""), as its preview images show it. */
+export async function sampleW9Pdf(today: string): Promise<Uint8Array> {
+  const t = template("irs-w9");
+  return (await render(t, { ...prefill(t, FACTS, today), ...W9_REQUEST }, FACTS, today, true)).bytes;
+}
+
+/**
+ * The sample W-9's first page as images in public/sample/ (spot 5b; Design, and Security P3 in 20261104-1327). The IRS
+ * form isn't drawn by ShipShape's code, so the browser can't draw it again as it does the other papers. `npm run
+ * sample:w9-image` makes them from `sampleW9Pdf("")`, the date left blank, since a fixed date would differ from the
+ * file's: the top of the page for the document page's crop, and the whole page for its sheet. `page` is that page's
+ * `pageHash`: a test checks it, so a change to the sample's facts, the IRS form or how it's filled fails until the
+ * images are made again under the next `number`.
+ */
+export const SAMPLE_W9_IMAGES = {
+  number: 1,
+  page: "ec298014bb3859e669b551babe54008fa64f56a11360209c795a62ad2f4becb9",
+  crop: { src: "/sample/w9-1-top.webp", width: 600, height: 480 },
+  full: { src: "/sample/w9-1.webp", width: 918, height: 1188 },
+};
+
+const sampleW9 = z.object({ kind: z.literal("w9"), images: z.literal(SAMPLE_W9_IMAGES.number) });
+
 async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides: Record<string, string>): Promise<string> {
   const start = prefill(t, facts, ctx.today);
   const values = { ...start, ...overrides };
@@ -54,12 +88,13 @@ async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides
     { bytes: out.bytes, mime: "application/pdf" },
     "sample",
     // The NDA keeps the values it was filled with, and which drawing drew it, so its preview draws its cover page from
-    // them (spot 5b).
+    // them; the W-9 keeps which images show its page (spot 5b).
     {
       template: t.id,
       templateVersion: t.source.version,
       fields: fillRecord(t, values, start),
       ...(t.kind === "nda" && { paper: { kind: "nda", values }, drawn: SAMPLE_DRAWING }),
+      ...(t.kind === "w9" && { paper: { kind: "w9", images: SAMPLE_W9_IMAGES.number } }),
     },
   );
 }
@@ -78,9 +113,8 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await tx.query("select app.set_tax_id($1, 'ein', $2, $3)", [orgId, encryptField(SAMPLE_EIN, orgId, "ein"), SAMPLE_EIN.slice(-4)]);
   await tx.query("select app.confirm_facts($1, $2)", [orgId, [...Object.keys(f).filter((k) => f[k as ProfileKey]), "ein"]]);
 
-  const facts: Facts = { values: f, ein: SAMPLE_EIN, einLast4: SAMPLE_EIN.slice(-4) };
-  const w9 = await filled(tx, ctx, templateById("irs-w9")!, facts, { requester: "Northwind Builders (sample)", sign: "on" });
-  await filled(tx, ctx, templateById("common-paper-mnda")!, facts, {
+  const w9 = await filled(tx, ctx, template("irs-w9"), FACTS, W9_REQUEST);
+  await filled(tx, ctx, template("common-paper-mnda"), FACTS, {
     effective_date: day(-40),
     mnda_term: "years",
     mnda_years: "1",
@@ -156,31 +190,37 @@ const sampleNda = z
       MNDA !== undefined && MNDA.fields.every((f) => !f.required || (f.when !== undefined && values[f.when.key] !== f.when.equals) || Boolean(values[f.key])),
   );
 
+/** A sample paper's first page: drawn from marks (the papers ShipShape draws), or the sample W-9's images. */
+export type SamplePreview = { marks: PaperMark[] } | { images: typeof SAMPLE_W9_IMAGES };
+
 /**
- * A sample document's first page as preview marks (spot 5b), or null. Decided here, on the server: only in a sample,
- * only for a version the sample drew with today's drawing (SAMPLE_DRAWING; its values kept with it), and only when those
- * values still read as a paper. A signed copy starts with the pages of the version that was sent (lib/pdf/to-sign.ts,
- * then the certificate appended), so its first page is that version's: the request leads back to it. Real documents
- * never get one (their thumbnails wait for 5c); no file is read either way (Security 20261104-1327). Decorative, so a
- * failure to draw it leaves the paper card, never the page broken.
+ * A sample document's first page (spot 5b), or null. Decided here, on the server: only in a sample, and only for a
+ * version the sample made. A drawn paper must be drawn with today's drawing (SAMPLE_DRAWING; its values kept with it)
+ * and those values must still read as a paper; the W-9 must name today's images (SAMPLE_W9_IMAGES). A signed copy
+ * starts with the pages of the version that was sent (lib/pdf/to-sign.ts, then the certificate appended), so its first
+ * page is that version's: the request leads back to it. Real documents never get one (their thumbnails wait for 5c);
+ * no file is read either way (Security 20261104-1327). Decorative, so a failure to draw it leaves the paper card,
+ * never the page broken.
  */
 export async function samplePaperPreview(
   ctx: Ctx,
   versions: readonly Pick<VersionRow, "version" | "origin" | "fill_record">[],
   requests: readonly Pick<SignatureRequestRow, "version" | "signed_version">[],
-): Promise<PaperMark[] | null> {
+): Promise<SamplePreview | null> {
   if (!ctx.demo) return null;
   const latest = versions[0];
   const sent = latest?.origin === "signed" ? requests.find((r) => r.signed_version === latest.version)?.version : undefined;
   const drawn = sent === undefined ? latest : versions.find((v) => v.version === sent);
   const record = drawn?.origin === "sample" ? drawn.fill_record : null;
-  if (!record || record.drawn !== SAMPLE_DRAWING) return null;
+  if (!record) return null;
+  if (sampleW9.safeParse(record.paper).success) return { images: SAMPLE_W9_IMAGES };
+  if (record.drawn !== SAMPLE_DRAWING) return null;
   try {
     const raw = record.paper;
     const paper = samplePaper.safeParse(raw);
-    if (paper.success) return await samplePaperMarks(paper.data);
+    if (paper.success) return { marks: await samplePaperMarks(paper.data) };
     const nda = sampleNda.safeParse(raw);
-    return nda.success ? await sampleNdaCover(nda.data.values) : null;
+    return nda.success ? { marks: await sampleNdaCover(nda.data.values) } : null;
   } catch (e) {
     console.error(`sample preview: not drawn (${e instanceof Error ? e.name : "error"})`);
     return null;

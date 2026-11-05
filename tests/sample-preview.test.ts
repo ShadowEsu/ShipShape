@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,14 +8,15 @@ import { asService, asUser } from "@/lib/server/db";
 import type { VersionRow } from "@/lib/server/documents";
 import type { SignatureRequestRow } from "@/lib/server/esign";
 import type { Ctx } from "@/lib/server/profile";
-import { samplePaperPreview, seedSampleActivity, seedSampleWorkspace } from "@/lib/server/sample";
+import { SAMPLE_W9_IMAGES, samplePaperPreview, sampleW9Pdf, seedSampleActivity, seedSampleWorkspace } from "@/lib/server/sample";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { plusDays } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { pageHash } from "./support/page-hash";
 import { renderPage, textOf } from "./support/render";
 
-/** A sample paper's first page on its document page (ledger 461, spot 5b): drawn, not read from the file. */
+/** A sample paper's first page on its document page (ledger 461, spot 5b): drawn, or the W-9's images, never read from the file. */
 
 const jar = vi.hoisted(() => new Map<string, { value: string }>());
 vi.mock("next/headers", () => ({
@@ -116,17 +117,17 @@ describe("a sample paper's first page", () => {
     expect(textOf(html)).toContain("Show the first page of Certificate of liability insurance (sample)");
   });
 
-  it("draws only the sample's drawn papers and its NDA, only in a sample, and only from values that read as one", async () => {
+  it("shows only the sample's own papers, only in a sample, and only from values that read as one", async () => {
     const ctx = await signInSample();
     const docs = await documentsOf(ctx);
-    const drawn: string[] = [];
-    for (const d of docs) if (await samplePaperPreview(ctx, d.versions, d.requests)) drawn.push(d.title);
-    // Not the W-9: the IRS form isn't drawn by ShipShape's code, so its page isn't drawn here.
-    expect(drawn).toEqual([
+    const shown: string[] = [];
+    for (const d of docs) if (await samplePaperPreview(ctx, d.versions, d.requests)) shown.push(d.title);
+    expect(shown).toEqual([
       "Certificate of liability insurance (sample)",
       "City business license (sample)",
       "Contractor license (sample)",
       "Mutual NDA with Northwind Builders (sample)",
+      "W-9 Harbor Plumbing (sample)",
     ]);
 
     const coi = docs.find((d) => d.title.startsWith("Certificate of liability"));
@@ -138,6 +139,12 @@ describe("a sample paper's first page", () => {
     // Drawn by an earlier drawing (or before drawings were numbered): its file may differ from today's drawing.
     expect(await samplePaperPreview(ctx, [{ ...v1, fill_record: { paper: v1.fill_record?.paper } }], [])).toBeNull();
     expect(await samplePaperPreview(ctx, [{ ...v1, fill_record: { paper: v1.fill_record?.paper, drawn: 0 } }], [])).toBeNull();
+    // A W-9 shows today's images only: one that names other images (or none) keeps its card.
+    expect(await samplePaperPreview(ctx, [{ version: 1, origin: "sample", fill_record: { paper: { kind: "w9", images: SAMPLE_W9_IMAGES.number } } }], [])).toEqual({
+      images: SAMPLE_W9_IMAGES,
+    });
+    expect(await samplePaperPreview({ ...ctx, demo: false }, [{ version: 1, origin: "sample", fill_record: { paper: { kind: "w9", images: SAMPLE_W9_IMAGES.number } } }], [])).toBeNull();
+    expect(await samplePaperPreview(ctx, [{ version: 1, origin: "sample", fill_record: { paper: { kind: "w9", images: SAMPLE_W9_IMAGES.number - 1 } } }], [])).toBeNull();
     expect(await samplePaperPreview(ctx, [{ version: 1, origin: "sample", fill_record: { paper: { kind: "w9" }, drawn: 1 } }], [])).toBeNull();
     // An NDA record missing a value its form requires would still draw a plausible cover: not drawn.
     expect(await samplePaperPreview(ctx, [{ version: 1, origin: "sample", fill_record: { paper: { kind: "nda", values: {} }, drawn: 1 } }], [])).toBeNull();
@@ -179,11 +186,41 @@ describe("a sample paper's first page", () => {
     expect(html.slice(at)).toMatch(/<text[^>]*opacity="0.12"[^>]*>SAMPLE<\/text>/);
   });
 
-  it("keeps the paper card for the documents it doesn't draw", async () => {
+  it("shows the W-9's first page as images of the sample's own W-9, its signature date left blank", async () => {
+    // The images were made from this page (npm run sample:w9-image): a change to the sample's facts, the IRS form or
+    // how it's filled changes it, and then the images must be made again.
+    expect(await pageHash(await sampleW9Pdf("")), "the sample W-9's page changed: see SAMPLE_W9_IMAGES in lib/server/sample.ts").toBe(SAMPLE_W9_IMAGES.page);
+    // Blank, not a fixed date (Security P3): a date on the image would differ from the file's.
+    expect(await pageHash(await sampleW9Pdf("2026-11-04"))).not.toBe(SAMPLE_W9_IMAGES.page);
+    // Each image is there, at the size the page says, so it fills its place without moving anything.
+    for (const image of [SAMPLE_W9_IMAGES.crop, SAMPLE_W9_IMAGES.full]) {
+      expect(webpSize(await readFile(path.join(process.cwd(), "public", image.src)))).toEqual([image.width, image.height]);
+    }
+
     const ctx = await signInSample();
     const [w9] = await db.root((tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1 and kind = 'w9'", [ctx.orgId]));
     const html = await renderPage(DocumentPage, { params: Promise.resolve({ id: w9.id }), searchParams: Promise.resolve({}) });
-    expect(html).not.toContain('viewBox="0 0 612 792"');
+    expect(html).toContain(`<img src="${SAMPLE_W9_IMAGES.crop.src}" width="600" height="480" alt=""`);
+    // The whole page loads only when its sheet opens.
+    expect(html).toMatch(new RegExp(`<img src="${SAMPLE_W9_IMAGES.full.src}" width="918" height="1188" alt="" loading="lazy"`));
+    expect(textOf(html)).toContain("Show the first page of W-9 Harbor Plumbing (sample)");
+  });
+
+  it("keeps the paper card for a document it can't show", async () => {
+    const ctx = await signInSample();
+    const [w9] = await db.root((tx) => tx.query<{ id: string }>("select id from app.documents where org_id = $1 and kind = 'w9'", [ctx.orgId]));
+    // Made when the W-9's page was different: its images are gone.
+    await db.root((tx) => tx.query("update app.document_versions set fill_record = jsonb_set(fill_record, '{paper,images}', '0') where document_id = $1", [w9.id]));
+    const html = await renderPage(DocumentPage, { params: Promise.resolve({ id: w9.id }), searchParams: Promise.resolve({}) });
+    expect(html).not.toContain("/sample/w9-");
     expect(html).not.toContain("Show the first page");
   });
 });
+
+/** A WebP's width and height, from its header (cwebp writes a simple lossy file, or an extended one). */
+function webpSize(b: Buffer): [number, number] {
+  const chunk = b.toString("latin1", 12, 16);
+  if (chunk === "VP8 ") return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
+  if (chunk === "VP8X") return [b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1];
+  throw new Error(`not a lossy WebP: ${chunk}`);
+}
