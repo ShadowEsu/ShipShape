@@ -11,6 +11,12 @@ import { migrate } from "@/lib/server/migrations";
 import type { MigrationStep } from "@/lib/server/migrations";
 import { GET as callbackGet } from "@/app/api/integrations/slack/callback/route";
 import { GET as startGet } from "@/app/api/integrations/slack/start/route";
+import FaqPage from "@/app/faq/page";
+import HomePage from "@/app/page";
+import PricingPage from "@/app/pricing/page";
+import PrivacyPage from "@/app/privacy/page";
+import StatusPage from "@/app/status/page";
+import TermsPage from "@/app/terms/page";
 import { disconnectSlackChannel, sendSlackTestMessage } from "@/app/app/settings/actions";
 import SettingsPage from "@/app/app/settings/page";
 import { deleteAccount, exportWorkspace } from "@/lib/server/account";
@@ -881,6 +887,18 @@ describe("account deletion and export", () => {
     expect(everything).not.toContain("s3cr3tPathPart");
     expect(everything).not.toContain("SecretTokenValue");
     expect(everything).not.toContain("v1.");
+  });
+});
+
+describe("the public pages", () => {
+  it("only Privacy names Slack (as a recipient someone chooses); the site and pricing never offer it, configured or not", async () => {
+    for (const configured of [true, false]) {
+      if (!configured) vi.stubEnv("SLACK_CLIENT_ID", "");
+      for (const [name, page] of Object.entries({ home: HomePage, faq: FaqPage, pricing: PricingPage, status: StatusPage, terms: TermsPage })) {
+        expect([name, htmlText(await renderPage(page, {}))]).not.toEqual([name, expect.stringMatching(/slack/i)]);
+      }
+      expect(htmlText(await renderPage(PrivacyPage, {}))).toMatch(/Slack/);
+    }
   });
 });
 
