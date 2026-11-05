@@ -9,6 +9,7 @@ import { UserError } from "./errors";
 import { loadProfile, NeedsRecentSignIn, type Ctx } from "./profile";
 import { recentEnough } from "./session";
 import { deletionRecordAddress, sendDeletionRecord } from "./mail";
+import { disconnectSlackBeforeDeletion } from "./slack";
 import { blobStore, ObjectMissing, removeQueued } from "./storage";
 import { zip } from "./zip";
 
@@ -133,7 +134,8 @@ interface ExportContact {
 /**
  * Everything in the workspace as a ZIP: every version of every document, their details, the
  * business facts (tax ID only as its last 4 digits), the full history, the passport links with their
- * access log and the signature requests (never a token or code hash, W9-9), the people kept in People, and the exporting
+ * access log and the signature requests (never a token or code hash, W9-9), the people kept in People, the
+ * workspace's Slack connection where there is one (channel, team and when; never its webhook address or token), and the exporting
  * person's own sessions (browser and system name and times, Design row 34) and agreements. Owners
  * and admins only, after a recent sign-in; the export itself is recorded in the history.
  */
@@ -141,7 +143,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
   if (ctx.role === "member") throw new UserError("Only owners and admins can export the workspace.");
   if (!recentEnough(ctx)) throw new NeedsRecentSignIn("For your security, sign in again to export.");
 
-  const { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements, contacts } = await asUser(ctx.userId, async (tx) => {
+  const { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements, contacts, integrations } = await asUser(ctx.userId, async (tx) => {
     const docs = await tx.query<ExportDoc>(
       "select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on, d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.created_at::text as created_at from app.documents d where d.org_id = $1 order by d.created_at, d.id",
       [ctx.orgId],
@@ -192,7 +194,12 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
       "select name, email, company, source, created_at::text as created_at from app.contacts where org_id = $1 order by lower(name), id",
       [ctx.orgId],
     );
-    return { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements, contacts };
+    // Slack (0052): the columns a member may read; the encrypted address and token aren't among them.
+    const integrations = await tx.query<{ app: string; channel: string; team: string; connected_at: string }>(
+      "select 'slack' as app, channel, team_name as team, connected_at::text as connected_at from app.slack_connections where org_id = $1",
+      [ctx.orgId],
+    );
+    return { docs, versions, vendors, vendorFiles, sessions, links, linkDocs, linkAccess, signatures, agreements, contacts, integrations };
   });
 
   const passports: (ExportLink & { documents: string[]; access: Omit<ExportLinkAccess, "link_id">[] })[] = links.map((l) => ({ ...l, documents: [], access: [] }));
@@ -267,6 +274,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
     "signatures.json  your signature requests: the document and version, the signer's name and email, the status, when it was made, expires and was signed, the name they typed, when and to which version of the consent they agreed, and the reviewed file's SHA-256 fingerprint",
     "agreements.json  what you agreed to (such as the Terms and Privacy Policy), which version, and when",
     "contacts.csv     the people your workspace keeps in People: name, email, company, where each came from (typed, signer or sample) and when it was added",
+    ...(integrations.length ? ["integrations.json where ShipShape posts deadline reminders: the Slack channel and team, and when it was connected"] : []),
     "",
     "Check a file against its fingerprint with: shasum -a 256 <file>",
     ...(missing.length ? ["", "NOT INCLUDED: the stored copy of these files could not be found. Their details and fingerprints are still listed.", ...missing.map((m) => `  ${m}`)] : []),
@@ -299,6 +307,7 @@ export async function exportWorkspace(ctx: Ctx): Promise<{ filename: string; byt
             ["name,email,company,source,created_at", ...contacts.map((c) => [c.name, c.email, c.company, c.source, c.created_at].map(csvCell).join(","))].join("\n"),
           ),
         },
+        ...(integrations.length ? [{ name: "integrations.json", data: enc.encode(JSON.stringify(integrations, null, 2)) }] : []),
         ...files,
       ],
       now,
@@ -475,6 +484,8 @@ export async function dailyRunOverdue(): Promise<boolean> {
  */
 async function finishDeletion(userId: string, handled: string[]): Promise<void> {
   await deleteSignIn(userId);
+  // Slack's tokens for the workspaces about to go are revoked while we still hold them (never throws for Slack).
+  await disconnectSlackBeforeDeletion(userId);
   let rows: { storage_path: string }[];
   try {
     rows = await deleteRows(userId, handled);

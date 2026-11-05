@@ -7,10 +7,13 @@ import { PLANS } from "@/lib/plans";
 import type { BillingView } from "@/lib/server/billing";
 import type { LiveSession, SignedIn } from "@/lib/server/session";
 import { RECENT_AUTH_SECONDS } from "@/lib/server/session";
+import { START_PATH } from "@/lib/server/slack";
+import type { SlackOutcome, SlackRow } from "@/lib/server/slack";
 import { dayOf } from "@/lib/today";
 import { signOut } from "../../signin/actions";
+import { StateChip } from "../hair-row";
 import { CelebrationSwitch } from "../motion-moments";
-import { signOutEverywhere, signOutSession } from "./actions";
+import { disconnectSlackChannel, sendSlackTestMessage, signOutEverywhere, signOutSession } from "./actions";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
 import { ExportButton } from "./export-button";
 import { DeleteAccountForm, RenameWorkspaceForm } from "./forms";
@@ -33,6 +36,8 @@ export function SettingsV2({
   method,
   sessions,
   canRename,
+  slack,
+  slackOutcome,
 }: {
   ctx: SignedIn;
   zone: string;
@@ -44,6 +49,9 @@ export function SettingsV2({
   method: string;
   sessions: LiveSession[];
   canRename: boolean;
+  /** Null: Slack isn't offered here (not configured, or a sample), so nothing about it shows. */
+  slack: SlackRow | null;
+  slackOutcome: SlackOutcome | undefined;
 }) {
   return (
     <div className="mx-auto max-w-[720px] space-y-10">
@@ -184,6 +192,8 @@ export function SettingsV2({
         )}
       </section>
 
+      {slack && <SlackSection slack={slack} outcome={slackOutcome} />}
+
       {/* The celebration toggle (motion spec §2): on by default, kept in this browser, so nothing is stored about it. */}
       <section aria-labelledby="motion-title" className="space-y-3">
         <h2 id="motion-title" className="section-title">
@@ -305,5 +315,79 @@ export function SettingsV2({
         <DeleteAccountForm deleted={goes.deleted} left={goes.left} />
       </section>
     </div>
+  );
+}
+
+/** What the Slack row says after connecting, testing or disconnecting; ok: shown as done, otherwise as a problem. */
+const SLACK_SAYS: Record<SlackOutcome, { ok: boolean; text: string }> = {
+  connected: { ok: true, text: "Slack is connected. Deadline reminders will post in the channel you picked." },
+  cancelled: { ok: false, text: "Slack wasn't connected: it was cancelled in Slack." },
+  failed: { ok: false, text: "Slack couldn't be connected. Try again." },
+  refused: { ok: false, text: "Only owners and admins of this workspace can change Slack." },
+  busy: { ok: false, text: "Too many tries. Wait up to an hour, then try again." },
+  tested: { ok: true, text: "Test message sent. Check the channel in Slack." },
+  test_failed: { ok: false, text: "The test message didn't go through. Try again in a minute." },
+  broken: { ok: false, text: "Slack says that channel is gone. Reconnect to pick a channel." },
+  disconnected: { ok: true, text: "Slack is disconnected. ShipShape no longer posts there." },
+  disconnect_failed: { ok: false, text: "Slack couldn't be reached to disconnect. Try again in a minute." },
+};
+
+/**
+ * Slack (lib/server/slack.ts): one 52px row. Owners and admins connect (a link to the start route, which goes to
+ * Slack's consent screen), send a test message, disconnect, or reconnect a channel Slack says is gone; members see the
+ * row as it is. A state is a dot and a word (Quiet §1).
+ */
+function SlackSection({ slack, outcome }: { slack: SlackRow; outcome: SlackOutcome | undefined }) {
+  const c = slack.connection;
+  const says = outcome && SLACK_SAYS[outcome];
+  return (
+    <section id="slack" aria-labelledby="slack-title" className="space-y-3">
+      <h2 id="slack-title" tabIndex={-1} className="section-title">
+        Integrations
+      </h2>
+      {says && (
+        <p role="status" className={`rounded-xl px-4 py-3 text-sm ${says.ok ? "bg-ok-soft text-ok" : "bg-bad-soft text-bad"}`}>
+          {says.text}
+        </p>
+      )}
+      <ul className="group-list plain">
+        <li className="group-row flex-wrap justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-1 basis-56">
+            <h3 className="font-medium">Slack</h3>
+            <p className="text-sm text-ink-2">{c ? `${c.channel} in ${c.team}` : "Post deadline reminders to a Slack channel"}</p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
+            {!c ? (
+              <span className="dot-chip">Not connected</span>
+            ) : c.broken ? (
+              <StateChip tone="expired">Needs reconnecting</StateChip>
+            ) : (
+              <StateChip tone="ok">Connected</StateChip>
+            )}
+            {slack.canManage && (!c || c.broken) && (
+              // A plain link, not next/link: it must not be prefetched, and it leaves for Slack.
+              <a href={START_PATH} className="btn press">
+                {c ? "Reconnect" : "Connect"}
+              </a>
+            )}
+            {slack.canManage && c && !c.broken && (
+              <form action={sendSlackTestMessage}>
+                <SubmitButton className="btn-ghost press" pendingLabel="Sending…">
+                  Send a test message
+                </SubmitButton>
+              </form>
+            )}
+            {slack.canManage && c && (
+              <form action={disconnectSlackChannel}>
+                <SubmitButton className="btn-ghost press" pendingLabel="Disconnecting…">
+                  Disconnect
+                </SubmitButton>
+              </form>
+            )}
+          </div>
+        </li>
+      </ul>
+      {!slack.canManage && <p className="text-sm text-ink-3">Only owners and admins connect or disconnect Slack.</p>}
+    </section>
   );
 }

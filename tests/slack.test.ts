@@ -1,6 +1,9 @@
-import { readdir, readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { decryptField, encryptField } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
 import { runReminders } from "@/lib/server/deadlines";
@@ -8,9 +11,13 @@ import { migrate } from "@/lib/server/migrations";
 import type { MigrationStep } from "@/lib/server/migrations";
 import { GET as callbackGet } from "@/app/api/integrations/slack/callback/route";
 import { GET as startGet } from "@/app/api/integrations/slack/start/route";
+import { disconnectSlackChannel, sendSlackTestMessage } from "@/app/app/settings/actions";
+import SettingsPage from "@/app/app/settings/page";
+import { deleteAccount, exportWorkspace } from "@/lib/server/account";
 import { GET as cronGet } from "@/app/api/cron/reminders/route";
 import {
   finishSlackConnect,
+  sendSlackTest,
   sendSlackPosts,
   newSlackState,
   OAUTH_ACCESS_URL,
@@ -25,8 +32,10 @@ import {
 import type { SlackConfig } from "@/lib/server/slack";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import type { SignedIn } from "@/lib/server/session";
+import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { freshDb } from "./support/db";
 import type { TestDb } from "./support/db";
+import { actionsOf, renderPage, textOf as htmlText } from "./support/render";
 
 /** Slack (lib/server/slack.ts, 0052): deadline reminders posted to one channel an owner or admin connects. */
 
@@ -65,9 +74,17 @@ const HOOK = ["https://hooks.slack.com/services", "T0TEST", "B0TEST", "s3cr3tPat
 const TOKEN = ["xoxb", "test", "SecretTokenValue"].join("-");
 
 let db: TestDb;
+let blobDir: string;
 
 beforeAll(async () => {
   db = await freshDb();
+  // Deletion and export reach the file store; these workspaces hold no files, so an empty folder of their own will do.
+  blobDir = await mkdtemp(path.join(os.tmpdir(), "shipshape-slack-"));
+  setBlobStoreForTests(localBlobStore(blobDir));
+});
+
+afterAll(async () => {
+  await rm(blobDir, { recursive: true, force: true });
 });
 
 /** Slack fully configured, as Production would be. */
@@ -379,7 +396,8 @@ describe("the routes", () => {
   it("start: an owner or admin following the link on this site goes to Slack; another site's link, a member and a sample don't", async () => {
     const owner = await signIn("routes-start@example.com");
     expect(await takeSlackState(await start(), owner)).toBe(true);
-    for (const headers of [{ "sec-fetch-site": "cross-site" }, { "sec-fetch-site": "same-site" }, { "sec-fetch-site": "none" }, {}, { origin: "https://evil.example", host: "app.shipshape.example" }]) {
+    const refusedHeaders: Record<string, string>[] = [{ "sec-fetch-site": "cross-site" }, { "sec-fetch-site": "same-site" }, { "sec-fetch-site": "none" }, {}, { origin: "https://evil.example", host: "app.shipshape.example" }];
+    for (const headers of refusedHeaders) {
       expect((await startGet(startRequest(headers))).status, JSON.stringify(headers)).toBe(403);
     }
     const admin = await teammate(owner, "routes-start-admin@example.com", "admin");
@@ -658,6 +676,211 @@ describe("reminders to Slack (the daily run)", () => {
     expect(await sendSlackPosts()).toBeNull();
     expect(slack.posts()).toEqual([]);
     expect(c.slack.posts()).toEqual([]);
+  });
+});
+
+/** Settings as the redesigned app draws it, and the Slack section's part of it ("" when there's none). */
+async function settings(slack?: string) {
+  const html = await renderPage(SettingsPage, { searchParams: Promise.resolve(slack ? { slack } : {}) });
+  const at = html.indexOf('id="slack"');
+  const section = at === -1 ? "" : html.slice(at, html.indexOf("</section>", at));
+  return { html, section, actions: actionsOf(section), forms: section.match(/<form\b/g)?.length ?? 0 };
+}
+
+describe("Settings' Slack row", () => {
+  it("not connected: an owner or admin gets a Connect link to the start route", async () => {
+    const owner = await signIn("settings-owner@example.com");
+    const s = await settings();
+    expect(s.actions).toEqual([{ tag: "a", label: expect.any(String), href: "/api/integrations/slack/start" }]);
+    expect(s.forms).toBe(0);
+    await teammate(owner, "settings-owner-admin@example.com", "admin");
+    expect((await settings()).actions.map((a) => a.href)).toEqual(["/api/integrations/slack/start"]);
+  });
+
+  it("connected: shows the channel and team, with a test message and Disconnect; broken: Reconnect and Disconnect", async () => {
+    fakeSlack();
+    const owner = await signIn("settings-connected@example.com");
+    await connect(owner);
+    const s = await settings();
+    expect(htmlText(s.section)).toContain("#deadlines");
+    expect(htmlText(s.section)).toContain("Acme Team");
+    expect(s.actions.filter((a) => a.tag === "a")).toEqual([]);
+    expect(s.forms).toBe(2);
+    await db.root((tx) => tx.query("update app.slack_connections set broken_at = now() where org_id = $1", [owner.orgId]));
+    const broken = await settings();
+    expect(broken.actions.filter((a) => a.tag === "a").map((a) => a.href)).toEqual(["/api/integrations/slack/start"]);
+    expect(broken.forms).toBe(1);
+  });
+
+  it("members see the row read-only", async () => {
+    fakeSlack();
+    const owner = await signIn("settings-member@example.com");
+    await teammate(owner, "settings-member-member@example.com", "member");
+    const empty = await settings();
+    expect(empty.section).not.toBe("");
+    expect(empty.actions).toEqual([]);
+    expect(empty.forms).toBe(0);
+    await finishSignIn(owner.userId, { demo: false });
+    await connect(await requireWorkspace());
+    await teammate(owner, "settings-member-member2@example.com", "member");
+    const connected = await settings();
+    expect(htmlText(connected.section)).toContain("#deadlines");
+    expect(connected.actions).toEqual([]);
+    expect(connected.forms).toBe(0);
+  });
+
+  it("isn't there at all while Slack isn't configured, in a sample, or in the earlier look", async () => {
+    await signIn("settings-hidden@example.com");
+    expect((await settings()).section).not.toBe("");
+    vi.stubEnv("SLACK_CLIENT_ID", "");
+    const off = await settings("connected");
+    expect(off.section).toBe("");
+    expect(htmlText(off.html)).not.toMatch(/slack/i);
+    configure();
+    vi.stubEnv("SHIPSHAPE_APP_URL", "http://app.shipshape.example");
+    expect(htmlText((await settings()).html)).not.toMatch(/slack/i);
+    configure();
+    await signInSample();
+    const sample = await settings("connected");
+    expect(sample.section).toBe("");
+    expect(htmlText(sample.html)).not.toMatch(/slack/i);
+    await signIn("settings-hidden-v1@example.com");
+    vi.stubEnv("SHIPSHAPE_UI", "v1");
+    expect(htmlText((await settings("connected")).html)).not.toMatch(/slack/i);
+  });
+
+  it("says how the last action went, only for an outcome it knows", async () => {
+    await signIn("settings-outcome@example.com");
+    expect((await settings("tested")).section).toMatch(/role="status"/);
+    expect((await settings("<script>")).section).not.toMatch(/role="status"/);
+  });
+});
+
+describe("test message and disconnect", () => {
+  it("an owner's test message posts to the channel, with a link to Deadlines", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("test-owner@example.com");
+    await connect(owner);
+    await expect(sendSlackTestMessage()).rejects.toThrow("redirect /app/settings?slack=tested#slack");
+    expect(slack.posts()).toHaveLength(1);
+    expect(textOf(slack.posts()[0])).toContain("My business");
+    expect(textOf(slack.posts()[0])).toContain(`${APP}/app/deadlines`);
+  });
+
+  it("a member can't send one or disconnect, whatever they post", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("test-member@example.com");
+    await connect(owner);
+    await teammate(owner, "test-member-member@example.com", "member");
+    await expect(sendSlackTestMessage()).rejects.toThrow("redirect /app/settings?slack=refused#slack");
+    await expect(disconnectSlackChannel()).rejects.toThrow("redirect /app/settings?slack=refused#slack");
+    expect(slack.calls.map((c) => c.url)).toEqual([OAUTH_ACCESS_URL]);
+    expect(await connection(owner.orgId)).toBeDefined();
+  });
+
+  it("checks the role twice: the session's, and the database's own membership row", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("test-layers@example.com");
+    await connect(owner);
+    const member = await teammate(owner, "test-layers-member@example.com", "member");
+    // The session says member (whatever the database says): refused before anything is read.
+    expect(await sendSlackTest({ ...owner, role: "member" })).toBe("refused");
+    // The session claims owner, the database says member: refused all the same.
+    expect(await sendSlackTest({ ...member, role: "owner" })).toBe("refused");
+    expect(slack.posts()).toEqual([]);
+  });
+
+  it("a test message Slack says went nowhere marks the connection broken", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("test-broken@example.com");
+    await connect(owner);
+    slack.hook = () => new Response("channel_not_found", { status: 404 });
+    await expect(sendSlackTestMessage()).rejects.toThrow("redirect /app/settings?slack=broken#slack");
+    expect((await connection(owner.orgId)).broken_at).not.toBeNull();
+  });
+
+  it("test messages: 10 an hour per workspace", async () => {
+    fakeSlack();
+    const owner = await signIn("test-busy@example.com");
+    await connect(owner);
+    for (let i = 0; i < 10; i++) await expect(sendSlackTestMessage()).rejects.toThrow("slack=tested");
+    await expect(sendSlackTestMessage()).rejects.toThrow("slack=busy");
+  });
+
+  it("Disconnect revokes the token in Slack, then forgets the connection", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("disconnect@example.com");
+    await connect(owner);
+    await expect(disconnectSlackChannel()).rejects.toThrow("redirect /app/settings?slack=disconnected#slack");
+    const revoke = slack.calls.find((c) => c.url === REVOKE_URL);
+    expect(revoke?.auth).toBe(`Bearer ${TOKEN}`);
+    expect(await connection(owner.orgId)).toBeUndefined();
+  });
+
+  it("Disconnect keeps the connection when Slack can't revoke the token, so it's never forgotten while live", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("disconnect-down@example.com");
+    await connect(owner);
+    logged();
+    slack.revoke = { ok: false, error: "ratelimited" };
+    await expect(disconnectSlackChannel()).rejects.toThrow("redirect /app/settings?slack=disconnect_failed#slack");
+    expect(await connection(owner.orgId)).toBeDefined();
+    // A token Slack already dropped counts as revoked.
+    slack.revoke = { ok: false, error: "token_revoked" };
+    await expect(disconnectSlackChannel()).rejects.toThrow("slack=disconnected");
+    expect(await connection(owner.orgId)).toBeUndefined();
+  });
+});
+
+describe("account deletion and export", () => {
+  it("deleting the account revokes the token of each workspace it deletes and removes the connection", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("delete-slack@example.com");
+    await connect(owner);
+    await deleteAccount(owner);
+    expect(slack.calls.filter((c) => c.url === REVOKE_URL).map((c) => c.auth)).toEqual([`Bearer ${TOKEN}`]);
+    expect(await connection(owner.orgId)).toBeUndefined();
+  });
+
+  it("deleting goes on when Slack can't be reached, logging only the error's name", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("delete-slack-down@example.com");
+    await connect(owner);
+    const lines = logged();
+    slack.revoke = { ok: false, error: "internal_error" };
+    await deleteAccount(owner);
+    expect(await connection(owner.orgId)).toBeUndefined();
+    expect(lines).toEqual(["slack: account deletion: token not revoked (SlackError internal_error)"]);
+  });
+
+  it("leaving a workspace with another owner leaves its Slack alone", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("delete-slack-shared@example.com");
+    await connect(owner);
+    const second = await db.user("delete-slack-shared-2@example.com");
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'owner')", [owner.orgId, second]));
+    await finishSignIn(owner.userId, { demo: false });
+    await deleteAccount(await requireWorkspace());
+    expect(slack.calls.filter((c) => c.url === REVOKE_URL)).toEqual([]);
+    expect(await connection(owner.orgId)).toBeDefined();
+  });
+
+  it("the export lists the connection, never its webhook address or token", async () => {
+    fakeSlack();
+    const owner = await signIn("export-slack@example.com");
+    const zipFile = path.join(blobDir, "export.zip");
+    await writeFile(zipFile, (await exportWorkspace(owner)).bytes);
+    expect(execFileSync("unzip", ["-Z1", zipFile]).toString()).not.toContain("integrations.json");
+    await connect(owner);
+    const bytes = (await exportWorkspace(owner)).bytes;
+    await writeFile(zipFile, bytes);
+    const listed = JSON.parse(execFileSync("unzip", ["-p", zipFile, "integrations.json"]).toString());
+    expect(listed).toEqual([{ app: "slack", channel: "#deadlines", team: "Acme Team", connected_at: expect.any(String) }]);
+    // Entries are stored uncompressed (lib/server/zip.ts), so a secret anywhere would show in the bytes as they are.
+    const everything = Buffer.from(bytes).toString("latin1");
+    expect(everything).not.toContain("s3cr3tPathPart");
+    expect(everything).not.toContain("SecretTokenValue");
+    expect(everything).not.toContain("v1.");
   });
 });
 
