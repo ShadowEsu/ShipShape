@@ -26,6 +26,12 @@
     transform: scale(0.98);
   }
 }
+/* Glass panels open without a fade: an opacity below 1 drops their blur while it plays (Quiet §5). */
+@keyframes q-open-glass {
+  from {
+    transform: translateY(4px) scale(0.98);
+  }
+}
 @keyframes q-rise {
   from {
     opacity: 0;

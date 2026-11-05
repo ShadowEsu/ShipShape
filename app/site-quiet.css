@@ -129,6 +129,51 @@
 }
 
 /* Header and footer, on every site page */
+/* The header stays at the top: white over the page's top, glass once content runs under it (Quiet §3, glass-spec L1
+   bar values; ScrollFlag sets data-scrolled). Nothing above it sets filter, opacity, mask or isolation. */
+.site-quiet.sq-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background-color: var(--canvas);
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color 150ms var(--q-ease),
+    border-color 150ms var(--q-ease),
+    -webkit-backdrop-filter 150ms var(--q-ease),
+    backdrop-filter 150ms var(--q-ease);
+}
+.site-quiet.sq-header[data-scrolled] {
+  border-bottom-color: var(--line);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .site-quiet.sq-header[data-scrolled] {
+    background-color: rgb(255 255 255 / 0.72);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6);
+  }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .site-quiet.sq-header[data-scrolled] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: var(--canvas) !important;
+    box-shadow: none;
+  }
+}
+@media (forced-colors: active) {
+  .site-quiet.sq-header {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background: Canvas !important;
+    border-bottom-color: CanvasText;
+  }
+}
+/* A link to a section (How it works) lands below the header, not under it. */
+html:has(.sq-header) {
+  scroll-padding-top: 72px;
+}
 .site-quiet .sq-header-row {
   display: flex;
   align-items: center;
@@ -542,6 +587,9 @@
 @media (prefers-reduced-motion: reduce) {
   .site-quiet .site-intro.is-on {
     display: none;
+  }
+  .site-quiet.sq-header {
+    transition: none;
   }
   .site-quiet [data-reveal],
   .site-quiet [data-reveal].is-pending {

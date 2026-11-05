@@ -873,3 +873,74 @@ html:has(.ui-v2 .top-bar) {
     inset: -16px 0 -8px;
   }
 }
+
+/*
+ * Glass accents (Quiet §3; BOSS 5 Nov for Preston: "Apple-like glass on bounded surfaces"), glass-spec L1: the floating
+ * control layer only. The top bar once content scrolls under it (ScrollFlag sets data-scrolled), the phone's tab bar,
+ * ⌘K, sheets and menus. Never the page, cards, rows, lists or inputs. At most 3 at once on the phone (top bar, tab bar,
+ * one sheet) and 2 on desktop (top bar, one dialog or menu). Unlayered, so these beat the components' and utilities'
+ * solid fills; nothing above a glass surface may set filter, opacity < 1, mask, clip-path, mix-blend-mode or isolation
+ * (glass-spec §3: that parent would become the backdrop root and the blur would stop at it).
+ */
+.scroll-flag {
+  height: 1px;
+  margin-bottom: -1px;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .ui-v2 .top-bar {
+    transition:
+      background-color var(--q-state) var(--q-ease),
+      -webkit-backdrop-filter var(--q-state) var(--q-ease),
+      backdrop-filter var(--q-state) var(--q-ease);
+  }
+  /* Bars carry a few short labels: fill 0.72, blur 12px, saturate 1.4, a 1px light inner top edge (the bottom keeps its line). */
+  .ui-v2 .top-bar[data-scrolled] {
+    background-color: rgb(255 255 255 / 0.72);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6);
+  }
+  @media (max-width: 599px) {
+    .ui-v2 .tab-bar {
+      background-color: rgb(255 255 255 / 0.72);
+      -webkit-backdrop-filter: blur(12px) saturate(1.4);
+      backdrop-filter: blur(12px) saturate(1.4);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6);
+    }
+  }
+  /* Text-dense panels read whether or not the blur renders: fill 0.88, blur 22px. */
+  .ui-v2 :is(dialog.sheet, dialog.search-dialog, .filter-menu > ul) {
+    background-color: rgb(255 255 255 / 0.88);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+  }
+  /* A fade would drop the blur while it plays (WebKit): glass opens by scale and a 4px rise only (Quiet §5). */
+  .ui-v2 dialog:is(.sheet, .search-dialog)[open] {
+    animation-name: q-open-glass;
+  }
+}
+/* glass-spec §2: solid surfaces for less transparency or more contrast, and system colours in forced-colours mode. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .ui-v2 :is(.top-bar, .tab-bar, dialog.sheet, dialog.search-dialog, .filter-menu > ul) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: var(--paper) !important;
+    box-shadow: none;
+  }
+  .ui-v2 dialog:is(.sheet, .search-dialog)[open] {
+    animation-name: q-open;
+  }
+}
+@media (forced-colors: active) {
+  .ui-v2 :is(.top-bar, .tab-bar, dialog.sheet, dialog.search-dialog, .filter-menu > ul) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background: Canvas !important;
+    border-color: CanvasText;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-v2 .top-bar {
+    transition: none;
+  }
+}
