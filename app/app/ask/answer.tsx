@@ -2,6 +2,7 @@ import Link from "next/link";
 import { NotLegalAdvice } from "@/components/ui";
 import { currentMatchIds } from "@/lib/request-words";
 import type { ReadBy, RequestItem } from "@/lib/server/request-check";
+import { Celebrate } from "../motion-moments";
 
 // `dot`: the state as the v2 chip's dot colour (validity-chip in globals.css); v1 keeps the tinted pill.
 const STATE: Record<RequestItem["state"], { label: string; cls: string; icon: string; dot: string }> = {
@@ -82,6 +83,20 @@ export function RequestAnswer({ items, titleId, by, v2 = true }: { items: readon
         </h2>
         {v2 && readBy}
       </div>
+      {/* A real win (motion spec §4): everything asked for is here and current. The redesigned app only. */}
+      {v2 && items.length > 0 && items.every((i) => i.state === "ready") && (
+        <Celebrate
+          trigger="check-all"
+          className="flex items-center gap-2 py-3 text-[15px] font-medium text-ok"
+          mark={
+            <span aria-hidden="true" className="grid size-6 place-items-center rounded-full bg-ok text-sm text-white">
+              ✓
+            </span>
+          }
+        >
+          {items.length === 1 ? "You have it." : `You have all ${items.length}.`}
+        </Celebrate>
+      )}
       {items.length === 0 ? (
         <p className="text-sm text-ink-2">
           {by === "ai"

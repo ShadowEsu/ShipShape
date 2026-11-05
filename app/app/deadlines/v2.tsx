@@ -5,7 +5,20 @@ import type { Deadline, OutboxMessage } from "@/lib/server/deadlines";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { fmtDay, timeOf } from "@/lib/today";
 import { HairRow, StateChip } from "../hair-row";
-import { when } from "./when";
+import { Celebrate, CountUp } from "../motion-moments";
+import { whenParts } from "./when";
+
+/** when(d) with its days counting up (motion spec §4: days left on deadlines); the words come from the same parts. */
+function When({ d }: { d: Deadline }) {
+  const { before, n, after } = whenParts(d);
+  return (
+    <>
+      {before}
+      {n !== null && <CountUp value={n} />}
+      {after}
+    </>
+  );
+}
 
 /** Each group's dot, and the word an expiry date gets in it (a renewal notice is "Renewal notice" in every group). */
 const TONE = {
@@ -43,7 +56,7 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
             line={`${DOC_KINDS[d.kind]} · ${d.date_kind === "expires" ? "expires" : "renewal notice"} ${fmtDay(d.due_on)}`}
             chip={
               <StateChip tone={t.dot}>
-                {d.date_kind === "expires" ? t.expires : "Renewal notice"} · {when(d)}
+                {d.date_kind === "expires" ? t.expires : "Renewal notice"} · <When d={d} />
               </StateChip>
             }
           />
@@ -112,6 +125,22 @@ export function DeadlinesV2({
   gated: boolean;
 }) {
   const shown = soon ? all.filter(needsAttention) : all;
+  // Every document current: nothing lapsed and nothing due in 30 days, the one win Deadlines celebrates (motion spec §4).
+  const current = all.length > 0 && !all.some(needsAttention);
+  const won = (words: React.ReactNode) => (
+    <Celebrate
+      trigger="all-current"
+      role="status"
+      className="flex items-start gap-2 rounded-2xl border border-line px-4 py-3 text-sm text-ink-2"
+      mark={
+        <span aria-hidden="true" className="grid size-5 place-items-center rounded-full bg-ok text-xs text-white">
+          ✓
+        </span>
+      }
+    >
+      <span>{words}</span>
+    </Celebrate>
+  );
   return (
     <div className="space-y-8">
       <PageHeader eyebrow="Deadlines" title="What's coming up">
@@ -151,14 +180,17 @@ export function DeadlinesV2({
               </Link>
             </p>
           )}
-          {quiet && !soon && (
-            <p role="status" className="rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">
-              Nothing expires in the next 90 days.{" "}
-              {reminders
-                ? "Owners and admins get a reminder 90, 30 and 7 days before, under Reminders sent."
-                : "Add these dates to your calendar. The calendar file includes alerts 30 and 7 days before."}
-            </p>
-          )}
+          {quiet &&
+            !soon &&
+            won(
+              <>
+                Nothing expires in the next 90 days.{" "}
+                {reminders
+                  ? "Owners and admins get a reminder 90, 30 and 7 days before, under Reminders sent."
+                  : "Add these dates to your calendar. The calendar file includes alerts 30 and 7 days before."}
+              </>,
+            )}
+          {current && !quiet && !soon && won("Every document is current: nothing has lapsed or is due in the next 30 days.")}
           <Group title="Lapsed" items={shown.filter((d) => d.days_left < 0)} tone="bad" />
           <Group title="Next 30 days" items={shown.filter((d) => d.days_left >= 0 && d.days_left <= 30)} tone="warn" />
           <Group title="Later" items={shown.filter((d) => d.days_left > 30)} tone="ok" />

@@ -89,7 +89,8 @@ export default function PrivacyPage() {
         to the sign-in return page; a cookie that keeps a passport, signing or upload link open for 30 minutes on that link&apos;s own
         pages; and one that holds your browser&apos;s time zone for a year so dates are judged on your own calendar day. In a sample
         workspace, two more for up to 12 hours: which of Start here&apos;s 3 steps you&apos;ve done, and that you&apos;ve seen them
-        finished. No advertising or analytics cookies, and no tracking scripts.
+        finished. Your browser&apos;s own storage keeps whether celebrations are on (Settings) and the day each last played; it isn&apos;t
+        sent to us. No advertising or analytics cookies, and no tracking scripts.
       </p>
 
       <h2>Who else handles your data</h2>

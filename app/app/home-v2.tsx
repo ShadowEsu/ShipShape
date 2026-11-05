@@ -8,6 +8,7 @@ import type { StartPath } from "@/lib/server/start-here";
 import type { Tool } from "@/lib/server/tools";
 import { AiBox } from "./ai-box";
 import { HairRow } from "./hair-row";
+import { Arrive } from "./motion-moments";
 import { savedLine } from "./saved/list";
 import { StartHere } from "./start-here";
 
@@ -48,7 +49,7 @@ export function HomeV2(props: {
         {recent.length === 0 ? (
           <p className="quiet-empty">The documents you add or make show up here.</p>
         ) : (
-          <ul className="hair-list">
+          <Arrive list="home-recent" className="hair-list">
             {recent.map((d) => (
               <HairRow
                 key={d.id}
@@ -59,7 +60,7 @@ export function HomeV2(props: {
                 chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
               />
             ))}
-          </ul>
+          </Arrive>
         )}
       </section>
 
