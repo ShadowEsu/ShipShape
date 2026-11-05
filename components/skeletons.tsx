@@ -1,3 +1,5 @@
+import { MARK_PATHS } from "./brand-mark";
+
 /**
  * Loading skeletons for app routes (each route's loading.tsx), shaped like the page they stand in for
  * so it doesn't jump when the page arrives. Screen readers hear "Loading…" once; the shapes are hidden.
@@ -11,10 +13,14 @@ export function LoadingFrame({ children }: { children: React.ReactNode }) {
         Loading…
       </p>
       <div aria-hidden="true" className="brand-loader pointer-events-none absolute inset-0 z-10 place-items-center">
-        <svg width="48" height="48" viewBox="0 0 32 32" className="text-ink">
-          <rect width="32" height="32" rx="8" fill="currentColor" />
-          <path d="M7 19h18l-3 5H10z" fill="var(--paper)" />
-          <path d="M16 7v10M16 7l6 8h-6" stroke="var(--paper)" strokeWidth="2" fill="none" strokeLinejoin="round" />
+        {/* The app icon (Design's rules: the mark at 62% of an ink tile, radius 22.5%), as one svg so it rocks whole. */}
+        <svg width="48" height="48" viewBox="0 0 64 64" className="text-ink">
+          <rect width="64" height="64" rx="14.4" fill="currentColor" />
+          <g transform="translate(12.16 12.16) scale(0.62)">
+            {MARK_PATHS.map((d) => (
+              <path key={d} d={d} fill="var(--paper)" />
+            ))}
+          </g>
         </svg>
       </div>
       <div aria-hidden="true" className="skeleton space-y-6 motion-safe:animate-pulse">
