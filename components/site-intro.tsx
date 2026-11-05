@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { LogoMark } from "@/components/ui";
+import { BrandMark } from "@/components/brand-mark";
 import { introScript } from "@/lib/site-intro";
 
 const OVERLAY_ID = "site-intro";
@@ -15,7 +15,7 @@ export async function SiteIntro() {
     <>
       <div id={OVERLAY_ID} className="site-intro" aria-hidden="true" suppressHydrationWarning>
         <span className="site-intro-mark">
-          <LogoMark size={56} />
+          <BrandMark size={64} />
         </span>
       </div>
       {/* Browsers hide a script's nonce from the DOM once it runs, so hydration sees an empty one. */}
