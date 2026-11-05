@@ -6,8 +6,8 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
  * The motion moments that need a script (Design's shared spec, 4 Nov, §2-§3): count-ups, staggered arrival and
  * celebrations; the shimmer and the branded loader are CSS only (app/motion.css). Every one renders its final state in
  * the server HTML and does nothing under reduced motion; a count-up or a celebration ends at once on a click, key,
- * wheel or touch (spec §3.3). None waits for anything: a list's rows are already in the page when they rise (spec §2:
- * the 8th starts 490ms after the 1st, and all are in place by 840ms).
+ * wheel or touch (spec §3.3). None waits for anything: a list's rows are already in the page when they rise (Quiet §5:
+ * the 8th starts 210ms after the 1st, and all are in place by 450ms).
  */
 
 const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -118,13 +118,13 @@ export function CountUp({ value }: { value: number }) {
 
 // The lists that have arrived in this visit: each arrives once, not again on a re-sort, a filter or a return.
 const arrived = new Set<string>();
-// The longest arrival: the 8th row starts after 7 staggers and runs one normal duration (app/motion.css).
-const ARRIVAL_MS = 7 * 70 + 350;
+// The longest arrival: the 8th row starts after 7 staggers of 30ms and runs 240ms (app/motion.css, Quiet §5).
+const ARRIVAL_MS = 7 * 30 + 240;
 
 /**
- * A list whose rows rise into place the first time it loads in a visit (spec §2, staggered arrival; each row's delay
- * comes from its place, app/motion.css). The class comes off once they're in place, so rows added, sorted or filtered
- * later just appear.
+ * A list whose first 8 rows rise into place the first time it loads in a visit (Quiet §5, staggered arrival; each
+ * row's delay comes from its place, app/motion.css). The class comes off once they're in place, so rows added, sorted
+ * or filtered later just appear.
  */
 export function Arrive({ list, className, children }: { list: string; className: string; children: React.ReactNode }) {
   const [on, setOn] = useState(() => !arrived.has(list));

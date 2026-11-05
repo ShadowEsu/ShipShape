@@ -289,14 +289,14 @@ body {
     @apply flex min-w-0 flex-1 flex-col items-center gap-1.5 text-[13px] text-ink-2;
   }
   .ui-v2 .round-icon {
-    @apply grid size-14 place-items-center rounded-xl border border-line bg-paper text-ink transition-colors duration-[180ms];
+    @apply grid size-14 place-items-center rounded-xl border border-line bg-paper text-ink transition-colors duration-[150ms];
   }
   .ui-v2 .round-action:hover .round-icon {
     @apply bg-tile;
   }
   /* A row in an action sheet or menu (the document page's More). */
   .ui-v2 .menu-row {
-    @apply flex min-h-12 w-full items-center rounded-lg px-3 text-left text-[15px] text-ink transition-colors duration-[180ms] hover:bg-tile md:min-h-10;
+    @apply flex min-h-12 w-full items-center rounded-lg px-3 text-left text-[15px] text-ink transition-colors duration-[150ms] hover:bg-tile md:min-h-10;
   }
   /* A hairline card (Collect's counts). */
   .ui-v2 .tile {
@@ -357,16 +357,16 @@ body {
     @apply grid size-11 place-items-center rounded-full text-ink-2;
   }
   .ui-v2 .top-link {
-    @apply items-center rounded-lg px-2.5 py-1.5 text-[13px] whitespace-nowrap text-ink-2 transition-colors duration-[180ms] hover:bg-tile hover:text-ink;
+    @apply items-center rounded-lg px-2.5 py-1.5 text-[13px] whitespace-nowrap text-ink-2 transition-colors duration-[150ms] hover:bg-tile hover:text-ink;
   }
   .ui-v2 .search-button {
-    @apply h-[34px] items-center gap-2 rounded-lg border border-line bg-paper px-2.5 text-left text-[13.5px] text-ink-3 transition-colors duration-[180ms] hover:border-field md:w-[200px] lg:w-[340px];
+    @apply h-[34px] items-center gap-2 rounded-lg border border-line bg-paper px-2.5 text-left text-[13.5px] text-ink-3 transition-colors duration-[150ms] hover:border-field md:w-[200px] lg:w-[340px];
   }
   .ui-v2 .search-kbd {
     @apply ml-auto rounded-md border border-[var(--line-2)] px-1.5 font-sans text-[11.5px] leading-4 text-ink-3;
   }
   .ui-v2 .search-row {
-    @apply flex min-h-11 items-center gap-3 rounded-lg px-2 py-1 text-sm text-ink transition-colors duration-[120ms] hover:bg-tile focus-visible:bg-tile;
+    @apply flex min-h-11 items-center gap-3 rounded-lg px-2 py-1 text-sm text-ink transition-colors duration-[150ms] hover:bg-tile focus-visible:bg-tile;
   }
 
   /* Home: the question, the one-line box, one row of tools. */
@@ -396,7 +396,7 @@ body {
     @apply flex min-h-11 flex-col items-center gap-2 text-center text-[12.5px] leading-4 text-ink-2 lg:w-[76px];
   }
   .ui-v2 .tool-square {
-    @apply grid size-[52px] place-items-center rounded-xl border border-line bg-paper text-ink transition-colors duration-[180ms];
+    @apply grid size-[52px] place-items-center rounded-xl border border-line bg-paper text-ink transition-colors duration-[150ms];
   }
   .ui-v2 .tool:hover .tool-square {
     @apply bg-tile;
@@ -493,7 +493,7 @@ body {
     @apply flex gap-5 overflow-x-auto border-b border-line;
   }
   .ui-v2 .tab {
-    @apply -mb-px inline-flex min-h-11 items-center gap-1.5 border-b-2 border-transparent text-sm whitespace-nowrap text-ink-2 transition-colors duration-[180ms] hover:text-ink;
+    @apply -mb-px inline-flex min-h-11 items-center gap-1.5 border-b-2 border-transparent text-sm whitespace-nowrap text-ink-2 transition-colors duration-[150ms] hover:text-ink;
   }
   .ui-v2 .tab[aria-current="page"] {
     @apply border-ink font-medium text-ink;
