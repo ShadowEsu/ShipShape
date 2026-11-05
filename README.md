@@ -64,6 +64,7 @@ Next.js 16 (App Router, server actions), Postgres with row level security, pdf-l
 | Path | What it is |
 | --- | --- |
 | `app/page.tsx`, `app/pricing`, `app/faq`, `app/status`, `app/terms`, `app/privacy` | Public site |
+| `public/site/`, `scripts/site-shots.py` | The home page's product screenshots, cropped from app stills at 2x; re-run the script on new stills after the app's look changes |
 | `app/app/*` | The product: home, documents, saved, sent, signed copies, history, make (fill), read a request, facts, passport, collect, deadlines, settings |
 | `app/p/[id]`, `app/s/[id]`, `app/c/[id]` | Public passport, signing and vendor upload pages |
 | `app/api/*` | Health, waitlist, signed file downloads, reminder cron, Stripe webhook |
