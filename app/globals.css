@@ -360,8 +360,13 @@ body {
   .ui-v2 .search-button {
     @apply h-[34px] items-center gap-2 rounded-lg border border-line bg-paper px-2.5 text-left text-[13.5px] text-ink-2 transition-colors duration-[150ms] hover:border-field md:w-[200px] lg:w-[340px];
   }
+  /* The icon and the key hint keep their size, the hint on one line; only the words truncate. In the 200px button from
+     md to 1023px the hint shrank and wrapped ("Ctrl" over "K") and the 16px icon shrank to a few pixels. */
+  .ui-v2 .search-button > svg {
+    @apply shrink-0;
+  }
   .ui-v2 .search-kbd {
-    @apply ml-auto rounded-md border border-[var(--line-2)] px-1.5 font-sans text-[11.5px] leading-4 text-ink-2;
+    @apply ml-auto shrink-0 rounded-md border border-[var(--line-2)] px-1.5 font-sans text-[11.5px] leading-4 whitespace-nowrap text-ink-2;
   }
   .ui-v2 .search-row {
     @apply flex min-h-11 items-center gap-3 rounded-lg px-2 py-1 text-sm text-ink transition-colors duration-[150ms] hover:bg-tile focus-visible:bg-tile;
