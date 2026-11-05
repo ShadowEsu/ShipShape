@@ -16,7 +16,7 @@ describe("motion moments in the server HTML (spec §3.4)", () => {
     expect(await html(createElement(Arrive, { list: "t", className: "hair-list", children: createElement("li", null, "a") }))).toBe(
       '<ul class="hair-list m-arrive"><li>a</li></ul>',
     );
-    const check = await html(createElement(Celebrate, { trigger: "check-all", children: "✓" }));
+    const check = await html(createElement(Celebrate, { trigger: "check-all", className: "flex", mark: "✓", children: "You have it." }));
     expect(check).not.toContain("celebrate-burst");
     expect(check).not.toContain("celebrate-check");
   });

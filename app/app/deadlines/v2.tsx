@@ -127,11 +127,18 @@ export function DeadlinesV2({
   const shown = soon ? all.filter(needsAttention) : all;
   // Every document current: nothing lapsed and nothing due in 30 days, the one win Deadlines celebrates (motion spec §4).
   const current = all.length > 0 && !all.some(needsAttention);
-  const won = (
-    <Celebrate trigger="all-current">
-      <span aria-hidden="true" className="grid size-5 place-items-center rounded-full bg-ok text-xs text-white">
-        ✓
-      </span>
+  const won = (words: React.ReactNode) => (
+    <Celebrate
+      trigger="all-current"
+      role="status"
+      className="flex items-start gap-2 rounded-2xl border border-line px-4 py-3 text-sm text-ink-2"
+      mark={
+        <span aria-hidden="true" className="grid size-5 place-items-center rounded-full bg-ok text-xs text-white">
+          ✓
+        </span>
+      }
+    >
+      <span>{words}</span>
     </Celebrate>
   );
   return (
@@ -173,23 +180,17 @@ export function DeadlinesV2({
               </Link>
             </p>
           )}
-          {quiet && !soon && (
-            <p role="status" className="flex items-start gap-2 rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">
-              {won}
-              <span>
+          {quiet &&
+            !soon &&
+            won(
+              <>
                 Nothing expires in the next 90 days.{" "}
                 {reminders
                   ? "Owners and admins get a reminder 90, 30 and 7 days before, under Reminders sent."
                   : "Add these dates to your calendar. The calendar file includes alerts 30 and 7 days before."}
-              </span>
-            </p>
-          )}
-          {current && !quiet && !soon && (
-            <p role="status" className="flex items-start gap-2 rounded-2xl border border-line px-4 py-3 text-sm text-ink-2">
-              {won}
-              <span>Every document is current: nothing has lapsed or is due in the next 30 days.</span>
-            </p>
-          )}
+              </>,
+            )}
+          {current && !quiet && !soon && won("Every document is current: nothing has lapsed or is due in the next 30 days.")}
           <Group title="Lapsed" items={shown.filter((d) => d.days_left < 0)} tone="bad" />
           <Group title="Next 30 days" items={shown.filter((d) => d.days_left >= 0 && d.days_left <= 30)} tone="warn" />
           <Group title="Later" items={shown.filter((d) => d.days_left > 30)} tone="ok" />

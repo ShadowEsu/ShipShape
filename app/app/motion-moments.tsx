@@ -189,49 +189,89 @@ export function CelebrationSwitch() {
   );
 }
 
-const BURST = 8;
+// The burst (spec §2): 8 shapes, 10px and 8px in turn, in the full-strength state colours (the "You have it" green,
+// the "Expires soon" amber, ink), fanned over the right half of the check from -70° to 70°, 30-48px out, so most fly
+// above and below the words rather than across them. A row needs about 12px above and below its line for the fan.
+const REACH = [40, 30, 48, 34, 34, 48, 30, 40];
+const BURST = REACH.map((reach, i) => ({
+  angle: -70 + 20 * i,
+  reach,
+  look: `${i % 2 === 0 ? "size-2.5 rounded-full" : "size-2 rounded-[2px]"} ${["bg-ok", "bg-warn", "bg-ink"][i % 3]}`,
+}));
 
 /**
- * A real win, once a day per trigger (spec §2, celebration): the check pops and 8 small shapes burst from it and fade
- * in 900ms, around it and no further than 48px. Off in Settings, under reduced motion, or when already seen today (the
- * person's own calendar day, as everywhere in the app), the check is just there.
+ * Resolves once nothing holding `el` is moving: a route's view transition, a list's arrival. Endless animations (a
+ * loader's rock) don't count. So a burst starts with its row at rest (spec §2).
  */
-export function Celebrate({ trigger, children }: { trigger: CelebrationTrigger; children: React.ReactNode }) {
+function settled(el: Element): Promise<unknown> {
+  const moving = document.getAnimations().filter((a) => {
+    const fx = a.effect;
+    return fx instanceof KeyframeEffect && fx.target?.contains(el) && fx.getComputedTiming().iterations !== Infinity;
+  });
+  return Promise.all(moving.map((a) => a.finished.catch(() => undefined)));
+}
+
+/**
+ * A real win's row, once a day per trigger (spec §2, celebration): `mark` (the check) then the words. Once the row is
+ * at rest, the check pops and the shapes burst from it and fade in 900ms, clipped to the row. Off in Settings, under
+ * reduced motion, or when already seen today (the person's own calendar day, as everywhere in the app), the check is
+ * just there.
+ */
+export function Celebrate({
+  trigger,
+  mark,
+  className,
+  role,
+  children,
+}: {
+  trigger: CelebrationTrigger;
+  mark: React.ReactNode;
+  className: string;
+  role?: "status";
+  children: React.ReactNode;
+}) {
   const [burst, setBurst] = useState(false);
+  const box = useRef<HTMLSpanElement>(null);
   useEffect(() => {
+    const el = box.current;
     const today = new Date().toLocaleDateString("en-CA");
     const key = `ss-celebrated-${trigger}`;
-    if (still() || readKey(CELEBRATE_KEY) === "off" || readKey(key) === today) return;
-    setBurst(true);
+    if (!el || still() || readKey(CELEBRATE_KEY) === "off" || readKey(key) === today) return;
     // Seen once it has played or been skipped, so a page left mid-burst plays it next time. Whichever ends it first,
-    // the timer or a skip, takes the other away.
-    const end = () => {
+    // the timer or a skip (before or during the burst), takes the other away.
+    let over = false;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const stop = () => {
+      over = true;
       clearTimeout(t);
       for (const type of SKIP) window.removeEventListener(type, end, true);
+    };
+    const end = () => {
+      stop();
       writeKey(key, today);
       setBurst(false);
     };
-    const t = setTimeout(end, 900);
     for (const type of SKIP) window.addEventListener(type, end, { capture: true, passive: true });
-    return () => {
-      clearTimeout(t);
-      for (const type of SKIP) window.removeEventListener(type, end, true);
-    };
+    settled(el).then(() => {
+      if (over) return;
+      setBurst(true);
+      t = setTimeout(end, 900);
+    });
+    return stop;
   }, [trigger]);
   return (
-    <span className="relative inline-grid place-items-center">
-      <span className={burst ? "celebrate-check" : undefined}>{children}</span>
-      {burst && (
-        <span aria-hidden="true" className="celebrate-burst pointer-events-none absolute inset-0 grid place-items-center">
-          {Array.from({ length: BURST }, (_, i) => (
-            <span
-              key={i}
-              className={`absolute size-1.5 ${i % 3 === 0 ? "rounded-full bg-ok" : i % 3 === 1 ? "rotate-45 bg-accent" : "rounded-sm bg-warn"}`}
-              style={{ "--a": `${(360 / BURST) * i}deg`, "--d": `${32 + (i % 2) * 16}px` }}
-            />
-          ))}
-        </span>
-      )}
-    </span>
+    <p role={role} className={`isolate overflow-clip ${className}`}>
+      <span ref={box} className="relative inline-grid shrink-0 place-items-center">
+        <span className={burst ? "celebrate-check" : undefined}>{mark}</span>
+        {burst && (
+          <span aria-hidden="true" className="celebrate-burst pointer-events-none absolute inset-0 -z-10 grid place-items-center">
+            {BURST.map((s, i) => (
+              <span key={i} className={`absolute ${s.look}`} style={{ "--a": `${s.angle}deg`, "--d": `${s.reach}px` }} />
+            ))}
+          </span>
+        )}
+      </span>
+      {children}
+    </p>
   );
 }

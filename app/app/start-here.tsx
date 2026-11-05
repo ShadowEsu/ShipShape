@@ -49,14 +49,17 @@ export function StartHere({ path }: { path: StartPath }) {
       {next === -1 && (
         <div className="space-y-3 pt-2">
           <StartFinishShown />
-          <p className="flex items-start gap-2 text-sm text-ink-2">
-            <Celebrate trigger="start-done">
+          <Celebrate
+            trigger="start-done"
+            className="flex items-start gap-2 py-3 text-sm text-ink-2"
+            mark={
               <span aria-hidden="true" className="grid size-5 place-items-center rounded-full bg-ok text-xs text-white">
                 ✓
               </span>
-            </Celebrate>
+            }
+          >
             <span>That&apos;s ShipShape: the request in, the packet out, the dates watched. Real accounts aren&apos;t open yet.</span>
-          </p>
+          </Celebrate>
           <WaitlistForm label="Hear when real accounts open" />
         </div>
       )}

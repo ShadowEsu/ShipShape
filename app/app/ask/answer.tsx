@@ -85,14 +85,17 @@ export function RequestAnswer({ items, titleId, by, v2 = true }: { items: readon
       </div>
       {/* A real win (motion spec §4): everything asked for is here and current. The redesigned app only. */}
       {v2 && items.length > 0 && items.every((i) => i.state === "ready") && (
-        <p className="flex items-center gap-2 text-[15px] font-medium text-ok">
-          <Celebrate trigger="check-all">
+        <Celebrate
+          trigger="check-all"
+          className="flex items-center gap-2 py-3 text-[15px] font-medium text-ok"
+          mark={
             <span aria-hidden="true" className="grid size-6 place-items-center rounded-full bg-ok text-sm text-white">
               ✓
             </span>
-          </Celebrate>
+          }
+        >
           {items.length === 1 ? "You have it." : `You have all ${items.length}.`}
-        </p>
+        </Celebrate>
       )}
       {items.length === 0 ? (
         <p className="text-sm text-ink-2">

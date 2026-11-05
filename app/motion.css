@@ -291,15 +291,20 @@
     transform: scale(var(--m-scale-pop));
   }
 }
-/* A burst shape flies out along its angle (--a) by up to 48px and fades. */
+/* A burst shape flies out along its angle (--a) from the check's edge (12px) to its reach (--d, at most 48px), whole
+   size, at full opacity for the first 40%, then fades out evenly. */
 @keyframes m-burst {
   from {
     opacity: 1;
-    transform: rotate(var(--a)) translateX(0) scale(1);
+    transform: rotate(var(--a)) translateX(12px);
+  }
+  40% {
+    opacity: 1;
+    animation-timing-function: linear;
   }
   to {
     opacity: 0;
-    transform: rotate(var(--a)) translateX(var(--d, 40px)) scale(0.6);
+    transform: rotate(var(--a)) translateX(var(--d, 40px));
   }
 }
 
@@ -367,7 +372,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Celebration (Celebrate): the check pops to 1.04 and back, and 8 small shapes burst from it and fade, inside its card. */
+/* Celebration (Celebrate): the check pops to 1.04 and back, and 8 shapes burst from it and fade, clipped to its row. */
 .ui-v2 .celebrate-check {
   animation: m-pop var(--m-normal) var(--m-ease-pop) both;
 }
