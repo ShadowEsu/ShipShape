@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { NotLegalAdvice } from "@/components/ui";
+import { currentMatchIds } from "@/lib/request-words";
 import type { ReadBy, RequestItem } from "@/lib/server/request-check";
 
 // `dot`: the state as the v2 chip's dot colour (validity-chip in globals.css); v1 keeps the tinted pill.
@@ -10,10 +11,6 @@ const STATE: Record<RequestItem["state"], { label: string; cls: string; icon: st
   missing: { label: "Not in your documents", cls: "bg-bad-soft text-bad", icon: "✕", dot: "expired" },
   unmatched: { label: "Check this one yourself", cls: "bg-canvas text-ink-2", icon: "?", dot: "none" },
 };
-
-/** The best current match of each item, once: what a passport link for this request would hold. */
-export const currentMatchIds = (items: readonly RequestItem[]) =>
-  [...new Set(items.flatMap((i) => (i.state === "ready" || i.state === "expiring" ? [i.matches[0].id] : [])))];
 
 /** One document the request asks for: its name and state, the words that asked for it, your matches, the fix if missing. */
 export function RequestItemBody({ item }: { item: RequestItem }) {

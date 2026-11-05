@@ -1,4 +1,5 @@
 import type { DocKind } from "@/lib/server/documents";
+import type { RequestItem } from "@/lib/server/request-check";
 
 /**
  * Check a request without AI (ledger 461, weakest spot 4): the documents a pasted request names, found by matching the
@@ -137,3 +138,7 @@ export function askedDocuments(text: string): AskedDocument[] {
   }
   return out;
 }
+
+/** The best current match of each item, once: what a passport link for this request would hold. */
+export const currentMatchIds = (items: readonly RequestItem[]) =>
+  [...new Set(items.flatMap((i) => (i.state === "ready" || i.state === "expiring" ? [i.matches[0].id] : [])))];

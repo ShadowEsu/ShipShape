@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Notice, PageHeader } from "@/components/app-ui";
 import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
+import { WaitlistForm } from "@/components/waitlist";
 import { PLANS } from "@/lib/plans";
 import type { BillingView } from "@/lib/server/billing";
 import type { LiveSession, SignedIn } from "@/lib/server/session";
@@ -98,6 +99,13 @@ export function SettingsV2({
             )}
           </li>
         </ul>
+        {/* Start here ends on the waitlist once, then leaves Home; this is where it stays in a sample (ledger 461, spot 2a). */}
+        {ctx.demo && (
+          <div className="space-y-3">
+            <p className="text-sm text-ink-2">Real accounts aren&apos;t open yet.</p>
+            <WaitlistForm label="Hear when real accounts open" />
+          </div>
+        )}
         {view.status === "past_due" && (
           <Notice>
             Your last payment didn&apos;t go through. Pro stays on for 7 days after a failed payment.{" "}
