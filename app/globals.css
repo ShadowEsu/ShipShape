@@ -36,22 +36,62 @@
 }
 
 /*
- * Inside the app, look A (Design calm v2; BOSS picked it 3 Nov): black, white and hairlines, no grey fills or tints.
- * The one accent is --brand; look B is this one line set to Harbor green (#1d6a4e), nothing else.
+ * Inside the app: Quiet (Design, 4 Nov, agents/design/quiet-language-2026-11-04: SPEC.md and tokens.css), the language
+ * Jaymini and ShipShape share. White, soft neutrals, one ink. Light only. The spec's tokens first, then the names the
+ * app's classes already use, pointed at them; SHIPSHAPE_UI=v1 never reads any of this.
  */
 .ui-v2 {
-  --brand: #111111;
+  /* §1 colour. --ink-3 is placeholders and disabled only (3.4:1), never text to read. */
+  --canvas: #ffffff;
+  --fill: #f6f6f5;
+  --fill-2: #efefed;
+  --line: #e8e8e6;
+  --ink: #0a0a0a;
+  --ink-2: #5b5b58;
+  --ink-3: #8c8c88;
+  --cta: #0a0a0a;
+  --on-cta: #ffffff;
+  --ok: #1a7f4b;
+  --wait: #b26b00;
+  --bad: #c42b1c;
+  --info: #2f5fd0;
+  /* §3 radius, spacing and the one elevation (the ask box, menus, search). */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+  --s9: 96px;
+  --pop: 0 1px 2px rgb(0 0 0 / 0.06), 0 12px 32px -16px rgb(0 0 0 / 0.22);
+  /* §2 type: the system face, Inter (app/layout.tsx) where there is none; headings take SF Pro Display in that slot. */
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-inter), system-ui, sans-serif;
+  --sans-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", var(--font-inter), system-ui, sans-serif;
+
+  /* The app's own names. ShipShape's accent is ink (the logo, the focus ring, the active nav tick); buttons are ink too. */
+  --brand: #0a0a0a;
   --accent: var(--brand);
-  --accent-ink: #ffffff;
-  --accent-soft: #f3f3f1;
-  --ink-2: #3f3f3d;
-  --line: #ececea;
-  --line-2: #e3e3e0;
-  --sep: #ececea;
-  --side: #fbfbfa;
-  /* The hover fill, and what's left of the old wells until the inner pages lose theirs. */
-  --tile: #f3f3f1;
-  --strip: linear-gradient(90deg, #f4efff, #fdf0f4 45%, #fff4ea);
+  --accent-ink: var(--on-cta);
+  --accent-soft: var(--fill);
+  --paper: var(--canvas);
+  /* Every divider and 1px border is --line, never darker. Fields keep --field (3:1, WCAG 1.4.11). */
+  --line-2: var(--line);
+  --sep: var(--line);
+  --side: var(--fill);
+  --tile: var(--fill);
+  /* The sample's strip: the fill, no tinted wash. Warning words keep --warn (#9a4a00, 6.3:1); --wait (4.2:1 on white)
+     colours a status dot only. */
+  --strip: var(--fill);
+
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 @theme inline {
@@ -156,14 +196,15 @@ body {
   .ui-v2 .btn-block {
     @apply w-full sm:w-auto;
   }
+  /* H2 (Quiet §2): 20/1.3/600, 18 on the phone. */
   .ui-v2 .section-title {
-    @apply text-[17px] leading-6 font-semibold text-ink;
+    @apply text-[18px] leading-[1.3] font-semibold tracking-[-0.01em] text-ink min-[600px]:text-[20px];
   }
 
-  /* Grouped inset list: 16px corners, 60px rows, separators inset past the 32px icon. Rows are a list's items, or a
-     description list's term-and-value pairs (each in a div). */
+  /* Grouped inset list: 12px corners, separators inset past the icon. Rows are a list's items, or a description list's
+     term-and-value pairs (each in a div). */
   .ui-v2 .group-list {
-    @apply overflow-hidden rounded-2xl border border-line bg-paper;
+    @apply overflow-hidden rounded-xl border border-line bg-paper;
   }
   .ui-v2 .group-list > :is(li, div) {
     @apply relative;
@@ -230,7 +271,7 @@ body {
   }
   /* Check a request's text: a hairline box, the accent ring on focus. */
   .ui-v2 .request-well {
-    @apply block w-full resize-y rounded-2xl border border-[var(--line-2)] bg-paper px-4 py-3 text-base text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand;
+    @apply block w-full resize-y rounded-xl border border-line bg-paper px-4 py-3 text-base text-ink outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-brand;
   }
   .ui-v2 .request-well[aria-invalid="true"] {
     @apply ring-2 ring-bad;
@@ -241,25 +282,25 @@ body {
     @apply flex min-w-0 flex-1 flex-col items-center gap-1.5 text-[13px] text-ink-2;
   }
   .ui-v2 .round-icon {
-    @apply grid size-14 place-items-center rounded-2xl border border-[var(--line-2)] bg-paper text-ink transition-colors duration-[180ms];
+    @apply grid size-14 place-items-center rounded-xl border border-line bg-paper text-ink transition-colors duration-[180ms];
   }
   .ui-v2 .round-action:hover .round-icon {
     @apply bg-tile;
   }
   /* A row in an action sheet or menu (the document page's More). */
   .ui-v2 .menu-row {
-    @apply flex min-h-12 w-full items-center rounded-xl px-3 text-left text-[15px] text-ink transition-colors duration-[180ms] hover:bg-tile md:min-h-10;
+    @apply flex min-h-12 w-full items-center rounded-lg px-3 text-left text-[15px] text-ink transition-colors duration-[180ms] hover:bg-tile md:min-h-10;
   }
   /* A hairline card (Collect's counts). */
   .ui-v2 .tile {
-    @apply flex h-full flex-col gap-3 rounded-2xl border border-line bg-paper p-4 text-left;
+    @apply flex h-full flex-col gap-3 rounded-xl border border-line bg-paper p-4 text-left;
   }
   .ui-v2 .tag {
     @apply inline-flex w-fit items-center rounded-full bg-paper px-2 py-0.5 text-xs text-ink-2 ring-1 ring-line;
   }
   /* An icon in a 34px hairline square: list rows, search results, sheets. */
   .ui-v2 .row-icon {
-    @apply grid size-[34px] shrink-0 place-items-center rounded-[10px] border border-[var(--line-2)] bg-paper text-ink-2;
+    @apply grid size-[34px] shrink-0 place-items-center rounded-lg border border-line bg-paper text-ink-2;
   }
 
   /* The shell (Design calm v2). The sidebar: flat rows under small grey labels, the active row's faint fill. */
@@ -267,7 +308,7 @@ body {
     @apply border-r border-line bg-side px-2.5 py-3.5;
   }
   .ui-v2 .side-label {
-    @apply px-2.5 pt-3.5 pb-1 text-xs text-ink-3;
+    @apply px-2.5 pt-4 pb-1 text-[13px] leading-[1.4] font-medium text-ink-2;
   }
   .ui-v2 .side-row {
     @apply flex min-h-8 items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink-2 transition-colors duration-[180ms] hover:bg-tile;
@@ -276,7 +317,7 @@ body {
     @apply bg-tile font-medium text-ink;
   }
   .ui-v2 .side-icon {
-    @apply shrink-0 text-ink-3;
+    @apply shrink-0 text-ink-2;
   }
   .ui-v2 .side-row[aria-current="page"] .side-icon {
     @apply text-brand;
@@ -311,7 +352,7 @@ body {
     @apply items-center rounded-lg px-2.5 py-1.5 text-[13px] whitespace-nowrap text-ink-2 transition-colors duration-[180ms] hover:bg-tile hover:text-ink;
   }
   .ui-v2 .search-button {
-    @apply h-[34px] items-center gap-2 rounded-[10px] border border-[var(--line-2)] bg-paper px-2.5 text-left text-[13.5px] text-ink-3 transition-colors duration-[180ms] hover:border-field md:w-[200px] lg:w-[340px];
+    @apply h-[34px] items-center gap-2 rounded-lg border border-line bg-paper px-2.5 text-left text-[13.5px] text-ink-3 transition-colors duration-[180ms] hover:border-field md:w-[200px] lg:w-[340px];
   }
   .ui-v2 .search-kbd {
     @apply ml-auto rounded-md border border-[var(--line-2)] px-1.5 font-sans text-[11.5px] leading-4 text-ink-3;
@@ -324,8 +365,10 @@ body {
   .ui-v2 .home-top {
     @apply flex flex-col items-center pt-4 md:pt-10;
   }
+  /* Title (Quiet §2): 32/1.12/600, 28 on the phone. */
   .ui-v2 .home-title {
-    @apply text-center text-2xl leading-8 font-normal tracking-[-0.015em] text-balance text-ink sm:text-[28px] sm:leading-9;
+    @apply text-center text-[28px] leading-[1.12] font-semibold tracking-[-0.025em] text-balance text-ink min-[600px]:text-[32px];
+    font-family: var(--sans-display);
   }
   .ui-v2 .prompt {
     @apply mt-6 flex min-h-14 w-full items-start gap-3 rounded-2xl border border-[var(--line-2)] bg-paper py-[9px] pr-[9px] pl-3.5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors duration-[180ms];
@@ -348,7 +391,7 @@ body {
     @apply flex min-h-11 flex-col items-center gap-2 text-center text-[12.5px] leading-4 text-ink-2 lg:w-[76px];
   }
   .ui-v2 .tool-square {
-    @apply grid size-[52px] place-items-center rounded-[14px] border border-[var(--line-2)] bg-paper text-ink transition-colors duration-[180ms];
+    @apply grid size-[52px] place-items-center rounded-xl border border-line bg-paper text-ink transition-colors duration-[180ms];
   }
   .ui-v2 .tool:hover .tool-square {
     @apply bg-tile;
@@ -360,15 +403,15 @@ body {
   .ui-v2 .tool.closed .tool-square {
     @apply border-dashed border-[#bdbdb8] text-ink-3;
   }
-  /* Home's sections: a 14px title and View all, then a hairline list of 58px rows. */
+  /* Home's sections: an H2 and View all, then the list. */
   .ui-v2 .home-section-title {
-    @apply text-sm font-medium text-ink;
+    @apply text-[18px] leading-[1.3] font-semibold tracking-[-0.01em] text-ink min-[600px]:text-[20px];
   }
   /* The list is the container: a row's layout follows the list's width, not the screen's, so a list in a half column
      (Home's Waiting beside Saved) wraps as on the phone instead of cutting its titles. */
   .ui-v2 .hair-list {
     container-type: inline-size;
-    @apply overflow-hidden rounded-[14px] border border-line bg-paper;
+    @apply overflow-hidden rounded-xl border border-line bg-paper;
   }
   .ui-v2 .hair-list > li + li {
     @apply border-t border-line;
@@ -387,10 +430,10 @@ body {
     @apply min-w-0;
   }
   .ui-v2 .hair-title {
-    @apply line-clamp-2 text-sm font-medium text-ink @xl:line-clamp-none @xl:truncate;
+    @apply line-clamp-2 text-[15px] leading-[1.4] font-medium text-ink @xl:line-clamp-none @xl:truncate;
   }
   .ui-v2 .hair-meta {
-    @apply block text-[12.5px] leading-[18px] text-ink-3 @xl:truncate;
+    @apply block text-[13px] leading-[18px] text-ink-2 @xl:truncate;
   }
   .ui-v2 .hair-chip {
     grid-area: chip;
@@ -416,7 +459,7 @@ body {
     }
   }
   .ui-v2 .quiet-empty {
-    @apply rounded-[14px] border border-line px-4 py-4 text-sm text-ink-3;
+    @apply rounded-xl border border-line px-4 py-4 text-[15px] text-ink-2;
   }
   /* A state as a dot and a word in a hairline pill (Design calm v2). Grey: waiting on someone. */
   .ui-v2 .dot-chip {
@@ -438,13 +481,13 @@ body {
     @apply flex gap-5 overflow-x-auto border-b border-line;
   }
   .ui-v2 .tab {
-    @apply -mb-px inline-flex min-h-11 items-center gap-1.5 border-b-2 border-transparent text-sm whitespace-nowrap text-ink-3 transition-colors duration-[180ms] hover:text-ink;
+    @apply -mb-px inline-flex min-h-11 items-center gap-1.5 border-b-2 border-transparent text-sm whitespace-nowrap text-ink-2 transition-colors duration-[180ms] hover:text-ink;
   }
   .ui-v2 .tab[aria-current="page"] {
     @apply border-ink font-medium text-ink;
   }
   .ui-v2 .tab-count {
-    @apply text-xs text-ink-3;
+    @apply text-xs text-ink-2;
   }
   /* A small menu of links: a hairline pill that opens a hairline card under it. */
   .ui-v2 .filter-menu {
@@ -457,7 +500,7 @@ body {
     display: none;
   }
   .ui-v2 .filter-menu > ul {
-    @apply absolute top-[calc(100%+6px)] right-0 z-20 min-w-44 rounded-xl border border-[var(--line-2)] bg-paper p-1.5 shadow-[0_8px_24px_rgb(0_0_0/0.08)];
+    @apply absolute top-[calc(100%+6px)] right-0 z-20 min-w-44 rounded-xl border border-line bg-paper p-1.5 shadow-[var(--pop)];
   }
   .ui-v2 .filter-menu a {
     @apply flex min-h-10 items-center rounded-lg px-2.5 text-sm text-ink-2 hover:bg-tile hover:text-ink;
@@ -499,11 +542,11 @@ body {
   }
   .ui-v2 .history-time {
     grid-area: time;
-    @apply text-[12.5px] whitespace-nowrap text-ink-3 tabular-nums;
+    @apply text-[13px] whitespace-nowrap text-ink-2 tabular-nums;
   }
   .ui-v2 .history-who {
     grid-area: who;
-    @apply text-[12.5px] whitespace-nowrap text-ink-3;
+    @apply text-[13px] whitespace-nowrap text-ink-2;
   }
   .ui-v2 .history-who::before {
     content: "·" / "";
@@ -517,23 +560,31 @@ body {
   }
 }
 
+/* Quiet §1: --ink-3 is for placeholders and disabled only. Inside the app, text set in ink-3 to be read (hints, meta,
+   counts) reads in ink-2; placeholders (placeholder:), disabled states (disabled:) and the closed tools keep ink-3. In
+   the utilities layer and at one class's weight, so a hover: or focus: colour on the same element still wins. */
+@layer utilities {
+  :where(.ui-v2) .text-ink-3 {
+    color: var(--ink-2);
+  }
+}
+
 /*
  * Every page in the redesigned app, through the hooks the shared components carry. Unlayered on purpose: these win
  * over the utilities the components were written with, so the earlier look (SHIPSHAPE_UI=v1) stays exactly as it was outside .ui-v2.
  */
-/* Page titles in the app's sans (Design calm v2): 500, 22/30 on the phone, 24/32 from sm up. */
+/* Page titles (Quiet §2, Title): 32/1.12/600 in the display face, 28 on the phone (under 600px). */
 .ui-v2 .page-title {
-  font-family: var(--sans);
-  font-weight: 500;
-  font-size: 22px;
-  line-height: 30px;
-  letter-spacing: -0.015em;
+  font-family: var(--sans-display);
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
   text-wrap: balance;
 }
-@media (min-width: 640px) {
+@media (min-width: 600px) {
   .ui-v2 .page-title {
-    font-size: 24px;
-    line-height: 32px;
+    font-size: 32px;
   }
 }
 /* A state chip as a dot and a word in a hairline pill (Design calm v2); the dot carries the colour, the word the state. */
@@ -617,12 +668,12 @@ html:has(.ui-v2 .top-bar) {
   scroll-padding-top: 64px;
 }
 /* Some eyebrows name the tool above a question-shaped title ("Check a request"), so it stays, as quiet secondary text:
-   the page header's and the document card's kind line read as the public pages' .kicker (Design 11-04: sentence case,
-   sans, no tracking; text-sm font-medium text-ink-2). The earlier look and the shared pages keep .eyebrow. */
+   the page header's and the document card's kind line are labels (Quiet §2: 13/1.4/500, ink-2, sentence case, no
+   tracking). The earlier look and the shared pages keep .eyebrow. */
 .ui-v2 :is(.page-eyebrow, .doc-kind) {
   font-family: var(--sans);
-  font-size: var(--text-sm);
-  line-height: var(--text-sm--line-height);
+  font-size: 13px;
+  line-height: 1.4;
   font-weight: 500;
   color: var(--ink-2);
   letter-spacing: 0;
@@ -636,13 +687,14 @@ html:has(.ui-v2 .top-bar) {
 .ui-v2 .page-header:not(:has(.page-eyebrow:not(.page-eyebrow-repeat))) {
   align-items: center;
 }
+/* Quiet §3 radius: 8 for small controls, 12 for cards and panels. */
 .ui-v2 .input {
   min-height: 44px;
-  border-radius: 12px;
+  border-radius: 8px;
   font-size: 16px;
 }
 .ui-v2 .card {
-  border-radius: 16px;
+  border-radius: 12px;
 }
 /* Empty states (Design, PR 5): open space instead of a card, the title in the app's sans, and the page's icon in a
    hairline square. The earlier look never shows the icon. */
@@ -657,12 +709,18 @@ html:has(.ui-v2 .top-bar) {
   background: none;
   padding: 32px 0;
 }
+/* H2 (Quiet §2). */
 .ui-v2 .empty-title {
   font-family: var(--sans);
   font-size: 18px;
-  line-height: 26px;
-  font-weight: 500;
+  line-height: 1.3;
+  font-weight: 600;
   letter-spacing: -0.01em;
+}
+@media (min-width: 600px) {
+  .ui-v2 .empty-title {
+    font-size: 20px;
+  }
 }
 .ui-v2 .empty-example-label {
   font-family: var(--sans);
@@ -679,12 +737,14 @@ html:has(.ui-v2 .top-bar) {
 .ui-v2 .fill-section > legend:not(.sr-only) {
   float: none;
   margin: 0 0 8px;
-  font-size: 17px;
-  line-height: 24px;
+  font-size: 18px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .ui-v2 .fill-fields {
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--paper);
 }
 .ui-v2 .fill-fields > * {

@@ -319,6 +319,10 @@
   position: relative;
   overflow: hidden;
 }
+/* The surface tone (Quiet): the shapes are --fill; the app's canvas is white, so the old canvas blocks would vanish. */
+.ui-v2 .skeleton .bg-canvas {
+  background-color: var(--fill);
+}
 .ui-v2 .skeleton :is(.bg-line, .bg-canvas)::after {
   content: "";
   position: absolute;

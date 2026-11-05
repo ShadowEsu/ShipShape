@@ -9,7 +9,7 @@ import { PulseOnView } from "./motion-v2";
 import { AccountSheet, SideNav, TopBar } from "./nav-v2";
 
 /**
- * The app's frame (Design calm v2, look A): a white page with hairlines. On desktop a flat 236px sidebar (grouped rows,
+ * The app's frame (Quiet, Design 4 Nov): a white page with hairlines. On desktop a flat 240px sidebar (grouped rows,
  * the workspace row at its foot) and a slim top bar (the page's name, search, Help and Feedback); on the phone the top
  * bar alone, with the menu and search. The shell itself never animates.
  */
@@ -23,7 +23,7 @@ export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: b
   );
   return (
     <div className="ui-v2 min-h-dvh bg-paper md:flex">
-      <aside aria-label="Workspace" className="side hidden md:sticky md:top-0 md:flex md:h-dvh md:w-[236px] md:shrink-0 md:flex-col">
+      <aside aria-label="Workspace" className="side hidden md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:shrink-0 md:flex-col">
         <div className="px-2 pt-1 pb-3.5">
           <Logo href="/app" />
         </div>
@@ -68,7 +68,8 @@ export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: b
             </AccountSheet>
           }
         />
-        <main id="main" className="mx-auto max-w-[1040px] space-y-6 px-4 pt-6 pb-16 md:px-10 md:pt-10">
+        {/* Quiet §3: content at most 880px, centred; 48px at the sides and 56px on top from md, 20px on the phone. */}
+        <main id="main" className="mx-auto max-w-[976px] space-y-6 px-5 pt-6 pb-16 md:px-12 md:pt-14">
           {children}
         </main>
       </div>
