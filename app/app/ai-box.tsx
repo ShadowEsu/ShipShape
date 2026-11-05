@@ -130,11 +130,10 @@ export function AiBoxView({
   const refused = answer?.kind === "check" && !pending && !check.field ? check.error : undefined;
 
   return (
-    <div className="mx-auto w-full max-w-[640px] space-y-3">
+    <div className="mx-auto w-full max-w-[720px] space-y-3">
       <form ref={formRef} action={onSubmit}>
         {/* One line that grows with what's typed (field-sizing), with no mic: the box finds a tool or checks a request. */}
         <div className="prompt">
-          <span className="prompt-orb" aria-hidden="true" />
           <textarea
             name="text"
             rows={1}

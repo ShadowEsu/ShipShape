@@ -17,6 +17,8 @@ import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { searchAction } from "@/app/app/search-actions";
 import { ShellV2 } from "@/app/app/shell-v2";
+import WorkspacePage from "@/app/app/workspace/page";
+import { findByName, NAV_GROUPS, searchPages, TAB_ITEMS } from "@/components/app-sections";
 import { ErrorPanel } from "@/components/error-panel";
 import { PROFILE_FIELDS } from "@/lib/profile-fields";
 import { asService, asUser } from "@/lib/server/db";
@@ -27,9 +29,9 @@ import { FILL_BUSY, SAMPLE_FULL } from "@/lib/server/limits";
 import { createPassport, passportFileUrl, revokePassport } from "@/lib/server/passport";
 import { factsForFill, saveEin, saveProfile, type Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
-import { setSaved } from "@/lib/server/saved";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { appTools } from "@/lib/server/tools";
 import { templateById, TEMPLATES } from "@/lib/templates/catalog";
 import { fmtDay } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
@@ -529,22 +531,28 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     expect(html).toMatch(/<a class="btn-ghost" href="\/app\/make">Make a document<\/a>/);
   });
 
-  it("Recent lists the five newest active documents, newest first, each with its kind, issuer and state", async () => {
+  it("Needs you lists what lapses or is lapsing, each with its state as a dot and a word; Your papers the three newest active documents", async () => {
     const ctx = await signIn("home-v2-recent@example.com");
+    expect(textOf(section(await homePage(), "needs-title"))).toContain("Nothing has expired, expires, or has a renewal notice due in the next 30 days.");
     await db.root((tx) =>
       tx.query(
         "insert into app.documents (org_id, title, kind, issuer, expires_on, status, created_at) select $1, 'Doc ' || n, 'permit', 'City (test)', $2::date - 1, case when n = 6 then 'archived' else 'active' end, now() - make_interval(mins => 10 - n) from generate_series(1, 7) n",
         [ctx.orgId, ctx.today],
       ),
     );
-    const recent = section(await homePage(), "recent-title");
-    expect(rowTitles(recent)).toEqual(["Doc 7", "Doc 5", "Doc 4", "Doc 3", "Doc 2"]);
-    expect(textOf(recent)).toContain("Permit · City (test)");
-    expect(recent).toContain('data-validity="expired"');
-    expect(actionsOf(recent)[0]).toEqual({ tag: "a", label: "View all", href: "/app/documents" });
+    const html = await homePage();
+    const needs = section(html, "needs-title");
+    expect(rowTitles(needs)).toEqual(["Doc 7", "Doc 5", "Doc 4", "Doc 3", "Doc 2"]);
+    expect(textOf(needs)).toMatch(/View all Doc 7 Permit · It has lapsed\. \S* ?Expired · /);
+    expect(needs).toContain('class="validity-chip');
+    expect(actionsOf(needs)[0]).toEqual({ tag: "a", label: "View all", href: "/app/deadlines" });
+    const papers = section(html, "papers-title");
+    expect(rowTitles(papers)).toEqual(["Doc 7", "Doc 5", "Doc 4"]);
+    expect(textOf(papers)).toContain("Permit · City (test)");
+    expect(actionsOf(papers)[0]).toEqual({ tag: "a", label: "View all", href: "/app/documents" });
   });
 
-  it("Waiting on others: the open signature requests on active documents, then the vendors who owe a document, and only this workspace's (S1, S4, S5)", async () => {
+  it("Shared: the open signature requests on active documents, then the vendors who owe a document, and only this workspace's (S1, S4, S5)", async () => {
     const ctx = await signInSample();
     const nda = await db.root(async (tx) => {
       const [d] = await tx.query<{ id: string; title: string }>("select id, title from app.documents where org_id = $1 and kind = 'nda'", [ctx.orgId]);
@@ -566,7 +574,7 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     await requestSignature(ctx, { documentId: permit, signerName: "Lee Park (sample)", signerEmail: "lee@city.example", days: 7 }, "192.0.2.10");
     await db.root((tx) => tx.query("update app.documents set status = 'archived' where id = $1", [permit]));
 
-    const waiting = section(await homePage(), "waiting-title");
+    const waiting = section(await homePage(), "shared-title");
     expect(rowTitles(waiting)).toEqual([nda.title, "Bayside Drywall (sample)", "Rivera Electric (sample)"]);
     const text = textOf(waiting);
     expect(text).toContain(`Dana Kim (sample) · sent ${fmtDay(ctx.today)} Not signed yet`);
@@ -580,29 +588,11 @@ describe("home, redesigned (SHIPSHAPE_UI=v2)", () => {
     // Someone in another workspace sees none of it, and their own empty state; so do they after joining this one too,
     // while they're in their own (a person in two workspaces sees each one's on its own Home).
     const other = await signIn("home-v2-other@example.com");
-    const otherHome = () => homePage().then((html) => textOf(section(html, "waiting-title")));
+    const otherHome = () => homePage().then((html) => textOf(section(html, "shared-title")));
     expect(await otherHome()).not.toMatch(/Dana Kim|Bayside|Rivera/);
-    expect(await otherHome()).toContain("Signature requests nobody has signed yet, and vendors who still owe you a document, show up here.");
+    expect(await otherHome()).toContain("Links you share, signature requests nobody has signed yet, and vendors who still owe you a document show up here.");
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'member')", [ctx.orgId, other.userId]));
     expect(await otherHome()).not.toMatch(/Dana Kim|Bayside|Rivera/);
-  });
-
-  it("Saved: the person's three newest saves beside Waiting, each to its page with its state in words; with nothing saved it isn't there", async () => {
-    const ctx = await signIn("home-v2-saved@example.com");
-    expect(await homePage()).not.toContain('id="saved-title"');
-    for (const n of [1, 2, 3, 4]) {
-      const [doc] = await db.root((tx) =>
-        tx.query<{ id: string }>("insert into app.documents (org_id, title, kind, expires_on) values ($1, $2, 'permit', $3::date + 400) returning id", [ctx.orgId, `Saved ${n}`, ctx.today]),
-      );
-      await setSaved(ctx, { kind: "document", id: doc.id, saved: true });
-    }
-    const html = await homePage();
-    const saved = section(html, "saved-title");
-    expect(rowTitles(saved)).toEqual(["Saved 4", "Saved 3", "Saved 2"]);
-    expect(textOf(saved)).toContain("Saved 4 Permit · current");
-    expect(saved).not.toContain("hair-chip");
-    expect(actionsOf(saved)[0]).toEqual({ tag: "a", label: "View all", href: "/app/saved" });
-    expect(html).toContain('<div class="grid gap-12 lg:grid-cols-2 lg:gap-6"><section aria-labelledby="waiting-title"');
   });
 
   it("search finds this workspace's active documents by their words, never an archived one or another workspace's (S1, S5, S6)", async () => {
@@ -674,18 +664,73 @@ describe("the app's frame, redesigned", () => {
     expect(textOf(await shell(await signIn("shell-v2-real@example.com")))).not.toContain("Sample workspace");
   });
 
-  it("Feedback writes to the contact address, and isn't there while none is set; Help opens the FAQ, in the top bar and the phone's menu", async () => {
+  it("Feedback writes to the contact address, and isn't there while none is set; Help opens the FAQ, in the top bar and on the workspace page", async () => {
     const ctx = await signIn("shell-v2-feedback@example.com");
-    expect(actionsOf(await shell(ctx)).filter((a) => a.label === "Feedback")).toEqual([]);
-    expect(actionsOf(await shell(ctx)).filter((a) => a.label === "Help")).toHaveLength(2);
+    const helpAndFeedback = (html: string) => actionsOf(html).filter((a) => a.label === "Feedback" || a.label === "Help");
+    expect(helpAndFeedback(await shell(ctx))).toEqual([{ tag: "a", label: "Help", href: "/faq" }]);
+    expect(helpAndFeedback(await renderPage(WorkspacePage, {}))).toEqual([{ tag: "a", label: "Help", href: "/faq" }]);
     vi.stubEnv("CONTACT_EMAIL", "hello@shipshape.example");
-    const html = await shell(ctx);
     const pair = [
       { tag: "a", label: "Help", href: "/faq" },
       { tag: "a", label: "Feedback", href: "mailto:hello@shipshape.example?subject=ShipShape%20feedback" },
     ];
-    // The top bar's (hidden on the phone), then the phone menu's.
-    expect(actionsOf(html).filter((a) => a.label === "Feedback" || a.label === "Help")).toEqual([...pair, ...pair]);
+    // The top bar's (hidden on the phone), and the workspace page's (the phone's way to them).
+    expect(helpAndFeedback(await shell(ctx))).toEqual(pair);
+    expect(helpAndFeedback(await renderPage(WorkspacePage, {}))).toEqual(pair);
+  });
+
+  it("on the phone, the tab bar is exactly Home, Documents, Check, Deadlines and Passport, with the page you're on marked", async () => {
+    const ctx = await signIn("shell-v2-tabs@example.com");
+    at.path = "/app/documents/some-document";
+    const html = await shell(ctx);
+    const from = html.indexOf('<nav aria-label="Tabs"');
+    const bar = html.slice(from, html.indexOf("</nav>", from));
+    expect(actionsOf(bar).map(({ label, href }) => [label, href])).toEqual([
+      ["Home", "/app"],
+      ["Documents", "/app/documents"],
+      ["Check", "/app/ask"],
+      ["Deadlines", "/app/deadlines"],
+      ["Passport", "/app/passport"],
+    ]);
+    expect([...bar.matchAll(/<a [^>]*aria-current="page"[^>]*>/g)].map((m) => /\bhref="([^"]*)"/.exec(m[0])?.[1])).toEqual(["/app/documents"]);
+  });
+
+  it("the account button opens a list titled with the business's name: the sidebar's pages in its groups, then the account and Settings", async () => {
+    const ctx = await signIn("shell-v2-workspace@example.com");
+    const account = /<a [^>]*href="\/app\/workspace"[^>]*>/.exec(await shell(ctx))?.[0] ?? "";
+    expect(/\baria-label="([^"]*)"/.exec(account)?.[1]).toBe(`${ctx.name}: all pages and account`);
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Old permit', 'permit', $2::date - 1)", [ctx.orgId, ctx.today]));
+    const html = await renderPage(WorkspacePage, {});
+    expect(textOf(/<h1[^>]*>[\s\S]*?<\/h1>/.exec(html)?.[0] ?? "")).toBe(ctx.name);
+    expect([...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1])).toEqual(["Work", "Track", "Business", "Account"]);
+    expect([...html.matchAll(/class="hair-title">([^<]*)</g)].map((m) => m[1])).toEqual([
+      "Home",
+      "Documents",
+      "Saved",
+      "Signed copies",
+      "Sent",
+      "Templates",
+      "History",
+      "Deadlines",
+      "Passport",
+      "Business facts",
+      "Collect",
+      "People",
+      "Help",
+      "Settings",
+    ]);
+    expect(textOf(html)).toContain("Deadlines 1 lapsed");
+    expect(textOf(html)).toMatch(/Account \S+ .+ Owner Settings Sign out$/);
+  });
+
+  it("search finds every page the sidebar and the tab bar go to by its name, in a sample and a real workspace", () => {
+    for (const ws of [{ demo: true, role: "owner" }, { demo: false, role: "member" }] satisfies Pick<Ctx, "demo" | "role">[]) {
+      const tools = appTools(ws);
+      const entries = [...tools, ...searchPages(tools)];
+      for (const [href, label] of [...NAV_GROUPS.flatMap((g) => g.items), ...TAB_ITEMS]) {
+        expect(findByName(entries, label).map((t) => t.href)).toContain(href);
+      }
+    }
   });
 });
 

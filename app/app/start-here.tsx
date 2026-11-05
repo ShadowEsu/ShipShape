@@ -51,7 +51,7 @@ export function StartHere({ path }: { path: StartPath }) {
           <StartFinishShown />
           <Celebrate
             trigger="start-done"
-            className="flex items-start gap-2 py-3 text-sm text-ink-2"
+            className="flex items-start gap-2 py-6 text-sm text-ink-2"
             mark={
               <span aria-hidden="true" className="grid size-5 place-items-center rounded-full bg-ok text-xs text-white">
                 ✓

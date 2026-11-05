@@ -5,23 +5,40 @@
  */
 :root {
   --dur-press: 120ms;
-  --dur-fast: 180ms;
   --dur-base: 240ms;
-  --dur-sheet: 320ms;
   --dur-moment: 600ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
   /* A damped spring (damping 0.67, 1.6 Hz), about 6% overshoot, sampled once into linear(). */
   --ease-spring: linear(0, 0.072, 0.236, 0.431, 0.617, 0.774, 0.894, 0.976, 1.026, 1.051, 1.059, 1.055, 1.046, 1.035, 1.024, 1.014, 1.007, 1.002, 0.999, 0.997, 0.997, 0.997, 0.997, 0.998, 1);
-  --stagger: 40ms;
+  /* Quiet §5 (Design, 4 Nov), calmer than the above: state changes and menus in 150ms on the sharp curve; menus and
+     sheets open from 0.98; lists arrive by a 4px rise, 240ms, 30ms apart. */
+  --q-state: 150ms;
+  --q-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --q-arrive: 240ms;
+  --q-stagger: 30ms;
+  --q-rise: 4px;
 }
 
-@keyframes v2-rise {
+@keyframes q-open {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: scale(0.98);
   }
 }
+/* Glass panels open without a fade: an opacity below 1 drops their blur while it plays (Quiet §5). */
+@keyframes q-open-glass {
+  from {
+    transform: translateY(4px) scale(0.98);
+  }
+}
+@keyframes q-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--q-rise));
+  }
+}
+
 @keyframes v2-fade-in {
   from {
     opacity: 0;
@@ -44,16 +61,6 @@
     transform: translateY(-4px);
   }
 }
-@keyframes v2-sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-}
-@keyframes v2-drawer-in {
-  from {
-    transform: translateX(-100%);
-  }
-}
 @keyframes v2-chip-out {
   to {
     opacity: 0;
@@ -73,10 +80,10 @@
   }
 }
 
-/* Staggered reveals: each child rises 6px into place, 40ms apart; the first 8 are staggered, the rest arrive with the 8th. */
+/* Staggered reveals (Quiet §5): each child rises 4px into place, 30ms apart; the first 8 are staggered, the rest arrive with the 8th. */
 .ui-v2 .stagger > * {
-  animation: v2-rise var(--dur-base) var(--ease-out) both;
-  animation-delay: calc(min(var(--i, 0), 7) * var(--stagger));
+  animation: q-rise var(--q-arrive) var(--m-ease-smooth) both;
+  animation-delay: calc(min(var(--i, 0), 7) * var(--q-stagger));
 }
 
 /* An inline result or success notice arriving under what caused it. */
@@ -97,11 +104,11 @@
 }
 /* "Expires soon" pulses once when it first comes on screen: app/app/motion-v2.tsx (Web Animations, off under reduced motion). */
 
-/* A chip's state change (§6.3): the old label leaves up 4px, the new one rises in from 4px below, 180ms. Each snapshot
-   keeps its own size (no stretching) while the group moves between the two widths. */
+/* A chip's state change (§6.3): the old label leaves up 4px, the new one rises in from 4px below, 150ms (Quiet §5).
+   Each snapshot keeps its own size (no stretching) while the group moves between the two widths. */
 ::view-transition-group(.v2-chip) {
-  animation-duration: var(--dur-fast);
-  animation-timing-function: var(--ease-inout);
+  animation-duration: var(--q-state);
+  animation-timing-function: var(--q-ease);
 }
 ::view-transition-old(.v2-chip),
 ::view-transition-new(.v2-chip) {
@@ -109,10 +116,10 @@
   height: 100%;
 }
 ::view-transition-old(.v2-chip) {
-  animation: v2-chip-out var(--dur-fast) var(--ease-inout) both;
+  animation: v2-chip-out var(--q-state) var(--q-ease) both;
 }
 ::view-transition-new(.v2-chip) {
-  animation: v2-chip-in var(--dur-fast) var(--ease-inout) both;
+  animation: v2-chip-in var(--q-state) var(--q-ease) both;
 }
 
 /* Press: 0.97 while held, released on the spring. Hover and focus never move anything. A sending button (data-busy) is
@@ -153,39 +160,46 @@
   pointer-events: none;
 }
 
-/* Sheets (account, a document's More): <dialog> slides up, its backdrop fades. */
+/* Sheets, menus and search (Quiet §5): each opens from 0.98 and fades in, 150ms; its scrim (the dialog's ::backdrop)
+   dims in with it. Esc and a click outside close them at once (a <dialog> has no exit animation). A bottom sheet grows
+   from its foot, a menu from its corner under the button, search from its top. */
+.ui-v2 dialog:is(.sheet, .search-dialog)[open] {
+  animation: q-open var(--q-state) var(--q-ease) both;
+}
 .ui-v2 dialog.sheet[open] {
-  animation: v2-sheet-up var(--dur-sheet) var(--ease-spring) both;
-}
-.ui-v2 dialog.sheet[open]::backdrop {
-  animation: v2-fade-in var(--dur-base) var(--ease-out) both;
-}
-/* From md up a menu sheet sits under its button, and a card sheet (a document's first page) sits in the middle: each
-   drops 4px into place and fades in, instead of sliding up from the bottom edge. */
-@media (min-width: 768px) {
-  .ui-v2 dialog.sheet-menu[open],
-  .ui-v2 dialog.sheet-card[open] {
-    animation: v2-drop-in var(--dur-fast) var(--ease-out) both;
-  }
-}
-/* The phone's menu slides in from the left; search drops 4px into place. Their backdrops fade. */
-.ui-v2 dialog.drawer[open] {
-  animation: v2-drawer-in var(--dur-sheet) var(--ease-out) both;
+  transform-origin: 50% 100%;
 }
 .ui-v2 dialog.search-dialog[open] {
-  animation: v2-drop-in var(--dur-fast) var(--ease-out) both;
+  transform-origin: 50% 0;
 }
-.ui-v2 dialog.drawer[open]::backdrop,
-.ui-v2 dialog.search-dialog[open]::backdrop {
-  animation: v2-fade-in var(--dur-base) var(--ease-out) both;
+@media (min-width: 768px) {
+  .ui-v2 dialog.sheet[open] {
+    transform-origin: 0 100%;
+  }
+  .ui-v2 dialog.sheet-menu[open] {
+    transform-origin: 100% 0;
+  }
+  .ui-v2 dialog.sheet-card[open] {
+    transform-origin: 50% 50%;
+  }
+}
+/* The scrim dims by its background colour, from clear to each dialog's own (black at 10-30%, or none for a desktop
+   menu), never by an opacity fade (Quiet §5, Design 11-05 from Jaymini's measurement: an opacity fade on a wrapper
+   holding the dialog doubled interaction p95). */
+@keyframes q-scrim-in {
+  from {
+    background-color: transparent;
+  }
+}
+.ui-v2 dialog:is(.sheet, .search-dialog)[open]::backdrop {
+  animation: q-scrim-in var(--q-state) var(--q-ease) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Movement becomes a short fade or nothing; where things end up never changes. */
+  /* Reduced motion is static: things are simply where they end up. */
   .ui-v2 .stagger > *,
   .ui-v2 .arrive {
-    animation: v2-fade-in 120ms linear both;
-    animation-delay: 0s;
+    animation: none;
   }
   .ui-v2 .press,
   .ui-v2 .press:active:not(:disabled, [data-busy]) {
@@ -211,13 +225,9 @@
   ::view-transition-new(.v2-morph) {
     animation: v2-fade-in 120ms linear both;
   }
-  .ui-v2 dialog.sheet[open],
-  .ui-v2 dialog.sheet[open]::backdrop,
-  .ui-v2 dialog.drawer[open],
-  .ui-v2 dialog.drawer[open]::backdrop,
-  .ui-v2 dialog.search-dialog[open],
-  .ui-v2 dialog.search-dialog[open]::backdrop {
-    animation: v2-fade-in 120ms linear both;
+  .ui-v2 dialog:is(.sheet, .search-dialog)[open],
+  .ui-v2 dialog:is(.sheet, .search-dialog)[open]::backdrop {
+    animation: none;
   }
   .ui-v2 .notice-ok,
   .ui-v2 .saved-line {
@@ -273,12 +283,6 @@
     transform: translateX(100%);
   }
 }
-@keyframes m-rise {
-  from {
-    opacity: 0;
-    transform: translateY(var(--m-dist-sm));
-  }
-}
 @keyframes m-rock {
   0%,
   100% {
@@ -319,6 +323,10 @@
   position: relative;
   overflow: hidden;
 }
+/* The surface tone (Quiet): the shapes are --fill; the app's canvas is white, so the old canvas blocks would vanish. */
+.ui-v2 .skeleton .bg-canvas {
+  background-color: var(--fill);
+}
 .ui-v2 .skeleton :is(.bg-line, .bg-canvas)::after {
   content: "";
   position: absolute;
@@ -342,31 +350,31 @@
   display: grid;
 }
 
-/* Staggered arrival (app/app/motion-moments.tsx Arrive): on a list's first load, its first 8 rows rise 8px into place,
-   70ms apart; the rest arrive with the 8th. */
-.ui-v2 .m-arrive > * {
-  animation: m-rise var(--m-normal) var(--m-ease-smooth) both;
+/* Staggered arrival (app/app/motion-moments.tsx Arrive; Quiet §5): on a list's first load, its first 8 rows fade and
+   rise 4px into place, 240ms, 30ms apart; the rest are simply there. */
+.ui-v2 .m-arrive > :nth-child(-n + 8) {
+  animation: q-rise var(--q-arrive) var(--m-ease-smooth) both;
 }
 .ui-v2 .m-arrive > :nth-child(2) {
-  animation-delay: var(--m-stagger);
+  animation-delay: var(--q-stagger);
 }
 .ui-v2 .m-arrive > :nth-child(3) {
-  animation-delay: calc(2 * var(--m-stagger));
+  animation-delay: calc(2 * var(--q-stagger));
 }
 .ui-v2 .m-arrive > :nth-child(4) {
-  animation-delay: calc(3 * var(--m-stagger));
+  animation-delay: calc(3 * var(--q-stagger));
 }
 .ui-v2 .m-arrive > :nth-child(5) {
-  animation-delay: calc(4 * var(--m-stagger));
+  animation-delay: calc(4 * var(--q-stagger));
 }
 .ui-v2 .m-arrive > :nth-child(6) {
-  animation-delay: calc(5 * var(--m-stagger));
+  animation-delay: calc(5 * var(--q-stagger));
 }
 .ui-v2 .m-arrive > :nth-child(7) {
-  animation-delay: calc(6 * var(--m-stagger));
+  animation-delay: calc(6 * var(--q-stagger));
 }
-.ui-v2 .m-arrive > :nth-child(n + 8) {
-  animation-delay: calc(7 * var(--m-stagger));
+.ui-v2 .m-arrive > :nth-child(8) {
+  animation-delay: calc(7 * var(--q-stagger));
 }
 
 /* Count-ups (CountUp): the digits keep their width while they change. */

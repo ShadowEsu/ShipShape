@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Newsreader } from "next/font/google";
+import { Geist, Geist_Mono, Inter, Newsreader } from "next/font/google";
 import { connection } from "next/server";
 import { TimeZoneCookie } from "@/components/time-zone-cookie";
 import { appUrl } from "@/lib/server/flags";
@@ -16,6 +16,9 @@ const newsreader = Newsreader({ subsets: ["latin"], weight: "600", variable: "--
 const newsreaderItalic400 = Newsreader({ subsets: ["latin"], weight: "400", style: "italic", variable: "--font-newsreader-italic-400", display: "swap", preload: false });
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
+// Quiet (Design, 4 Nov): the app and the site set type in the system face (San Francisco on Apple devices); Inter is the
+// fallback elsewhere, variable and never preloaded, so a device that has San Francisco never downloads it.
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap", preload: false });
 
 const TITLE = "ShipShape: your business paperwork, in one passport";
 const DESCRIPTION =
@@ -39,7 +42,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // A prerendered page has no nonce, and the strict CSP would block all of its JavaScript.
   await connection();
   return (
-    <html lang="en" className={`${newsreader.variable} ${newsreaderItalic400.variable} ${geist.variable} ${geistMono.variable}`}>
+    <html lang="en" className={`${newsreader.variable} ${newsreaderItalic400.variable} ${geist.variable} ${geistMono.variable} ${inter.variable}`}>
       <body>
         <a
           href="#main"

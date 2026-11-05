@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { NAV_GROUPS as GROUPS } from "@/components/app-sections";
+import { initialsOf, NAV_GROUPS as GROUPS, TAB_ITEMS, WORKSPACE_HREF, type SearchTool } from "@/components/app-sections";
 import { Icon } from "@/components/icons";
+import { ScrollFlag } from "@/components/scroll-flag";
 import { Logo } from "@/components/ui";
-import { SearchDialog, type SearchTool } from "./search-v2";
+import { SearchDialog } from "./search-v2";
 
 // The top bar's title: the sidebar's name for the page, or the tool's own name for pages outside the sidebar.
 const TITLES: readonly (readonly [href: string, title: string])[] = [
@@ -16,14 +17,15 @@ const TITLES: readonly (readonly [href: string, title: string])[] = [
 
 const isActive = (path: string, href: string) => (href === "/app" ? path === "/app" : path === href || path.startsWith(`${href}/`));
 
-function titleFor(path: string): string {
+function titleFor(path: string, workspace: string): string {
+  if (isActive(path, WORKSPACE_HREF)) return workspace;
   return TITLES.find(([href]) => isActive(path, href))?.[1] ?? "ShipShape";
 }
 
 /**
- * The sidebar's rows. The active row has the faint fill and the accent icon; nothing moves on hover. `lapsed`: how many
- * active documents have lapsed; while it isn't 0, Deadlines carries the count as a small red badge, so it means something
- * to sighted people too (not just a dot), with its word on hover and ", N lapsed" read with the row.
+ * The sidebar's rows. The active row has the fill and the accent's tick; nothing moves on hover. `lapsed`: how many
+ * active documents have lapsed; while it isn't 0, Deadlines carries the count as one quiet number (Quiet §1), with its
+ * word on hover and ", N lapsed" read with the row.
  */
 export function SideNav({ lapsed }: { lapsed: number }) {
   const path = usePathname();
@@ -78,7 +80,7 @@ function Sheet({ id, title, open, menu, children }: { id: string; title: string;
       ref={open}
       id={id}
       aria-labelledby={`${id}-title`}
-      className={`sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-[20px] bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:shadow-[0_12px_40px_-12px_rgb(0_0_0/0.3)] ${wide}`}
+      className={`sheet fixed inset-x-0 top-auto bottom-0 m-0 w-full max-w-none rounded-t-2xl bg-paper p-0 pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 md:shadow-[var(--pop)] ${wide}`}
       onClick={(e) => {
         // A click on the backdrop lands on the dialog element itself; a link to a #fragment on this page doesn't change the path.
         if (e.target === e.currentTarget || (e.target instanceof Element && e.target.closest("a[href]"))) e.currentTarget.close();
@@ -151,20 +153,9 @@ export function ActionSheet({ id, title, label, className, children }: { id: str
 
 const ROLE: Record<"owner" | "admin" | "member", string> = { owner: "Owner", admin: "Admin", member: "Member" };
 
-/** Two letters for the workspace's tile: its first two words' initials, "(sample)" left out ("Harbor Plumbing (sample)" → HP). */
-export function initialsOf(workspace: string): string {
-  const words = workspace
-    .replace(/\(sample\)/i, "")
-    .split(/\s+/)
-    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter((w) => w.length > 0);
-  const letters = words.length > 1 ? `${words[0][0]}${words[1][0]}` : (words[0] ?? "?").slice(0, 2);
-  return letters.toUpperCase();
-}
-
 /**
  * The workspace row and its sheet: the workspace (never a person's name: ShipShape stores none), its role, Settings,
- * and what the server passes in (sign out). It sits at the sidebar's foot, and at the foot of the phone's menu.
+ * and what the server passes in (sign out). It sits at the sidebar's foot; the phone has the workspace page instead.
  */
 export function AccountSheet({ id, workspace, role, children }: { id: string; workspace: string; role: "owner" | "admin" | "member"; children: React.ReactNode }) {
   const sheet = useRef<HTMLDialogElement>(null);
@@ -202,62 +193,18 @@ export function AccountSheet({ id, workspace, role, children }: { id: string; wo
   );
 }
 
-/** The phone's menu: the sidebar as a panel from the left, Help and Feedback (the top bar's, which the phone hides), and the workspace row at its foot. */
-function NavDrawer({ open, lapsed, contact, account }: { open: React.RefObject<HTMLDialogElement | null>; lapsed: number; contact: string | null; account: React.ReactNode }) {
-  const path = usePathname();
-  useEffect(() => {
-    open.current?.close();
-  }, [path, open]);
-  return (
-    <dialog
-      ref={open}
-      id="nav-drawer"
-      aria-label="Menu"
-      className="drawer fixed inset-y-0 right-auto left-0 m-0 h-dvh max-h-none w-[300px] max-w-[85vw] flex-col bg-side p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-ink backdrop:bg-black/30 open:flex"
-      onClick={(e) => {
-        if (e.target === e.currentTarget || (e.target instanceof Element && e.target.closest("a[href]"))) e.currentTarget.close();
-      }}
-    >
-      <div className="flex items-center justify-between py-1 pr-1 pl-4">
-        <Logo href="/app" />
-        <button type="button" onClick={() => open.current?.close()} className="grid size-11 place-items-center rounded-full text-ink-2" aria-label="Close">
-          <Icon name="close" />
-        </button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5">
-        <SideNav lapsed={lapsed} />
-        <ul aria-label="Help" className="mt-4 mb-2 flex gap-1 px-1.5 text-sm text-ink-2">
-          <li>
-            <Link href="/faq" className="inline-flex min-h-11 items-center rounded-full px-2.5 hover:text-ink">
-              Help
-            </Link>
-          </li>
-          {contact && (
-            <li>
-              <a href={`mailto:${contact}?subject=${encodeURIComponent("ShipShape feedback")}`} className="inline-flex min-h-11 items-center rounded-full px-2.5 hover:text-ink">
-                Feedback
-              </a>
-            </li>
-          )}
-        </ul>
-      </div>
-      <div className="border-t border-line px-2.5 py-2">{account}</div>
-    </dialog>
-  );
-}
-
 // The platform doesn't change while the page is open, so there's nothing to subscribe to.
 const noSubscription = () => () => {};
 const isApple = () => /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 /**
  * The slim bar over every page: the page's name on the left, search in the middle (⌘K or Ctrl K from anywhere), Help
- * and Feedback on the right. On the phone: the menu, the logo, and search.
+ * and Feedback on the right. On the phone: the account button (the workspace page: every page, grouped as the sidebar,
+ * and the account), the logo, and search. Solid at the top of a page; glass once content scrolls under it (Quiet §3).
  */
-export function TopBar({ tools, contact, lapsed, account }: { tools: readonly SearchTool[]; contact: string | null; lapsed: number; account: React.ReactNode }) {
+export function TopBar({ tools, pages, contact, workspace }: { tools: readonly SearchTool[]; pages: readonly SearchTool[]; contact: string | null; workspace: string }) {
   const path = usePathname();
   const search = useRef<HTMLDialogElement>(null);
-  const drawer = useRef<HTMLDialogElement>(null);
   // Null on the server and in the first render, so the shortcut's label never differs between the two.
   const apple = useSyncExternalStore(noSubscription, isApple, () => null);
   useEffect(() => {
@@ -273,24 +220,19 @@ export function TopBar({ tools, contact, lapsed, account }: { tools: readonly Se
   const openSearch = () => search.current?.showModal();
   return (
     <>
+      <ScrollFlag target=".ui-v2 .top-bar" />
       <header className="top-bar">
-        <button
-          type="button"
-          aria-haspopup="dialog"
-          aria-controls="nav-drawer"
-          onClick={() => {
-            const d = drawer.current;
-            if (!d) return;
-            d.showModal();
-            // The menu starts on the page you're on (or Close), not on the logo above the menu items.
-            (d.querySelector<HTMLElement>('a[aria-current="page"]') ?? d.querySelector<HTMLElement>('button[aria-label="Close"]'))?.focus();
-          }}
+        <Link
+          href={WORKSPACE_HREF}
+          aria-current={isActive(path, WORKSPACE_HREF) ? "page" : undefined}
           className="top-icon md:hidden"
-          aria-label="Menu"
+          aria-label={`${workspace}: all pages and account`}
         >
-          <Icon name="menu" />
-        </button>
-        <p className="hidden truncate text-sm font-medium text-ink md:block">{titleFor(path)}</p>
+          <span className="account-tile" aria-hidden="true">
+            {initialsOf(workspace)}
+          </span>
+        </Link>
+        <p className="hidden truncate text-sm font-medium text-ink md:block">{titleFor(path, workspace)}</p>
         <div className="flex justify-center md:hidden">
           <Logo href="/app" />
         </div>
@@ -313,8 +255,29 @@ export function TopBar({ tools, contact, lapsed, account }: { tools: readonly Se
           </button>
         </div>
       </header>
-      <SearchDialog open={search} tools={tools} />
-      <NavDrawer open={drawer} lapsed={lapsed} contact={contact} account={account} />
+      <SearchDialog open={search} tools={tools} pages={pages} />
     </>
+  );
+}
+
+/**
+ * The phone's tab bar (Design, 4 Nov 22:4x; Quiet §4): under 600px, fixed at the foot, exactly Home, Documents, Check,
+ * Deadlines and Passport. 22px icons over 11px labels; the page you're on in ink, the rest lighter. Never animates.
+ */
+export function TabBar() {
+  const path = usePathname();
+  return (
+    <nav aria-label="Tabs" className="tab-bar">
+      <ul>
+        {TAB_ITEMS.map(([href, label, icon]) => (
+          <li key={href}>
+            <Link href={href} aria-current={isActive(path, href) ? "page" : undefined} className="tab-item">
+              <Icon name={icon} size={22} />
+              {label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }

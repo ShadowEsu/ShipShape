@@ -1,39 +1,61 @@
 import Link from "next/link";
 import { ValidityChip } from "@/components/app-ui";
 import { Icon } from "@/components/icons";
-import { DOC_KINDS, type DocRow } from "@/lib/server/documents";
-import type { WaitingSignature, WaitingVendor } from "@/lib/server/home";
-import type { SavedRow } from "@/lib/server/saved";
+import { PaperSvg } from "@/components/paper-svg";
+import { attentionLine } from "@/lib/attention";
+import { LETTER } from "@/lib/pdf/surface";
+import { DOC_KINDS, type AttentionRow, type DocRow } from "@/lib/server/documents";
+import { WAITING_MAX, type WaitingSignature, type WaitingVendor } from "@/lib/server/home";
+import type { PassportRow } from "@/lib/server/passport";
+import type { SamplePreview } from "@/lib/server/sample";
 import type { StartPath } from "@/lib/server/start-here";
 import type { Tool } from "@/lib/server/tools";
+import { dayOf, fmtDay } from "@/lib/today";
 import { AiBox } from "./ai-box";
-import { HairRow } from "./hair-row";
+import { HairRow, StateChip } from "./hair-row";
 import { Arrive } from "./motion-moments";
-import { savedLine } from "./saved/list";
+import { linkStatus } from "./passport/link-status";
 import { StartHere } from "./start-here";
 
+/** How many of what needs you Home lists; Deadlines has every date. */
+const NEEDS_SHOWN = 5;
+
 /**
- * Home (Design calm v2, look A): the question, the box and one row of tools on top; under them what has happened and
- * what's still out, each a hairline list. Every row is a real record of this workspace, and every chip a real column.
- * A sample also gets its Start here path between the top and Recent (ledger 461).
+ * Home (Design SC, 4 Nov; Quiet): one 720px column. The question and the ask box are the primary job, with one row of
+ * tools under it. A sample's Start here comes next (#44, its primary path). Then what needs you (each a row with its
+ * state as a dot and a word), your papers (their first pages where the server drew one: only a sample's own; any other
+ * paper is its title row), and what's shared with others. Every row is a real record of this workspace.
  */
 export function HomeV2(props: {
-  recent: DocRow[];
+  /** Home's "Needs attention" (lib/server/documents.ts homeSummary): most urgent first, and how many there are. */
+  needs: AttentionRow[];
+  needsTotal: number;
+  /** The viewer's day, and whether a renewed copy can be added here: what each row says and where it goes. */
+  today: string;
+  canUpload: boolean;
+  /** The newest papers, and the first pages the server drew for them (a sample's own only), by id. */
+  papers: DocRow[];
+  previews: ReadonlyMap<string, SamplePreview>;
   /** The open signature requests, each with the day it was sent where the viewer is, and the vendors who owe a document. */
   waiting: { signatures: (WaitingSignature & { sentOn: string })[]; vendors: WaitingVendor[] };
-  /** This person's newest saves; none, and the section isn't there (Design: absent, not empty). */
-  saved: SavedRow[];
-  /** The viewer's time zone, for a saved link's last day. */
+  /** The workspace's passport links: the working ones show under Shared. */
+  links: PassportRow[];
   zone: string;
   tools: readonly Tool[];
   aiOn: boolean;
   /** A sample's Start here; null in a real workspace. */
   start: StartPath | null;
 }) {
-  const { recent, waiting, saved, zone, tools, aiOn, start } = props;
-  const nothingWaiting = waiting.signatures.length === 0 && waiting.vendors.length === 0;
+  const { needs, needsTotal, today, canUpload, papers, previews, waiting, zone, tools, aiOn, start } = props;
+  const links = props.links.filter((l) => linkStatus(l, zone).working).slice(0, WAITING_MAX);
+  const drawn = papers.flatMap((doc) => {
+    const preview = previews.get(doc.id);
+    return preview ? [{ doc, preview }] : [];
+  });
+  const plain = papers.filter((d) => !previews.has(d.id));
+  const nothingShared = links.length === 0 && waiting.signatures.length === 0 && waiting.vendors.length === 0;
   return (
-    <div className="space-y-12">
+    <div className="mx-auto max-w-[720px] space-y-12">
       <section className="home-top">
         <h1 id="home-title" className="home-title">
           What do you need to get done?
@@ -44,68 +66,128 @@ export function HomeV2(props: {
 
       {start && <StartHere path={start} />}
 
-      <section aria-labelledby="recent-title">
-        <SectionHead id="recent-title" title="Recent" all={recent.length > 0 ? "/app/documents" : null} />
-        {recent.length === 0 ? (
-          <p className="quiet-empty">The documents you add or make show up here.</p>
+      <section aria-labelledby="needs-title">
+        <SectionHead id="needs-title" title="Needs you" all={needsTotal > 0 ? "/app/deadlines" : null} />
+        {needs.length === 0 ? (
+          <p className="quiet-empty">Nothing has expired, expires, or has a renewal notice due in the next 30 days.</p>
         ) : (
-          <Arrive list="home-recent" className="hair-list">
-            {recent.map((d) => (
-              <HairRow
-                key={d.id}
-                href={`/app/documents/${d.id}`}
-                icon="documents"
-                title={d.title}
-                line={d.issuer ? `${DOC_KINDS[d.kind]} · ${d.issuer}` : DOC_KINDS[d.kind]}
-                chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
-              />
-            ))}
+          <Arrive list="home-needs" className="hair-list">
+            {needs.slice(0, NEEDS_SHOWN).map((d) => {
+              const line = attentionLine(d, today, canUpload);
+              return (
+                <HairRow
+                  key={d.id}
+                  href={line.href}
+                  icon="documents"
+                  title={d.title}
+                  line={`${DOC_KINDS[d.kind]} · ${line.state}`}
+                  chip={
+                    line.renewal ? (
+                      <StateChip tone="expiring">Renewal notice · {fmtDay(d.attention_on)}</StateChip>
+                    ) : (
+                      <ValidityChip validity={d.validity} expiresOn={d.expires_on} />
+                    )
+                  }
+                />
+              );
+            })}
           </Arrive>
         )}
       </section>
 
-      {/* Waiting on others and Saved side by side from lg up, stacked on the phone (Design calm v2). */}
-      <div className={saved.length > 0 ? "grid gap-12 lg:grid-cols-2 lg:gap-6" : undefined}>
-        <section aria-labelledby="waiting-title" className="min-w-0">
-          <SectionHead id="waiting-title" title="Waiting on others" all={waiting.signatures.length > 0 ? "/app/sent?tab=signatures" : null} />
-          {nothingWaiting ? (
-            <p className="quiet-empty">Signature requests nobody has signed yet, and vendors who still owe you a document, show up here.</p>
-          ) : (
-            <ul className="hair-list">
-              {waiting.signatures.map((s) => (
-                <HairRow
-                  key={s.id}
-                  href={`/app/documents/${s.documentId}`}
-                  icon="sign"
-                  title={s.title}
-                  line={`${s.signerName} · sent ${s.sentOn}`}
-                  chip={<span className="dot-chip">Not signed yet</span>}
-                />
-              ))}
-              {waiting.vendors.map((v) => (
-                <HairRow key={v.id} href={`/app/collect/${v.id}`} icon="collect" title={v.name} line={`Collect · ${v.outstanding.join(", ")}`} chip={<span className="dot-chip">Waiting</span>} />
-              ))}
-            </ul>
-          )}
-        </section>
-        {saved.length > 0 && (
-          <section aria-labelledby="saved-title" className="min-w-0">
-            <SectionHead id="saved-title" title="Saved" all="/app/saved" />
-            <ul className="hair-list">
-              {saved.map((r) => (
-                <HairRow
-                  key={`${r.kind}-${r.id}`}
-                  href={r.href}
-                  icon={r.kind === "document" ? "documents" : "passport"}
-                  title={r.kind === "document" ? r.title : r.label}
-                  line={savedLine(r, zone)}
-                />
-              ))}
-            </ul>
-          </section>
+      <section aria-labelledby="papers-title">
+        <SectionHead id="papers-title" title="Your papers" all={papers.length > 0 ? "/app/documents" : null} />
+        {papers.length === 0 ? (
+          <p className="quiet-empty">The documents you add or make show up here.</p>
+        ) : (
+          <div className="space-y-4">
+            {drawn.length > 0 && (
+              <ul className="grid grid-cols-3 gap-3 sm:gap-4">
+                {drawn.map(({ doc, preview }) => (
+                  <li key={doc.id} className="min-w-0">
+                    <PaperThumb doc={doc} preview={preview} />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {plain.length > 0 && (
+              <ul className="hair-list">
+                {plain.map((d) => (
+                  <HairRow
+                    key={d.id}
+                    href={`/app/documents/${d.id}`}
+                    icon="documents"
+                    title={d.title}
+                    line={d.issuer ? `${DOC_KINDS[d.kind]} · ${d.issuer}` : DOC_KINDS[d.kind]}
+                    chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
         )}
-      </div>
+      </section>
+
+      <section aria-labelledby="shared-title">
+        <SectionHead id="shared-title" title="Shared" all={links.length > 0 ? "/app/passport" : null} />
+        {nothingShared ? (
+          <p className="quiet-empty">Links you share, signature requests nobody has signed yet, and vendors who still owe you a document show up here.</p>
+        ) : (
+          <ul className="hair-list">
+            {links.map((l) => (
+              <HairRow
+                key={l.id}
+                href={`/app/passport/${l.id}`}
+                icon="passport"
+                title={l.label}
+                line={`${l.documents} ${l.documents === 1 ? "document" : "documents"} · opened ${l.opens} ${l.opens === 1 ? "time" : "times"} · until ${dayOf(l.expires_at, zone)}`}
+                chip={<StateChip tone="ok">Working</StateChip>}
+              />
+            ))}
+            {waiting.signatures.map((s) => (
+              <HairRow
+                key={s.id}
+                href={`/app/documents/${s.documentId}`}
+                icon="sign"
+                title={s.title}
+                line={`${s.signerName} · sent ${s.sentOn}`}
+                chip={<StateChip tone="none">Not signed yet</StateChip>}
+              />
+            ))}
+            {waiting.vendors.map((v) => (
+              <HairRow
+                key={v.id}
+                href={`/app/collect/${v.id}`}
+                icon="collect"
+                title={v.name}
+                line={`Collect · ${v.outstanding.join(", ")}`}
+                chip={<StateChip tone="none">Waiting</StateChip>}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
+  );
+}
+
+/**
+ * A paper's first page as Home's thumbnail (Design SC): the top of the page in a 5:4 crop with 12px corners and a 1px
+ * line, no shadow, its title in 13px under it. The drawing is the server's (samplePaperPreview), so nothing is read to
+ * show it; the link names the paper.
+ */
+function PaperThumb({ doc, preview }: { doc: DocRow; preview: SamplePreview }) {
+  return (
+    <Link href={`/app/documents/${doc.id}`} className="group block space-y-2">
+      <span className="block aspect-[5/4] overflow-hidden rounded-xl border border-line bg-paper">
+        {"marks" in preview ? (
+          <PaperSvg marks={preview.marks} width={LETTER.w} height={LETTER.h} className="block h-auto w-full" />
+        ) : (
+          <img src={preview.images.crop.src} width={preview.images.crop.width} height={preview.images.crop.height} alt="" decoding="async" className="block h-auto w-full" />
+        )}
+      </span>
+      <span className="line-clamp-2 block text-[13px] leading-[1.4] text-ink group-hover:underline">{doc.title}</span>
+    </Link>
   );
 }
 
@@ -130,13 +212,13 @@ export function ToolRow({ tools }: { tools: readonly Tool[] }) {
 
 function SectionHead({ id, title, all }: { id: string; title: string; all: string | null }) {
   return (
-    <div className="mb-2.5 flex items-baseline justify-between gap-4">
+    <div className="mb-3 flex items-baseline justify-between gap-4">
       <h2 id={id} className="home-section-title">
         {title}
       </h2>
       {all && (
         // Three "View all" links on one page: each says which list it opens, starting with the words it shows.
-        <Link href={all} aria-label={`View all ${title.toLowerCase()}`} className="text-[13px] text-ink-3 hover:text-ink">
+        <Link href={all} aria-label={`View all ${title.toLowerCase()}`} className="text-[13px] text-ink-2 hover:text-ink">
           View all
         </Link>
       )}

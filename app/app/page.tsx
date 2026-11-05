@@ -4,10 +4,10 @@ import { attentionLine } from "@/lib/attention";
 import { aiEnabled } from "@/lib/server/ai";
 import { ATTENTION_MAX, DOC_KINDS, homeSummary, recentDocuments } from "@/lib/server/documents";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
-import { SAVED_MAX, waitingOnOthers } from "@/lib/server/home";
+import { waitingOnOthers } from "@/lib/server/home";
 import { listPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
-import { listSaved } from "@/lib/server/saved";
+import { samplePaperPreviews } from "@/lib/server/sample";
 import { DEFAULT_WORKSPACE_NAME, requireWorkspace, viewerZone } from "@/lib/server/session";
 import { startPath } from "@/lib/server/start-here";
 import { appTools } from "@/lib/server/tools";
@@ -23,18 +23,24 @@ const TASKS = [
 export default async function AppHome() {
   const ctx = await requireWorkspace();
   if (uiV2()) {
-    const [recent, waiting, saved, zone, start] = await Promise.all([
+    const [summary, recent, waiting, links, zone, start] = await Promise.all([
+      homeSummary(ctx),
       recentDocuments(ctx),
       waitingOnOthers(ctx),
-      listSaved(ctx, SAVED_MAX),
+      listPassports(ctx),
       viewerZone(),
       startPath(ctx),
     ]);
     return (
       <HomeV2
-        recent={recent}
+        needs={summary.attention}
+        needsTotal={summary.attentionTotal}
+        today={ctx.today}
+        canUpload={!ctx.demo && realDocsEnabled()}
+        papers={recent}
+        previews={await samplePaperPreviews(ctx, recent.map((d) => d.id))}
         waiting={{ signatures: waiting.signatures.map((s) => ({ ...s, sentOn: dayOf(s.sentAt, zone) })), vendors: waiting.vendors }}
-        saved={saved}
+        links={links}
         zone={zone}
         tools={appTools(ctx)}
         aiOn={aiEnabled()}

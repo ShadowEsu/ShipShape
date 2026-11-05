@@ -26,10 +26,8 @@ export interface Waiting {
   vendors: WaitingVendor[];
 }
 
-/** How many of each Home's "Waiting on others" lists. */
+/** How many of each Home's "Shared" lists: open signature requests, and the vendors who still owe a document. */
 export const WAITING_MAX = 3;
-/** How many of the person's newest saves Home's "Saved" shows (View all opens the rest). */
-export const SAVED_MAX = 3;
 
 // Open requests on documents still in the workspace (an archived document's requests are withdrawn, and never come back
 // here: Security S5). The signer's name is the one the owner typed; the email stays on the document's page (S4).
@@ -42,9 +40,9 @@ const PENDING_SQL = `
   limit $2`;
 
 /**
- * Home's "Waiting on others": signature requests nobody has signed yet, newest first, then the vendors who still owe a
- * document, A to Z. Read as the signed-in member under row level security, so a workspace sees only its own (S1); the
- * vendors only while Collect is open here, as the Collect page itself.
+ * What's out with others on Home's "Shared": signature requests nobody has signed yet, newest first, then the vendors
+ * who still owe a document, A to Z. Read as the signed-in member under row level security, so a workspace sees only its
+ * own (S1); the vendors only while Collect is open here, as the Collect page itself.
  */
 export async function waitingOnOthers(ctx: Ctx): Promise<Waiting> {
   const rows = await asUser(ctx.userId, (tx) =>

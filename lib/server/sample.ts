@@ -228,6 +228,35 @@ export async function samplePaperPreview(
 }
 
 /**
+ * Home's "Your papers" (Design SC, 4 Nov): the first page of each of these documents, by id, decided as on its own page
+ * (samplePaperPreview). Only in a sample; a real workspace gets none and reads nothing. Versions and signature requests
+ * are read under row level security, scoped to this workspace.
+ */
+export async function samplePaperPreviews(ctx: Ctx, ids: readonly string[]): Promise<Map<string, SamplePreview>> {
+  const out = new Map<string, SamplePreview>();
+  if (!ctx.demo || ids.length === 0) return out;
+  const { versions, requests } = await asUser(ctx.userId, async (tx) => ({
+    versions: await tx.query<Pick<VersionRow, "version" | "origin" | "fill_record"> & { document_id: string }>(
+      "select document_id, version, origin, fill_record from app.document_versions where org_id = $1 and document_id = any($2::uuid[]) order by version desc",
+      [ctx.orgId, ids],
+    ),
+    requests: await tx.query<Pick<SignatureRequestRow, "version" | "signed_version"> & { document_id: string }>(
+      "select document_id, version, signed_version from app.signature_requests where org_id = $1 and document_id = any($2::uuid[])",
+      [ctx.orgId, ids],
+    ),
+  }));
+  for (const id of ids) {
+    const preview = await samplePaperPreview(
+      ctx,
+      versions.filter((v) => v.document_id === id),
+      requests.filter((r) => r.document_id === id),
+    );
+    if (preview) out.set(id, preview);
+  }
+  return out;
+}
+
+/**
  * The sample's people and their networks: names say (sample), emails are .example, networks are documentation addresses
  * (RFC 5737). Jordan Lee is one of the sample's People; Sam Ortiz isn't yet, so the request shows "Keep in People".
  */

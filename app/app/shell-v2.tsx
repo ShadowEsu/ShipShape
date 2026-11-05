@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { searchPages } from "@/components/app-sections";
 import { Logo } from "@/components/ui";
 import { lapsedCount } from "@/lib/server/documents";
 import { contactEmail } from "@/lib/server/flags";
@@ -6,24 +7,20 @@ import type { Ctx } from "@/lib/server/profile";
 import { appTools } from "@/lib/server/tools";
 import { signOut } from "../signin/actions";
 import { PulseOnView } from "./motion-v2";
-import { AccountSheet, SideNav, TopBar } from "./nav-v2";
+import { AccountSheet, SideNav, TabBar, TopBar } from "./nav-v2";
 
 /**
- * The app's frame (Design calm v2, look A): a white page with hairlines. On desktop a flat 236px sidebar (grouped rows,
- * the workspace row at its foot) and a slim top bar (the page's name, search, Help and Feedback); on the phone the top
- * bar alone, with the menu and search. The shell itself never animates.
+ * The app's frame (Quiet, Design 4 Nov): a white page with hairlines. On desktop a flat 240px sidebar (grouped rows,
+ * the workspace row at its foot) and a slim top bar (the page's name, search, Help and Feedback). On the phone the top
+ * bar has the account button (the workspace page) and search, and under 600px a tab bar sits at the foot. The shell
+ * itself never animates.
  */
 export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: boolean; children: React.ReactNode }) {
   const lapsed = await lapsedCount(ws);
   const tools = appTools(ws).map(({ name, href, icon, tag, closed }) => ({ name, href, icon, tag: closed ? tag : null }));
-  const signOutForm = (
-    <form action={signOut}>
-      <button className="btn-ghost w-full">Sign out</button>
-    </form>
-  );
   return (
     <div className="ui-v2 min-h-dvh bg-paper md:flex">
-      <aside aria-label="Workspace" className="side hidden md:sticky md:top-0 md:flex md:h-dvh md:w-[236px] md:shrink-0 md:flex-col">
+      <aside aria-label="Workspace" className="side hidden md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:shrink-0 md:flex-col">
         <div className="px-2 pt-1 pb-3.5">
           <Logo href="/app" />
         </div>
@@ -32,7 +29,9 @@ export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: b
         </div>
         <div className="pt-3">
           <AccountSheet id="account-sheet-side" workspace={ws.name} role={ws.role}>
-            {signOutForm}
+            <form action={signOut}>
+              <button className="btn-ghost w-full">Sign out</button>
+            </form>
           </AccountSheet>
         </div>
       </aside>
@@ -58,20 +57,13 @@ export async function ShellV2({ ws, deleting, children }: { ws: Ctx; deleting: b
             )}
           </section>
         )}
-        <TopBar
-          tools={tools}
-          contact={contactEmail()}
-          lapsed={lapsed}
-          account={
-            <AccountSheet id="account-sheet-menu" workspace={ws.name} role={ws.role}>
-              {signOutForm}
-            </AccountSheet>
-          }
-        />
-        <main id="main" className="mx-auto max-w-[1040px] space-y-6 px-4 pt-6 pb-16 md:px-10 md:pt-10">
+        <TopBar tools={tools} pages={searchPages(tools)} contact={contactEmail()} workspace={ws.name} />
+        {/* Quiet §3: content at most 880px, centred; 48px at the sides and 56px on top from md, 20px on the phone. */}
+        <main id="main" className="mx-auto max-w-[976px] space-y-6 px-5 pt-6 pb-16 md:px-12 md:pt-14">
           {children}
         </main>
       </div>
+      <TabBar />
       <PulseOnView />
     </div>
   );
