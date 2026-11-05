@@ -122,14 +122,17 @@ export function DocumentV2(p: {
             {doc.title}
           </h1>
         </ViewTransition>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-2">
-          {/* A changed state (new dates saved, a new version) crossfades in place, the old label out and up, the new one in (§6.3). */}
-          <ViewTransition update="v2-chip" default="none">
-            <ValidityChip validity={doc.validity} expiresOn={doc.expires_on} />
-          </ViewTransition>
-          {latest && <span>Version {latest.version}</span>}
+        {/* Save keeps its place at the row's end at any width (Design, 4 Nov): only the chip and the version wrap. */}
+        <div className="mt-2 flex items-center gap-3 text-sm text-ink-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+            {/* A changed state (new dates saved, a new version) crossfades in place, the old label out and up, the new one in (§6.3). */}
+            <ViewTransition update="v2-chip" default="none">
+              <ValidityChip validity={doc.validity} expiresOn={doc.expires_on} />
+            </ViewTransition>
+            {latest && <span>Version {latest.version}</span>}
+          </div>
           {active && (
-            <div className="ml-auto">
+            <div className="shrink-0">
               <SaveToggle kind="document" id={doc.id} saved={p.saved} />
             </div>
           )}

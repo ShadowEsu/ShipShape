@@ -190,11 +190,21 @@ export function CelebrationSwitch() {
 }
 
 // The burst (spec §2): 8 shapes, 10px and 8px in turn, in the full-strength state colours (the "You have it" green,
-// the "Expires soon" amber, ink), fanned over the right half of the check from -70° to 70°, 30-48px out, so most fly
-// above and below the words rather than across them. A row needs about 12px above and below its line for the fan.
-const REACH = [40, 30, 48, 34, 34, 48, 30, 40];
-const BURST = REACH.map((reach, i) => ({
-  angle: -70 + 20 * i,
+// the "Expires soon" amber, ink). They fan up and down from the check (34° to 82° either side, never level with the
+// words) and each stops inside a row with 24px above and below its line. The words sit on an opaque layer above the
+// shapes, so none ever covers them (Design, 4 Nov).
+const FAN = [
+  [-82, 30],
+  [-66, 32],
+  [-50, 38],
+  [-34, 48],
+  [34, 48],
+  [50, 38],
+  [66, 32],
+  [82, 30],
+];
+const BURST = FAN.map(([angle, reach], i) => ({
+  angle,
   reach,
   look: `${i % 2 === 0 ? "size-2.5 rounded-full" : "size-2 rounded-[2px]"} ${["bg-ok", "bg-warn", "bg-ink"][i % 3]}`,
 }));
@@ -271,7 +281,7 @@ export function Celebrate({
           </span>
         )}
       </span>
-      {children}
+      <span className="relative z-[1] bg-paper">{children}</span>
     </p>
   );
 }
