@@ -4,14 +4,18 @@ import { Icon } from "@/components/icons";
 import { DOC_KINDS, type DocRow } from "@/lib/server/documents";
 import type { WaitingSignature, WaitingVendor } from "@/lib/server/home";
 import type { SavedRow } from "@/lib/server/saved";
+import type { StartPath } from "@/lib/server/start-here";
 import type { Tool } from "@/lib/server/tools";
 import { AiBox } from "./ai-box";
 import { HairRow } from "./hair-row";
+import { Arrive } from "./motion-moments";
 import { savedLine } from "./saved/list";
+import { StartHere } from "./start-here";
 
 /**
  * Home (Design calm v2, look A): the question, the box and one row of tools on top; under them what has happened and
  * what's still out, each a hairline list. Every row is a real record of this workspace, and every chip a real column.
+ * A sample also gets its Start here path between the top and Recent (ledger 461).
  */
 export function HomeV2(props: {
   recent: DocRow[];
@@ -23,8 +27,10 @@ export function HomeV2(props: {
   zone: string;
   tools: readonly Tool[];
   aiOn: boolean;
+  /** A sample's Start here; null in a real workspace. */
+  start: StartPath | null;
 }) {
-  const { recent, waiting, saved, zone, tools, aiOn } = props;
+  const { recent, waiting, saved, zone, tools, aiOn, start } = props;
   const nothingWaiting = waiting.signatures.length === 0 && waiting.vendors.length === 0;
   return (
     <div className="space-y-12">
@@ -36,12 +42,14 @@ export function HomeV2(props: {
         <ToolRow tools={tools} />
       </section>
 
+      {start && <StartHere path={start} />}
+
       <section aria-labelledby="recent-title">
         <SectionHead id="recent-title" title="Recent" all={recent.length > 0 ? "/app/documents" : null} />
         {recent.length === 0 ? (
           <p className="quiet-empty">The documents you add or make show up here.</p>
         ) : (
-          <ul className="hair-list">
+          <Arrive list="home-recent" className="hair-list">
             {recent.map((d) => (
               <HairRow
                 key={d.id}
@@ -52,7 +60,7 @@ export function HomeV2(props: {
                 chip={<ValidityChip validity={d.validity} expiresOn={d.expires_on} />}
               />
             ))}
-          </ul>
+          </Arrive>
         )}
       </section>
 

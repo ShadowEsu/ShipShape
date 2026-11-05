@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { NotLegalAdvice } from "@/components/ui";
-import type { RequestItem } from "@/lib/server/ai";
+import { currentMatchIds } from "@/lib/request-words";
+import type { ReadBy, RequestItem } from "@/lib/server/request-check";
+import { Celebrate } from "../motion-moments";
 
 // `dot`: the state as the v2 chip's dot colour (validity-chip in globals.css); v1 keeps the tinted pill.
 const STATE: Record<RequestItem["state"], { label: string; cls: string; icon: string; dot: string }> = {
@@ -10,10 +12,6 @@ const STATE: Record<RequestItem["state"], { label: string; cls: string; icon: st
   missing: { label: "Not in your documents", cls: "bg-bad-soft text-bad", icon: "✕", dot: "expired" },
   unmatched: { label: "Check this one yourself", cls: "bg-canvas text-ink-2", icon: "?", dot: "none" },
 };
-
-/** The best current match of each item, once: what a passport link for this request would hold. */
-export const currentMatchIds = (items: readonly RequestItem[]) =>
-  [...new Set(items.flatMap((i) => (i.state === "ready" || i.state === "expiring" ? [i.matches[0].id] : [])))];
 
 /** One document the request asks for: its name and state, the words that asked for it, your matches, the fix if missing. */
 export function RequestItemBody({ item }: { item: RequestItem }) {
@@ -65,19 +63,45 @@ export function RequestItemBody({ item }: { item: RequestItem }) {
 /**
  * What a checked request comes back as, wherever it was checked (Home's box and Check a request): what it asks for,
  * each item against your documents, the way to share the current ones, and the not-a-law-firm line as visible text on
- * every answer (Security MUST-L2, L3).
+ * every answer (Security MUST-L2, L3). `by`: whether the AI read it or the plain reader matched names (AI off), which
+ * the answer says, since the plain reader can miss a document a request describes without naming it.
  */
-export function RequestAnswer({ items, titleId, v2 = true }: { items: readonly RequestItem[]; titleId: string; v2?: boolean }) {
+export function RequestAnswer({ items, titleId, by, v2 = true }: { items: readonly RequestItem[]; titleId: string; by: ReadBy; v2?: boolean }) {
   const linkIds = currentMatchIds(items);
   const count = `${items.length} ${items.length === 1 ? "document" : "documents"}`;
+  // Who found the items: under the title in the redesigned app (Design, 4 Nov), at the foot in the earlier look.
+  const readBy = (
+    <p className="text-[13px] leading-5 text-ink-3">
+      {by === "ai" ? "Read by AI. Check it against the request." : "Found by matching document names, not by AI. Check it against the request."}
+    </p>
+  );
   return (
     <div className="space-y-4">
-      <h2 id={titleId} tabIndex={-1} className={v2 ? "section-title" : "font-serif text-2xl font-semibold"}>
-        {items.length === 0 ? "The request doesn't ask for any documents" : `The request asks for ${count}`}
-      </h2>
+      <div className="space-y-1">
+        <h2 id={titleId} tabIndex={-1} className={v2 ? "section-title" : "font-serif text-2xl font-semibold"}>
+          {items.length === 0 ? "The request doesn't ask for any documents" : `The request asks for ${count}`}
+        </h2>
+        {v2 && readBy}
+      </div>
+      {/* A real win (motion spec §4): everything asked for is here and current. The redesigned app only. */}
+      {v2 && items.length > 0 && items.every((i) => i.state === "ready") && (
+        <Celebrate
+          trigger="check-all"
+          className="flex items-center gap-2 py-3 text-[15px] font-medium text-ok"
+          mark={
+            <span aria-hidden="true" className="grid size-6 place-items-center rounded-full bg-ok text-sm text-white">
+              ✓
+            </span>
+          }
+        >
+          {items.length === 1 ? "You have it." : `You have all ${items.length}.`}
+        </Celebrate>
+      )}
       {items.length === 0 ? (
         <p className="text-sm text-ink-2">
-          The AI didn&apos;t find any documents asked for in that text. If it should have, paste just the part that lists them and check it again.
+          {by === "ai"
+            ? "The AI didn't find any documents asked for in that text. If it should have, paste just the part that lists them and check it again."
+            : "That text names none of the documents ShipShape knows: a W-9, an insurance certificate, a license, a permit, an NDA or another agreement, a registration, a tax certificate or a bond. If it asks for something else, check it against your documents yourself."}
         </p>
       ) : (
         <ul className={v2 ? "group-list" : "divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper"}>
@@ -89,7 +113,7 @@ export function RequestAnswer({ items, titleId, v2 = true }: { items: readonly R
         </ul>
       )}
       <div className="space-y-1">
-        <p className="text-[13px] leading-5 text-ink-3">Read by AI. Check it against the request.</p>
+        {!v2 && readBy}
         <NotLegalAdvice />
       </div>
       {linkIds.length > 0 && (

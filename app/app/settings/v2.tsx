@@ -2,12 +2,14 @@ import Link from "next/link";
 import { Notice, PageHeader } from "@/components/app-ui";
 import { HashLanding } from "@/components/hash-landing";
 import { SubmitButton } from "@/components/submit-button";
+import { WaitlistForm } from "@/components/waitlist";
 import { PLANS } from "@/lib/plans";
 import type { BillingView } from "@/lib/server/billing";
 import type { LiveSession, SignedIn } from "@/lib/server/session";
 import { RECENT_AUTH_SECONDS } from "@/lib/server/session";
 import { dayOf } from "@/lib/today";
 import { signOut } from "../../signin/actions";
+import { CelebrationSwitch } from "../motion-moments";
 import { signOutEverywhere, signOutSession } from "./actions";
 import { ManageBillingForm, UpgradeForm } from "./billing-forms";
 import { ExportButton } from "./export-button";
@@ -98,6 +100,13 @@ export function SettingsV2({
             )}
           </li>
         </ul>
+        {/* Start here ends on the waitlist once, then leaves Home; this is where it stays in a sample (ledger 461, spot 2a). */}
+        {ctx.demo && (
+          <div className="space-y-3">
+            <p className="text-sm text-ink-2">Real accounts aren&apos;t open yet.</p>
+            <WaitlistForm label="Hear when real accounts open" inSample />
+          </div>
+        )}
         {view.status === "past_due" && (
           <Notice>
             Your last payment didn&apos;t go through. Pro stays on for 7 days after a failed payment.{" "}
@@ -173,6 +182,18 @@ export function SettingsV2({
         ) : (
           <ExportButton />
         )}
+      </section>
+
+      {/* The celebration toggle (motion spec §2): on by default, kept in this browser, so nothing is stored about it. */}
+      <section aria-labelledby="motion-title" className="space-y-3">
+        <h2 id="motion-title" className="section-title">
+          Animations
+        </h2>
+        <ul className="group-list plain">
+          <li>
+            <CelebrationSwitch />
+          </li>
+        </ul>
       </section>
 
       {/* The sign-in pool requires an authenticator app for everyone (infra/signin.yaml), so this is a statement, not a switch.

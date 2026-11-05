@@ -3,11 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AI_REQUEST_CONSENT_VERSION } from "@/lib/ai";
-import { AI_CAPS, AI_MODEL, readRequest, RequestInputError, setAiProviderForTests, type AiProvider, type AiRequest } from "@/lib/server/ai";
+import { AI_CAPS, AI_MODEL, readRequest, setAiProviderForTests, type AiProvider, type AiRequest } from "@/lib/server/ai";
 import { asService, asUser } from "@/lib/server/db";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
 import type { Ctx } from "@/lib/server/profile";
+import { RequestInputError } from "@/lib/server/request-check";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
 

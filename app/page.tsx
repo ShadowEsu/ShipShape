@@ -4,6 +4,7 @@ import Link from "next/link";
 import { SiteFooter, SiteHeader, StatusLabel, type Status } from "@/components/site";
 import { WaitlistForm } from "@/components/waitlist";
 import { PLANS } from "@/lib/plans";
+import { aiEnabled } from "@/lib/server/ai";
 import { paymentsLive } from "@/lib/server/billing-config";
 import { appUrl, realDocsEnabled } from "@/lib/server/flags";
 import { homeJsonLd, jsonLdText } from "@/lib/server/seo";
@@ -54,8 +55,22 @@ const STEPS: { title: string; body: string }[] = [
   { title: "Stay current", body: "Expiry and renewal dates become deadlines and a calendar file with alerts; on Pro, reminders 90, 30 and 7 days ahead, shown to owners and admins on the Deadlines page." },
 ];
 
-/** What works today, what waits on setup and what's planned, worded for whether real documents and live payments are open (Security MUST-4). */
-function capabilities(docs: boolean, live: boolean): { title: string; body: string; status: Status }[] {
+type Capability = { title: string; body: string; status: Status };
+
+/**
+ * What works today, what waits on setup and what's planned, worded for whether real documents, live payments and AI
+ * are open (Security MUST-4). With AI off, "What are they asking for?" matches document names (ledger 461).
+ */
+function capabilities(docs: boolean, live: boolean, ai: boolean): Capability[] {
+  const aiLater: Capability[] = ai
+    ? []
+    : [
+        {
+          title: "Reading requests with AI",
+          body: "Also finds documents a request describes without naming them. Built and tested; it runs only when you tick the box for a request, and turns on after our security review.",
+          status: "Awaiting setup",
+        },
+      ];
   return [
     { title: "Documents, versions and history", body: "Search, archive and see every version; every change and download recorded.", status: "Works today" },
     { title: "W-9 and NDA from your facts", body: "Official IRS form and Common Paper's standard NDA, filled and saved.", status: "Works today" },
@@ -78,7 +93,10 @@ function capabilities(docs: boolean, live: boolean): { title: string; body: stri
     live
       ? { title: "Payments", body: "Pro is paid monthly through Stripe; cancel any time from Settings.", status: "Works today" }
       : { title: "Payments", body: "Paying for Pro by card through Stripe is built and tested. No real charges yet.", status: "Awaiting setup" },
-    { title: "“What are they asking for?”", body: "Paste a request and see which documents it asks for and which you have. Built and tested; it runs only when you tick the box for a request, and turns on after our security review.", status: "Awaiting setup" },
+    ai
+      ? { title: "“What are they asking for?”", body: "Paste a request and see which documents it asks for and which you have. AI reads it only when you tick the box for that request.", status: "Works today" }
+      : { title: "“What are they asking for?”", body: "Paste a request and see which documents it names and which you have, current or expired. Found by matching document names, with no AI.", status: "Works today" },
+    ...aiLater,
     { title: "Dates read off certificates", body: "Expiry dates filled in from an uploaded certificate, with your OK. Opt-in AI.", status: "Planned" },
   ];
 }
@@ -119,6 +137,7 @@ export default function Home() {
   const site = appUrl();
   const docs = realDocsEnabled();
   const live = paymentsLive();
+  const ai = aiEnabled();
   return (
     <>
       {site && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(homeJsonLd(site, PITCH)) }} />}
@@ -185,7 +204,7 @@ export default function Home() {
             <p className="kicker">Where things stand</p>
             <h2 className="mt-2 font-serif text-3xl font-semibold tracking-tight sm:text-4xl">What works today, and what doesn&apos;t yet.</h2>
             <ul className="mt-8 grid gap-3 md:grid-cols-2">
-              {capabilities(docs, live).map((c) => (
+              {capabilities(docs, live, ai).map((c) => (
                 <li key={c.title} className={`rounded-2xl border border-line p-4 ${c.status === "Planned" ? "bg-canvas" : ""}`}>
                   <div className="flex items-start justify-between gap-3">
                     <h3 className="font-semibold">{c.title}</h3>

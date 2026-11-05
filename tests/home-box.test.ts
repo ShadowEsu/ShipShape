@@ -5,7 +5,7 @@ import { AiBoxView } from "@/app/app/ai-box";
 import { RequestAnswer } from "@/app/app/ask/answer";
 import { AskForm } from "@/app/app/ask/form";
 import { NOT_A_LAW_FIRM } from "@/components/ui";
-import type { RequestItem } from "@/lib/server/ai";
+import type { RequestItem } from "@/lib/server/request-check";
 
 // Security MUST-L1 to L3 (3 Nov): the not-a-law-firm line, word for word and as visible text, beside the tick that
 // sends a request to the model, and on every answer to a checked request, on Home and on Check a request alike.
@@ -40,11 +40,11 @@ describe("Home's box and the legal line", () => {
     expect(empty).not.toContain("not a law firm");
   });
 
-  it("with AI off a typed request shows neither the tick nor the line, only that AI is off; a few words to find a tool show neither", async () => {
-    const off = await box(REQUEST, false);
+  it("with AI off a typed request is still checked: the line shows without the tick; a few words to find a tool show neither", async () => {
+    const off = visible(await box(REQUEST, false));
     expect(off).not.toContain('name="consent"');
-    expect(off).not.toContain("not a law firm");
-    expect(off).toContain("AI is off right now, so it can&#x27;t check a request.");
+    expect(off).toContain(LINE);
+    expect(off).toContain('aria-label="Check this request"');
 
     const words = await box("make a w9", true);
     expect(words).not.toContain('name="consent"');
@@ -52,31 +52,48 @@ describe("Home's box and the legal line", () => {
   });
 
   it("Home's answer to a checked request carries the line as visible text, with what was asked and what you have", async () => {
-    const answer = visible(await box(REQUEST, true, { answer: { kind: "check" }, check: { items: ITEMS } }));
+    const answer = visible(await box(REQUEST, true, { answer: { kind: "check" }, check: { items: ITEMS, by: "ai" } }));
     const card = answer.slice(answer.indexOf('aria-label="Answer"'));
     expect(card).toContain("The request asks for 2 documents");
     expect(card).toContain(LINE);
     expect(card).toContain("Share the current one in a link");
   });
 
+  it("an answer says who found the items: the AI, or names matched without it", async () => {
+    for (const v2 of [true, false]) {
+      const ai = visible(await html(createElement(RequestAnswer, { items: ITEMS, titleId: "t", by: "ai", v2 })));
+      const names = visible(await html(createElement(RequestAnswer, { items: ITEMS, titleId: "t", by: "names", v2 })));
+      expect(ai).toContain("Read by AI.");
+      expect(names).toContain("not by AI.");
+      expect(names).not.toContain("Read by AI");
+    }
+    const noneByNames = visible(await html(createElement(RequestAnswer, { items: [], titleId: "t", by: "names" })));
+    expect(noneByNames).not.toContain("The AI");
+  });
+
   it("the shared answer carries the line in both looks and when nothing was asked for (Check a request draws the same one)", async () => {
     for (const v2 of [true, false]) {
       for (const items of [ITEMS, []]) {
-        const out = visible(await html(createElement(RequestAnswer, { items, titleId: "t", v2 })));
+        const out = visible(await html(createElement(RequestAnswer, { items, titleId: "t", by: "names", v2 })));
         expect(out).toContain(LINE);
       }
     }
-    const none = await html(createElement(RequestAnswer, { items: [], titleId: "t" }));
+    const none = await html(createElement(RequestAnswer, { items: [], titleId: "t", by: "ai" }));
     expect(none).toContain("The request doesn&#x27;t ask for any documents");
     expect(none).not.toContain("in a link");
   });
 
-  it("Check a request's tick carries the line as visible text, in both looks (L5)", async () => {
+  it("Check a request's tick carries the line as visible text, in both looks (L5); with AI off there's no tick and the line stays", async () => {
     for (const v2 of [true, false]) {
-      const form = visible(await html(createElement(AskForm, { v2 })));
+      const form = visible(await html(createElement(AskForm, { v2, ai: true })));
       const tick = form.indexOf('name="consent"');
       expect(tick).toBeGreaterThan(-1);
       expect(form.indexOf(LINE, tick)).toBeGreaterThan(tick);
+
+      const off = visible(await html(createElement(AskForm, { v2, ai: false })));
+      expect(off).not.toContain('name="consent"');
+      expect(off).not.toContain("Anthropic");
+      expect(off).toContain(LINE);
     }
   });
 });

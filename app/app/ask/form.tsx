@@ -10,10 +10,13 @@ import { RequestAnswer } from "./answer";
  * `v2`: the redesigned app (Design 02 Nov, PR 8): the request in a hairline well and the consent as a checkbox row with
  * the tick on the left, as on Home (Design #23 S2), no card. "Read the request" is the page's one primary until an
  * answer shows; then the answer's own action leads and reading again is secondary (Design #23 S1). Same action, words
- * and consent behaviour in both looks.
+ * and consent behaviour in both looks. `ai`: whether the AI reads it; while it's off, the plain reader matches document
+ * names, sends nothing, and so asks for no consent (ledger 461). The not-a-law-firm line shows either way. `pasted`: the
+ * request the field starts with (a sample's Start here).
  */
-export function AskForm({ v2 = false }: { v2?: boolean }) {
-  const [state, action, pending] = useActionState<AskState, FormData>(askAction, {});
+export function AskForm({ v2 = false, ai, pasted }: { v2?: boolean; ai: boolean; pasted?: string }) {
+  // The state carries what the field shows, so a pasted request starts in it.
+  const [state, action, pending] = useActionState<AskState, FormData>(askAction, { text: pasted });
   const items = state.items;
   const form = useRef<HTMLFormElement>(null);
   const textError = state.field === "text" ? state.error : undefined;
@@ -57,48 +60,11 @@ export function AskForm({ v2 = false }: { v2?: boolean }) {
             The email or checklist that asks for your documents. Up to {AI_REQUEST_MAX_CHARS.toLocaleString("en-US")} characters.
           </p>
         </div>
-        {v2 ? (
-          <ul className="group-list plain">
-            <li>
-              <label className="group-row cursor-pointer items-start gap-3 hover:bg-tile">
-                <input
-                  type="checkbox"
-                  name="consent"
-                  value="yes"
-                  defaultChecked={state.consent}
-                  aria-required="true"
-                  aria-invalid={consentError ? true : undefined}
-                  aria-describedby={consentError ? "consent-error consent-source" : "consent-source"}
-                  className="mt-0.5 size-5 shrink-0 accent-[var(--accent)]"
-                />
-                <span className="min-w-0 flex-1 text-[15px]">{AI_REQUEST_CONSENT_TEXT}</span>
-              </label>
-            </li>
-          </ul>
-        ) : (
-          <label className="flex items-start gap-3 text-sm">
-            <input
-              type="checkbox"
-              name="consent"
-              value="yes"
-              defaultChecked={state.consent}
-              aria-required="true"
-              aria-invalid={consentError ? true : undefined}
-              aria-describedby={consentError ? "consent-error consent-source" : "consent-source"}
-              className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
-            />
-            <span>{AI_REQUEST_CONSENT_TEXT}</span>
-          </label>
-        )}
-        <p id="consent-source" className="text-xs text-ink-3">
-          Source:{" "}
-          <a href={AI_TRAINING_SOURCE.href} target="_blank" rel="noopener noreferrer" className="underline">
-            {AI_TRAINING_SOURCE.label}
-          </a>
-          , checked {AI_TRAINING_SOURCE.checked}.
-        </p>
-        {/* Beside the tick that sends the request, as on Home's box (Security MUST-L1, L5). */}
+        {ai && <AskConsent v2={v2} defaultChecked={state.consent} error={consentError} />}
+        {/* Beside the tick that sends the request, as on Home's box (Security MUST-L1, L5), and on its own without AI. */}
         <p className="text-[13px] leading-[19px] text-ink-2">{NOT_A_LAW_FIRM}</p>
+        {/* After that line, where it was before the tick moved into AskConsent, so the earlier look stays as it was. Shown
+            without the tick too: AI turned on after this page was drawn still gets a message, not a silent submit. */}
         {consentError && (
           <p id="consent-error" className="text-sm text-bad">
             {consentError}
@@ -114,11 +80,53 @@ export function AskForm({ v2 = false }: { v2?: boolean }) {
         </button>
       </form>
 
-      {items && (
+      {items && state.by && (
         <section aria-labelledby="result-title">
-          <RequestAnswer items={items} titleId="result-title" v2={v2} />
+          <RequestAnswer items={items} titleId="result-title" by={state.by} v2={v2} />
         </section>
       )}
     </div>
+  );
+}
+
+/** The tick that lets this one check send the request to the AI, with where its claim comes from and its error. */
+function AskConsent({ v2, defaultChecked, error }: { v2: boolean; defaultChecked?: boolean; error?: string }) {
+  const box = (
+    <input
+      type="checkbox"
+      name="consent"
+      value="yes"
+      defaultChecked={defaultChecked}
+      aria-required="true"
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? "consent-error consent-source" : "consent-source"}
+      className={v2 ? "mt-0.5 size-5 shrink-0 accent-[var(--accent)]" : "mt-0.5 size-4 shrink-0 accent-[var(--accent)]"}
+    />
+  );
+  return (
+    <>
+      {v2 ? (
+        <ul className="group-list plain">
+          <li>
+            <label className="group-row cursor-pointer items-start gap-3 hover:bg-tile">
+              {box}
+              <span className="min-w-0 flex-1 text-[15px]">{AI_REQUEST_CONSENT_TEXT}</span>
+            </label>
+          </li>
+        </ul>
+      ) : (
+        <label className="flex items-start gap-3 text-sm">
+          {box}
+          <span>{AI_REQUEST_CONSENT_TEXT}</span>
+        </label>
+      )}
+      <p id="consent-source" className="text-xs text-ink-3">
+        Source:{" "}
+        <a href={AI_TRAINING_SOURCE.href} target="_blank" rel="noopener noreferrer" className="underline">
+          {AI_TRAINING_SOURCE.label}
+        </a>
+        , checked {AI_TRAINING_SOURCE.checked}.
+      </p>
+    </>
   );
 }

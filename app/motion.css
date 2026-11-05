@@ -235,3 +235,165 @@
     animation: v2-fade-in 120ms linear both;
   }
 }
+
+/*
+ * The motion moments (Design's shared spec, 4 Nov, ledgers 462 + 463): skeleton shimmer, the branded loader, count-ups,
+ * staggered arrival and celebrations. Only these use the shared --m-* tokens; the state motion above keeps its own
+ * (spec §1 exception). Transform and opacity only; reduced motion is static (spec §3).
+ */
+:root {
+  --m-instant: 80ms;
+  --m-fast: 180ms;
+  --m-exit: 150ms;
+  --m-normal: 350ms;
+  --m-slow: 600ms;
+  --m-crawl: 1000ms;
+  --m-stagger: 70ms;
+  --m-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --m-ease-sharp: cubic-bezier(0.4, 0, 0.2, 1);
+  --m-ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --m-dist-sm: 8px;
+  --m-dist-md: 16px;
+  --m-scale-press: 0.95;
+  --m-scale-pop: 1.04;
+}
+
+@keyframes m-appear {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes m-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes m-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--m-dist-sm));
+  }
+}
+@keyframes m-rock {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes m-pop {
+  50% {
+    transform: scale(var(--m-scale-pop));
+  }
+}
+/* A burst shape flies out along its angle (--a) from the check's edge (12px) to its reach (--d, at most 48px), whole
+   size, at full opacity for the first 40%, then fades out evenly. */
+@keyframes m-burst {
+  from {
+    opacity: 1;
+    transform: rotate(var(--a)) translateX(12px);
+  }
+  40% {
+    opacity: 1;
+    animation-timing-function: linear;
+  }
+  to {
+    opacity: 0;
+    transform: rotate(var(--a)) translateX(var(--d, 40px));
+  }
+}
+
+/* Skeleton shimmer: nothing for the first 200ms (no flash on a fast load), then the shapes, each swept by one
+   highlight at 100° (about 6% lighter), 1.4s, looping only while the page loads. Replaces the blink. */
+.ui-v2 .skeleton {
+  animation: m-appear var(--m-fast) var(--m-ease-sharp) 200ms both;
+}
+.ui-v2 .skeleton :is(.bg-line, .bg-canvas) {
+  position: relative;
+  overflow: hidden;
+}
+.ui-v2 .skeleton :is(.bg-line, .bg-canvas)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.55) 50%, transparent 70%);
+  animation: m-sweep 1.4s linear infinite;
+}
+
+/* The branded loader: a view still loading after 600ms shows the mark, rocking 2° each way over 1.6s, over its
+   skeleton. It goes with the skeleton when the page arrives. */
+.ui-v2 .brand-loader {
+  animation: m-appear var(--m-fast) var(--m-ease-sharp) 600ms both;
+}
+.ui-v2 .brand-loader svg {
+  animation: m-rock 1.6s var(--m-ease-sharp) infinite;
+}
+.brand-loader {
+  display: none;
+}
+.ui-v2 .brand-loader {
+  display: grid;
+}
+
+/* Staggered arrival (app/app/motion-moments.tsx Arrive): on a list's first load, its first 8 rows rise 8px into place,
+   70ms apart; the rest arrive with the 8th. */
+.ui-v2 .m-arrive > * {
+  animation: m-rise var(--m-normal) var(--m-ease-smooth) both;
+}
+.ui-v2 .m-arrive > :nth-child(2) {
+  animation-delay: var(--m-stagger);
+}
+.ui-v2 .m-arrive > :nth-child(3) {
+  animation-delay: calc(2 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(4) {
+  animation-delay: calc(3 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(5) {
+  animation-delay: calc(4 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(6) {
+  animation-delay: calc(5 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(7) {
+  animation-delay: calc(6 * var(--m-stagger));
+}
+.ui-v2 .m-arrive > :nth-child(n + 8) {
+  animation-delay: calc(7 * var(--m-stagger));
+}
+
+/* Count-ups (CountUp): the digits keep their width while they change. */
+.ui-v2 .count-up {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Celebration (Celebrate): the check pops to 1.04 and back, and 8 shapes burst from it and fade, clipped to its row. */
+.ui-v2 .celebrate-check {
+  animation: m-pop var(--m-normal) var(--m-ease-pop) both;
+}
+.ui-v2 .celebrate-burst > span {
+  animation: m-burst 900ms var(--m-ease-smooth) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A static skeleton, the mark standing still, every row in place, no pop and no burst. The skeleton and the mark
+     still wait their 200ms and 600ms, then appear at once (1ms, no fade), so a fast load flashes nothing here either. */
+  .ui-v2 .skeleton,
+  .ui-v2 .brand-loader {
+    animation-duration: 1ms;
+  }
+  .ui-v2 .brand-loader svg,
+  .ui-v2 .m-arrive > *,
+  .ui-v2 .celebrate-check {
+    animation: none;
+  }
+  .ui-v2 .skeleton :is(.bg-line, .bg-canvas)::after,
+  .ui-v2 .celebrate-burst {
+    display: none;
+  }
+}

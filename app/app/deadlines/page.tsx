@@ -8,7 +8,9 @@ import { DOC_KINDS, firstDocument } from "@/lib/server/documents";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { mailOn } from "@/lib/server/mail";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
+import { startStepOpen } from "@/lib/server/start-here";
 import { fmtDay, timeOf } from "@/lib/today";
+import { DeadlinesSeen } from "../start-mark";
 import { DeadlinesV2 } from "./v2";
 import { when } from "./when";
 
@@ -58,19 +60,23 @@ export default async function DeadlinesPage({ searchParams }: { searchParams: Pr
 
   if (uiV2())
     return (
-      <DeadlinesV2
-        all={all}
-        outbox={outbox}
-        reminders={reminders}
-        member={member}
-        demo={ctx.demo}
-        emailed={mailOn()}
-        first={first}
-        zone={zone}
-        quiet={quiet}
-        soon={sp.soon === "1"}
-        gated={!ctx.demo && !realDocsEnabled()}
-      />
+      <>
+        {/* A sample's Start here (only the redesigned Home shows it): opening Deadlines is its third step. */}
+        {(await startStepOpen(ctx, 3)) && <DeadlinesSeen />}
+        <DeadlinesV2
+          all={all}
+          outbox={outbox}
+          reminders={reminders}
+          member={member}
+          demo={ctx.demo}
+          emailed={mailOn()}
+          first={first}
+          zone={zone}
+          quiet={quiet}
+          soon={sp.soon === "1"}
+          gated={!ctx.demo && !realDocsEnabled()}
+        />
+      </>
     );
 
   return (

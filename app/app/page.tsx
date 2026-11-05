@@ -9,6 +9,7 @@ import { listPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
 import { listSaved } from "@/lib/server/saved";
 import { DEFAULT_WORKSPACE_NAME, requireWorkspace, viewerZone } from "@/lib/server/session";
+import { startPath } from "@/lib/server/start-here";
 import { appTools } from "@/lib/server/tools";
 import { dayOf } from "@/lib/today";
 import { HomeV2 } from "./home-v2";
@@ -22,7 +23,13 @@ const TASKS = [
 export default async function AppHome() {
   const ctx = await requireWorkspace();
   if (uiV2()) {
-    const [recent, waiting, saved, zone] = await Promise.all([recentDocuments(ctx), waitingOnOthers(ctx), listSaved(ctx, SAVED_MAX), viewerZone()]);
+    const [recent, waiting, saved, zone, start] = await Promise.all([
+      recentDocuments(ctx),
+      waitingOnOthers(ctx),
+      listSaved(ctx, SAVED_MAX),
+      viewerZone(),
+      startPath(ctx),
+    ]);
     return (
       <HomeV2
         recent={recent}
@@ -31,6 +38,7 @@ export default async function AppHome() {
         zone={zone}
         tools={appTools(ctx)}
         aiOn={aiEnabled()}
+        start={start}
       />
     );
   }

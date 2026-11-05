@@ -6,6 +6,7 @@ import { z } from "zod";
 import { PlanLimit, UserError } from "@/lib/server/errors";
 import { createPassport, listPassports, revokePassport } from "@/lib/server/passport";
 import { requireWorkspace } from "@/lib/server/session";
+import { markStart } from "@/lib/server/start-here";
 
 /** The new-link form's fields, as its error messages name them. */
 export type PassportField = "label" | "docs" | "days";
@@ -31,6 +32,8 @@ export async function makePassport(_prev: PassportFormState, data: FormData): Pr
   try {
     const created = await createPassport(ctx, { label: data.get("label"), days: data.get("days"), documentIds: docs });
     revalidatePath("/app/passport");
+    // In a sample, a link made is Start here's second step.
+    await markStart(ctx, 2);
     return { created: { ...created, label: values.label.trim(), documents: new Set(docs).size, days: Number(values.days) } };
   } catch (e) {
     if (e instanceof PlanLimit) {

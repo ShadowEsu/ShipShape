@@ -21,7 +21,8 @@ export function HairRow({
   href: string;
   icon: IconName;
   title: string;
-  line: string;
+  /** The meta line: words, or words around a count-up (Passport's "opened 3 times"). */
+  line: React.ReactNode;
   chip?: React.ReactNode;
   current?: boolean;
   morph?: string;

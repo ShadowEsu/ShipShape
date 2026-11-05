@@ -119,6 +119,12 @@ export async function getSession(): Promise<IssuedSession | null> {
   return decodeSession((await cookies()).get(COOKIE)?.value);
 }
 
+/** The session in a request's Cookie header, for a route handed a plain Request (the waitlist's sample tally). */
+export function sessionInHeader(cookie: string | null, now = Date.now()): IssuedSession | null {
+  const pair = (cookie ?? "").split(/;\s*/).find((c) => c.startsWith(`${COOKIE}=`));
+  return decodeSession(pair?.slice(COOKIE.length + 1), now);
+}
+
 export async function startSession(s: NewSession) {
   (await cookies()).set(COOKIE, encodeSession(s), {
     httpOnly: true,

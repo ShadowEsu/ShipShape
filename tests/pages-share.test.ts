@@ -746,19 +746,22 @@ describe.each([
 ])("What are they asking for?, %s", (_look, ui) => {
   beforeEach(() => vi.stubEnv("SHIPSHAPE_UI", ui));
 
-  it("with AI switched off: one line on what that means, and one way forward", async () => {
+  it("with AI switched off: the same form checks by document names, with no tick and nothing said about Anthropic", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "");
     await signIn(`${ui || "v2"}-ask-off@example.com`);
-    const html = await renderPage(AskPage, {});
-    expect(textOf(html)).toContain("Reading requests with AI is switched off right now, so check the request against your documents yourself");
-    expect(actionsOf(html)).toEqual([{ tag: "a", label: "Open your documents", href: "/app/documents" }]);
+    const html = await renderPage(AskPage, none());
+    expect(html).toMatch(/<textarea[^>]*name="text"/);
+    expect(html).not.toContain('name="consent"');
+    expect(textOf(html)).not.toContain("Anthropic");
+    expect(textOf(html)).toContain("ShipShape is document software, not a law firm, and doesn't give legal advice.");
+    expect(textOf(html)).toContain("Read the request");
   });
 
   it("with AI on: the consent box claims only what Anthropic says, and names the source and when it was checked", async () => {
     vi.stubEnv("SHIPSHAPE_AI", "1");
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
     await signIn(`${ui || "v2"}-ask-on@example.com`);
-    const html = await renderPage(AskPage, {});
+    const html = await renderPage(AskPage, none());
     const text = textOf(html);
     expect(text).toContain("and nothing from your documents is sent. Anthropic says that by default it doesn't train on what its API receives.");
     expect(text).not.toContain("Anthropic doesn't train on it");
@@ -777,12 +780,26 @@ describe("What are they asking for?, redesigned only", () => {
     vi.stubEnv("SHIPSHAPE_AI", "1");
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-not-a-key");
     await signIn("v2-ask-look@example.com");
-    const html = await renderPage(AskPage, {});
+    const html = await renderPage(AskPage, none());
     expect(html).toMatch(/^<div class="mx-auto max-w-\[720px\] space-y-6">/);
     expect(html).not.toMatch(/<form[^>]*class="card/);
     expect(/<textarea[^>]*>/.exec(html)?.[0]).toContain('class="request-well"');
     expect(html).toMatch(/<label class="group-row[^"]*"><input[^>]*name="consent"[^>]*\/><span[^>]*>Send the text above to Anthropic&#x27;s Claude[^<]*<\/span>/);
     expect(html).toMatch(/<button class="btn-accent press">Read the request<\/button>/);
+  });
+
+  it("a sample's Start here opens it with Northwind's request already pasted; a real workspace's form opens empty", async () => {
+    vi.stubEnv("SHIPSHAPE_UI", "v2");
+    const field = async (searchParams: Promise<{ try?: string }>) => textOf(/<textarea[^>]*>([^<]*)<\/textarea>/.exec(await renderPage(AskPage, { searchParams }))?.[1] ?? "");
+    await signIn("v2-ask-try@example.com");
+    expect(await field(Promise.resolve({ try: "northwind" }))).toBe("");
+
+    const userId = await createLocalUser(null, true);
+    const [org] = await asService((tx) => tx.query<{ id: string }>("select app.create_sample_workspace($1, 'Sample') as id", [userId]));
+    await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
+    await finishSignIn(userId, { demo: true });
+    expect(await field(Promise.resolve({ try: "northwind" }))).toContain("a certificate of insurance naming Northwind Builders as additional insured");
+    expect(await field(Promise.resolve({}))).toBe("");
   });
 });
 
@@ -1102,8 +1119,40 @@ describe("form errors name the field to fix", () => {
       const text = "Before your first job we need a W-9 and a certificate of insurance.";
       const done = await askAction({}, form({ text, consent: "yes" }));
       expect(done.items?.map((i) => i.label)).toEqual(["W-9"]);
+      expect(done.by).toBe("ai");
       expect(done).not.toHaveProperty("consent");
       expect(done).not.toHaveProperty("error");
+    } finally {
+      setAiProviderForTests(null);
+    }
+  });
+
+  it("reading a request with AI off: the server matches document names, with or without a tick, and nothing reaches the model", async () => {
+    vi.stubEnv("SHIPSHAPE_AI", "");
+    let calls = 0;
+    setAiProviderForTests(async () => {
+      calls++;
+      return { text: JSON.stringify({ items: [] }), inputTokens: 1, outputTokens: 1, truncated: false };
+    });
+    try {
+      await signIn("form-ask-off@example.com");
+      const text = "Before your first job we need a W-9 and a certificate of insurance.";
+      const ticked: Record<string, string>[] = [{ text }, { text, consent: "yes" }];
+      for (const fields of ticked) {
+        const done = await askAction({}, form(fields));
+        expect(done.by).toBe("names");
+        expect(done.items?.map((i) => [i.kind, i.quote, i.traced])).toEqual([
+          ["w9", "Before your first job we need a W-9 and a certificate of insurance", true],
+          ["coi", "Before your first job we need a W-9 and a certificate of insurance", true],
+        ]);
+      }
+      expect(await askAction({}, form({ text: "too short" }))).toEqual({
+        error: "Paste the request: the email or checklist that asks for your documents.",
+        field: "text",
+        text: "too short",
+        consent: false,
+      });
+      expect(calls).toBe(0);
     } finally {
       setAiProviderForTests(null);
     }

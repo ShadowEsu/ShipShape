@@ -75,7 +75,8 @@ export default function PrivacyPage() {
           ShipShape opens or, if you asked, when Collect goes on sale. Deleting your account also removes the waitlist entry for your
           account&apos;s email address. To come off the list any other time, write to us at the address below. We don&apos;t check that an
           address belongs to whoever typed it. ShipShape doesn&apos;t email the list yet; if an address on it isn&apos;t yours, write to
-          us and we&apos;ll delete it.
+          us and we&apos;ll delete it. We also count new sign-ups per day, split by whether they came from inside the sample
+          workspace: numbers only, with nothing about who signed up.
         </li>
         <li>
           <strong>Service records:</strong> each AI read you agreed to and what it cost; your sign-in provider&apos;s account ID; and
@@ -87,8 +88,10 @@ export default function PrivacyPage() {
       <p>
         One sign-in cookie that lasts up to 12 hours; while you&apos;re signing in, a second one that lasts 10 minutes and is only sent
         to the sign-in return page; a cookie that keeps a passport, signing or upload link open for 30 minutes on that link&apos;s own
-        pages; and one that holds your browser&apos;s time zone for a year so dates are judged on your own calendar day. No advertising
-        or analytics cookies, and no tracking scripts.
+        pages; and one that holds your browser&apos;s time zone for a year so dates are judged on your own calendar day. In a sample
+        workspace, two more for up to 12 hours: which of Start here&apos;s 3 steps you&apos;ve done, and that you&apos;ve seen them
+        finished. Your browser&apos;s own storage keeps whether celebrations are on (Settings) and the day each last played; it isn&apos;t
+        sent to us. No advertising or analytics cookies, and no tracking scripts.
       </p>
 
       <h2>Who else handles your data</h2>
