@@ -1,13 +1,15 @@
 import Link from "next/link";
+import { BrandMark } from "./brand-mark";
 
+/**
+ * The lockup (Design's rules): the mark about 1.4x the cap height of the 16px name, an 8px gap to "ShipShape" at 600.
+ * The 24px box draws the mark about 16px tall (42 of its 64 units), and its own 1.5px side margin plus 6.5px makes the
+ * 8px gap.
+ */
 export function Logo({ href = "/" }: { href?: string }) {
   return (
-    <Link href={href} className="inline-flex items-center gap-2 font-semibold tracking-tight text-ink" aria-label="ShipShape home">
-      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="8" fill="currentColor" />
-        <path d="M7 19h18l-3 5H10z" fill="var(--paper)" />
-        <path d="M16 7v10M16 7l6 8h-6" stroke="var(--paper)" strokeWidth="2" fill="none" strokeLinejoin="round" />
-      </svg>
+    <Link href={href} className="inline-flex items-center gap-[6.5px] font-semibold tracking-tight text-ink" aria-label="ShipShape home">
+      <BrandMark size={24} />
       <span>ShipShape</span>
     </Link>
   );
