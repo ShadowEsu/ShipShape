@@ -385,11 +385,12 @@ body {
   .ui-v2 .prompt-send {
     @apply grid size-10 shrink-0 place-items-center rounded-full bg-ink text-paper transition-colors duration-[150ms] disabled:cursor-not-allowed disabled:bg-fill disabled:text-ink-3;
   }
+  /* Home's tools under the ask box: two rows of five in its 720px column. */
   .ui-v2 .tool-row {
-    @apply mt-10 grid w-full grid-cols-5 gap-x-2 gap-y-4 lg:flex lg:w-auto lg:justify-center lg:gap-3.5;
+    @apply mt-8 grid w-full grid-cols-5 gap-x-2 gap-y-4;
   }
   .ui-v2 .tool {
-    @apply flex min-h-11 flex-col items-center gap-2 text-center text-[12.5px] leading-4 text-ink-2 lg:w-[76px];
+    @apply flex min-h-11 flex-col items-center gap-2 text-center text-[13px] leading-4 text-ink-2;
   }
   .ui-v2 .tool-square {
     @apply grid size-[52px] place-items-center rounded-xl border border-line bg-paper text-ink transition-colors duration-[150ms];

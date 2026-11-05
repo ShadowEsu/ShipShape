@@ -6,8 +6,8 @@ import { dayOf, fmtDay } from "@/lib/today";
 import { HairRow } from "../hair-row";
 import { linkStatus } from "../passport/link-status";
 
-/** A saved row's meta line in the redesigned look, with its state in words instead of a chip (Design calm v2, Home's Saved). */
-export function savedLine(row: SavedRow, zone: string): string {
+/** A saved row's meta line in the redesigned look, with its state in words instead of a chip (Design calm v2). */
+function savedLine(row: SavedRow, zone: string): string {
   if (row.kind === "link") {
     const s = linkStatus({ revoked_at: row.revokedAt, expires_at: row.expiresAt }, zone);
     const docs = `${row.documents} ${row.documents === 1 ? "document" : "documents"}`;
