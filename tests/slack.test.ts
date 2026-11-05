@@ -1,14 +1,17 @@
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { decryptField } from "@/lib/server/crypto";
+import { decryptField, encryptField } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
+import { runReminders } from "@/lib/server/deadlines";
 import { migrate } from "@/lib/server/migrations";
 import type { MigrationStep } from "@/lib/server/migrations";
 import { GET as callbackGet } from "@/app/api/integrations/slack/callback/route";
 import { GET as startGet } from "@/app/api/integrations/slack/start/route";
+import { GET as cronGet } from "@/app/api/cron/reminders/route";
 import {
   finishSlackConnect,
+  sendSlackPosts,
   newSlackState,
   OAUTH_ACCESS_URL,
   REVOKE_URL,
@@ -448,6 +451,213 @@ describe("the routes", () => {
     expect((await startGet(startRequest())).headers.get("location")).toBe("/app/settings?slack=busy#slack");
     for (let i = 0; i < 20; i++) await callbackGet(callbackRequest({ error: "access_denied", state: "x" }));
     expect((await callbackGet(callbackRequest({ error: "access_denied", state: "x" }))).headers.get("location")).toBe("/app/settings?slack=busy#slack");
+  });
+});
+
+const pro = (ctx: SignedIn) =>
+  db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, $2, 'active', 'pro')", [ctx.orgId, `cus_${ctx.orgId.slice(0, 8)}`]));
+const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+async function addDoc(ctx: SignedIn, title: string, days: number): Promise<string> {
+  const [d] = await db.root((tx) =>
+    tx.query<{ id: string }>("insert into app.documents (org_id, title, kind, created_by, expires_on) values ($1, $2, 'other', $3, $4) returning id", [ctx.orgId, title, ctx.userId, inDays(days)]),
+  );
+  return d.id;
+}
+const textOf = (c: Call): string => JSON.parse(c.body).text;
+const waiting = async (orgId: string) =>
+  db.root((tx) => tx.query<{ attempts: number; claimed: boolean; last_error: string | null }>("select attempts, claimed_at is not null as claimed, last_error from app.slack_posts where org_id = $1", [orgId]));
+
+/** A connected Pro workspace with one document expiring in 5 days. */
+async function connectedPro(email: string, title = "Liability certificate") {
+  const slack = fakeSlack();
+  const ctx = await signIn(email);
+  await pro(ctx);
+  await connect(ctx);
+  const doc = await addDoc(ctx, title, 5);
+  slack.calls.length = 0;
+  return { slack, ctx, doc };
+}
+
+describe("reminders to Slack (the daily run)", () => {
+  afterEach(async () => {
+    await db.root((tx) => tx.query("delete from app.slack_posts"));
+  });
+
+  it("posts each reminder once: the workspace, the title, what's due and when, and a link; no tax number, Slack's markup escaped", async () => {
+    const { slack, ctx } = await connectedPro("run-once@example.com", "W-9 Jordan Lee 123-45-6789 <!channel> & co");
+    await runReminders(undefined, ctx.orgId);
+    expect(await sendSlackPosts()).toEqual({ sent: 1, failed: 0, held: 0, broken: 0 });
+    const [post] = slack.posts();
+    expect(post.url).toBe(HOOK);
+    expect(post.redirect).toBe("error");
+    expect(post.timed).toBe(true);
+    const text = textOf(post);
+    expect(text).toContain("My business");
+    expect(text).toContain("expires in 5 days");
+    expect(text).toContain(`<${APP}/app/deadlines|`);
+    expect(text).not.toContain("123-45-6789");
+    expect(text).not.toContain("<!channel>");
+    expect(text).toContain("&lt;!channel&gt; &amp; co");
+    // Again, and again: nothing more.
+    await runReminders(undefined, ctx.orgId);
+    expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 0 });
+    expect(slack.posts()).toHaveLength(1);
+    expect(await waiting(ctx.orgId)).toEqual([]);
+  });
+
+  it("the daily run's answer says what it posted", async () => {
+    const { slack, ctx } = await connectedPro("run-cron@example.com");
+    vi.stubEnv("CRON_SECRET", "c".repeat(40));
+    const res = await cronGet(new Request(`${APP}/api/cron/reminders`, { headers: { authorization: `Bearer ${"c".repeat(40)}` } }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.slack.sent).toBeGreaterThanOrEqual(1);
+    expect(slack.posts().some((c) => textOf(c).includes("Liability certificate"))).toBe(true);
+    expect(await waiting(ctx.orgId)).toEqual([]);
+  });
+
+  it("retries a failed post on the next runs, 3 tries in all, logging only the error's name", async () => {
+    const { slack, ctx } = await connectedPro("run-retry@example.com");
+    const lines = logged();
+    slack.hook = () => new Response("rollup_error", { status: 500 });
+    await runReminders(undefined, ctx.orgId);
+    for (const attempts of [1, 2, 3]) {
+      expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 1, held: 0, broken: 0 });
+      expect(await waiting(ctx.orgId)).toEqual([{ attempts, claimed: false, last_error: "SlackError rollup_error" }]);
+    }
+    expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 0 });
+    expect(slack.posts()).toHaveLength(3);
+    // Out of tries: gone.
+    expect(await waiting(ctx.orgId)).toEqual([]);
+    expect(lines.join("\n")).not.toMatch(/Liability|s3cr3t|hooks\.slack/);
+    expect(lines).toHaveLength(3);
+  });
+
+  it("two runs at once post a reminder once: each post is claimed before it's sent", async () => {
+    const { slack, ctx } = await connectedPro("run-twice@example.com");
+    await runReminders(undefined, ctx.orgId);
+    const runs = await Promise.all([sendSlackPosts(), sendSlackPosts()]);
+    expect(runs.map((r) => r?.sent).sort()).toEqual([0, 1]);
+    expect(slack.posts()).toHaveLength(1);
+  });
+
+  it("a post that failed once goes on the next run", async () => {
+    const { slack, ctx } = await connectedPro("run-retry-ok@example.com");
+    logged();
+    slack.hook = () => new Response("", { status: 503 });
+    await runReminders(undefined, ctx.orgId);
+    expect((await sendSlackPosts())?.failed).toBe(1);
+    slack.hook = () => new Response("ok", { status: 200 });
+    expect((await sendSlackPosts())?.sent).toBe(1);
+    expect(await waiting(ctx.orgId)).toEqual([]);
+  });
+
+  it("Slack saying the channel is gone marks the connection broken and stops posting there", async () => {
+    const a = await connectedPro("run-broken-a@example.com");
+    await addDoc(a.ctx, "Business license", 6);
+    logged();
+    // A 404 with no word, as a removed webhook can answer.
+    a.slack.hook = () => new Response("", { status: 404 });
+    await runReminders(undefined, a.ctx.orgId);
+    expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 1 });
+    // One try only: the second reminder for that workspace wasn't attempted.
+    expect(a.slack.posts()).toHaveLength(1);
+    expect((await connection(a.ctx.orgId)).broken_at).not.toBeNull();
+    expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 0 });
+    expect(a.slack.posts()).toHaveLength(1);
+    // A new reminder isn't even queued while it's broken.
+    await db.root((tx) => tx.query("delete from app.slack_posts where org_id = $1", [a.ctx.orgId]));
+    await addDoc(a.ctx, "Permit", 7);
+    await runReminders(undefined, a.ctx.orgId);
+    expect(await waiting(a.ctx.orgId)).toEqual([]);
+
+    // Slack's word alone says so too.
+    const b = await connectedPro("run-broken-b@example.com");
+    b.slack.hook = () => new Response("no_service", { status: 400 });
+    await runReminders(undefined, b.ctx.orgId);
+    expect((await sendSlackPosts())?.broken).toBe(1);
+    expect((await connection(b.ctx.orgId)).broken_at).not.toBeNull();
+  });
+
+  it("checks the stored webhook address again before every post", async () => {
+    const { slack, ctx } = await connectedPro("run-recheck@example.com");
+    await db.root((tx) =>
+      tx.query("update app.slack_connections set webhook_url_enc = $2 where org_id = $1", [ctx.orgId, encryptField(HOOK.replace("hooks.slack.com", "hooks.slack.com.evil.example"), ctx.orgId, "slack_webhook_url")]),
+    );
+    logged();
+    await runReminders(undefined, ctx.orgId);
+    expect((await sendSlackPosts())?.broken).toBe(1);
+    expect(slack.calls).toEqual([]);
+  });
+
+  it("stays inside the time budget: nothing starts after it, and no post waits past it", async () => {
+    const { slack, ctx } = await connectedPro("run-budget@example.com");
+    logged();
+    await runReminders(undefined, ctx.orgId);
+    expect(await sendSlackPosts(Date.now() - 1)).toEqual({ sent: 0, failed: 0, held: 1, broken: 0 });
+    expect(slack.posts()).toEqual([]);
+    // Slack never answers: the post gives up at the budget, not at its own 5 seconds.
+    slack.hook = (signal) => {
+      const { promise, reject } = Promise.withResolvers<Response>();
+      signal?.addEventListener("abort", () => reject(signal.reason));
+      return promise;
+    };
+    const began = Date.now();
+    expect(await sendSlackPosts(Date.now() + 300)).toEqual({ sent: 0, failed: 1, held: 0, broken: 0 });
+    expect(Date.now() - began).toBeLessThan(2000);
+    expect(await waiting(ctx.orgId)).toEqual([{ attempts: 1, claimed: false, last_error: "SlackError timeout" }]);
+  });
+
+  it("drops a post over 3 days old instead of posting a stale reminder", async () => {
+    const { slack, ctx } = await connectedPro("run-stale@example.com");
+    await runReminders(undefined, ctx.orgId);
+    await db.root((tx) => tx.query("update app.slack_posts set created_at = now() - interval '3 days 1 minute' where org_id = $1", [ctx.orgId]));
+    expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 0 });
+    expect(slack.posts()).toEqual([]);
+    expect(await waiting(ctx.orgId)).toEqual([]);
+  });
+
+  it("never posts for a sample workspace, even one with a connection row put there by hand", async () => {
+    const slack = fakeSlack();
+    const sample = await signInSample();
+    const doc = await addDoc(sample, "Sample certificate", 5);
+    await db.root((tx) =>
+      tx.query("insert into app.slack_connections (org_id, webhook_url_enc, access_token_enc, channel, team_id, team_name) values ($1, $2, 'v1.x', '#x', 'T123', 'X')", [
+        sample.orgId,
+        encryptField(HOOK, sample.orgId, "slack_webhook_url"),
+      ]),
+    );
+    await runReminders(undefined, sample.orgId);
+    expect(await waiting(sample.orgId)).toEqual([]);
+    await db.root((tx) => tx.query("insert into app.slack_posts (org_id, document_id, body) values ($1, $2, 'x')", [sample.orgId, doc]));
+    expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 0 });
+    expect(slack.posts()).toEqual([]);
+  });
+
+  it("posts nothing for a workspace that isn't on Pro, isn't connected, or while Slack isn't configured", async () => {
+    const slack = fakeSlack();
+    const free = await signIn("run-free@example.com");
+    await connect(free);
+    await addDoc(free, "Free plan certificate", 5);
+    await runReminders(undefined, free.orgId);
+    expect(await waiting(free.orgId)).toEqual([]);
+    // Queued while on Pro, then the plan lapsed: not posted.
+    const doc = await addDoc(free, "Lapsed plan certificate", 5);
+    await db.root((tx) => tx.query("insert into app.slack_posts (org_id, document_id, body) values ($1, $2, 'x')", [free.orgId, doc]));
+    expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 0 });
+
+    const unconnected = await signIn("run-unconnected@example.com");
+    await pro(unconnected);
+    await addDoc(unconnected, "Unconnected certificate", 5);
+    await runReminders(undefined, unconnected.orgId);
+    expect(await waiting(unconnected.orgId)).toEqual([]);
+
+    const c = await connectedPro("run-unconfigured@example.com");
+    await runReminders(undefined, c.ctx.orgId);
+    vi.stubEnv("SLACK_CLIENT_ID", "");
+    expect(await sendSlackPosts()).toBeNull();
+    expect(slack.posts()).toEqual([]);
+    expect(c.slack.posts()).toEqual([]);
   });
 });
 

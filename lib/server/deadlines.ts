@@ -2,6 +2,7 @@ import "server-only";
 import { fmtDay, isoToday } from "@/lib/today";
 import { asService, asUser, pgErrorCode } from "./db";
 import { DOC_KINDS, type DocKind } from "./documents";
+import { slackReminderBody } from "./slack";
 import type { Ctx } from "./profile";
 
 export type DateKind = "expires" | "renews";
@@ -133,23 +134,23 @@ function mergeSameDay(rows: DueRow[]): DueReminder[] {
   return [...byKey.values()];
 }
 
-function reminderText(r: DueReminder): { subject: string; body: string } {
+/** The email's subject and body, and `line`, the one sentence a Slack post carries (lib/server/slack.ts). */
+function reminderText(r: DueReminder): { subject: string; body: string; line: string } {
   const ahead = r.kinds.map((k) => (k === "expires" ? "expires" : "is due for renewal")).join(" and ");
   const passed = r.kinds.map((k) => (k === "expires" ? "expired" : "passed its renewal date")).join(" and ");
   const days = `${r.days_left} ${r.days_left === 1 ? "day" : "days"}`;
   const day = fmtDay(r.due_on);
   const when = r.days_left > 0 ? `in ${days} (${day})` : r.days_left === 0 ? "today" : `on ${day}`;
   const subject = (r.days_left >= 0 ? `${r.title} ${ahead} ${r.days_left > 0 ? `in ${days}` : "today"}` : `${r.title} has lapsed`).slice(0, 200);
-  const body = [
-    `${r.title} ${r.days_left >= 0 ? ahead : passed} ${when}.`,
-    "Renew it, then upload the new version in ShipShape so your passport links share the current one.",
-  ].join("\n\n");
-  return { subject, body };
+  const line = `${r.title} ${r.days_left >= 0 ? ahead : passed} ${when}.`;
+  const body = [line, "Renew it, then upload the new version in ShipShape so your passport links share the current one."].join("\n\n");
+  return { subject, body, line };
 }
 
 /**
  * Sends every reminder that is due and not sent yet: to each owner and admin of the workspace,
- * through the outbox (email sending is off). Safe to run as often as you like: each reminder goes
+ * through the outbox (email sending is off), and to the workspace's Slack channel where one is connected
+ * (queued in app.slack_posts). Safe to run as often as you like: each reminder goes
  * out once. Runs as the service role because it works across workspaces (a scheduled job, no user);
  * `onlyOrg` limits it to one workspace (a sample workspace right after it is made).
  * Each reminder is written in its own savepoint (Security R-1tx): one that can't be written is
@@ -180,10 +181,19 @@ export async function runReminders(today = isoToday(), onlyOrg: string | null = 
              where m.org_id = $1 and m.role in ('owner', 'admin') and coalesce(u.email, case when o.is_demo then 'x' end) is not null`,
             [r.org_id],
           );
-          const { subject, body } = reminderText(r);
+          const { subject, body, line } = reminderText(r);
           // The message names the document's title, so it goes when the document is deleted for good (0048).
           for (const to of recipients) {
             await sp.query("insert into app.outbox (org_id, to_email, subject, body, document_id) values ($1, $2, $3, $4, $5)", [r.org_id, to.email, subject, body, r.document_id]);
+          }
+          // A workspace connected to Slack (and not broken) gets the reminder there too, posted by the daily run
+          // (sendSlackPosts). Written under the same claim, so it's queued once.
+          const [slack] = await sp.query<{ name: string }>(
+            "select o.name from app.slack_connections c join app.organizations o on o.id = c.org_id where c.org_id = $1 and c.broken_at is null and not o.is_demo",
+            [r.org_id],
+          );
+          if (slack) {
+            await sp.query("insert into app.slack_posts (org_id, document_id, body) values ($1, $2, $3)", [r.org_id, r.document_id, slackReminderBody(slack.name, line)]);
           }
           return true;
         });

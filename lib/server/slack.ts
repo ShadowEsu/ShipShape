@@ -464,15 +464,15 @@ export async function slackRow(who: SlackWho): Promise<SlackRow | null> {
 export const SLACK_MAX_ATTEMPTS = 3;
 
 /**
- * What may be posted: unclaimed, under the tries, at most 3 days old, for a workspace that is connected, not broken,
- * real and on Pro (reminders are part of Pro).
+ * What may be posted: unclaimed, under the tries, for a workspace that is connected, not broken, real and on Pro
+ * (reminders are part of Pro). Rows over 3 days old were deleted just before (sendSlackPosts).
  */
 const QUEUE_SQL = `
   select p.id, p.org_id, p.body, c.webhook_url_enc
   from app.slack_posts p
   join app.slack_connections c on c.org_id = p.org_id
   join app.organizations o on o.id = p.org_id
-  where p.claimed_at is null and p.attempts < $1 and p.created_at > now() - interval '3 days'
+  where p.claimed_at is null and p.attempts < $1
     and c.broken_at is null and not o.is_demo and app.org_plan(p.org_id) = 'pro'
   order by p.created_at, p.id
   limit 500`;
