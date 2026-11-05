@@ -5,6 +5,8 @@ import { decryptField } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
 import { migrate } from "@/lib/server/migrations";
 import type { MigrationStep } from "@/lib/server/migrations";
+import { GET as callbackGet } from "@/app/api/integrations/slack/callback/route";
+import { GET as startGet } from "@/app/api/integrations/slack/start/route";
 import {
   finishSlackConnect,
   newSlackState,
@@ -340,6 +342,112 @@ describe("connecting", () => {
     // The owner's own row goes in; nobody signed in changes it afterwards.
     await row(owner.orgId, owner.userId);
     await expect(asUser(owner.userId, (tx) => tx.query("update app.slack_connections set broken_at = null where org_id = $1", [owner.orgId]))).rejects.toThrow(/permission denied/);
+  });
+});
+
+/** A sample visitor, signed in to a fresh sample workspace. */
+async function signInSample(): Promise<SignedIn> {
+  const userId = await createLocalUser(null, true);
+  await asService((tx) => tx.query("select app.create_sample_workspace($1, 'Harbor Plumbing (sample)')", [userId]));
+  await finishSignIn(userId, { demo: true });
+  return requireWorkspace();
+}
+
+const startRequest = (headers: Record<string, string> = { "sec-fetch-site": "same-origin" }) => new Request(`${APP}/api/integrations/slack/start`, { headers });
+const callbackRequest = (params: Record<string, string>) => new Request(`${APP}/api/integrations/slack/callback?${new URLSearchParams(params)}`);
+
+/** "Connect" as the browser follows it: the state from Slack's consent address. */
+async function start(): Promise<string> {
+  const res = await startGet(startRequest());
+  expect(res.status).toBe(302);
+  const to = new URL(res.headers.get("location") ?? "");
+  expect(to.origin + to.pathname).toBe("https://slack.com/oauth/v2/authorize");
+  return to.searchParams.get("state") ?? "";
+}
+
+describe("the routes", () => {
+  it("don't exist while Slack isn't configured", async () => {
+    await signIn("routes-off@example.com");
+    vi.stubEnv("SLACK_CLIENT_SECRET", "");
+    expect((await startGet(startRequest())).status).toBe(404);
+    expect((await callbackGet(callbackRequest({ code: "c", state: "s" }))).status).toBe(404);
+  });
+
+  it("start: an owner or admin following the link on this site goes to Slack; another site's link, a member and a sample don't", async () => {
+    const owner = await signIn("routes-start@example.com");
+    expect(await takeSlackState(await start(), owner)).toBe(true);
+    for (const headers of [{ "sec-fetch-site": "cross-site" }, { "sec-fetch-site": "same-site" }, { "sec-fetch-site": "none" }, {}, { origin: "https://evil.example", host: "app.shipshape.example" }]) {
+      expect((await startGet(startRequest(headers))).status, JSON.stringify(headers)).toBe(403);
+    }
+    const admin = await teammate(owner, "routes-start-admin@example.com", "admin");
+    expect(await takeSlackState(await start(), admin)).toBe(true);
+    await teammate(owner, "routes-start-member@example.com", "member");
+    const refused = await startGet(startRequest());
+    expect(refused.status).toBe(303);
+    expect(refused.headers.get("location")).toBe("/app/settings?slack=refused#slack");
+    await signInSample();
+    expect((await startGet(startRequest())).headers.get("location")).toBe("/app/settings?slack=refused#slack");
+    jar.clear();
+    await expect(startGet(startRequest())).rejects.toThrow("redirect /signin");
+  });
+
+  it("callback: connects for the owner who started it", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("routes-callback@example.com");
+    const res = await callbackGet(callbackRequest({ code: "code-1", state: await start() }));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/app/settings?slack=connected#slack");
+    expect(slack.calls.map((c) => c.url)).toEqual([OAUTH_ACCESS_URL]);
+    expect(await connection(owner.orgId)).toMatchObject({ channel: "#deadlines", team_name: "Acme Team" });
+  });
+
+  it("callback: a wrong state stores nothing and never calls Slack", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("routes-wrong@example.com");
+    const state = await start();
+    for (const bad of [`${state}x`, newSlackState({ ...owner, sessionId: "00000000-0000-0000-0000-000000000000" }), ""]) {
+      expect((await callbackGet(callbackRequest({ code: "code-1", state: bad }))).headers.get("location")).toBe("/app/settings?slack=failed#slack");
+    }
+    // Started by someone else, in their browser.
+    const other = await signIn("routes-wrong-other@example.com");
+    const theirs = await start();
+    await finishSignIn(owner.userId, { demo: false });
+    expect((await callbackGet(callbackRequest({ code: "code-1", state: theirs }))).headers.get("location")).toBe("/app/settings?slack=failed#slack");
+    expect(slack.calls).toEqual([]);
+    expect(await connection(owner.orgId)).toBeUndefined();
+    expect(await connection(other.orgId)).toBeUndefined();
+  });
+
+  it("callback: Slack's access_denied is a cancel, uses up the state, and calls nothing", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("routes-denied@example.com");
+    const state = await start();
+    expect((await callbackGet(callbackRequest({ error: "access_denied", state }))).headers.get("location")).toBe("/app/settings?slack=cancelled#slack");
+    expect((await callbackGet(callbackRequest({ code: "code-1", state }))).headers.get("location")).toBe("/app/settings?slack=failed#slack");
+    expect((await callbackGet(callbackRequest({ error: "invalid_scope", state: await start() }))).headers.get("location")).toBe("/app/settings?slack=failed#slack");
+    expect(slack.calls).toEqual([]);
+    expect(await connection(owner.orgId)).toBeUndefined();
+  });
+
+  it("callback: a member or a sample is refused, even with a state of their own", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("routes-member@example.com");
+    const member = await teammate(owner, "routes-member-member@example.com", "member");
+    expect((await callbackGet(callbackRequest({ code: "code-1", state: newSlackState(member) }))).headers.get("location")).toBe("/app/settings?slack=refused#slack");
+    const sample = await signInSample();
+    expect((await callbackGet(callbackRequest({ code: "code-1", state: newSlackState(sample) }))).headers.get("location")).toBe("/app/settings?slack=refused#slack");
+    expect(slack.calls).toEqual([]);
+    expect(await connection(owner.orgId)).toBeUndefined();
+    expect(await connection(sample.orgId)).toBeUndefined();
+  });
+
+  it("start and callback each take 20 tries an hour per person", async () => {
+    fakeSlack();
+    await signIn("routes-busy@example.com");
+    for (let i = 0; i < 20; i++) await start();
+    expect((await startGet(startRequest())).headers.get("location")).toBe("/app/settings?slack=busy#slack");
+    for (let i = 0; i < 20; i++) await callbackGet(callbackRequest({ error: "access_denied", state: "x" }));
+    expect((await callbackGet(callbackRequest({ error: "access_denied", state: "x" }))).headers.get("location")).toBe("/app/settings?slack=busy#slack");
   });
 });
 

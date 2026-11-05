@@ -306,6 +306,11 @@ const secretsFor = async (who: SlackWho) => (await asService((tx) => tx.query<Se
 export type SlackOutcome = "connected" | "cancelled" | "failed" | "refused" | "busy" | "tested" | "test_failed" | "broken" | "disconnected" | "disconnect_failed";
 export const SLACK_OUTCOMES: readonly SlackOutcome[] = ["connected", "cancelled", "failed", "refused", "busy", "tested", "test_failed", "broken", "disconnected", "disconnect_failed"];
 
+/** Back to Settings' Slack row, saying how it went (the routes; the actions use redirect()). */
+export function backToSettings(outcome: SlackOutcome): Response {
+  return new Response(null, { status: 303, headers: { Location: `/app/settings?slack=${outcome}#slack`, "Cache-Control": "no-store" } });
+}
+
 const canManage = (who: SlackWho) => !who.demo && who.role !== "member";
 
 /** Revokes a token we no longer keep, logging a failure by name only. */
