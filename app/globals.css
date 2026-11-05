@@ -817,7 +817,7 @@ html:has(.ui-v2 .top-bar) {
 }
 @media (max-width: 599px) {
   .ui-v2 {
-    --tab-bar: calc(56px + max(24px, env(safe-area-inset-bottom)));
+    --tab-bar: 80px;
   }
   .ui-v2 .tab-bar {
     display: block;
@@ -825,13 +825,14 @@ html:has(.ui-v2 .top-bar) {
     inset-inline: 0;
     bottom: 0;
     z-index: 30;
+    height: var(--tab-bar);
     padding-bottom: max(24px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
     background: rgb(255 255 255 / 0.97);
   }
   .ui-v2 .tab-bar ul {
     display: flex;
-    height: 56px;
+    height: 100%;
   }
   .ui-v2 .tab-bar li {
     flex: 1;
@@ -862,7 +863,7 @@ html:has(.ui-v2 .top-bar) {
     padding-bottom: calc(var(--tab-bar) + 32px + 44px + 16px);
   }
   html:has(.ui-v2 .save-dock) {
-    scroll-padding-bottom: calc(56px + max(24px, env(safe-area-inset-bottom)) + 8px + 44px + 16px);
+    scroll-padding-bottom: calc(80px + 8px + 44px + 16px);
   }
   .ui-v2 .save-dock {
     bottom: calc(var(--tab-bar) + 8px);

@@ -38,10 +38,7 @@ export default async function AppHome() {
         today={ctx.today}
         canUpload={!ctx.demo && realDocsEnabled()}
         papers={recent}
-        previews={await samplePaperPreviews(
-          ctx,
-          recent.map((d) => d.id),
-        )}
+        previews={await samplePaperPreviews(ctx, recent.map((d) => d.id))}
         waiting={{ signatures: waiting.signatures.map((s) => ({ ...s, sentOn: dayOf(s.sentAt, zone) })), vendors: waiting.vendors }}
         links={links}
         zone={zone}
