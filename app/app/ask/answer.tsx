@@ -87,7 +87,7 @@ export function RequestAnswer({ items, titleId, by, v2 = true }: { items: readon
       {v2 && items.length > 0 && items.every((i) => i.state === "ready") && (
         <Celebrate
           trigger="check-all"
-          className="flex items-center gap-2 py-3 text-[15px] font-medium text-ok"
+          className="flex items-center gap-2 py-6 text-[15px] font-medium text-ok"
           mark={
             <span aria-hidden="true" className="grid size-6 place-items-center rounded-full bg-ok text-sm text-white">
               ✓
