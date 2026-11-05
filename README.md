@@ -117,7 +117,7 @@ Nothing here can be done from the repo; each step needs its owner.
 2. **Security's review** (Security). Read `lib/server/slack.ts`, `supabase/migrations/0052_slack.sql`, the two routes under `app/api/integrations/slack/` and `tests/slack.test.ts`, and give a GO before step 4. The Privacy sentence (Slack as a recipient only when an owner or admin connects it, and what's sent) went out with `TERMS_VERSION` 2026-11-04.7 and should be in the lawyer's review of `/privacy` too.
 3. **The Slack app** (Preston, signed in on his Mac at <https://api.slack.com/apps>):
    1. Create New App → From scratch. App Name: `ShipShape`. Development workspace: his own.
-   2. Basic Information → Display Information: app icon `public/brand/app-icon-512.png` (512 × 512; it arrives with `brand/ship-mark`, commit 1e50fd7), short description `Deadline reminders from ShipShape`, background color `#111111`. Save.
+   2. Basic Information → Display Information: app icon `public/brand/app-icon-512.png` (512 × 512; it arrives with `brand/ship-mark`, commit 1e50fd7), short description `Deadline reminders from ShipShape`, background color `#0a0a0a` (the brand's ink). Save.
    3. Incoming Webhooks: Activate Incoming Webhooks → On.
    4. OAuth & Permissions → Redirect URLs → Add `<APP>/api/integrations/slack/callback` exactly. Save URLs.
    5. OAuth & Permissions → Scopes → Bot Token Scopes: `incoming-webhook` only. Nothing under User Token Scopes. Leave Token Rotation off (ShipShape keeps the token only to revoke it on Disconnect; a rotating token would expire within 12 hours and couldn't be revoked).
