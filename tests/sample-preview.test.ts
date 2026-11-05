@@ -101,7 +101,11 @@ describe("a sample paper's first page", () => {
     const html = await renderPage(DocumentPage, { params: Promise.resolve({ id: coi.id }), searchParams: Promise.resolve({}) });
     const at = html.indexOf('viewBox="0 0 612 792"');
     expect(at).toBeGreaterThan(-1);
-    const page = textOf(html.slice(at, html.indexOf("</svg>", at)));
+    const svg = html.slice(at, html.indexOf("</svg>", at));
+    const page = textOf(svg);
+    // Each text is fitted to its width in the PDF's own font, so a phone without Arial or Times sets it where the file has it.
+    expect((svg.match(/<text /g) ?? []).length).toBeGreaterThan(50);
+    expect((svg.match(/<text [^>]*textLength="[\d.]+"[^>]*lengthAdjust="spacingAndGlyphs"/g) ?? []).length).toBe((svg.match(/<text /g) ?? []).length);
     expect(page).toContain("CERTIFICATE OF LIABILITY INSURANCE");
     expect(page).toContain(usDate(coi.expires_on));
     expect(page).not.toContain(usDate(moved));
@@ -140,6 +144,17 @@ describe("a sample paper's first page", () => {
     expect(await samplePaperPreview(ctx, [], [])).toBeNull();
     // A newer version that isn't a signed copy of the drawn one (an upload over it): its own page, which isn't drawn.
     expect(await samplePaperPreview(ctx, [{ version: 2, origin: "upload", fill_record: null }, v1], [])).toBeNull();
+  });
+
+  it("leaves the card when a kept value can't be drawn, logging no value, instead of breaking the page", async () => {
+    const ctx = await signInSample();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    // The PDF's standard fonts can't encode an arrow; the schema only checks lengths, so this passes it and then fails to draw.
+    const business = { legalName: "Harbor → Plumbing LLC", dba: "Harbor Plumbing", address: ["100 Example Street", "Springfield, CA 90000"], signer: "Alex Rivera" };
+    const paper = { kind: "coi", business, dates: { issued: "2025-11-25", from: "2025-11-25", to: "2026-11-25" } };
+    expect(await samplePaperPreview(ctx, [{ version: 1, origin: "sample", fill_record: { paper, drawn: 1 } }], [])).toBeNull();
+    expect(logged.mock.calls.map((c) => String(c[0]))).toEqual(["sample preview: not drawn (Error)"]);
+    logged.mockRestore();
   });
 
   it("shows the signed NDA's cover page: a signed copy starts with the pages of the version that was sent", async () => {
