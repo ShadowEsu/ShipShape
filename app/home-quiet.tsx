@@ -57,7 +57,10 @@ const WHO_PAPER: Record<string, { src: string; alt: string }> = {
 /** The four lines of the ink band (Design: C's band, from TRUST as reviewed). */
 const BAND = new Set(["tax-ids", "storage", "walls", "no-ads"]);
 
-/** The FAQ's questions the home page repeats; the rest are on /faq. */
+/**
+ * The FAQ's questions the home page repeats; the rest are on /faq. Not "When can I use it for real documents?": its
+ * answer points to the sample's waitlist, and the home page mentions no waitlist while preview-only (row 525).
+ */
 const HOME_FAQ = new Set([
   "What is ShipShape?",
   "Is ShipShape a law firm? Does it give legal advice?",
@@ -65,7 +68,6 @@ const HOME_FAQ = new Set([
   "How are passport links protected?",
   "Does ShipShape use AI?",
   "Can I get my data out, or delete it?",
-  "When can I use it for real documents?",
 ]);
 
 const TONE: Record<Status, "ok" | "wait" | "todo"> = { "Works today": "ok", "Awaiting setup": "wait", Planned: "todo" };
