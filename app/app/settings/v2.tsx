@@ -348,7 +348,7 @@ function SlackSection({ slack, outcome }: { slack: SlackRow; outcome: SlackOutco
   const detail = c
     ? `${c.channel} in ${c.team}${slack.pro ? "" : `. ${paused}`}`
     : slack.pro
-      ? "Post deadline reminders to a Slack channel"
+      ? "Post deadline reminders to a Slack channel."
       : "Deadline reminders in a Slack channel come with Pro.";
   return (
     <section id="slack" aria-labelledby="slack-title" className="space-y-3">
