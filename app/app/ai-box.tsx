@@ -16,16 +16,17 @@ const TEMPLATES = {
   "common-paper-mnda": { name: "Make a mutual NDA", line: "Common Paper's mutual NDA, cover page filled for you.", href: "/app/make/common-paper-mnda" },
 } as const;
 
-type Answer = { kind: "tool"; tool: Tool; name: string; line: string; href: string } | { kind: "none" } | { kind: "ai-off" } | { kind: "check" };
+type Answer = { kind: "tool"; tool: Tool; name: string; line: string; href: string } | { kind: "none" } | { kind: "check" };
 
-/** What the box does with this text: check it as a request (AI on, and it reads like one), say AI is off, or find a tool. */
-const modeOf = (text: string, aiOn: boolean) => (looksLikeRequest(text) ? (aiOn ? "check" : "ai-off") : "find");
+/** What the box does with this text: check it as a request (it reads like one), or find a tool. */
+const modeOf = (text: string) => (looksLikeRequest(text) ? "check" : "find");
 
 /**
  * Home's box (Design spec 2026-11-02 §3; BOSS 01:2x): it finds the right tool, or checks a pasted request against the
- * vault with the existing "What are they asking for?" reading. Nothing else: no advice, no thread. Each answer replaces
- * the last. Finding a tool happens in the browser from the words; only checking a request sends text, after its box is
- * ticked. This holds the state; AiBoxView draws it.
+ * vault with the existing "What are they asking for?" check. Nothing else: no advice, no thread. Each answer replaces
+ * the last. Finding a tool happens in the browser from the words. Checking a request sends the text to the server;
+ * with AI on, the AI reads it only after its box is ticked; with AI off, the server matches document names and sends
+ * it nowhere else (ledger 461). This holds the state; AiBoxView draws it.
  */
 export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }) {
   const [text, setText] = useState("");
@@ -63,13 +64,11 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
 
   const submit = (form: FormData) => {
     setRound((r) => r + 1);
-    const mode = modeOf(text, aiOn);
-    if (mode === "check") {
+    if (modeOf(text) === "check") {
       setAnswer({ kind: "check" });
       runCheck(form);
       return;
     }
-    if (mode === "ai-off") return setAnswer({ kind: "ai-off" });
     const d = routeFor(text);
     setAnswer(d ? toolFor(d) : { kind: "none" });
   };
@@ -92,8 +91,9 @@ export function AiBox({ tools, aiOn }: { tools: readonly Tool[]; aiOn: boolean }
 }
 
 /**
- * The box as drawn from its state. It decides from the text alone whether this is a check, and a check always shows
- * the consent tick with the not-a-law-firm line (Security MUST-L1), so no caller can show one without the other.
+ * The box as drawn from its state. It decides from the text alone whether this is a check. A check shows the
+ * not-a-law-firm line, and with AI on the consent tick beside it (Security MUST-L1), so no caller can show the tick
+ * without the line.
  */
 export function AiBoxView({
   text,
@@ -121,7 +121,7 @@ export function AiBoxView({
   formRef?: Ref<HTMLFormElement>;
 }) {
   const ids = useId();
-  const mode = modeOf(text, aiOn);
+  const mode = modeOf(text);
   const checking = mode === "check";
   const filled = text.trim().length > 0;
   const textError = answer?.kind === "check" && check.field === "text" ? check.error : undefined;
@@ -156,15 +156,19 @@ export function AiBoxView({
           </button>
         </div>
         <span className="sr-only" aria-live="polite">
-          {checking ? "Check a request" : mode === "ai-off" ? "AI is off; pick a tool below" : "Finds the right tool"}
+          {checking ? "Check a request" : "Finds the right tool"}
         </span>
         {textError && (
           <p id={`${ids}-text-error`} className="mt-2 px-2 text-sm text-bad">
             {textError}
           </p>
         )}
-        {mode === "ai-off" && <p className="mt-2 px-2 text-[13px] text-ink-2">AI is off right now, so it can&apos;t check a request. Pick a tool below.</p>}
-        {checking && <RequestConsent id={ids} defaultChecked={check.consent} error={consentError} />}
+        {checking && (
+          <div className="mt-3.5 space-y-1.5 px-1">
+            {aiOn && <RequestConsent id={ids} defaultChecked={check.consent} error={consentError} />}
+            <p className={`text-[13px] leading-[19px] text-ink-2 ${aiOn ? "pl-7" : ""}`}>{NOT_A_LAW_FIRM}</p>
+          </div>
+        )}
       </form>
       {/* Always mounted, so the stage is announced when it appears (a live region added with its text can be missed). */}
       <p className={pending && answer?.kind === "check" ? "text-center text-sm text-ink-2" : "sr-only"} role="status">
@@ -197,21 +201,12 @@ export function AiBoxView({
               .
             </p>
           )}
-          {answer.kind === "ai-off" && (
-            <p className="text-sm text-ink-2">
-              Reading requests with AI is switched off right now, so check the request against your documents yourself; everything else works as
-              usual.{" "}
-              <Link href="/app/documents" className="underline">
-                Open your documents
-              </Link>
-            </p>
-          )}
           {refused && (
             <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">
               {refused}
             </p>
           )}
-          {items && <RequestAnswer items={items} titleId={`${ids}-answer-title`} />}
+          {items && check.by && <RequestAnswer items={items} titleId={`${ids}-answer-title`} by={check.by} />}
         </section>
       )}
     </div>
@@ -219,12 +214,12 @@ export function AiBoxView({
 }
 
 /**
- * The tick that lets one check send the request to the model, with where that claim comes from and the
- * not-a-law-firm line beside it, at the same size (Security MUST-L1, 3 Nov). Shown only while the box will check.
+ * The tick that lets one check send the request to the model, with where that claim comes from; the not-a-law-firm
+ * line follows it at the same size (Security MUST-L1, 3 Nov). Shown only while the box will check with AI on.
  */
 function RequestConsent({ id, defaultChecked, error }: { id: string; defaultChecked?: boolean; error?: string }) {
   return (
-    <div className="mt-3.5 space-y-1.5 px-1">
+    <>
       <label className="flex items-start gap-3 text-[13px] leading-[19px] text-ink-2">
         <input
           type="checkbox"
@@ -252,7 +247,6 @@ function RequestConsent({ id, defaultChecked, error }: { id: string; defaultChec
           {error}
         </p>
       )}
-      <p className="pl-7 text-[13px] leading-[19px] text-ink-2">{NOT_A_LAW_FIRM}</p>
-    </div>
+    </>
   );
 }

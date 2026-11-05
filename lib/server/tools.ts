@@ -1,6 +1,5 @@
 import "server-only";
 import type { IconName } from "@/components/icons";
-import { aiEnabled } from "./ai";
 import { esignAvailable } from "./esign";
 import { collectOpen, realDocsEnabled } from "./flags";
 import type { Ctx } from "./profile";
@@ -56,7 +55,8 @@ export function appTools(ctx: Pick<Ctx, "demo" | "role">): Tool[] {
       line: "Paste what a customer asked for; see what you have.",
       href: "/app/ask",
       icon: "check",
-      tag: aiEnabled() ? null : "AI is off right now",
+      // With AI off it checks by document names (ledger 461), so it's never closed.
+      tag: null,
     },
     { id: "passport", name: "Passport", short: "Passport", line: "One link with exactly the documents you pick.", href: "/app/passport", icon: "passport", tag: null },
     {

@@ -2,15 +2,15 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { AI_RECIPIENT, AI_REQUEST_CONSENT_VERSION, AI_REQUEST_MAX_CHARS } from "@/lib/ai";
+import { AI_RECIPIENT, AI_REQUEST_CONSENT_VERSION } from "@/lib/ai";
 import { asService, asUser } from "./db";
-import { DOC_KINDS, listDocuments, type DocKind } from "./documents";
+import { DOC_KINDS, type DocKind } from "./documents";
 import { UserError } from "./errors";
 import { GateClosed } from "./flags";
 import { rateLimited } from "./http";
 import { scrub } from "./log";
 import type { Ctx } from "./profile";
-import type { Validity } from "@/lib/today";
+import { matchToDocuments, RequestInputError, requestText, type RequestItem } from "./request-check";
 
 /**
  * AI on user text (Security G4). Rules this module enforces:
@@ -186,53 +186,15 @@ const Reply = z.object({
     .max(20),
 });
 
-const normalise = (s: string) => s.toLowerCase().replace(/[\s"“”'‘’]+/g, " ").trim();
-
-export interface MatchedDoc {
-  id: string;
-  title: string;
-  validity: Validity;
-  expires_on: string | null;
-}
-export interface RequestItem {
-  kind: DocKind;
-  label: string;
-  quote: string | null;
-  /** null: no quote given. false: the quote isn't in the request, so show "Not found in the request". */
-  traced: boolean | null;
-  /** From the best match: ready (current), expiring, expired; missing: no match; unmatched: kind "other" and no title match. */
-  state: "ready" | "expiring" | "expired" | "missing" | "unmatched";
-  matches: MatchedDoc[];
-}
-
-const VALIDITY_ORDER: Record<Validity, number> = { ok: 0, none: 1, expiring: 2, expired: 3 };
-
-// Words too common in document names to tell two documents apart.
-const FILLER = new Set(["the", "and", "for", "your", "our", "copy", "form", "completed", "signed", "sample", "naming", "with", "from", "certificate", "proof"]);
-const nameWords = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !FILLER.has(w)));
-
 export interface RequestInput {
   text: string;
   consent: boolean;
 }
 
-/** A problem with one field of the request form; `field` says which, so the form shows the message there. */
-export class RequestInputError extends UserError {
-  readonly field: "text" | "consent";
-  constructor(field: "text" | "consent", message: string) {
-    super(message);
-    this.field = field;
-  }
-}
-
-/** "What are they asking for?": lists the documents a pasted request asks for and matches them to the vault. */
+/** "What are they asking for?" by AI: lists the documents a pasted request asks for and matches them to the vault. */
 export async function readRequest(ctx: Ctx, input: RequestInput, network: string): Promise<RequestItem[]> {
   if (!aiEnabled()) throw new GateClosed("Reading requests with AI is switched off right now.");
-  const text = input.text.trim();
-  if (text.length < 20) throw new RequestInputError("text", "Paste the request: the email or checklist that asks for your documents.");
-  if (text.length > AI_REQUEST_MAX_CHARS) {
-    throw new RequestInputError("text", `That's longer than ${AI_REQUEST_MAX_CHARS} characters. Paste just the part that lists the documents.`);
-  }
+  const text = requestText(input.text);
   if (!input.consent) throw new RequestInputError("consent", `Check the box to send this text to ${AI_RECIPIENT}.`);
   if ((await rateLimited("ai-user", ctx.userId, 10, 3600)) || (await rateLimited("ai-net", network, 30, 3600))) {
     throw new UserError("That's the hourly limit for AI reading. Nothing was sent; try again in an hour.");
@@ -294,24 +256,7 @@ export async function readRequest(ctx: Ctx, input: RequestInput, network: string
 
   const items = parseReply(reply);
   await asUser(ctx.userId, (tx) => tx.query("select app.audit_append($1, 'ai.request_read', $1)", [ctx.orgId]));
-
-  // Candidates: the same kind, or a title sharing at least two words with what was asked for (a
-  // "city business license" kept as a permit). Best first: most shared words, then most current.
-  const docs = (await listDocuments(ctx)).map((d) => ({ doc: d, words: nameWords(d.title) }));
-  const source = normalise(redacted);
-  return items.map((item) => {
-    const quote = item.quote || null;
-    const asked = nameWords(item.label);
-    const matches = docs
-      .map(({ doc, words }) => ({ doc, shared: [...asked].filter((w) => words.has(w)).length }))
-      .filter(({ doc, shared }) => (item.kind !== "other" && doc.kind === item.kind) || shared >= 2)
-      .sort((a, b) => b.shared - a.shared || VALIDITY_ORDER[a.doc.validity] - VALIDITY_ORDER[b.doc.validity])
-      .slice(0, 5)
-      .map(({ doc }) => ({ id: doc.id, title: doc.title, validity: doc.validity, expires_on: doc.expires_on }));
-    const best = matches[0]?.validity;
-    const state: RequestItem["state"] = !best ? (item.kind === "other" ? "unmatched" : "missing") : best === "ok" || best === "none" ? "ready" : best;
-    return { kind: item.kind, label: item.label, quote, traced: quote === null ? null : source.includes(normalise(quote)), state, matches };
-  });
+  return matchToDocuments(ctx, items, redacted);
 }
 
 /** Strict: anything but the expected JSON is an error shown as such, never a guess (G4 §5). */
