@@ -1,11 +1,13 @@
 import "server-only";
 import { createHmac, randomBytes } from "node:crypto";
 import { z } from "zod";
+import { billingConfig } from "./billing-config";
 import { decryptField, encryptField, fieldKey, safeEqual, sha256Hex } from "./crypto";
 import { asService, asUser } from "./db";
 import { appUrl } from "./flags";
 import { rateLimited } from "./http";
 import { scrub } from "./log";
+import { orgPlan } from "./plans";
 import { sessionSecret } from "./session";
 import type { SignedIn } from "./session";
 
@@ -19,8 +21,11 @@ import type { SignedIn } from "./session";
  *   SHIPSHAPE_APP_URL, and the field and session keys. Off, nothing here is offered or called.
  * - Only owners and admins of a real (not sample) workspace connect, test or disconnect; the database refuses
  *   anyone else's row too (0052).
- * - The state that goes to Slack and back is signed, bound to this browser's session, person and workspace, valid
- *   10 minutes and taken once (app.slack_states_used).
+ * - Reminders are part of Pro, so Slack is too: only a workspace on Pro connects or sends a test message. A
+ *   connection whose workspace has left Pro is paused (nothing is queued or posted) and Settings says so; off Pro
+ *   and unconnected, Settings says Slack comes with Pro, and only where Pro can be had.
+ * - The state that goes to Slack and back carries only a nonce and the time; its signature binds it to this
+ *   browser's session, person and workspace. Valid 10 minutes, taken once (app.slack_states_used).
  * - Outbound calls go to three addresses only, all through `call`: Slack's oauth.v2.access and auth.revoke (fixed
  *   constants), and a webhook on https://hooks.slack.com/services/ (slackWebhookUrl, checked before it's stored and
  *   again before every post). Every call has a timeout and follows no redirect.
@@ -139,17 +144,22 @@ const POST_MS = 5_000;
 export const STATE_SECONDS = 10 * 60;
 const SKEW_SECONDS = 60;
 
-const State = z.object({ o: z.string(), u: z.string(), s: z.string(), n: z.string().min(32).max(64), c: z.number().int() });
-// A label of its own, so no other MAC made with the session secret can pass as this state.
-const stateMac = (payload: string) => createHmac("sha256", sessionSecret()).update(`slack-state:${payload}`).digest("base64url");
+const State = z.object({ n: z.string().min(32).max(64), c: z.number().int() });
+/**
+ * The MAC covers whose state it is, so the state itself carries no ids to Slack or into browser history (Security
+ * SHOULD). A label of its own, so no other MAC made with the session secret can pass as this state. The payload is
+ * base64url and the ids are UUIDs, so "|" can't be part of either.
+ */
+const stateMac = (payload: string, who: StateOwner) =>
+  createHmac("sha256", sessionSecret()).update(`slack-state:${payload}|${who.orgId}|${who.userId}|${who.sessionId}`).digest("base64url");
 
 /** Whose "Add to Slack" this is: the state is bound to all three. */
 export type StateOwner = Pick<SignedIn, "orgId" | "userId" | "sessionId">;
 
 export function newSlackState(who: StateOwner, now = Date.now()): string {
-  const state = { o: who.orgId, u: who.userId, s: who.sessionId, n: randomBytes(32).toString("base64url"), c: Math.floor(now / 1000) };
+  const state = { n: randomBytes(32).toString("base64url"), c: Math.floor(now / 1000) };
   const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
-  return `${payload}.${stateMac(payload)}`;
+  return `${payload}.${stateMac(payload, who)}`;
 }
 
 function parseJson(base64url: string): unknown {
@@ -167,15 +177,12 @@ function parseJson(base64url: string): unknown {
 export async function takeSlackState(state: string | null, who: StateOwner, now = Date.now()): Promise<boolean> {
   if (!state || state.length > 1000) return false;
   const [payload, mac, extra] = state.split(".");
-  if (!payload || !mac || extra !== undefined || !safeEqual(mac, stateMac(payload))) return false;
+  if (!payload || !mac || extra !== undefined || !safeEqual(mac, stateMac(payload, who))) return false;
   const parsed = State.safeParse(parseJson(payload));
   if (!parsed.success) return false;
-  const { o, u, s, n, c } = parsed.data;
+  const { n, c } = parsed.data;
   const age = now / 1000 - c;
   if (age < -SKEW_SECONDS || age > STATE_SECONDS) return false;
-  if (s !== who.sessionId) return false;
-  if (u !== who.userId) return false;
-  if (o !== who.orgId) return false;
   const taken = await asService(async (tx) => {
     await tx.query("delete from app.slack_states_used where expires_at < now()");
     return tx.query("insert into app.slack_states_used (nonce_sha256, expires_at) values ($1, now() + interval '15 minutes') on conflict do nothing returning 1", [sha256Hex(n)]);
@@ -265,7 +272,9 @@ const BROKEN_WORDS: Record<string, true> = { no_service: true, channel_not_found
 export async function postToSlack(webhookUrl: string, text: string, timeoutMs = POST_MS): Promise<"ok" | "broken"> {
   const url = slackWebhookUrl(webhookUrl);
   if (!url) return "broken";
-  const res = await call(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) }, Math.min(POST_MS, timeoutMs));
+  // No unfurling: a title holding an address must not make Slack fetch it and preview it in the channel (Security SHOULD).
+  const body = JSON.stringify({ text, unfurl_links: false, unfurl_media: false });
+  const res = await call(url, { method: "POST", headers: { "content-type": "application/json" }, body }, Math.min(POST_MS, timeoutMs));
   if (res.ok) return "ok";
   const answer = (await res.text().catch(() => "")).trim().slice(0, 60);
   if (Object.hasOwn(BROKEN_STATUS, res.status) || Object.hasOwn(BROKEN_WORDS, answer)) return "broken";
@@ -302,9 +311,41 @@ interface Secrets {
 
 const secretsFor = async (who: SlackWho) => (await asService((tx) => tx.query<Secrets>(SECRETS_SQL, [who.orgId, who.userId])))[0];
 
+/** Whether the workspace is on Pro now (app.org_plan), where reminders, and so Slack's posts, are. */
+export const onPro = async (who: Pick<SignedIn, "userId" | "orgId">) => (await asUser(who.userId, (tx) => orgPlan(tx, who.orgId))) === "pro";
+
+/** Whether a workspace off Pro could move to it here: payments on and new subscriptions not paused. */
+function proOnOffer(): boolean {
+  const billing = billingConfig();
+  return billing !== null && !billing.checkoutPaused;
+}
+
 /** What the Settings page says after an action: one fixed message each (app/app/settings/v2.tsx). */
-export type SlackOutcome = "connected" | "cancelled" | "failed" | "refused" | "busy" | "tested" | "test_failed" | "broken" | "disconnected" | "disconnect_failed";
-export const SLACK_OUTCOMES: readonly SlackOutcome[] = ["connected", "cancelled", "failed", "refused", "busy", "tested", "test_failed", "broken", "disconnected", "disconnect_failed"];
+export type SlackOutcome =
+  | "connected"
+  | "cancelled"
+  | "failed"
+  | "refused"
+  | "pro_only"
+  | "busy"
+  | "tested"
+  | "test_failed"
+  | "broken"
+  | "disconnected"
+  | "disconnect_failed";
+export const SLACK_OUTCOMES: readonly SlackOutcome[] = [
+  "connected",
+  "cancelled",
+  "failed",
+  "refused",
+  "pro_only",
+  "busy",
+  "tested",
+  "test_failed",
+  "broken",
+  "disconnected",
+  "disconnect_failed",
+];
 
 /** Back to Settings' Slack row, saying how it went (the routes; the actions use redirect()). */
 export function backToSettings(outcome: SlackOutcome): Response {
@@ -338,6 +379,9 @@ export async function finishSlackConnect(cfg: SlackConfig, who: SlackWho & State
   if (!(await takeSlackState(params.state, who))) return "failed";
   if (params.error) return params.error === "access_denied" ? "cancelled" : "failed";
   if (!params.code || params.code.length > 512) return "failed";
+  // Checked again here, not only at the start: the plan can lapse in the 10 minutes the state lives. Before the
+  // exchange, so a refusal leaves no token anywhere.
+  if (!(await onPro(who))) return "pro_only";
   let got: SlackInstall;
   try {
     got = await exchangeSlackCode(cfg, params.code);
@@ -377,6 +421,7 @@ const MARK_BROKEN_SQL = "update app.slack_connections set broken_at = now() wher
 export async function sendSlackTest(who: SlackWho): Promise<SlackOutcome> {
   const cfg = slackConfig();
   if (!cfg || !canManage(who)) return "refused";
+  if (!(await onPro(who))) return "pro_only";
   if (await rateLimited("slack-test", who.orgId, 10, 3600)) return "busy";
   const c = await secretsFor(who);
   if (!c) return "refused";
@@ -448,15 +493,25 @@ export async function disconnectSlackBeforeDeletion(userId: string): Promise<voi
 export interface SlackRow {
   connection: { channel: string; team: string; broken: boolean } | null;
   canManage: boolean;
+  /** On Pro: Connect and test messages are offered, and a connection posts. Off Pro a connection is paused. */
+  pro: boolean;
 }
 
-/** Settings' Slack row, or null where it isn't shown at all: Slack not configured, or a sample workspace. */
+/**
+ * Settings' Slack row, or null where it isn't shown at all: Slack not configured, a sample workspace, or a workspace
+ * off Pro with no connection where Pro can't be had (payments off or paused), since Slack couldn't connect there.
+ */
 export async function slackRow(who: SlackWho): Promise<SlackRow | null> {
   if (!slackConfig() || who.demo) return null;
-  const [c] = await asUser(who.userId, (tx) =>
-    tx.query<{ channel: string; team_name: string; broken: boolean }>("select channel, team_name, broken_at is not null as broken from app.slack_connections where org_id = $1", [who.orgId]),
-  );
-  return { connection: c ? { channel: c.channel, team: c.team_name, broken: c.broken } : null, canManage: canManage(who) };
+  const { c, pro } = await asUser(who.userId, async (tx) => {
+    const [row] = await tx.query<{ channel: string; team_name: string; broken: boolean }>(
+      "select channel, team_name, broken_at is not null as broken from app.slack_connections where org_id = $1",
+      [who.orgId],
+    );
+    return { c: row, pro: (await orgPlan(tx, who.orgId)) === "pro" };
+  });
+  if (!pro && !c && !proOnOffer()) return null;
+  return { connection: c ? { channel: c.channel, team: c.team_name, broken: c.broken } : null, canManage: canManage(who), pro };
 }
 
 // The daily run ------------------------------------------------------------------------------------------------

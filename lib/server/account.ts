@@ -491,7 +491,10 @@ async function finishDeletion(userId: string, handled: string[]): Promise<void> 
     rows = await deleteRows(userId, handled);
   } catch (e) {
     if (pgErrorCode(e) !== BILLING_NOT_HANDLED) throw e;
-    rows = await deleteRows(userId, await cancelSubscriptionsBeforeDeletion(userId));
+    const handledNow = await cancelSubscriptionsBeforeDeletion(userId);
+    // The workspace that just became this person's alone has its Slack revoked too before it goes (Security SHOULD).
+    await disconnectSlackBeforeDeletion(userId);
+    rows = await deleteRows(userId, handledNow);
   }
   await removeAfterDeletion(rows);
 }

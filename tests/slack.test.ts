@@ -78,6 +78,7 @@ const CLIENT_SECRET = "f".repeat(32);
 const APP = "https://app.shipshape.example";
 const HOOK = ["https://hooks.slack.com/services", "T0TEST", "B0TEST", "s3cr3tPathPart"].join("/");
 const TOKEN = ["xoxb", "test", "SecretTokenValue"].join("-");
+const TOKEN2 = ["xoxb", "test", "OtherTokenValue"].join("-");
 
 let db: TestDb;
 let blobDir: string;
@@ -134,6 +135,8 @@ interface FakeSlack {
   access: Record<string, unknown>;
   revoke: Record<string, unknown>;
   hook: (signal: AbortSignal | undefined) => Response | Promise<Response>;
+  /** Runs while Slack is revoking a token, before it answers. */
+  onRevoke?: () => Promise<unknown>;
   posts: () => Call[];
 }
 
@@ -157,7 +160,10 @@ function fakeSlack(): FakeSlack {
       timed: init?.signal instanceof AbortSignal,
     });
     if (url === OAUTH_ACCESS_URL) return Response.json(fake.access);
-    if (url === REVOKE_URL) return Response.json(fake.revoke);
+    if (url === REVOKE_URL) {
+      await fake.onRevoke?.();
+      return Response.json(fake.revoke);
+    }
     if (url.startsWith("https://hooks.slack.com/")) return fake.hook(init?.signal ?? undefined);
     throw new Error(`unexpected address ${url}`);
   });
@@ -168,6 +174,27 @@ function fakeSlack(): FakeSlack {
 async function signIn(email: string): Promise<SignedIn> {
   await finishSignIn(await createLocalUser(email, false), { demo: false });
   return requireWorkspace();
+}
+
+/** Pro, where reminders and so Slack are: a billing row with no subscription id, so deleting needs no Stripe. */
+const pro = (ctx: SignedIn) =>
+  db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, $2, 'active', 'pro')", [ctx.orgId, `cus_${ctx.orgId.slice(0, 8)}`]));
+/** Pro ended: the workspace is on Free again. */
+const lapse = (ctx: SignedIn) => db.root((tx) => tx.query("delete from app.billing where org_id = $1", [ctx.orgId]));
+
+/** signIn, with the new workspace on Pro. */
+async function signInPro(email: string): Promise<SignedIn> {
+  const ctx = await signIn(email);
+  await pro(ctx);
+  return ctx;
+}
+
+/** Payments on, in Stripe's test mode: a workspace off Pro could move to it here. */
+function payments() {
+  vi.stubEnv("BILLING_ENABLED", "1");
+  vi.stubEnv("STRIPE_SECRET_KEY", `sk_test_${"a".repeat(24)}`);
+  vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_testsecret123");
+  vi.stubEnv("STRIPE_PRICE_PRO", "price_Pro1");
 }
 
 /** Adds someone to the workspace with this role and signs them in (their cookie replaces the jar's). */
@@ -278,18 +305,27 @@ describe("the state", () => {
     expect(await takeSlackState(newSlackState({ ...ctx, userId: other.userId }), ctx)).toBe(false);
     expect(await takeSlackState(newSlackState({ ...ctx, orgId: other.orgId }), ctx)).toBe(false);
     const [payload, mac] = newSlackState(ctx).split(".");
-    const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload, "base64url").toString()), o: ctx.orgId })).toString("base64url");
-    expect(await takeSlackState(`${forged}.${mac.slice(0, -2)}xx`, ctx)).toBe(false);
+    // The time moved (still inside the 10 minutes) under the same signature.
+    const moved = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload, "base64url").toString()), c: Math.floor(Date.now() / 1000) + 30 })).toString("base64url");
+    expect(await takeSlackState(`${moved}.${mac}`, ctx)).toBe(false);
+    expect(await takeSlackState(`${payload}.${mac.slice(0, -2)}xx`, ctx)).toBe(false);
     expect(await takeSlackState(null, ctx)).toBe(false);
     // None of those used anything up: the right state still works.
     expect(await takeSlackState(newSlackState(ctx), ctx)).toBe(true);
+  });
+
+  it("carries only a nonce and the time: no workspace, person or session id goes to Slack or into the browser's history", async () => {
+    const ctx = await signIn("state-ids@example.com");
+    const decoded = Buffer.from(newSlackState(ctx).split(".")[0], "base64url").toString();
+    expect(Object.keys(JSON.parse(decoded)).sort()).toEqual(["c", "n"]);
+    for (const id of [ctx.orgId, ctx.userId, ctx.sessionId]) expect(decoded).not.toContain(id);
   });
 });
 
 describe("connecting", () => {
   it("trades the code server to server and stores the webhook and token encrypted only", async () => {
     const slack = fakeSlack();
-    const ctx = await signIn("connect@example.com");
+    const ctx = await signInPro("connect@example.com");
     await connect(ctx);
 
     const [exchange] = slack.calls;
@@ -317,7 +353,7 @@ describe("connecting", () => {
 
   it("refuses an answer with more than the one scope, or a webhook that isn't Slack's", async () => {
     const slack = fakeSlack();
-    const ctx = await signIn("connect-scope@example.com");
+    const ctx = await signInPro("connect-scope@example.com");
     const quiet = logged();
     slack.access = { ...ACCESS, scope: "incoming-webhook,chat:write" };
     expect(await finishSlackConnect(cfg(), ctx, { code: "c", state: newSlackState(ctx), error: null })).toBe("failed");
@@ -336,7 +372,7 @@ describe("connecting", () => {
   });
 
   it("logs a failure by the error's name and Slack's error word only", async () => {
-    const ctx = await signIn("connect-log@example.com");
+    const ctx = await signInPro("connect-log@example.com");
     const lines = logged();
     setSlackFetchForTests(async () => {
       throw new Error(`fetch failed for ${HOOK} with ${TOKEN}`);
@@ -400,7 +436,7 @@ describe("the routes", () => {
   });
 
   it("start: an owner or admin following the link on this site goes to Slack; another site's link, a member and a sample don't", async () => {
-    const owner = await signIn("routes-start@example.com");
+    const owner = await signInPro("routes-start@example.com");
     expect(await takeSlackState(await start(), owner)).toBe(true);
     const refusedHeaders: Record<string, string>[] = [{ "sec-fetch-site": "cross-site" }, { "sec-fetch-site": "same-site" }, { "sec-fetch-site": "none" }, {}, { origin: "https://evil.example", host: "app.shipshape.example" }];
     for (const headers of refusedHeaders) {
@@ -420,7 +456,7 @@ describe("the routes", () => {
 
   it("callback: connects for the owner who started it", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("routes-callback@example.com");
+    const owner = await signInPro("routes-callback@example.com");
     const res = await callbackGet(callbackRequest({ code: "code-1", state: await start() }));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/app/settings?slack=connected#slack");
@@ -430,13 +466,13 @@ describe("the routes", () => {
 
   it("callback: a wrong state stores nothing and never calls Slack", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("routes-wrong@example.com");
+    const owner = await signInPro("routes-wrong@example.com");
     const state = await start();
     for (const bad of [`${state}x`, newSlackState({ ...owner, sessionId: "00000000-0000-0000-0000-000000000000" }), ""]) {
       expect((await callbackGet(callbackRequest({ code: "code-1", state: bad }))).headers.get("location")).toBe("/app/settings?slack=failed#slack");
     }
     // Started by someone else, in their browser.
-    const other = await signIn("routes-wrong-other@example.com");
+    const other = await signInPro("routes-wrong-other@example.com");
     const theirs = await start();
     await finishSignIn(owner.userId, { demo: false });
     expect((await callbackGet(callbackRequest({ code: "code-1", state: theirs }))).headers.get("location")).toBe("/app/settings?slack=failed#slack");
@@ -447,7 +483,7 @@ describe("the routes", () => {
 
   it("callback: Slack's access_denied is a cancel, uses up the state, and calls nothing", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("routes-denied@example.com");
+    const owner = await signInPro("routes-denied@example.com");
     const state = await start();
     expect((await callbackGet(callbackRequest({ error: "access_denied", state }))).headers.get("location")).toBe("/app/settings?slack=cancelled#slack");
     expect((await callbackGet(callbackRequest({ code: "code-1", state }))).headers.get("location")).toBe("/app/settings?slack=failed#slack");
@@ -468,9 +504,26 @@ describe("the routes", () => {
     expect(await connection(sample.orgId)).toBeUndefined();
   });
 
+  it("off Pro: Connect, a callback and a test message are refused before Slack is called, and nothing is stored", async () => {
+    const slack = fakeSlack();
+    const owner = await signIn("routes-free@example.com");
+    expect((await startGet(startRequest())).headers.get("location")).toBe("/app/settings?slack=pro_only#slack");
+    // A state started on Pro that comes back after Pro ended: refused before the code is traded.
+    expect((await callbackGet(callbackRequest({ code: "code-1", state: newSlackState(owner) }))).headers.get("location")).toBe("/app/settings?slack=pro_only#slack");
+    expect(slack.calls).toEqual([]);
+    expect(await connection(owner.orgId)).toBeUndefined();
+    // Connected on Pro, then Pro ended: no test message either.
+    await pro(owner);
+    await connect(owner);
+    await lapse(owner);
+    slack.calls.length = 0;
+    await expect(sendSlackTestMessage()).rejects.toThrow("redirect /app/settings?slack=pro_only#slack");
+    expect(slack.calls).toEqual([]);
+  });
+
   it("start and callback each take 20 tries an hour per person", async () => {
     fakeSlack();
-    await signIn("routes-busy@example.com");
+    await signInPro("routes-busy@example.com");
     for (let i = 0; i < 20; i++) await start();
     expect((await startGet(startRequest())).headers.get("location")).toBe("/app/settings?slack=busy#slack");
     for (let i = 0; i < 20; i++) await callbackGet(callbackRequest({ error: "access_denied", state: "x" }));
@@ -478,8 +531,6 @@ describe("the routes", () => {
   });
 });
 
-const pro = (ctx: SignedIn) =>
-  db.root((tx) => tx.query("insert into app.billing (org_id, stripe_customer_id, status, plan) values ($1, $2, 'active', 'pro')", [ctx.orgId, `cus_${ctx.orgId.slice(0, 8)}`]));
 const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 async function addDoc(ctx: SignedIn, title: string, days: number): Promise<string> {
   const [d] = await db.root((tx) =>
@@ -494,8 +545,7 @@ const waiting = async (orgId: string) =>
 /** A connected Pro workspace with one document expiring in 5 days. */
 async function connectedPro(email: string, title = "Liability certificate") {
   const slack = fakeSlack();
-  const ctx = await signIn(email);
-  await pro(ctx);
+  const ctx = await signInPro(email);
   await connect(ctx);
   const doc = await addDoc(ctx, title, 5);
   slack.calls.length = 0;
@@ -515,6 +565,8 @@ describe("reminders to Slack (the daily run)", () => {
     expect(post.url).toBe(HOOK);
     expect(post.redirect).toBe("error");
     expect(post.timed).toBe(true);
+    // Slack mustn't fetch and preview an address a title holds.
+    expect(JSON.parse(post.body)).toMatchObject({ unfurl_links: false, unfurl_media: false });
     const text = textOf(post);
     expect(text).toContain("My business");
     expect(text).toContain("expires in 5 days");
@@ -660,8 +712,9 @@ describe("reminders to Slack (the daily run)", () => {
 
   it("posts nothing for a workspace that isn't on Pro, isn't connected, or while Slack isn't configured", async () => {
     const slack = fakeSlack();
-    const free = await signIn("run-free@example.com");
+    const free = await signInPro("run-free@example.com");
     await connect(free);
+    await lapse(free);
     await addDoc(free, "Free plan certificate", 5);
     await runReminders(undefined, free.orgId);
     expect(await waiting(free.orgId)).toEqual([]);
@@ -670,8 +723,7 @@ describe("reminders to Slack (the daily run)", () => {
     await db.root((tx) => tx.query("insert into app.slack_posts (org_id, document_id, body) values ($1, $2, 'x')", [free.orgId, doc]));
     expect(await sendSlackPosts()).toEqual({ sent: 0, failed: 0, held: 0, broken: 0 });
 
-    const unconnected = await signIn("run-unconnected@example.com");
-    await pro(unconnected);
+    const unconnected = await signInPro("run-unconnected@example.com");
     await addDoc(unconnected, "Unconnected certificate", 5);
     await runReminders(undefined, unconnected.orgId);
     expect(await waiting(unconnected.orgId)).toEqual([]);
@@ -695,7 +747,7 @@ async function settings(slack?: string) {
 
 describe("Settings' Slack row", () => {
   it("not connected: an owner or admin gets a Connect link to the start route", async () => {
-    const owner = await signIn("settings-owner@example.com");
+    const owner = await signInPro("settings-owner@example.com");
     const s = await settings();
     expect(s.actions).toEqual([{ tag: "a", label: expect.any(String), href: "/api/integrations/slack/start" }]);
     expect(s.forms).toBe(0);
@@ -705,7 +757,7 @@ describe("Settings' Slack row", () => {
 
   it("connected: shows the channel and team, with a test message and Disconnect; broken: Reconnect and Disconnect", async () => {
     fakeSlack();
-    const owner = await signIn("settings-connected@example.com");
+    const owner = await signInPro("settings-connected@example.com");
     await connect(owner);
     const s = await settings();
     expect(htmlText(s.section)).toContain("#deadlines");
@@ -720,7 +772,7 @@ describe("Settings' Slack row", () => {
 
   it("members see the row read-only", async () => {
     fakeSlack();
-    const owner = await signIn("settings-member@example.com");
+    const owner = await signInPro("settings-member@example.com");
     await teammate(owner, "settings-member-member@example.com", "member");
     const empty = await settings();
     expect(empty.section).not.toBe("");
@@ -735,8 +787,37 @@ describe("Settings' Slack row", () => {
     expect(connected.forms).toBe(0);
   });
 
+  it("off Pro: says Slack comes with Pro, with no Connect, and only where Pro can be had; a connection that left Pro is paused, with Disconnect only", async () => {
+    fakeSlack();
+    const owner = await signIn("settings-free@example.com");
+    // Payments off: no way to Pro here, so Slack isn't offered at all.
+    expect((await settings()).section).toBe("");
+    payments();
+    const free = await settings();
+    expect(free.actions).toEqual([{ tag: "a", label: expect.any(String), href: "#plan" }]);
+    // The row itself says so, not only the link's label.
+    expect(htmlText(free.section).replace(free.actions[0].label, "")).toMatch(/\bPro\b/);
+    expect(free.forms).toBe(0);
+    // New subscriptions paused: no way to Pro either.
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "1");
+    expect((await settings()).section).toBe("");
+    vi.stubEnv("SHIPSHAPE_CHECKOUT_PAUSED", "");
+    // Connected on Pro, then Pro ended: paused, never "Connected", and Disconnect is all there is, payments on or off.
+    await pro(owner);
+    await connect(owner);
+    await lapse(owner);
+    for (const on of [true, false]) {
+      if (!on) vi.stubEnv("BILLING_ENABLED", "");
+      const paused = await settings();
+      expect(htmlText(paused.section)).toMatch(/Paused/);
+      expect(htmlText(paused.section)).not.toMatch(/\bConnected\b/);
+      expect(paused.actions.filter((a) => a.tag === "a")).toEqual([]);
+      expect(paused.forms).toBe(1);
+    }
+  });
+
   it("isn't there at all while Slack isn't configured, in a sample, or in the earlier look", async () => {
-    await signIn("settings-hidden@example.com");
+    await signInPro("settings-hidden@example.com");
     expect((await settings()).section).not.toBe("");
     vi.stubEnv("SLACK_CLIENT_ID", "");
     const off = await settings("connected");
@@ -750,13 +831,13 @@ describe("Settings' Slack row", () => {
     const sample = await settings("connected");
     expect(sample.section).toBe("");
     expect(htmlText(sample.html)).not.toMatch(/slack/i);
-    await signIn("settings-hidden-v1@example.com");
+    await signInPro("settings-hidden-v1@example.com");
     vi.stubEnv("SHIPSHAPE_UI", "v1");
     expect(htmlText((await settings("connected")).html)).not.toMatch(/slack/i);
   });
 
   it("says how the last action went, only for an outcome it knows", async () => {
-    await signIn("settings-outcome@example.com");
+    await signInPro("settings-outcome@example.com");
     expect((await settings("tested")).section).toMatch(/role="status"/);
     expect((await settings("<script>")).section).not.toMatch(/role="status"/);
   });
@@ -765,7 +846,7 @@ describe("Settings' Slack row", () => {
 describe("test message and disconnect", () => {
   it("an owner's test message posts to the channel, with a link to Deadlines", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("test-owner@example.com");
+    const owner = await signInPro("test-owner@example.com");
     await connect(owner);
     await expect(sendSlackTestMessage()).rejects.toThrow("redirect /app/settings?slack=tested#slack");
     expect(slack.posts()).toHaveLength(1);
@@ -775,7 +856,7 @@ describe("test message and disconnect", () => {
 
   it("a member can't send one or disconnect, whatever they post", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("test-member@example.com");
+    const owner = await signInPro("test-member@example.com");
     await connect(owner);
     await teammate(owner, "test-member-member@example.com", "member");
     await expect(sendSlackTestMessage()).rejects.toThrow("redirect /app/settings?slack=refused#slack");
@@ -786,7 +867,7 @@ describe("test message and disconnect", () => {
 
   it("checks the role twice: the session's, and the database's own membership row", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("test-layers@example.com");
+    const owner = await signInPro("test-layers@example.com");
     await connect(owner);
     const member = await teammate(owner, "test-layers-member@example.com", "member");
     // The session says member (whatever the database says): refused before anything is read.
@@ -798,7 +879,7 @@ describe("test message and disconnect", () => {
 
   it("a test message Slack says went nowhere marks the connection broken", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("test-broken@example.com");
+    const owner = await signInPro("test-broken@example.com");
     await connect(owner);
     slack.hook = () => new Response("channel_not_found", { status: 404 });
     await expect(sendSlackTestMessage()).rejects.toThrow("redirect /app/settings?slack=broken#slack");
@@ -807,7 +888,7 @@ describe("test message and disconnect", () => {
 
   it("test messages: 10 an hour per workspace", async () => {
     fakeSlack();
-    const owner = await signIn("test-busy@example.com");
+    const owner = await signInPro("test-busy@example.com");
     await connect(owner);
     for (let i = 0; i < 10; i++) await expect(sendSlackTestMessage()).rejects.toThrow("slack=tested");
     await expect(sendSlackTestMessage()).rejects.toThrow("slack=busy");
@@ -815,7 +896,7 @@ describe("test message and disconnect", () => {
 
   it("Disconnect revokes the token in Slack, then forgets the connection", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("disconnect@example.com");
+    const owner = await signInPro("disconnect@example.com");
     await connect(owner);
     await expect(disconnectSlackChannel()).rejects.toThrow("redirect /app/settings?slack=disconnected#slack");
     const revoke = slack.calls.find((c) => c.url === REVOKE_URL);
@@ -825,7 +906,7 @@ describe("test message and disconnect", () => {
 
   it("Disconnect keeps the connection when Slack can't revoke the token, so it's never forgotten while live", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("disconnect-down@example.com");
+    const owner = await signInPro("disconnect-down@example.com");
     await connect(owner);
     logged();
     slack.revoke = { ok: false, error: "ratelimited" };
@@ -841,7 +922,7 @@ describe("test message and disconnect", () => {
 describe("account deletion and export", () => {
   it("deleting the account revokes the token of each workspace it deletes and removes the connection", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("delete-slack@example.com");
+    const owner = await signInPro("delete-slack@example.com");
     await connect(owner);
     await deleteAccount(owner);
     expect(slack.calls.filter((c) => c.url === REVOKE_URL).map((c) => c.auth)).toEqual([`Bearer ${TOKEN}`]);
@@ -850,7 +931,7 @@ describe("account deletion and export", () => {
 
   it("deleting goes on when Slack can't be reached, logging only the error's name", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("delete-slack-down@example.com");
+    const owner = await signInPro("delete-slack-down@example.com");
     await connect(owner);
     const lines = logged();
     slack.revoke = { ok: false, error: "internal_error" };
@@ -861,7 +942,7 @@ describe("account deletion and export", () => {
 
   it("leaving a workspace with another owner leaves its Slack alone", async () => {
     const slack = fakeSlack();
-    const owner = await signIn("delete-slack-shared@example.com");
+    const owner = await signInPro("delete-slack-shared@example.com");
     await connect(owner);
     const second = await db.user("delete-slack-shared-2@example.com");
     await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'owner')", [owner.orgId, second]));
@@ -871,9 +952,29 @@ describe("account deletion and export", () => {
     expect(await connection(owner.orgId)).toBeDefined();
   });
 
+  it("a workspace that becomes the person's alone during the deletion has its token revoked too (the billing retry, SS001)", async () => {
+    const slack = fakeSlack();
+    const owner = await signInPro("delete-race@example.com");
+    await connect(owner);
+    const co = await signInPro("delete-race-co@example.com");
+    slack.access = { ...ACCESS, access_token: TOKEN2, team: { id: "T0456DEF", name: "Co Team" } };
+    await connect(co);
+    await db.root((tx) => tx.query("insert into app.members (org_id, user_id, role) values ($1, $2, 'owner')", [co.orgId, owner.userId]));
+    // While the first workspace's token is being revoked, the other owner leaves the second: it's now the deleting
+    // person's alone, billed and not handled, so the database refuses (SS001) and the deletion goes round again.
+    slack.onRevoke = async () => {
+      slack.onRevoke = undefined;
+      await db.root((tx) => tx.query("delete from app.members where org_id = $1 and user_id = $2", [co.orgId, co.userId]));
+    };
+    await finishSignIn(owner.userId, { demo: false });
+    await deleteAccount(await requireWorkspace());
+    expect(slack.calls.filter((c) => c.url === REVOKE_URL).map((c) => c.auth)).toEqual([`Bearer ${TOKEN}`, `Bearer ${TOKEN2}`]);
+    expect(await connection(co.orgId)).toBeUndefined();
+  });
+
   it("the export lists the connection, never its webhook address or token", async () => {
     fakeSlack();
-    const owner = await signIn("export-slack@example.com");
+    const owner = await signInPro("export-slack@example.com");
     const zipFile = path.join(blobDir, "export.zip");
     await writeFile(zipFile, (await exportWorkspace(owner)).bytes);
     expect(execFileSync("unzip", ["-Z1", zipFile]).toString()).not.toContain("integrations.json");

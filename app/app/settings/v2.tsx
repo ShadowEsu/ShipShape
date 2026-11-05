@@ -324,6 +324,7 @@ const SLACK_SAYS: Record<SlackOutcome, { ok: boolean; text: string }> = {
   cancelled: { ok: false, text: "Slack wasn't connected: it was cancelled in Slack." },
   failed: { ok: false, text: "Slack couldn't be connected. Try again." },
   refused: { ok: false, text: "Only owners and admins of this workspace can change Slack." },
+  pro_only: { ok: false, text: "Slack reminders come with Pro. Nothing was sent to Slack." },
   busy: { ok: false, text: "Too many tries. Wait up to an hour, then try again." },
   tested: { ok: true, text: "Test message sent. Check the channel in Slack." },
   test_failed: { ok: false, text: "The test message didn't go through. Try again in a minute." },
@@ -333,13 +334,19 @@ const SLACK_SAYS: Record<SlackOutcome, { ok: boolean; text: string }> = {
 };
 
 /**
- * Slack (lib/server/slack.ts): one 52px row. Owners and admins connect (a link to the start route, which goes to
- * Slack's consent screen), send a test message, disconnect, or reconnect a channel Slack says is gone; members see the
- * row as it is. A state is a dot and a word (Quiet §1).
+ * Slack (lib/server/slack.ts): one 52px row. Owners and admins of a workspace on Pro connect (a link to the start
+ * route, which goes to Slack's consent screen), send a test message, disconnect, or reconnect a channel Slack says is
+ * gone; members see the row as it is. Off Pro, Connect isn't offered (reminders are part of Pro) and a connection
+ * shows as paused, with Disconnect only. A state is a dot and a word (Quiet §1).
  */
 function SlackSection({ slack, outcome }: { slack: SlackRow; outcome: SlackOutcome | undefined }) {
   const c = slack.connection;
   const says = outcome && SLACK_SAYS[outcome];
+  const detail = c
+    ? `${c.channel} in ${c.team}${slack.pro ? "" : ". Paused: reminders post on Pro only."}`
+    : slack.pro
+      ? "Post deadline reminders to a Slack channel"
+      : "Deadline reminders in a Slack channel come with Pro";
   return (
     <section id="slack" aria-labelledby="slack-title" className="space-y-3">
       <h2 id="slack-title" tabIndex={-1} className="section-title">
@@ -354,23 +361,30 @@ function SlackSection({ slack, outcome }: { slack: SlackRow; outcome: SlackOutco
         <li className="group-row flex-wrap justify-between gap-x-4 gap-y-2">
           <div className="min-w-0 flex-1 basis-56">
             <h3 className="font-medium">Slack</h3>
-            <p className="text-sm text-ink-2">{c ? `${c.channel} in ${c.team}` : "Post deadline reminders to a Slack channel"}</p>
+            <p className="text-sm text-ink-2">{detail}</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-3">
             {!c ? (
               <span className="dot-chip">Not connected</span>
+            ) : !slack.pro ? (
+              <StateChip tone="expiring">Paused</StateChip>
             ) : c.broken ? (
               <StateChip tone="expired">Needs reconnecting</StateChip>
             ) : (
               <StateChip tone="ok">Connected</StateChip>
             )}
-            {slack.canManage && (!c || c.broken) && (
+            {slack.canManage && !slack.pro && !c && (
+              <a href="#plan" className="btn-ghost press">
+                See Pro
+              </a>
+            )}
+            {slack.canManage && slack.pro && (!c || c.broken) && (
               // A plain link, not next/link: it must not be prefetched, and it leaves for Slack.
               <a href={START_PATH} className="btn press">
                 {c ? "Reconnect" : "Connect"}
               </a>
             )}
-            {slack.canManage && c && !c.broken && (
+            {slack.canManage && slack.pro && c && !c.broken && (
               <form action={sendSlackTestMessage}>
                 <SubmitButton className="btn-ghost press" pendingLabel="Sending…">
                   Send a test message
