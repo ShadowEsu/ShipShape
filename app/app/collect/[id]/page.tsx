@@ -77,7 +77,8 @@ export default async function VendorPage({ params, searchParams }: { params: Pro
         </ul>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      {/* grid-cols-1 below lg, so a long file name truncates instead of widening the page (see the Passport page). */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section className="space-y-3" aria-labelledby="files-heading">
           <h2 id="files-heading" className="font-semibold">
             Files received

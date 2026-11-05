@@ -60,7 +60,8 @@ export default async function CollectPage() {
         </dl>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      {/* grid-cols-1 below lg, so a long vendor name truncates instead of widening the page (see the Passport page). */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section className="space-y-3" aria-labelledby="vendors-heading">
           <h2 id="vendors-heading" className="font-semibold">
             Vendors
