@@ -595,9 +595,11 @@ html:has(.sq-header) {
 .site-quiet .sq-tour-steps li[data-on] b {
   color: #ffffff;
 }
+/* Two lines held for every scene's line, so the steps don't move when a longer one wraps (the 390 tour). */
 .site-quiet .sq-tour-line {
-  min-height: 1.5em;
+  min-height: 3em;
   font-size: 14px;
+  line-height: 1.5;
   color: var(--ink-2);
 }
 
