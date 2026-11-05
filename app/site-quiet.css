@@ -1,0 +1,555 @@
+/*
+ * The public site in Quiet (Design SPEC 2026-11-04; values from its tokens.css). Everything here sits under
+ * .site-quiet: the home page's wrapper, and the shared header and footer on every site page. SHIPSHAPE_UI=v1 renders
+ * none of these classes, so the earlier site is untouched. Motion is transform and opacity only, and none of it plays
+ * under reduced motion.
+ */
+
+.site-quiet {
+  --canvas: #ffffff;
+  --fill: #f6f6f5;
+  --fill-2: #efefed;
+  --line: #e8e8e6;
+  --ink: #0a0a0a;
+  --ink-2: #5b5b58;
+  /* Placeholders and disabled only (3.4:1): never body text. */
+  --ink-3: #8c8c88;
+  --ok: #1a7f4b;
+  --wait: #b26b00;
+  --bad: #c42b1c;
+  --info: #2f5fd0;
+  /* The names the shared pieces inside (Logo, NotLegalAdvice, WaitlistForm) and Tailwind's classes read. */
+  --paper: #ffffff;
+  --accent: #0a0a0a;
+  --accent-ink: #ffffff;
+  --warn: var(--wait);
+  --q-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-inter, Inter), system-ui, sans-serif;
+  --q-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", var(--font-inter, Inter), system-ui, sans-serif;
+  --sans: var(--q-text);
+  /* No serif headings in Quiet. */
+  --serif: var(--q-display);
+  --q-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --q-reveal: cubic-bezier(0.19, 1, 0.22, 1);
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--q-text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.site-quiet .sq-wrap {
+  box-sizing: content-box;
+  max-width: 1120px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+/* Type (SPEC §2) */
+.site-quiet .sq-display {
+  font-family: var(--q-display);
+  font-size: 56px;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  font-weight: 500;
+}
+.site-quiet .sq-title {
+  font-family: var(--q-display);
+  font-size: 32px;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+.site-quiet .sq-h2 {
+  font-size: 20px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+.site-quiet .sq-lead {
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  max-width: 36em;
+}
+.site-quiet .sq-body {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.site-quiet :is(.sq-label, .sq-meta, .sq-note) {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.site-quiet .sq-label {
+  font-weight: 500;
+}
+.site-quiet .sq-link {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Buttons (SPEC §4): one ink primary per view, a line secondary. 44px on the hero and on phones. */
+.site-quiet .sq-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.site-quiet .sq-btn-cta {
+  background: var(--ink);
+  color: #ffffff;
+  transition: opacity 150ms var(--q-ease);
+}
+.site-quiet .sq-btn-cta:hover {
+  opacity: 0.85;
+}
+.site-quiet .sq-btn-line {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.site-quiet .sq-btn-line:hover {
+  background: var(--fill);
+}
+.site-quiet .sq-btn-lg {
+  height: 44px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+/* The waitlist's own controls, in Quiet's weight. */
+.site-quiet .btn {
+  font-weight: 500;
+}
+
+/* Header and footer, on every site page */
+.site-quiet .sq-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 64px;
+}
+.site-quiet .sq-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+}
+.site-quiet .sq-nav-link {
+  display: none;
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: var(--ink-2);
+}
+.site-quiet .sq-nav-link:hover {
+  color: var(--ink);
+  background: var(--fill);
+}
+.site-quiet .sq-nav .sq-btn {
+  margin-left: 8px;
+}
+@media (min-width: 640px) {
+  .site-quiet .sq-nav-link {
+    display: inline-flex;
+  }
+}
+
+.site-quiet.sq-footer {
+  border-top: 1px solid var(--line);
+}
+.site-quiet .sq-footer-row {
+  display: grid;
+  gap: 24px;
+  padding-block: 48px;
+}
+.site-quiet .sq-footer-brand {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+/* NotLegalAdvice sets --ink-3 for its text; in Quiet that colour is never body text. */
+.site-quiet .sq-legal {
+  max-width: 28rem;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.site-quiet .sq-footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px 24px;
+  font-size: 14px;
+}
+.site-quiet .sq-footer-link {
+  padding-block: 4px;
+  color: var(--ink-2);
+}
+.site-quiet .sq-footer-link:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+@media (min-width: 640px) {
+  .site-quiet .sq-footer-row {
+    grid-template-columns: 1fr auto;
+  }
+}
+
+/* The home page: white, 1120px, sections 96px apart (64px on a phone). */
+.site-quiet .sq-hero {
+  display: grid;
+  gap: 48px;
+  padding-top: 96px;
+}
+.site-quiet .sq-hero .sq-lead {
+  margin-top: 24px;
+}
+.site-quiet .sq-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+.site-quiet .sq-hero .sq-note {
+  margin-top: 16px;
+}
+.site-quiet .sq-hero-visual {
+  display: grid;
+  gap: 16px;
+  max-width: 560px;
+}
+@media (min-width: 1024px) {
+  .site-quiet .sq-hero {
+    grid-template-columns: minmax(0, 1fr) 520px;
+    gap: 64px;
+    align-items: start;
+  }
+}
+
+.site-quiet .sq-email {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+}
+.site-quiet .sq-email-body {
+  margin-top: 12px;
+  white-space: pre-line;
+}
+.site-quiet .sq-email .sq-meta {
+  margin-top: 16px;
+}
+
+/* Product screenshots: radius 16 on a --fill panel (SPEC §3, §7). */
+.site-quiet .sq-shot-panel {
+  background: var(--fill);
+  border-radius: 16px;
+  padding: 24px;
+}
+.site-quiet picture {
+  display: block;
+}
+.site-quiet .sq-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.site-quiet .sq-section {
+  margin-top: 96px;
+}
+.site-quiet .sq-section > .sq-label + .sq-title {
+  margin-top: 8px;
+}
+.site-quiet .sq-section-head .sq-lead {
+  margin-top: 16px;
+}
+.site-quiet .sq-section > .sq-note,
+.site-quiet .sq-section > .sq-lead {
+  margin-top: 24px;
+}
+
+.site-quiet .sq-packet {
+  display: grid;
+  gap: 32px;
+  margin-top: 32px;
+  padding: 48px;
+}
+.site-quiet .sq-papers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.site-quiet .sq-paper-name {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.site-quiet .sq-passport {
+  justify-self: center;
+  width: 100%;
+  max-width: 976px;
+}
+.site-quiet .sq-passport .sq-meta {
+  margin-top: 12px;
+}
+
+.site-quiet .sq-cols {
+  display: grid;
+  gap: 24px;
+  margin-top: 32px;
+  list-style: none;
+  padding: 0;
+}
+.site-quiet .sq-cols > li {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
+.site-quiet .sq-cols .sq-link {
+  justify-self: start;
+  margin-top: 4px;
+}
+@media (min-width: 768px) {
+  .site-quiet .sq-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .site-quiet .sq-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .site-quiet .sq-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.site-quiet .sq-capabilities {
+  display: grid;
+  column-gap: 48px;
+  margin-top: 32px;
+  list-style: none;
+  padding: 0;
+}
+.site-quiet .sq-capabilities > li {
+  border-top: 1px solid var(--line);
+  padding-block: 16px;
+}
+.site-quiet .sq-capability-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.site-quiet .sq-capability-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+@media (min-width: 768px) {
+  .site-quiet .sq-capabilities {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Status is a dot plus a word (SPEC §1). */
+.site-quiet .sq-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.site-quiet .sq-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.site-quiet [data-tone="ok"] > .sq-dot {
+  background: var(--ok);
+}
+.site-quiet [data-tone="wait"] > .sq-dot {
+  background: var(--wait);
+}
+.site-quiet [data-tone="todo"] > .sq-dot {
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+}
+
+.site-quiet .sq-split {
+  display: grid;
+  gap: 48px;
+}
+.site-quiet .sq-split .sq-title {
+  margin-top: 8px;
+}
+.site-quiet .sq-split .sq-lead {
+  margin-top: 16px;
+}
+.site-quiet .sq-trust {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  color: var(--ink-2);
+}
+.site-quiet .sq-trust > li {
+  display: flex;
+  gap: 12px;
+}
+.site-quiet .sq-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (min-width: 1024px) {
+  .site-quiet .sq-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.site-quiet .sq-closing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 32px;
+}
+.site-quiet .sq-closing .sq-lead {
+  margin-top: 16px;
+}
+@media (min-width: 1024px) {
+  .site-quiet .sq-closing {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+}
+
+.site-quiet.sq-home > .sq-footer {
+  margin-top: 96px;
+}
+
+/* Phones (< 600px, SPEC §2-§4) */
+@media (max-width: 599px) {
+  .site-quiet .sq-wrap {
+    padding-inline: 20px;
+  }
+  .site-quiet .sq-display {
+    font-size: 38px;
+  }
+  .site-quiet .sq-title {
+    font-size: 28px;
+  }
+  .site-quiet .sq-h2 {
+    font-size: 18px;
+  }
+  .site-quiet .sq-lead {
+    font-size: 16px;
+  }
+  .site-quiet .sq-btn {
+    height: 44px;
+  }
+  .site-quiet .sq-section,
+  .site-quiet.sq-home > .sq-footer {
+    margin-top: 64px;
+  }
+  .site-quiet .sq-shot-panel {
+    padding: 16px;
+  }
+  .site-quiet .sq-packet {
+    gap: 24px;
+  }
+  /* The 3 pages scroll sideways, each 72% of the row, and snap. */
+  .site-quiet .sq-papers {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+  .site-quiet .sq-papers > li {
+    flex: 0 0 72%;
+    scroll-snap-align: start;
+  }
+}
+
+/* Site reveals (SPEC §5): below the fold, a section fades in and rises 4px once. SiteReveals adds .is-pending. */
+.site-quiet [data-reveal] {
+  transition:
+    opacity 400ms var(--q-reveal),
+    transform 400ms var(--q-reveal);
+}
+.site-quiet [data-reveal].is-pending {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: none;
+}
+
+/*
+ * The intro (SPEC §5): hidden unless its script adds .is-on. The mark scales 0.96 to 1 and fades in over 0-300ms,
+ * holds to 600ms, and the white screen fades out by 1000ms, when the script takes the class off.
+ */
+.site-quiet .site-intro {
+  display: none;
+}
+.site-quiet .site-intro.is-on {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: var(--ink);
+  animation: sq-intro-out 400ms var(--q-ease) 600ms forwards;
+}
+.site-quiet .site-intro.is-on .site-intro-mark {
+  display: block;
+  animation: sq-intro-mark 300ms var(--q-ease) both;
+}
+@keyframes sq-intro-mark {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes sq-intro-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-quiet .site-intro.is-on {
+    display: none;
+  }
+  .site-quiet [data-reveal],
+  .site-quiet [data-reveal].is-pending {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .site-quiet .sq-btn-cta {
+    transition: none;
+  }
+}

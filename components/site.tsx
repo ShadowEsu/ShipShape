@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo, NotLegalAdvice } from "@/components/ui";
-import { realDocsEnabled } from "@/lib/server/flags";
+import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
+import "@/app/site-quiet.css";
 
 const NAV: [href: string, label: string][] = [
   ["/#how", "How it works"],
@@ -8,7 +9,28 @@ const NAV: [href: string, label: string][] = [
   ["/faq", "FAQ"],
 ];
 
+/** The site's header: Quiet (each page's own `.site-quiet` chrome) unless SHIPSHAPE_UI=v1 brings back the earlier one. */
 export function SiteHeader() {
+  const cta = realDocsEnabled() ? "Sign in" : "Try the sample";
+  if (uiV2()) {
+    return (
+      <header className="site-quiet sq-header">
+        <div className="sq-wrap sq-header-row">
+          <Logo />
+          <nav aria-label="Main" className="sq-nav">
+            {NAV.map(([href, label]) => (
+              <Link key={href} href={href} className="sq-nav-link">
+                {label}
+              </Link>
+            ))}
+            <Link href="/signin" className="sq-btn sq-btn-line">
+              {cta}
+            </Link>
+          </nav>
+        </div>
+      </header>
+    );
+  }
   return (
     <header className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-5">
       <Logo />
@@ -19,7 +41,7 @@ export function SiteHeader() {
           </Link>
         ))}
         <Link href="/signin" className="btn-ghost ml-2">
-          {realDocsEnabled() ? "Sign in" : "Try the sample"}
+          {cta}
         </Link>
       </nav>
     </header>
@@ -38,6 +60,25 @@ const FOOTER: [href: string, label: string][] = [
 ];
 
 export function SiteFooter() {
+  if (uiV2()) {
+    return (
+      <footer className="site-quiet sq-footer">
+        <div className="sq-wrap sq-footer-row">
+          <div className="sq-footer-brand">
+            <Logo />
+            <NotLegalAdvice className="sq-legal" />
+          </div>
+          <nav aria-label="Footer" className="sq-footer-nav">
+            {FOOTER.map(([href, label]) => (
+              <Link key={href} href={href} className="sq-footer-link">
+                {label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      </footer>
+    );
+  }
   return (
     <footer className="border-t border-line">
       <div className="mx-auto grid max-w-6xl gap-6 px-5 py-10 sm:grid-cols-[1fr_auto]">
