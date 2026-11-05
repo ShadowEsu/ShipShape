@@ -10,10 +10,12 @@ const COPY = {
 
 /**
  * Waitlist sign-up; `interest` records that the person wants to hear about one unsold feature. `label` is shown above
- * the field (a placeholder alone disappears while typing). The status region is always mounted, so screen readers
- * announce the confirmation, and focus moves to it because the button that had focus goes away.
+ * the field (a placeholder alone disappears while typing). `inSample`: the form sits inside the sample workspace (Start
+ * here, Settings), so a new address counts toward the sample's tally (0051); the server also needs a sample session. The
+ * status region is always mounted, so screen readers announce the confirmation, and focus moves to it because the button
+ * that had focus goes away.
  */
-export function WaitlistForm({ interest, label }: { interest?: "collect"; label: string }) {
+export function WaitlistForm({ interest, label, inSample }: { interest?: "collect"; label: string; inSample?: boolean }) {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   const [error, setError] = useState("");
@@ -32,7 +34,8 @@ export function WaitlistForm({ interest, label }: { interest?: "collect"; label:
     setError("");
     let message: string;
     try {
-      const res = await fetch("/api/waitlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, interest }) });
+      const body = { email, interest, ...(inSample ? { from: "sample" } : {}) };
+      const res = await fetch("/api/waitlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       if (res.ok) return setState("done");
       const data: unknown = await res.json().catch(() => null);
       message = data && typeof data === "object" && "error" in data && typeof data.error === "string" ? data.error : "We couldn't add you just now. Try again in a minute.";

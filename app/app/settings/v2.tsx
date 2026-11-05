@@ -104,7 +104,7 @@ export function SettingsV2({
         {ctx.demo && (
           <div className="space-y-3">
             <p className="text-sm text-ink-2">Real accounts aren&apos;t open yet.</p>
-            <WaitlistForm label="Hear when real accounts open" />
+            <WaitlistForm label="Hear when real accounts open" inSample />
           </div>
         )}
         {view.status === "past_due" && (

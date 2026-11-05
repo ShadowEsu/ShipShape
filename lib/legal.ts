@@ -1,5 +1,5 @@
 /** Version of /terms and /privacy recorded with every agreement; change it whenever either text changes. */
-export const TERMS_VERSION = "2026-11-04.4";
+export const TERMS_VERSION = "2026-11-04.5";
 
 /**
  * How long deleted data can stay in backups, as every deletion promise says it (Privacy, Delete for good). 14, not the
