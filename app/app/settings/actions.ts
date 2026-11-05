@@ -9,6 +9,7 @@ import { SubscriptionStillRunning, UserError } from "@/lib/server/errors";
 import { contactEmail, GateClosed } from "@/lib/server/flags";
 import { NeedsRecentSignIn, renameWorkspace } from "@/lib/server/profile";
 import { endAllSessions, endOneSession, endSession, requireWorkspace } from "@/lib/server/session";
+import { disconnectSlack, sendSlackTest } from "@/lib/server/slack";
 
 export interface RenameState {
   error?: string;
@@ -110,4 +111,20 @@ export async function manageBilling(_prev: BillingState): Promise<BillingState> 
     throw e;
   }
   redirect(url);
+}
+
+/** "Send a test message" on the Slack row (lib/server/slack.ts sendSlackTest): owners and admins, back to the row with how it went. */
+export async function sendSlackTestMessage() {
+  const ctx = await requireWorkspace();
+  const outcome = await sendSlackTest(ctx);
+  revalidatePath("/app/settings");
+  redirect(`/app/settings?slack=${outcome}#slack`);
+}
+
+/** "Disconnect" on the Slack row: revokes the token in Slack, then forgets the connection (disconnectSlack). */
+export async function disconnectSlackChannel() {
+  const ctx = await requireWorkspace();
+  const outcome = await disconnectSlack(ctx);
+  revalidatePath("/app/settings");
+  redirect(`/app/settings?slack=${outcome}#slack`);
 }

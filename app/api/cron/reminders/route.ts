@@ -5,6 +5,7 @@ import { cronSecret } from "@/lib/server/flags";
 import { fail, purgeRateHits } from "@/lib/server/http";
 import { sendQueuedMail } from "@/lib/server/mail";
 import { purgeSessions } from "@/lib/server/session";
+import { sendSlackPosts } from "@/lib/server/slack";
 
 export const dynamic = "force-dynamic";
 // The whole run has 50 s from the request (DAILY_RUN_BUDGET_MS, shared by the deletions, the sample
@@ -22,7 +23,10 @@ export const maxDuration = 60;
  * deleting session rows that ended over 30 days ago (Design row 34), and deleting
  * outbox reminders over 90 days old and signing-code messages over 1 day old (the privacy policy
  * says so; Security 2026-11-01 0749). Where email is on (SHIPSHAPE_EMAIL=1, lib/server/mail.ts), the
- * reminders just written, and the queued email of each other kind that is on, are then emailed. The scheduler (vercel.json) sends
+ * reminders just written, and the queued email of each other kind that is on, are then emailed. Where Slack is
+ * configured (lib/server/slack.ts), the reminders just queued for connected workspaces are posted to their channels,
+ * inside the same budget; a post that fails waits for the next run, and only the run itself throwing fails it (a
+ * customer's Slack being down isn't our failure). The scheduler (vercel.json) sends
  * `Authorization: Bearer $CRON_SECRET`; nothing else may run it.
  */
 export async function GET(req: Request) {
@@ -34,12 +38,25 @@ export async function GET(req: Request) {
   // cleanup, so files a deletion couldn't remove today are retried in the same run.
   const until = Date.now() + DAILY_RUN_BUDGET_MS;
   const reminders = runReminders();
-  // Email goes after the reminders are written, whether or not each was: rows already in the outbox still go out.
+  // Email and Slack go after the reminders are written, whether or not each was: rows already queued still go out.
   const mailing = reminders.then(
     () => sendQueuedMail(until),
     () => sendQueuedMail(until),
   );
-  const [sent, mailed, cleared, deletions, samples, sessions, outbox] = await Promise.allSettled([reminders, mailing, purgeRateHits(), finishDeletions(until), purgeSampleAccounts(until), purgeSessions(), purgeOutbox()]);
+  const posting = reminders.then(
+    () => sendSlackPosts(until),
+    () => sendSlackPosts(until),
+  );
+  const [sent, mailed, posted, cleared, deletions, samples, sessions, outbox] = await Promise.allSettled([
+    reminders,
+    mailing,
+    posting,
+    purgeRateHits(),
+    finishDeletions(until),
+    purgeSampleAccounts(until),
+    purgeSessions(),
+    purgeOutbox(),
+  ]);
   const [files, swept] = await Promise.allSettled([retryStorageCleanup(until), sweepDeletedWorkspaces(until)]);
   // Logs the error's name only: its message may hold addresses or query text.
   const log = (what: string, r: PromiseSettledResult<unknown>) => {
@@ -47,6 +64,7 @@ export async function GET(req: Request) {
   };
   log("reminders", sent);
   log("reminder email", mailed);
+  log("slack posts", posted);
   log("rate-limit purge", cleared);
   log("account deletions", deletions);
   log("sample purge", samples);
@@ -55,10 +73,11 @@ export async function GET(req: Request) {
   log("session purge", sessions);
   log("outbox purge", outbox);
   const mailFailed = mailed.status === "rejected" || (mailed.value?.failed ?? 0) > 0;
-  if (sent.status === "rejected" || sent.value.failed > 0 || mailFailed || cleared.status === "rejected" || deletions.status === "rejected" || deletions.value.failed > 0 || samples.status === "rejected" || samples.value.failed > 0 || files.status === "rejected" || swept.status === "rejected" || sessions.status === "rejected" || outbox.status === "rejected") {
+  if (sent.status === "rejected" || sent.value.failed > 0 || mailFailed || posted.status === "rejected" || cleared.status === "rejected" || deletions.status === "rejected" || deletions.value.failed > 0 || samples.status === "rejected" || samples.value.failed > 0 || files.status === "rejected" || swept.status === "rejected" || sessions.status === "rejected" || outbox.status === "rejected") {
     return fail("The daily run failed.", 500);
   }
-  // `mail` only where email is on: off, the answer is exactly what it was before email existed.
+  // `mail` only where email is on, `slack` only where Slack is configured: off, the answer is exactly what it was before.
   const mail = mailed.value ? { mail: mailed.value } : {};
-  return Response.json({ ok: true, sent: sent.value, ...mail, cleared: cleared.value, deletions: deletions.value, samples: samples.value, files: files.value, swept: swept.value, sessions: sessions.value, outbox: outbox.value }, { headers: { "Cache-Control": "no-store" } });
+  const slack = posted.value ? { slack: posted.value } : {};
+  return Response.json({ ok: true, sent: sent.value, ...mail, ...slack, cleared: cleared.value, deletions: deletions.value, samples: samples.value, files: files.value, swept: swept.value, sessions: sessions.value, outbox: outbox.value }, { headers: { "Cache-Control": "no-store" } });
 }

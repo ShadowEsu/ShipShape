@@ -41,6 +41,15 @@ export function sameOrigin(headers: Headers): boolean {
   }
 }
 
+/**
+ * For a link followed on this site (a GET navigation, which carries no Origin header): the browser must say the
+ * request came from this site (Sec-Fetch-Site: same-origin), or send a matching Origin. A link on another site, a
+ * typed or bookmarked address, and a browser that says neither are refused.
+ */
+export function sameOriginNavigation(headers: Headers): boolean {
+  return headers.get("sec-fetch-site") === "same-origin" || sameOrigin(headers);
+}
+
 /** The longest rate-limit window; see app.purge_rate_hits. */
 const MAX_WINDOW_SECONDS = 3600;
 

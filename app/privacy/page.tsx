@@ -106,6 +106,11 @@ export default function PrivacyPage() {
           will send them, and this page will name it.
         </li>
         <li>
+          Slack, only when an owner or admin of your workspace connects it in Settings: ShipShape then posts deadline reminders to
+          the one channel they picked, each with the workspace&apos;s name, the document&apos;s title, what&apos;s due and when, and
+          a link to Deadlines, never a file or a tax ID, and it can&apos;t read anything in your Slack.
+        </li>
+        <li>
           {AI_RECIPIENT}, only when you choose an AI action and tick the box for that action. Today there is one, &ldquo;What are they
           asking for?&rdquo;: it receives the request text you paste, with numbers shaped like an SSN or EIN removed, and never your
           documents. ShipShape keeps neither that text nor the answer; your history records only that a request was read. Anthropic
