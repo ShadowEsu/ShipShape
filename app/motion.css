@@ -6,7 +6,6 @@
 :root {
   --dur-press: 120ms;
   --dur-base: 240ms;
-  --dur-sheet: 320ms;
   --dur-moment: 600ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
@@ -54,11 +53,6 @@
   from {
     opacity: 0;
     transform: translateY(-4px);
-  }
-}
-@keyframes v2-drawer-in {
-  from {
-    transform: translateX(-100%);
   }
 }
 @keyframes v2-chip-out {
@@ -186,13 +180,6 @@
 .ui-v2 dialog:is(.sheet, .search-dialog)[open]::backdrop {
   animation: v2-fade-in var(--q-state) var(--q-ease) both;
 }
-/* The phone's menu slides in from the left; its backdrop fades. */
-.ui-v2 dialog.drawer[open] {
-  animation: v2-drawer-in var(--dur-sheet) var(--ease-out) both;
-}
-.ui-v2 dialog.drawer[open]::backdrop {
-  animation: v2-fade-in var(--dur-base) var(--ease-out) both;
-}
 
 @media (prefers-reduced-motion: reduce) {
   /* Reduced motion is static: things are simply where they end up. */
@@ -224,8 +211,8 @@
   ::view-transition-new(.v2-morph) {
     animation: v2-fade-in 120ms linear both;
   }
-  .ui-v2 dialog:is(.sheet, .search-dialog, .drawer)[open],
-  .ui-v2 dialog:is(.sheet, .search-dialog, .drawer)[open]::backdrop {
+  .ui-v2 dialog:is(.sheet, .search-dialog)[open],
+  .ui-v2 dialog:is(.sheet, .search-dialog)[open]::backdrop {
     animation: none;
   }
   .ui-v2 .notice-ok,

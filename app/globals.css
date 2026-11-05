@@ -334,10 +334,6 @@ body {
   .ui-v2 .side-count {
     @apply ml-auto text-[13px] leading-none font-normal text-ink-2 tabular-nums;
   }
-  /* In the phone's menu every row is a 44px target. */
-  .ui-v2 .drawer .side-row {
-    @apply min-h-11 text-[15px];
-  }
   .ui-v2 .account-row {
     @apply flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-[150ms] hover:bg-fill-2;
   }
@@ -810,5 +806,68 @@ html:has(.ui-v2 .top-bar) {
     z-index: -1;
     background: linear-gradient(to bottom, transparent, var(--paper) 16px);
     pointer-events: none;
+  }
+}
+/* The phone's tab bar (Design, 4 Nov 22:4x; Quiet §4): under 600px, 80px with the safe area, at the foot of the
+   screen; 22px icons over 11px labels, the page you're on in ink and the rest in ink-3. The page's foot and a docked
+   Save stop clear of it. */
+.ui-v2 .tab-bar {
+  display: none;
+}
+@media (max-width: 599px) {
+  .ui-v2 {
+    --tab-bar: calc(56px + max(24px, env(safe-area-inset-bottom)));
+  }
+  .ui-v2 .tab-bar {
+    display: block;
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 30;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: rgb(255 255 255 / 0.97);
+  }
+  .ui-v2 .tab-bar ul {
+    display: flex;
+    height: 56px;
+  }
+  .ui-v2 .tab-bar li {
+    flex: 1;
+    min-width: 0;
+  }
+  .ui-v2 .tab-item {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 11px;
+    line-height: 13px;
+    color: var(--ink-3);
+    transition: color var(--q-state) var(--q-ease);
+  }
+  .ui-v2 .tab-item[aria-current="page"] {
+    color: var(--ink);
+  }
+  .ui-v2 .tab-item:focus-visible {
+    outline-offset: -2px;
+  }
+  .ui-v2 #main {
+    padding-bottom: calc(var(--tab-bar) + 32px);
+  }
+  .ui-v2 #main:has(.save-dock) {
+    padding-bottom: calc(var(--tab-bar) + 32px + 44px + 16px);
+  }
+  html:has(.ui-v2 .save-dock) {
+    scroll-padding-bottom: calc(56px + max(24px, env(safe-area-inset-bottom)) + 8px + 44px + 16px);
+  }
+  .ui-v2 .save-dock {
+    bottom: calc(var(--tab-bar) + 8px);
+  }
+  /* The paper behind the docked Save runs down to the tab bar, not the screen's foot. */
+  .ui-v2 .save-dock::before {
+    inset: -16px 0 -8px;
   }
 }

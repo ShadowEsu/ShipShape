@@ -3,26 +3,20 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Icon, type IconName } from "@/components/icons";
+import { findByName, type SearchTool } from "@/components/app-sections";
+import { Icon } from "@/components/icons";
 import { searchAction, searchPeopleAction, type SearchHit } from "./search-actions";
-
-/** A tool as the search box lists it: Home's tools, with the closed gate's words when there is one. */
-export interface SearchTool {
-  name: string;
-  href: string;
-  icon: IconName;
-  tag: string | null;
-}
 
 /** How long typing pauses before the documents are asked for. */
 const PAUSE_MS = 150;
 
 /**
- * ⌘K: one field that finds a tool by its name (in the browser), and the workspace's documents by their words and its
- * people by name or company (the server, under row level security). Up and Down move between the results, Enter opens the first, Escape closes.
- * The full list is one link away: Documents with the same words.
+ * ⌘K: one field that finds a tool or a page by its name (in the browser), and the workspace's documents by their words
+ * and its people by name or company (the server, under row level security). Up and Down move between the results,
+ * Enter opens the first, Escape closes. The full list is one link away: Documents with the same words. With nothing
+ * typed it lists the tools; the pages (every destination the sidebar and the tab bar have) come up by name.
  */
-export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialogElement | null>; tools: readonly SearchTool[] }) {
+export function SearchDialog({ open, tools, pages }: { open: React.RefObject<HTMLDialogElement | null>; tools: readonly SearchTool[]; pages: readonly SearchTool[] }) {
   const router = useRouter();
   const path = usePathname();
   const [q, setQ] = useState("");
@@ -49,12 +43,12 @@ export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialog
     return () => clearTimeout(t);
   }, [words]);
 
-  const lower = words.toLowerCase();
-  const toolHits = words === "" ? tools : tools.filter((t) => t.name.toLowerCase().includes(lower));
+  const toolHits = words === "" ? tools : findByName(tools, words);
+  const pageHits = findByName(pages, words);
   const docs = hits.q === words ? hits.rows : [];
   const people = hits.q === words ? hits.people : [];
   const waiting = words !== "" && (pending || hits.q !== words);
-  const status = words === "" ? "" : waiting ? "Searching…" : `${toolHits.length + docs.length + people.length} found`;
+  const status = words === "" ? "" : waiting ? "Searching…" : `${toolHits.length + pageHits.length + docs.length + people.length} found`;
 
   // Arrow keys walk the result links in order, from the field into the list and back.
   const move = (e: React.KeyboardEvent) => {
@@ -124,6 +118,25 @@ export function SearchDialog({ open, tools }: { open: React.RefObject<HTMLDialog
                     </span>
                     <span className="min-w-0 flex-1 truncate">{t.name}</span>
                     {t.tag && <span className="shrink-0 text-xs text-ink-3">{t.tag}</span>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {pageHits.length > 0 && (
+          <section aria-labelledby="search-pages" className="mt-1">
+            <h2 id="search-pages" className="px-2 pt-1 pb-1.5 text-xs text-ink-3">
+              Pages
+            </h2>
+            <ul>
+              {pageHits.map((t) => (
+                <li key={t.href + t.name}>
+                  <Link href={t.href} data-hit="" className="search-row">
+                    <span className="row-icon">
+                      <Icon name={t.icon} size={18} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{t.name}</span>
                   </Link>
                 </li>
               ))}

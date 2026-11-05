@@ -17,6 +17,8 @@ import AppNotFound from "@/app/app/not-found";
 import AppHome from "@/app/app/page";
 import { searchAction } from "@/app/app/search-actions";
 import { ShellV2 } from "@/app/app/shell-v2";
+import WorkspacePage from "@/app/app/workspace/page";
+import { findByName, NAV_GROUPS, searchPages, TAB_ITEMS } from "@/components/app-sections";
 import { ErrorPanel } from "@/components/error-panel";
 import { PROFILE_FIELDS } from "@/lib/profile-fields";
 import { asService, asUser } from "@/lib/server/db";
@@ -30,6 +32,7 @@ import { seedSampleWorkspace } from "@/lib/server/sample";
 import { setSaved } from "@/lib/server/saved";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
+import { appTools } from "@/lib/server/tools";
 import { templateById, TEMPLATES } from "@/lib/templates/catalog";
 import { fmtDay } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
@@ -674,18 +677,73 @@ describe("the app's frame, redesigned", () => {
     expect(textOf(await shell(await signIn("shell-v2-real@example.com")))).not.toContain("Sample workspace");
   });
 
-  it("Feedback writes to the contact address, and isn't there while none is set; Help opens the FAQ, in the top bar and the phone's menu", async () => {
+  it("Feedback writes to the contact address, and isn't there while none is set; Help opens the FAQ, in the top bar and on the workspace page", async () => {
     const ctx = await signIn("shell-v2-feedback@example.com");
-    expect(actionsOf(await shell(ctx)).filter((a) => a.label === "Feedback")).toEqual([]);
-    expect(actionsOf(await shell(ctx)).filter((a) => a.label === "Help")).toHaveLength(2);
+    const helpAndFeedback = (html: string) => actionsOf(html).filter((a) => a.label === "Feedback" || a.label === "Help");
+    expect(helpAndFeedback(await shell(ctx))).toEqual([{ tag: "a", label: "Help", href: "/faq" }]);
+    expect(helpAndFeedback(await renderPage(WorkspacePage, {}))).toEqual([{ tag: "a", label: "Help", href: "/faq" }]);
     vi.stubEnv("CONTACT_EMAIL", "hello@shipshape.example");
-    const html = await shell(ctx);
     const pair = [
       { tag: "a", label: "Help", href: "/faq" },
       { tag: "a", label: "Feedback", href: "mailto:hello@shipshape.example?subject=ShipShape%20feedback" },
     ];
-    // The top bar's (hidden on the phone), then the phone menu's.
-    expect(actionsOf(html).filter((a) => a.label === "Feedback" || a.label === "Help")).toEqual([...pair, ...pair]);
+    // The top bar's (hidden on the phone), and the workspace page's (the phone's way to them).
+    expect(helpAndFeedback(await shell(ctx))).toEqual(pair);
+    expect(helpAndFeedback(await renderPage(WorkspacePage, {}))).toEqual(pair);
+  });
+
+  it("on the phone, the tab bar is exactly Home, Documents, Check, Deadlines and Passport, with the page you're on marked", async () => {
+    const ctx = await signIn("shell-v2-tabs@example.com");
+    at.path = "/app/documents/some-document";
+    const html = await shell(ctx);
+    const from = html.indexOf('<nav aria-label="Tabs"');
+    const bar = html.slice(from, html.indexOf("</nav>", from));
+    expect(actionsOf(bar).map(({ label, href }) => [label, href])).toEqual([
+      ["Home", "/app"],
+      ["Documents", "/app/documents"],
+      ["Check", "/app/ask"],
+      ["Deadlines", "/app/deadlines"],
+      ["Passport", "/app/passport"],
+    ]);
+    expect([...bar.matchAll(/<a [^>]*aria-current="page"[^>]*>/g)].map((m) => /\bhref="([^"]*)"/.exec(m[0])?.[1])).toEqual(["/app/documents"]);
+  });
+
+  it("the account button opens a list titled with the business's name: the sidebar's pages in its groups, then the account and Settings", async () => {
+    const ctx = await signIn("shell-v2-workspace@example.com");
+    const account = /<a [^>]*href="\/app\/workspace"[^>]*>/.exec(await shell(ctx))?.[0] ?? "";
+    expect(/\baria-label="([^"]*)"/.exec(account)?.[1]).toBe(`${ctx.name}: all pages and account`);
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, expires_on) values ($1, 'Old permit', 'permit', $2::date - 1)", [ctx.orgId, ctx.today]));
+    const html = await renderPage(WorkspacePage, {});
+    expect(textOf(/<h1[^>]*>[\s\S]*?<\/h1>/.exec(html)?.[0] ?? "")).toBe(ctx.name);
+    expect([...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1])).toEqual(["Work", "Track", "Business", "Account"]);
+    expect([...html.matchAll(/class="hair-title">([^<]*)</g)].map((m) => m[1])).toEqual([
+      "Home",
+      "Documents",
+      "Saved",
+      "Signed copies",
+      "Sent",
+      "Templates",
+      "History",
+      "Deadlines",
+      "Passport",
+      "Business facts",
+      "Collect",
+      "People",
+      "Help",
+      "Settings",
+    ]);
+    expect(textOf(html)).toContain("Deadlines 1 lapsed");
+    expect(textOf(html)).toMatch(/Account \S+ .+ Owner Settings Sign out$/);
+  });
+
+  it("search finds every page the sidebar and the tab bar go to by its name, in a sample and a real workspace", () => {
+    for (const ws of [{ demo: true, role: "owner" }, { demo: false, role: "member" }] satisfies Pick<Ctx, "demo" | "role">[]) {
+      const tools = appTools(ws);
+      const entries = [...tools, ...searchPages(tools)];
+      for (const [href, label] of [...NAV_GROUPS.flatMap((g) => g.items), ...TAB_ITEMS]) {
+        expect(findByName(entries, label).map((t) => t.href)).toContain(href);
+      }
+    }
   });
 });
 
