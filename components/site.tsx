@@ -12,7 +12,8 @@ const NAV: [href: string, label: string][] = [
 
 /**
  * The site's header: Quiet (each page's own `.site-quiet` chrome) unless SHIPSHAPE_UI=v1 brings back the earlier one.
- * The Quiet header stays at the top as the page scrolls: white at first, glass once content runs under it (Quiet §3).
+ * The Quiet header stays at the top as the page scrolls: the page's colour at first, glass once content runs under it
+ * (Quiet §3). The logo, the links in a pill in the middle, and one ink action (site direction A, row 520).
  */
 export function SiteHeader() {
   const cta = realDocsEnabled() ? "Sign in" : "Try the sample";
@@ -29,10 +30,10 @@ export function SiteHeader() {
                   {label}
                 </Link>
               ))}
-              <Link href="/signin" className="sq-btn sq-btn-line">
-                {cta}
-              </Link>
             </nav>
+            <Link href="/signin" className="sq-btn sq-btn-cta sq-header-cta">
+              {cta}
+            </Link>
           </div>
         </header>
       </>
@@ -55,6 +56,7 @@ export function SiteHeader() {
   );
 }
 
+/** The earlier footer's links (SHIPSHAPE_UI=v1); the Quiet footer groups the same ones. */
 const FOOTER: [href: string, label: string][] = [
   ["/for/contractors", "For contractors"],
   ["/for/freelancers", "For freelancers"],
@@ -66,6 +68,12 @@ const FOOTER: [href: string, label: string][] = [
   ["/faq#support", "Contact"],
 ];
 
+const FOOTER_GROUPS: { title: string; links: [href: string, label: string][] }[] = [
+  { title: "Product", links: [["/#how", "How it works"], ["/pricing", "Pricing"], ["/faq", "FAQ"], ["/status", "Status"]] },
+  { title: "For", links: [["/for/contractors", "Contractors"], ["/for/freelancers", "Freelancers"]] },
+  { title: "Company", links: [["/terms", "Terms"], ["/privacy", "Privacy"], ["/faq#support", "Contact"]] },
+];
+
 export function SiteFooter() {
   if (uiV2()) {
     return (
@@ -75,14 +83,21 @@ export function SiteFooter() {
             <Logo />
             <NotLegalAdvice className="sq-legal" />
           </div>
-          <nav aria-label="Footer" className="sq-footer-nav">
-            {FOOTER.map(([href, label]) => (
-              <Link key={href} href={href} className="sq-footer-link">
-                {label}
-              </Link>
-            ))}
-          </nav>
+          {FOOTER_GROUPS.map((group) => (
+            <nav key={group.title} aria-label={`Footer: ${group.title}`} className="sq-footer-nav">
+              <p className="sq-footer-title">{group.title}</p>
+              {group.links.map(([href, label]) => (
+                <Link key={href} href={href} className="sq-footer-link">
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          ))}
         </div>
+        {/* The name, large and faint, cut by the page's edge: decoration, so screen readers skip it. */}
+        <p className="sq-wordmark" aria-hidden="true">
+          ShipShape
+        </p>
       </footer>
     );
   }

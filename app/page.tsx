@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { aiEnabled } from "@/lib/server/ai";
 import { paymentsLive } from "@/lib/server/billing-config";
+import { accountSignIn } from "@/lib/server/cognito";
 import { appUrl, realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { homeJsonLd, jsonLdText } from "@/lib/server/seo";
 import { PITCH } from "./home-content";
@@ -17,7 +18,7 @@ export default function Home() {
   return (
     <>
       {site && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(homeJsonLd(site, PITCH)) }} />}
-      {uiV2() ? <HomeQuiet {...open} /> : <HomeV1 {...open} />}
+      {uiV2() ? <HomeQuiet {...open} accounts={accountSignIn(process.env) !== null} /> : <HomeV1 {...open} />}
     </>
   );
 }

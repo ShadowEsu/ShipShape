@@ -1,8 +1,8 @@
 /*
- * The public site in Quiet (Design SPEC 2026-11-04; values from its tokens.css). Everything here sits under
- * .site-quiet: the home page's wrapper, and the shared header and footer on every site page. SHIPSHAPE_UI=v1 renders
- * none of these classes, so the earlier site is untouched. Motion is transform and opacity only, and none of it plays
- * under reduced motion.
+ * The public site in Quiet (Design SPEC 2026-11-04; values from its tokens.css), with the home page in site direction A
+ * (row 520, after spacefs.com; Design notes 2026-11-05). Everything here sits under .site-quiet: the home page's wrapper,
+ * and the shared header and footer on every site page. SHIPSHAPE_UI=v1 renders none of these classes, so the earlier
+ * site is untouched. Motion is transform and opacity only, and none of it plays under reduced motion.
  */
 
 .site-quiet {
@@ -18,6 +18,9 @@
   --wait: #b26b00;
   --bad: #c42b1c;
   --info: #2f5fd0;
+  /* The home page's ground, with white cards on it; a heading's second line is --soft, 4.73:1 on it. */
+  --q-page: #f6f6f5;
+  --soft: #6e6e6a;
   /* The names the shared pieces inside (Logo, NotLegalAdvice, WaitlistForm) and Tailwind's classes read. */
   --paper: #ffffff;
   --accent: #0a0a0a;
@@ -44,20 +47,27 @@
   padding-inline: 24px;
 }
 
-/* Type (SPEC §2) */
+/* Type (SPEC §2; direction A's sizes: 76 and 56 on desktop, 40 and 34 on a phone) */
 .site-quiet .sq-display {
   font-family: var(--q-display);
-  font-size: 56px;
-  line-height: 1.04;
+  font-size: clamp(40px, 6vw, 76px);
+  line-height: 1.02;
   letter-spacing: -0.035em;
   font-weight: 500;
+  text-wrap: balance;
 }
 .site-quiet .sq-title {
   font-family: var(--q-display);
-  font-size: 32px;
-  line-height: 1.12;
-  letter-spacing: -0.025em;
-  font-weight: 600;
+  font-size: clamp(34px, 4.2vw, 56px);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  font-weight: 500;
+  text-wrap: balance;
+}
+/* A heading's second line. */
+.site-quiet .sq-soft {
+  display: block;
+  color: var(--soft);
 }
 .site-quiet .sq-h2 {
   font-size: 20px;
@@ -89,8 +99,14 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.site-quiet .sq-center {
+  text-align: center;
+}
+.site-quiet .sq-center .sq-lead {
+  margin-inline: auto;
+}
 
-/* Buttons (SPEC §4): one ink primary per view, a line secondary. 44px on the hero and on phones. */
+/* Buttons (SPEC §4): ink primary, a line secondary. 44px on the hero and on phones. */
 .site-quiet .sq-btn {
   display: inline-flex;
   align-items: center;
@@ -113,6 +129,7 @@
   opacity: 0.85;
 }
 .site-quiet .sq-btn-line {
+  background: var(--canvas);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .site-quiet .sq-btn-line:hover {
@@ -129,8 +146,8 @@
 }
 
 /* Header and footer, on every site page */
-/* The header stays at the top: white over the page's top, glass once content runs under it (Quiet §3, glass-spec L1
-   bar values; ScrollFlag sets data-scrolled). Nothing above it sets filter, opacity, mask or isolation. */
+/* The header stays at the top: the page's colour over its top, glass once content runs under it (Quiet §3, glass-spec
+   L1 bar values; ScrollFlag sets data-scrolled). Nothing above it sets filter, opacity, mask or isolation. */
 .site-quiet.sq-header {
   position: sticky;
   top: 0;
@@ -177,22 +194,29 @@
 html:has(.sq-header) {
   scroll-padding-top: 72px;
 }
+/* The logo, the links in a white pill in the middle, one ink action at the end. On a phone: the logo and the action. */
 .site-quiet .sq-header-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   height: 64px;
 }
+.site-quiet .sq-header-row > :first-child {
+  justify-self: start;
+}
 .site-quiet .sq-nav {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  display: none;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--line);
   font-size: 14px;
 }
 .site-quiet .sq-nav-link {
-  display: none;
-  padding: 8px 12px;
+  display: inline-flex;
+  padding: 6px 14px;
   border-radius: 999px;
   color: var(--ink-2);
 }
@@ -200,24 +224,29 @@ html:has(.sq-header) {
   color: var(--ink);
   background: var(--fill);
 }
-.site-quiet .sq-nav .sq-btn {
-  margin-left: 8px;
+.site-quiet .sq-header-cta {
+  grid-column: 3;
+  justify-self: end;
 }
 @media (min-width: 640px) {
-  .site-quiet .sq-nav-link {
-    display: inline-flex;
+  .site-quiet .sq-nav {
+    display: flex;
   }
 }
 
+/* The footer: the logo and the legal line, three columns of links, and the name large and faint, cut by the edge. */
 .site-quiet.sq-footer {
   border-top: 1px solid var(--line);
+  overflow: hidden;
 }
 .site-quiet .sq-footer-row {
   display: grid;
-  gap: 24px;
-  padding-block: 48px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+  padding-top: 56px;
 }
 .site-quiet .sq-footer-brand {
+  grid-column: 1 / -1;
   display: grid;
   gap: 12px;
   justify-items: start;
@@ -230,13 +259,18 @@ html:has(.sq-header) {
   color: var(--ink-2);
 }
 .site-quiet .sq-footer-nav {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  gap: 4px 24px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
   font-size: 14px;
 }
+.site-quiet .sq-footer-title {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
 .site-quiet .sq-footer-link {
+  justify-self: start;
   padding-block: 4px;
   color: var(--ink-2);
 }
@@ -244,17 +278,98 @@ html:has(.sq-header) {
   color: var(--ink);
   text-decoration: underline;
 }
-@media (min-width: 640px) {
+.site-quiet .sq-wordmark {
+  margin-top: 64px;
+  font-family: var(--q-display);
+  font-size: clamp(56px, 20vw, 280px);
+  font-weight: 600;
+  line-height: 0.8;
+  letter-spacing: -0.06em;
+  white-space: nowrap;
+  text-align: center;
+  color: #e6e6e3;
+  transform: translateY(18%);
+  user-select: none;
+}
+@media (min-width: 768px) {
   .site-quiet .sq-footer-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 2fr repeat(3, minmax(0, 1fr));
+  }
+  .site-quiet .sq-footer-brand {
+    grid-column: auto;
   }
 }
 
-/* The home page: white, 1120px, sections 96px apart (64px on a phone). */
+/* The home page, direction A: the page in --q-page with white cards on it, sections 128px apart (88px on a phone). */
+.site-quiet.sq-home {
+  background: var(--q-page);
+}
+.site-quiet.sq-home .sq-header:not([data-scrolled]) {
+  background-color: var(--q-page);
+}
+.site-quiet .sq-section {
+  margin-top: 128px;
+}
+.site-quiet .sq-section .sq-title + .sq-lead,
+.site-quiet .sq-section .sq-title + .sq-meta {
+  margin-top: 20px;
+}
+.site-quiet .sq-section .sq-label + .sq-title {
+  margin-top: 8px;
+}
+.site-quiet .sq-after {
+  margin-top: 24px;
+}
+.site-quiet .sq-card {
+  background: var(--canvas);
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  padding: 20px 24px;
+}
+
+/* Hero: centred in the first screen. Behind it, the ruled lines of a blank form (at most 5% ink), clear of the text. */
 .site-quiet .sq-hero {
+  position: relative;
+  isolation: isolate;
   display: grid;
-  gap: 48px;
-  padding-top: 96px;
+  align-items: center;
+  min-height: calc(100vh - 64px);
+  min-height: calc(100svh - 64px);
+  padding-block: 48px 80px;
+  text-align: center;
+}
+.site-quiet .sq-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: repeating-linear-gradient(to bottom, transparent 0 31px, rgb(10 10 10 / 0.05) 31px 32px);
+  -webkit-mask-image: radial-gradient(60% 55% at 50% 52%, transparent 30%, #000 75%), linear-gradient(to bottom, transparent 0, #000 160px);
+  -webkit-mask-composite: source-in;
+  mask-image: radial-gradient(60% 55% at 50% 52%, transparent 30%, #000 75%), linear-gradient(to bottom, transparent 0, #000 160px);
+  mask-composite: intersect;
+}
+.site-quiet .sq-hero-inner {
+  display: grid;
+  justify-items: center;
+}
+.site-quiet .sq-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  margin-bottom: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.site-quiet .sq-chip .sq-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--ok);
 }
 .site-quiet .sq-hero .sq-lead {
   margin-top: 24px;
@@ -262,141 +377,468 @@ html:has(.sq-header) {
 .site-quiet .sq-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  justify-content: center;
+  gap: 10px;
   margin-top: 32px;
 }
 .site-quiet .sq-hero .sq-note {
   margin-top: 16px;
 }
-.site-quiet .sq-hero-visual {
-  display: grid;
-  gap: 16px;
-  max-width: 560px;
-}
-@media (min-width: 1024px) {
-  .site-quiet .sq-hero {
-    grid-template-columns: minmax(0, 1fr) 520px;
-    gap: 64px;
-    align-items: start;
+
+/*
+ * The hero's arrival (the reference's declared timing, row 520 spec): five lines rise 16px over 1100ms, 120ms apart.
+ * The heading moves but never fades, so it counts as painted from the first frame (LCP). While the intro's white screen
+ * is up, they wait under it and rise when it lifts.
+ */
+@keyframes sq-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
   }
 }
+@keyframes sq-rise-move {
+  from {
+    transform: translateY(16px);
+  }
+}
+.site-quiet .sq-rise {
+  animation: sq-rise 1100ms var(--q-reveal) both;
+}
+.site-quiet .sq-display.sq-rise {
+  animation-name: sq-rise-move;
+}
+.site-quiet .sq-rise-0 {
+  animation-delay: 60ms;
+}
+.site-quiet .sq-rise-1 {
+  animation-delay: 180ms;
+}
+.site-quiet .sq-rise-2 {
+  animation-delay: 300ms;
+}
+.site-quiet .sq-rise-3 {
+  animation-delay: 420ms;
+}
+.site-quiet .sq-rise-4 {
+  animation-delay: 540ms;
+}
+.site-quiet.sq-home:has(.site-intro.is-on) .sq-rise {
+  animation-play-state: paused;
+}
 
-.site-quiet .sq-email {
+/* An app window drawn by us: neutral dots, the page's name, the app's own still. On a phone: just the pane, 1:1. */
+.site-quiet .sq-win {
+  overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: 14px;
+  background: var(--canvas);
+  box-shadow:
+    0 1px 2px rgb(10 10 10 / 0.04),
+    0 24px 64px -28px rgb(10 10 10 / 0.22);
+  text-align: left;
 }
-.site-quiet .sq-email-body {
-  margin-top: 12px;
-  white-space: pre-line;
+.site-quiet .sq-win-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding-inline: 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfbfa;
 }
-.site-quiet .sq-email .sq-meta {
-  margin-top: 16px;
+.site-quiet .sq-win-bar i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #dcdcd9;
 }
-
-/* Product screenshots: radius 16 on a --fill panel (SPEC §3, §7). */
-.site-quiet .sq-shot-panel {
-  background: var(--fill);
-  border-radius: 16px;
-  padding: 24px;
+.site-quiet .sq-win-bar span {
+  flex: 1;
+  margin-right: 51px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-2);
 }
-.site-quiet picture {
-  display: block;
-}
-.site-quiet .sq-shot {
+.site-quiet .sq-win-shot {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 16px;
-  box-shadow: 0 0 0 1px var(--line);
 }
 
-.site-quiet .sq-section {
-  margin-top: 96px;
+/*
+ * The tour. As the server sends it (and under reduced motion, or without JavaScript): the 3 scenes stacked, each under
+ * its step. Pinned (SiteTour sets data-pinned): a 100svh stage held for 300svh of scroll, the scenes cross-fading in one
+ * place and the step pills following; svh, so iOS Safari's address bar can't move it mid-pin (Design MUST 1).
+ */
+.site-quiet .sq-tour {
+  margin-top: 48px;
 }
-.site-quiet .sq-section > .sq-label + .sq-title {
-  margin-top: 8px;
-}
-.site-quiet .sq-section-head .sq-lead {
-  margin-top: 16px;
-}
-.site-quiet .sq-section > .sq-note,
-.site-quiet .sq-section > .sq-lead {
+.site-quiet .sq-tour-section > .sq-note {
   margin-top: 24px;
 }
-
-.site-quiet .sq-packet {
+.site-quiet .sq-tour-stage {
   display: grid;
-  gap: 32px;
-  margin-top: 32px;
-  padding: 48px;
+  justify-items: center;
+  padding-inline: 24px;
 }
-.site-quiet .sq-papers {
+.site-quiet .sq-tour-scenes {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
-  list-style: none;
+  gap: 56px;
+  width: min(960px, 100%);
+}
+.site-quiet .sq-tour-scene {
+  display: grid;
+  gap: 16px;
   margin: 0;
-  padding: 0;
 }
-.site-quiet .sq-paper-name {
-  margin-top: 12px;
-  font-size: 13px;
-  line-height: 1.4;
-  font-weight: 500;
+.site-quiet .sq-tour-caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
   color: var(--ink-2);
 }
-.site-quiet .sq-passport {
-  justify-self: center;
-  width: 100%;
-  max-width: 976px;
+.site-quiet .sq-tour-n {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
 }
-.site-quiet .sq-passport .sq-meta {
-  margin-top: 12px;
+.site-quiet .sq-tour-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+.site-quiet .sq-tour-steps {
+  display: none;
+}
+.site-quiet .sq-tour[data-pinned] {
+  height: 300vh;
+  height: 300svh;
+}
+.site-quiet .sq-tour[data-pinned] .sq-tour-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  align-content: center;
+  gap: 20px;
+  padding-block: 80px 24px;
+}
+.site-quiet .sq-tour[data-pinned] .sq-tour-scenes {
+  gap: 0;
+  width: min(960px, 100%, calc((100svh - 240px) * 1.6));
+}
+.site-quiet .sq-tour[data-pinned] .sq-tour-scene {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transform: translateY(12px) scale(0.985);
+  transition:
+    opacity 500ms var(--q-ease),
+    transform 700ms var(--q-reveal);
+}
+.site-quiet .sq-tour[data-pinned] .sq-tour-scene[data-on] {
+  opacity: 1;
+  transform: none;
+}
+/* While pinned, the pills stand in for the captions on screen; screen readers still get every caption. */
+.site-quiet .sq-tour[data-pinned] .sq-tour-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.site-quiet .sq-tour[data-pinned] .sq-tour-steps {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+.site-quiet .sq-tour-steps ol {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-quiet .sq-tour-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 14px;
+  color: var(--ink-2);
+  transition:
+    background-color 300ms var(--q-ease),
+    color 300ms var(--q-ease);
+}
+.site-quiet .sq-tour-steps li b {
+  font-weight: 500;
+  color: var(--ink);
+}
+.site-quiet .sq-tour-steps li[data-on] {
+  background: var(--ink);
+  color: #ffffff;
+  box-shadow: none;
+}
+.site-quiet .sq-tour-steps li[data-on] b {
+  color: #ffffff;
+}
+/* Below 480px the three titles don't fit one row: each pill keeps its number and one word (the line under says more). */
+.site-quiet .sq-tour-step-short {
+  display: none;
+}
+@media (max-width: 479px) {
+  .site-quiet .sq-tour-step-long {
+    display: none;
+  }
+  .site-quiet .sq-tour-step-short {
+    display: inline;
+  }
+}
+/* Two lines held for every scene's line, so the steps don't move when a longer one wraps (the 390 tour). */
+.site-quiet .sq-tour-line {
+  min-height: 3em;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-2);
 }
 
-.site-quiet .sq-cols {
+/* The four things it does: the heading holds still beside numbered rows; two cards to the pages for each trade. */
+.site-quiet .sq-rows {
   display: grid;
-  gap: 24px;
-  margin-top: 32px;
-  list-style: none;
+  gap: 40px;
+}
+.site-quiet .sq-rows-head .sq-lead {
+  margin-top: 20px;
+}
+.site-quiet .sq-rows-list {
+  margin: 0;
   padding: 0;
+  list-style: none;
 }
-.site-quiet .sq-cols > li {
+.site-quiet .sq-rows-list > li {
   display: grid;
-  align-content: start;
-  gap: 8px;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 8px 16px;
+  padding-block: 24px;
   border-top: 1px solid var(--line);
-  padding-top: 24px;
 }
-.site-quiet .sq-cols .sq-link {
-  justify-self: start;
-  margin-top: 4px;
+.site-quiet .sq-rows-list > li:last-child {
+  border-bottom: 1px solid var(--line);
 }
-@media (min-width: 768px) {
-  .site-quiet .sq-cols-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .site-quiet .sq-cols-4 {
+.site-quiet .sq-rows-list .sq-body {
+  grid-column: 2;
+}
+.site-quiet .sq-rows-n {
+  padding-top: 4px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.site-quiet .sq-cards2 {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+}
+.site-quiet .sq-card-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--ink);
+}
+.site-quiet .sq-card-link:hover {
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+.site-quiet .sq-card-link .sq-meta {
+  display: block;
+}
+.site-quiet .sq-card-line {
+  display: block;
+  margin-top: 2px;
+  font-weight: 500;
+}
+/* Ink, like the link it ends (Design MUST 5). */
+.site-quiet .sq-arrow {
+  font-size: 18px;
+  color: var(--ink);
+}
+@media (min-width: 600px) {
+  .site-quiet .sq-cards2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (min-width: 1024px) {
-  .site-quiet .sq-cols-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+@media (min-width: 900px) {
+  .site-quiet .sq-rows {
+    grid-template-columns: 5fr 7fr;
+    gap: 64px;
+    align-items: start;
+  }
+  .site-quiet .sq-rows-head {
+    position: sticky;
+    top: 112px;
+  }
+  .site-quiet .sq-rows-list > li {
+    grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: 24px;
+    padding-block: 28px;
+  }
+  .site-quiet .sq-rows-list .sq-body {
+    grid-column: auto;
   }
 }
 
+/* The ink band: what ShipShape is not, and four facts from TRUST (Design: C's band, grafted after the rows). */
+.site-quiet .sq-band {
+  display: grid;
+  gap: 40px;
+  padding: 40px 24px;
+  border-radius: 22px;
+  background: var(--ink);
+  color: #ffffff;
+}
+.site-quiet .sq-band-label {
+  font-size: 13px;
+  color: #c8c8c4;
+}
+.site-quiet .sq-band .sq-title {
+  margin-top: 10px;
+}
+/* 7.6:1 on the ink. */
+.site-quiet .sq-band-soft {
+  display: block;
+  color: #a3a39f;
+}
+.site-quiet .sq-band .sq-lead {
+  margin-top: 20px;
+  color: #c8c8c4;
+}
+.site-quiet .sq-band-list {
+  display: grid;
+  align-content: center;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #e6e6e2;
+}
+.site-quiet .sq-band-list > li {
+  display: flex;
+  gap: 12px;
+}
+.site-quiet .sq-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.site-quiet .sq-band .sq-icon {
+  stroke: #ffffff;
+}
+@media (min-width: 900px) {
+  .site-quiet .sq-band {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 64px;
+    padding: 72px 64px;
+    border-radius: 28px;
+  }
+}
+
+/* Deadlines, in a window on a soft wall. */
+.site-quiet .sq-wall {
+  margin-top: 48px;
+  padding: 64px;
+  border-radius: 28px;
+  background: radial-gradient(120% 90% at 20% 0%, #ffffff 0%, #eeeeeb 55%, #e4e6e3 100%);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.site-quiet .sq-wall .sq-win {
+  max-width: 980px;
+  margin-inline: auto;
+}
+
+/* Who it's for: a card each, the first page they're asked for most rising out of a grey well. */
+.site-quiet .sq-cases {
+  display: grid;
+  gap: 16px;
+  margin: 40px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.site-quiet .sq-case {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border-radius: 22px;
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.site-quiet .sq-case-well {
+  display: grid;
+  place-items: end center;
+  height: 240px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--fill-2);
+}
+.site-quiet .sq-case-well img {
+  width: 62%;
+  height: auto;
+  border-radius: 6px 6px 0 0;
+  box-shadow: 0 24px 64px -28px rgb(10 10 10 / 0.3);
+  transform: translateY(18px);
+}
+.site-quiet .sq-case-text {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 20px 12px 12px;
+}
+.site-quiet .sq-link-arrow {
+  justify-self: start;
+  margin-top: 4px;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (min-width: 900px) {
+  .site-quiet .sq-cases {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Where things stand: each capability with its status, in one card. */
 .site-quiet .sq-capabilities {
   display: grid;
   column-gap: 48px;
   margin-top: 32px;
+  padding-block: 8px;
   list-style: none;
-  padding: 0;
 }
 .site-quiet .sq-capabilities > li {
   border-top: 1px solid var(--line);
   padding-block: 16px;
+}
+.site-quiet .sq-capabilities > li:first-child {
+  border-top-color: transparent;
 }
 .site-quiet .sq-capability-head {
   display: flex;
@@ -412,6 +854,9 @@ html:has(.sq-header) {
 @media (min-width: 768px) {
   .site-quiet .sq-capabilities {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .site-quiet .sq-capabilities > li:nth-child(2) {
+    border-top-color: transparent;
   }
 }
 
@@ -440,63 +885,180 @@ html:has(.sq-header) {
   box-shadow: inset 0 0 0 1.5px var(--ink-3);
 }
 
-.site-quiet .sq-split {
+/* Pricing: two plans, the ink button on Pro only. */
+.site-quiet .sq-plans {
   display: grid;
-  gap: 48px;
+  gap: 16px;
+  margin-top: 48px;
+  text-align: left;
 }
-.site-quiet .sq-split .sq-title {
-  margin-top: 8px;
-}
-.site-quiet .sq-split .sq-lead {
-  margin-top: 16px;
-}
-.site-quiet .sq-trust {
+.site-quiet .sq-plan {
   display: grid;
-  gap: 12px;
-  list-style: none;
-  padding: 0;
+  align-content: start;
+  gap: 16px;
+  padding: 28px;
+}
+.site-quiet .sq-plan .sq-btn {
+  justify-self: start;
+}
+.site-quiet .sq-price {
+  font-family: var(--q-display);
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-weight: 500;
+}
+.site-quiet .sq-price small {
+  font-size: 14px;
+  letter-spacing: 0;
+  font-weight: 400;
   color: var(--ink-2);
 }
-.site-quiet .sq-trust > li {
+.site-quiet .sq-ticks {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+}
+.site-quiet .sq-ticks > li {
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
-.site-quiet .sq-icon {
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.site-quiet .sq-ticks > li::before {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 7px;
+  margin-top: 6px;
+  border: solid var(--ink);
+  border-width: 0 0 1.5px 1.5px;
+  transform: rotate(-45deg);
 }
-@media (min-width: 1024px) {
-  .site-quiet .sq-split {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (min-width: 768px) {
+  .site-quiet .sq-plans {
+    grid-template-columns: repeat(2, minmax(0, 380px));
+    justify-content: center;
   }
 }
 
-.site-quiet .sq-closing {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+/* Questions: the heading beside the list, which opens and closes by keyboard as well. */
+.site-quiet .sq-faq {
+  display: grid;
   gap: 32px;
 }
-.site-quiet .sq-closing .sq-lead {
+.site-quiet .sq-faq .sq-lead {
   margin-top: 16px;
 }
-@media (min-width: 1024px) {
-  .site-quiet .sq-closing {
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: space-between;
+.site-quiet .sq-faq-item {
+  padding-block: 20px;
+  border-top: 1px solid var(--line);
+}
+.site-quiet .sq-faq-item:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.site-quiet .sq-faq-item summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+.site-quiet .sq-faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.site-quiet .sq-faq-item summary::after {
+  content: "+";
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ink-2);
+}
+.site-quiet .sq-faq-item[open] summary::after {
+  content: "\2212";
+}
+.site-quiet .sq-faq-item summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.site-quiet .sq-faq-item > .sq-body {
+  max-width: 40em;
+  margin-top: 12px;
+}
+@media (min-width: 900px) {
+  .site-quiet .sq-faq {
+    grid-template-columns: 5fr 7fr;
+    gap: 64px;
   }
+}
+
+/* The close: the three first pages fanned over the last line. */
+.site-quiet .sq-fan {
+  position: relative;
+  width: 420px;
+  max-width: 100%;
+  height: 220px;
+  margin: 0 auto 40px;
+}
+.site-quiet .sq-fan img {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 150px;
+  height: auto;
+  border-radius: 6px;
+  box-shadow: 0 24px 64px -28px rgb(10 10 10 / 0.3);
+  transform-origin: 50% 120%;
+}
+.site-quiet .sq-fan img:nth-child(1) {
+  transform: translateX(-50%) rotate(-12deg) translateX(-70px);
+}
+.site-quiet .sq-fan img:nth-child(2) {
+  z-index: 1;
+  transform: translateX(-50%) translateY(-14px);
+}
+.site-quiet .sq-fan img:nth-child(3) {
+  transform: translateX(-50%) rotate(12deg) translateX(70px);
+}
+.site-quiet .sq-closing .sq-note {
+  margin-top: 14px;
 }
 
 .site-quiet.sq-home > .sq-footer {
-  margin-top: 96px;
+  margin-top: 128px;
+}
+
+/* Below 900px: the tour and Deadlines show one pane of the app at about 1:1, no window bar (Design MUST 2). */
+@media (max-width: 899px) {
+  .site-quiet .sq-win {
+    border-radius: 16px;
+  }
+  .site-quiet .sq-win-bar {
+    display: none;
+  }
+  .site-quiet .sq-tour-scenes,
+  .site-quiet .sq-tour[data-pinned] .sq-tour-scenes {
+    width: min(366px, 100%);
+  }
+  .site-quiet .sq-tour[data-pinned] .sq-tour-stage {
+    gap: 14px;
+    padding-block: 76px 16px;
+  }
+  /* On a short screen the pane keeps its top and loses its bottom, never its scale. */
+  .site-quiet .sq-tour[data-pinned] .sq-win-shot {
+    max-height: calc(100svh - 230px);
+    object-fit: cover;
+    object-position: top;
+  }
+  .site-quiet .sq-wall {
+    padding: 16px;
+    border-radius: 22px;
+  }
+  .site-quiet .sq-wall .sq-win {
+    max-width: 366px;
+  }
 }
 
 /* Phones (< 600px, SPEC §2-§4) */
@@ -504,11 +1066,8 @@ html:has(.sq-header) {
   .site-quiet .sq-wrap {
     padding-inline: 20px;
   }
-  .site-quiet .sq-display {
-    font-size: 38px;
-  }
-  .site-quiet .sq-title {
-    font-size: 28px;
+  .site-quiet .sq-tour-stage {
+    padding-inline: 20px;
   }
   .site-quiet .sq-h2 {
     font-size: 18px;
@@ -519,26 +1078,26 @@ html:has(.sq-header) {
   .site-quiet .sq-btn {
     height: 44px;
   }
-  .site-quiet .sq-section,
+  .site-quiet .sq-section {
+    margin-top: 88px;
+  }
   .site-quiet.sq-home > .sq-footer {
-    margin-top: 64px;
+    margin-top: 88px;
   }
-  .site-quiet .sq-shot-panel {
-    padding: 16px;
+  /* The text block is most of the screen: the lines show only above and below it. */
+  .site-quiet .sq-hero::before {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 64px, #000 18%, transparent 28%, transparent 78%, #000 88%);
+    -webkit-mask-composite: source-over;
+    mask-image: linear-gradient(to bottom, transparent 0, #000 64px, #000 18%, transparent 28%, transparent 78%, #000 88%);
+    mask-composite: add;
   }
-  .site-quiet .sq-packet {
-    gap: 24px;
+  /* The stack 1.2 times its phone size, so the pages read as forms (Design). */
+  .site-quiet .sq-fan {
+    width: 340px;
+    height: 200px;
   }
-  /* The 3 pages scroll sideways, each 72% of the row, and snap. */
-  .site-quiet .sq-papers {
-    display: flex;
-    gap: 12px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-  }
-  .site-quiet .sq-papers > li {
-    flex: 0 0 72%;
-    scroll-snap-align: start;
+  .site-quiet .sq-fan img {
+    width: 132px;
   }
 }
 
@@ -601,6 +1160,13 @@ html:has(.sq-header) {
     transition: none;
   }
   .site-quiet .sq-btn-cta {
+    transition: none;
+  }
+  .site-quiet .sq-rise {
+    animation: none;
+  }
+  .site-quiet .sq-tour-scene,
+  .site-quiet .sq-tour-steps li {
     transition: none;
   }
 }
