@@ -5,10 +5,10 @@ import { Icon } from "@/components/icons";
 
 /**
  * A sample paper's first page in the document page's 3:4 crop; a tap opens the whole page in a sheet (Design, 4 Nov):
- * from the bottom on a phone, centred from md up. Both are the same drawing the server sent (`page`), so opening it
- * reads no file and asks the server for nothing.
+ * from the bottom on a phone, centred from md up. A drawn paper is the same drawing the server sent (`page`) in both,
+ * so opening it reads no file and asks the server for nothing; the W-9's sheet shows its whole-page image (`full`).
  */
-export function PagePreview({ title, page }: { title: string; page: React.ReactNode }) {
+export function PagePreview({ title, page, full = page }: { title: string; page: React.ReactNode; full?: React.ReactNode }) {
   const sheet = useRef<HTMLDialogElement>(null);
   return (
     <>
@@ -44,7 +44,7 @@ export function PagePreview({ title, page }: { title: string; page: React.ReactN
         {/* Taller than the window from md up: focusable, so arrows and Page Down scroll it where browsers don't make a
             scroller focusable themselves (Safari), as the pricing table's scroller is. */}
         <div role="region" aria-label="The whole first page" tabIndex={0} className="max-h-[80dvh] overflow-y-auto px-4 pb-4">
-          <div className="overflow-hidden rounded-md border border-[var(--line-2)]">{page}</div>
+          <div className="overflow-hidden rounded-md border border-[var(--line-2)]">{full}</div>
         </div>
       </dialog>
     </>

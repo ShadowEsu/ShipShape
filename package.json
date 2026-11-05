@@ -15,7 +15,8 @@
     "lint": "tsc --noEmit && node scripts/check-sql.mjs && node scripts/check-pdf-load.mjs",
     "test": "vitest run",
     "test:s3": "SHIPSHAPE_S3_TEST_ENDPOINT=http://127.0.0.1:5917 vitest run tests/blob-store.test.ts",
-    "eval:ai": "vitest run --config vitest.evals.config.ts"
+    "eval:ai": "vitest run --config vitest.evals.config.ts",
+    "sample:w9-image": "vitest run --config scripts/sample-w9-image.config.mts"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "3.1161.0",
