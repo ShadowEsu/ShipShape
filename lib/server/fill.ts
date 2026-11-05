@@ -225,7 +225,7 @@ async function renderW9(v: Values, facts: Facts, today: string, sample: boolean)
   }
   form.flatten();
   if (sample) {
-    // Like the sample's own certificates (lib/pdf/sample-pdf.ts): a PDF filled in a sample says so on every page (W14-2).
+    // Like the sample's own papers (lib/pdf/sample-papers.ts): a PDF filled in a sample says so on every page (W14-2).
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
     const width = bold.widthOfTextAtSize(SAMPLE_STAMP, 96);
     for (const p of doc.getPages()) {
