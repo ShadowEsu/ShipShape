@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { MARK_PATHS } from "@/components/brand-mark";
 
 // The link preview for every page (shared pages too: it shows nothing about what's shared).
 export const alt = "ShipShape: your business paperwork, in one passport";
@@ -7,14 +8,15 @@ export const contentType = "image/png";
 
 export default function OpengraphImage() {
   return new ImageResponse(
-    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 72, background: "#f7f7f5", color: "#111111" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-        <svg width="64" height="64" viewBox="0 0 32 32">
-          <rect width="32" height="32" rx="8" fill="#111111" />
-          <path d="M7 19h18l-3 5H10z" fill="#ffffff" />
-          <path d="M16 7v10M16 7l6 8h-6" stroke="#ffffff" strokeWidth="2" fill="none" strokeLinejoin="round" />
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 72, background: "#ffffff", color: "#0a0a0a" }}>
+      {/* The lockup at 2.5x the app's: the mark about 1.4x the name's cap height, a 20px gap (16 + its own 3.75px side margin), then "ShipShape" at 600. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <svg width="60" height="60" viewBox="0 0 64 64">
+          {MARK_PATHS.map((d) => (
+            <path key={d} d={d} fill="#0a0a0a" />
+          ))}
         </svg>
-        <div style={{ fontSize: 40 }}>ShipShape</div>
+        <div style={{ fontSize: 40, fontWeight: 600 }}>ShipShape</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <div style={{ fontSize: 76, lineHeight: 1.05, letterSpacing: -2, maxWidth: 980 }}>Your business paperwork, in one passport.</div>
