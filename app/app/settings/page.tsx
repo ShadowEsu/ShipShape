@@ -9,6 +9,7 @@ import { billingView } from "@/lib/server/billing";
 import { signInMethod } from "@/lib/server/cognito";
 import { contactEmail, uiV2 } from "@/lib/server/flags";
 import { liveSessions, RECENT_AUTH_SECONDS, requireWorkspace, viewerZone } from "@/lib/server/session";
+import { SLACK_OUTCOMES, slackRow } from "@/lib/server/slack";
 import { dayOf } from "@/lib/today";
 import { signOut } from "../../signin/actions";
 import { signOutEverywhere, signOutSession } from "./actions";
@@ -19,13 +20,20 @@ import { SettingsV2 } from "./v2";
 
 export const metadata: Metadata = { title: "Settings" };
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; billing?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; billing?: string; slack?: string }> }) {
   const ctx = await requireWorkspace();
   const zone = await viewerZone();
-  const { error, billing } = await searchParams;
+  const { error, billing, slack: slackParam } = await searchParams;
   const contact = contactEmail();
   const exportError = exportProblem(error, contact);
-  const [view, goes, method, sessions] = await Promise.all([billingView(ctx), deletionPreview(ctx.userId), ctx.demo ? "local" : signInMethod(ctx.userId), liveSessions(ctx)]);
+  // Slack's row is the redesigned page's only (v1 has no section like it); null where Slack isn't offered at all.
+  const [view, goes, method, sessions, slack] = await Promise.all([
+    billingView(ctx),
+    deletionPreview(ctx.userId),
+    ctx.demo ? "local" : signInMethod(ctx.userId),
+    liveSessions(ctx),
+    slackRow(ctx),
+  ]);
   // Renaming is open before G3 (Security 0715 #3); a sample keeps its made-up name, and members can't rename.
   const canRename = !ctx.demo && ctx.role !== "member";
   if (uiV2())
@@ -41,6 +49,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         method={method}
         sessions={sessions}
         canRename={canRename}
+        slack={slack}
+        slackOutcome={SLACK_OUTCOMES.find((o) => o === slackParam)}
       />
     );
 
