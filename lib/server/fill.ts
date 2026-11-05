@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, PDFName, StandardFonts, TextAlignment, degrees, layoutMultilineText, rgb, type PDFFont } from "pdf-lib";
 import { z } from "zod";
-import { composePdf, inlineRuns, isPrintable, isPrintableText, type Block } from "@/lib/pdf/compose";
+import { composeMarks, composePdf, inlineRuns, isPrintable, isPrintableText, type Block } from "@/lib/pdf/compose";
+import type { PaperMark } from "@/lib/pdf/surface";
 import { makeInert } from "@/lib/pdf/inert";
 import type { EntityType, ProfileKey } from "@/lib/profile-fields";
 import { isVisible as visible, NDA_DEFAULT_PURPOSE } from "@/lib/templates/catalog";
@@ -225,7 +226,7 @@ async function renderW9(v: Values, facts: Facts, today: string, sample: boolean)
   }
   form.flatten();
   if (sample) {
-    // Like the sample's own certificates (lib/pdf/sample-pdf.ts): a PDF filled in a sample says so on every page (W14-2).
+    // Like the sample's own papers (lib/pdf/sample-papers.ts): a PDF filled in a sample says so on every page (W14-2).
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
     const width = bold.widthOfTextAtSize(SAMPLE_STAMP, 96);
     for (const p of doc.getPages()) {
@@ -254,7 +255,8 @@ const plusYears = (iso: string, years: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-async function renderNda(v: Values, sample: boolean): Promise<Rendered> {
+/** The NDA as blocks: the file and a sample's cover-page preview are both drawn from these. */
+async function ndaBlocks(v: Values, sample: boolean): Promise<Block[]> {
   const standard = await readFile(path.join(ROOT, "templates/common-paper-mnda-1.0/Mutual-NDA.md"), "utf8");
   const clauses = standard
     .split("\n")
@@ -313,10 +315,16 @@ async function renderNda(v: Values, sample: boolean): Promise<Rendered> {
     { type: "para", muted: true, size: 9, runs: [{ text: "Common Paper Mutual Non-Disclosure Agreement Version 1.0 (https://commonpaper.com/standards/mutual-nda/1.0/) free to use under CC BY 4.0." }] },
     ...stamp,
   ];
-  const bytes = await composePdf(blocks, {
+  return blocks;
+}
+
+const NDA_FOOTER = "Cover Page filled with ShipShape; Standard Terms unchanged from Common Paper (CC BY 4.0). ShipShape is not a law firm.";
+
+async function renderNda(v: Values, sample: boolean): Promise<Rendered> {
+  const bytes = await composePdf(await ndaBlocks(v, sample), {
     title: `Mutual NDA: ${v.p1_company} and ${v.p2_company}`,
     subject: "Common Paper Mutual NDA Version 1.0",
-    footer: "Cover Page filled with ShipShape; Standard Terms unchanged from Common Paper (CC BY 4.0). ShipShape is not a law firm.",
+    footer: NDA_FOOTER,
   });
   return {
     bytes,
@@ -325,6 +333,12 @@ async function renderNda(v: Values, sample: boolean): Promise<Rendered> {
     issuedOn: v.effective_date,
     expiresOn: v.mnda_term === "years" ? plusYears(v.effective_date, Number(v.mnda_years)) : null,
   };
+}
+
+/** A sample NDA's cover page as preview marks, drawn from the values it was filled with (spot 5b): its file's page 1. */
+export async function sampleNdaCover(v: Values): Promise<PaperMark[]> {
+  const [cover] = await composeMarks(await ndaBlocks(v, true), NDA_FOOTER);
+  return cover ?? [];
 }
 
 const SAMPLE_STAMP = "SAMPLE";

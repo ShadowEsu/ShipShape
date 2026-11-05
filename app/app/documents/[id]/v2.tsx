@@ -4,10 +4,13 @@ import { Notice, ValidityChip } from "@/components/app-ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { HashLanding } from "@/components/hash-landing";
 import { Icon } from "@/components/icons";
+import { PaperSvg } from "@/components/paper-svg";
 import { SubmitButton } from "@/components/submit-button";
 import { historyLabel } from "@/lib/history";
+import { LETTER } from "@/lib/pdf/surface";
 import { DOC_KINDS, DOCUMENT_HISTORY_SHOWN, type AuditRow, type DocKind, type DocRow, type VersionRow } from "@/lib/server/documents";
 import { SIGN_DAYS, type SignatureRequestRow } from "@/lib/server/esign";
+import type { SamplePreview } from "@/lib/server/sample";
 import { timeOf } from "@/lib/today";
 import type { TemplateInfo } from "@/lib/templates/types";
 import { StateChip } from "../../hair-row";
@@ -17,6 +20,7 @@ import { archive } from "../actions";
 import { DetailsListForm, SignRequestForm, VersionForm } from "../forms";
 import { archiveQuestion, versionWarning } from "../messages";
 import { DeleteForGood } from "./delete-dialog";
+import { PagePreview } from "./page-preview";
 import { ARCHIVED_ID, fieldSources, size, TITLE_ID } from "./shared";
 import { SignatureRequests } from "./signatures";
 import { StatusLanding } from "./status-landing";
@@ -93,6 +97,8 @@ export function DocumentV2(p: {
   kept: ReadonlySet<string>;
   /** An owner or admin (Security D3): an archived document offers Delete for good. */
   canDelete: boolean;
+  /** A sample's first page (lib/server/sample.ts samplePaperPreview): drawn from the values kept with it, or the W-9's images. */
+  preview: SamplePreview | null;
 }) {
   const { doc, versions, template, zone } = p;
   const latest = versions[0];
@@ -133,17 +139,30 @@ export function DocumentV2(p: {
       {p.notices}
 
       {/*
-        The first page's place. A paper card for every file: a real preview would read the file, and every read is a
-        history entry (Security, 20261102-1109). The 3:4 page sits in a fixed crop, so a preview can take its place without
-        moving anything.
+        The first page's place. A sample's drawn paper shows its page, drawn from the values kept with its version, and the
+        sample W-9 its images (spot 5b); every other file gets a paper card: a real preview would read the file, and every
+        read is a history entry (Security, 20261102-1109). The page sits in a fixed crop, so either fills it without moving
+        anything. The W-9's whole page loads only when its sheet opens (lazy, in a closed dialog).
       */}
-      <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl border border-line px-8 pt-6 md:h-64">
-        <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md border border-b-0 border-[var(--line-2)] bg-paper p-5">
-          <p className="doc-kind eyebrow">{DOC_KINDS[doc.kind]}</p>
-          <p className="mt-2 line-clamp-3 text-lg leading-snug font-medium">{doc.title}</p>
-          {latest && <p className="mt-3 font-mono text-xs text-ink-3">{FILE_TYPE[latest.mime]}</p>}
+      {p.preview && "marks" in p.preview ? (
+        <PagePreview title={doc.title} page={<PaperSvg marks={p.preview.marks} width={LETTER.w} height={LETTER.h} className="block h-auto w-full" />} />
+      ) : p.preview ? (
+        <PagePreview
+          title={doc.title}
+          page={<img src={p.preview.images.crop.src} width={p.preview.images.crop.width} height={p.preview.images.crop.height} alt="" decoding="async" className="block h-auto w-full" />}
+          full={
+            <img src={p.preview.images.full.src} width={p.preview.images.full.width} height={p.preview.images.full.height} alt="" loading="lazy" decoding="async" className="block h-auto w-full" />
+          }
+        />
+      ) : (
+        <div aria-hidden="true" className="h-52 overflow-hidden rounded-2xl border border-line px-8 pt-6 md:h-64">
+          <div className="mx-auto aspect-[3/4] w-full max-w-[300px] rounded-t-md border border-b-0 border-[var(--line-2)] bg-paper p-5">
+            <p className="doc-kind eyebrow">{DOC_KINDS[doc.kind]}</p>
+            <p className="mt-2 line-clamp-3 text-lg leading-snug font-medium">{doc.title}</p>
+            {latest && <p className="mt-3 font-mono text-xs text-ink-3">{FILE_TYPE[latest.mime]}</p>}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Where the Archived block was: after Restore it says so here (Design 05:33); after Archive it's read out only. */}
       <StatusLanding status={doc.status} />

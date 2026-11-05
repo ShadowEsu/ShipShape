@@ -1,5 +1,7 @@
 import "server-only";
-import { samplePdf } from "@/lib/pdf/sample-pdf";
+import { z } from "zod";
+import { SAMPLE_DRAWING, samplePaper, samplePaperMarks, samplePaperPdf, type SampleBusiness, type SamplePaper } from "@/lib/pdf/sample-papers";
+import type { PaperMark } from "@/lib/pdf/surface";
 import type { ProfileKey } from "@/lib/profile-fields";
 import { templateById } from "@/lib/templates/catalog";
 import type { Facts, TemplateInfo } from "@/lib/templates/types";
@@ -8,9 +10,9 @@ import { seedSampleVendors } from "./collect";
 import { encryptField } from "./crypto";
 import { asUser, type Tx } from "./db";
 import { listOutbox } from "./deadlines";
-import { insertDocument } from "./documents";
-import { completeSigning, createSignatureRequest, sendSigningCode } from "./esign";
-import { fillRecord, prefill, render } from "./fill";
+import { insertDocument, type VersionRow } from "./documents";
+import { completeSigning, createSignatureRequest, sendSigningCode, type SignatureRequestRow } from "./esign";
+import { fillRecord, prefill, render, sampleNdaCover } from "./fill";
 import { createPassport, openPassport, passportFileUrl } from "./passport";
 import { seedSamplePeople } from "./people";
 import type { Ctx } from "./profile";
@@ -39,6 +41,40 @@ const SAMPLE_FACTS: Record<ProfileKey, string> = {
   signer_title: "Managing member",
 };
 
+const FACTS: Facts = { values: SAMPLE_FACTS, ein: SAMPLE_EIN, einLast4: SAMPLE_EIN.slice(-4) };
+
+function template(id: string): TemplateInfo {
+  const t = templateById(id);
+  if (!t) throw new Error(`no template ${id}`);
+  return t;
+}
+
+/** The request the sample's W-9 answers, signed. */
+const W9_REQUEST = { requester: "Northwind Builders (sample)", sign: "on" };
+
+/** The sample's W-9 file: signed on `today`, or with the date left blank (""), as its preview images show it. */
+export async function sampleW9Pdf(today: string): Promise<Uint8Array> {
+  const t = template("irs-w9");
+  return (await render(t, { ...prefill(t, FACTS, today), ...W9_REQUEST }, FACTS, today, true)).bytes;
+}
+
+/**
+ * The sample W-9's first page as images in public/sample/ (spot 5b; Design, and Security P3 in 20261104-1327). The IRS
+ * form isn't drawn by ShipShape's code, so the browser can't draw it again as it does the other papers. `npm run
+ * sample:w9-image` makes them from `sampleW9Pdf("")`, the date left blank, since a fixed date would differ from the
+ * file's: the top of the page for the document page's crop, and the whole page for its sheet. `page` is that page's
+ * `pageHash`: a test checks it, so a change to the sample's facts, the IRS form or how it's filled fails until the
+ * images are made again under the next `number`.
+ */
+export const SAMPLE_W9_IMAGES = {
+  number: 1,
+  page: "ec298014bb3859e669b551babe54008fa64f56a11360209c795a62ad2f4becb9",
+  crop: { src: "/sample/w9-1-top.webp", width: 600, height: 480 },
+  full: { src: "/sample/w9-1.webp", width: 918, height: 1188 },
+};
+
+const sampleW9 = z.object({ kind: z.literal("w9"), images: z.literal(SAMPLE_W9_IMAGES.number) });
+
 async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides: Record<string, string>): Promise<string> {
   const start = prefill(t, facts, ctx.today);
   const values = { ...start, ...overrides };
@@ -51,7 +87,15 @@ async function filled(tx: Tx, ctx: Ctx, t: TemplateInfo, facts: Facts, overrides
     { title, kind: t.kind, counterparty: out.counterparty, issued_on: out.issuedOn, expires_on: out.expiresOn, template_id: t.id },
     { bytes: out.bytes, mime: "application/pdf" },
     "sample",
-    { template: t.id, templateVersion: t.source.version, fields: fillRecord(t, values, start) },
+    // The NDA keeps the values it was filled with, and which drawing drew it, so its preview draws its cover page from
+    // them; the W-9 keeps which images show its page (spot 5b).
+    {
+      template: t.id,
+      templateVersion: t.source.version,
+      fields: fillRecord(t, values, start),
+      ...(t.kind === "nda" && { paper: { kind: "nda", values }, drawn: SAMPLE_DRAWING }),
+      ...(t.kind === "w9" && { paper: { kind: "w9", images: SAMPLE_W9_IMAGES.number } }),
+    },
   );
 }
 
@@ -69,9 +113,8 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await tx.query("select app.set_tax_id($1, 'ein', $2, $3)", [orgId, encryptField(SAMPLE_EIN, orgId, "ein"), SAMPLE_EIN.slice(-4)]);
   await tx.query("select app.confirm_facts($1, $2)", [orgId, [...Object.keys(f).filter((k) => f[k as ProfileKey]), "ein"]]);
 
-  const facts: Facts = { values: f, ein: SAMPLE_EIN, einLast4: SAMPLE_EIN.slice(-4) };
-  const w9 = await filled(tx, ctx, templateById("irs-w9")!, facts, { requester: "Northwind Builders (sample)", sign: "on" });
-  await filled(tx, ctx, templateById("common-paper-mnda")!, facts, {
+  const w9 = await filled(tx, ctx, template("irs-w9"), FACTS, W9_REQUEST);
+  await filled(tx, ctx, template("common-paper-mnda"), FACTS, {
     effective_date: day(-40),
     mnda_term: "years",
     mnda_years: "1",
@@ -85,15 +128,18 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
     p2_notice: "contracts@northwind.example",
   });
 
-  const certificates: { title: string; kind: "coi" | "license" | "permit"; issuer: string; issued: number; expires: number; rows: [string, string][]; note: string }[] = [
+  // Full-page papers drawn for the sample (lib/pdf/sample-papers.ts), each with the dates the documents carry. The
+  // values a paper was drawn from stay with its version, so its preview is drawn from them too, never from details a
+  // visitor can edit afterwards (spot 5b).
+  const business: SampleBusiness = { legalName: f.legal_name, dba: f.dba, address: [f.address_line1, `${f.city}, ${f.state} ${f.postal_code}`], signer: f.signer_name };
+  const papers: { title: string; kind: "coi" | "license" | "permit"; issuer: string; issued: number; expires: number; paper: SamplePaper }[] = [
     {
       title: "Certificate of liability insurance",
       kind: "coi",
       issuer: "Example Mutual Insurance (sample)",
       issued: -344,
       expires: 21,
-      note: "A made-up insurance certificate, the kind contractors send to every new client.",
-      rows: [["Insured", "Harbor Plumbing LLC"], ["Insurer", "Example Mutual Insurance (sample)"], ["Policy number", "SAMPLE-GL-0000001"], ["General liability", "$1,000,000 each occurrence"], ["Policy period", `${day(-344)} to ${day(21)}`]],
+      paper: { kind: "coi", business, dates: { issued: day(-344), from: day(-344), to: day(21) } },
     },
     {
       title: "Contractor license",
@@ -101,8 +147,7 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       issuer: "State licensing board (sample)",
       issued: -480,
       expires: 250,
-      note: "A made-up state contractor license.",
-      rows: [["Licensee", "Harbor Plumbing LLC"], ["Classification", "Plumbing (sample)"], ["License number", "SAMPLE-000000"], ["Expires", day(250)]],
+      paper: { kind: "contractor-license", business, license: { issued: day(-480), expires: day(250), number: "SAMPLE-000000" } },
     },
     {
       title: "City business license",
@@ -110,18 +155,18 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
       issuer: "City of Springfield (sample)",
       issued: -377,
       expires: -12,
-      note: "A made-up city business license that lapsed, to show how ShipShape flags it.",
-      rows: [["Business", "Harbor Plumbing"], ["Account", "SAMPLE-BL-0000"], ["Valid through", day(-12)]],
+      paper: { kind: "city-license", business, license: { from: day(-377), to: day(-12), account: "SAMPLE-BL-0000" } },
     },
   ];
   let certificate: string | undefined;
-  for (const c of certificates) {
+  for (const c of papers) {
     const id = await insertDocument(
       tx,
       ctx,
       { title: `${c.title} (sample)`, kind: c.kind, issuer: c.issuer, issued_on: day(c.issued), expires_on: day(c.expires) },
-      { bytes: await samplePdf(c.title, c.rows, c.note), mime: "application/pdf" },
+      { bytes: await samplePaperPdf(c.paper), mime: "application/pdf" },
       "sample",
+      { paper: c.paper, drawn: SAMPLE_DRAWING },
     );
     if (c.kind === "coi") certificate = id;
   }
@@ -131,6 +176,55 @@ export async function seedSampleWorkspace(tx: Tx, orgId: string, userId: string,
   await seedSampleVendors(tx, ctx, day);
   // People (0046): three made-up contacts, so People has someone in it.
   await seedSamplePeople(tx, ctx);
+}
+
+const MNDA = templateById("common-paper-mnda");
+/**
+ * A sample NDA's kept values: the cover page is drawn from them by the template's own code, and only when every value
+ * the template's form requires is there (a record of nothing would still draw a plausible cover).
+ */
+const sampleNda = z
+  .object({ kind: z.literal("nda"), values: z.record(z.string().max(60), z.string().max(2000)) })
+  .refine(
+    ({ values }) =>
+      MNDA !== undefined && MNDA.fields.every((f) => !f.required || (f.when !== undefined && values[f.when.key] !== f.when.equals) || Boolean(values[f.key])),
+  );
+
+/** A sample paper's first page: drawn from marks (the papers ShipShape draws), or the sample W-9's images. */
+export type SamplePreview = { marks: PaperMark[] } | { images: typeof SAMPLE_W9_IMAGES };
+
+/**
+ * A sample document's first page (spot 5b), or null. Decided here, on the server: only in a sample, and only for a
+ * version the sample made. A drawn paper must be drawn with today's drawing (SAMPLE_DRAWING; its values kept with it)
+ * and those values must still read as a paper; the W-9 must name today's images (SAMPLE_W9_IMAGES). A signed copy
+ * starts with the pages of the version that was sent (lib/pdf/to-sign.ts, then the certificate appended), so its first
+ * page is that version's: the request leads back to it. Real documents never get one (their thumbnails wait for 5c);
+ * no file is read either way (Security 20261104-1327). Decorative, so a failure to draw it leaves the paper card,
+ * never the page broken.
+ */
+export async function samplePaperPreview(
+  ctx: Ctx,
+  versions: readonly Pick<VersionRow, "version" | "origin" | "fill_record">[],
+  requests: readonly Pick<SignatureRequestRow, "version" | "signed_version">[],
+): Promise<SamplePreview | null> {
+  if (!ctx.demo) return null;
+  const latest = versions[0];
+  const sent = latest?.origin === "signed" ? requests.find((r) => r.signed_version === latest.version)?.version : undefined;
+  const drawn = sent === undefined ? latest : versions.find((v) => v.version === sent);
+  const record = drawn?.origin === "sample" ? drawn.fill_record : null;
+  if (!record) return null;
+  if (sampleW9.safeParse(record.paper).success) return { images: SAMPLE_W9_IMAGES };
+  if (record.drawn !== SAMPLE_DRAWING) return null;
+  try {
+    const raw = record.paper;
+    const paper = samplePaper.safeParse(raw);
+    if (paper.success) return { marks: await samplePaperMarks(paper.data) };
+    const nda = sampleNda.safeParse(raw);
+    return nda.success ? { marks: await sampleNdaCover(nda.data.values) } : null;
+  } catch (e) {
+    console.error(`sample preview: not drawn (${e instanceof Error ? e.name : "error"})`);
+    return null;
+  }
 }
 
 /**
