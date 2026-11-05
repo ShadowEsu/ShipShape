@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { TERMS_VERSION } from "@/lib/legal";
 import { isTimeZone, todayIn, TZ_COOKIE } from "@/lib/today";
 import { asService, asUser } from "./db";
@@ -147,9 +148,10 @@ export type SignedIn = Session & Workspace & Viewer & { sessionId: string };
  * Design row 34's condition 4): the cookie's session row must be this person's, not signed out and
  * not expired; a session issued before the person last chose "Sign out on every device" is refused;
  * and the row's last_seen_at moves to now if it is over 10 minutes old, so most requests write
- * nothing and none waits on a second round trip.
+ * nothing and none waits on a second round trip. Cached for one server render (React `cache`): the app layout and the
+ * page both ask, and that was two round trips per page view. A server action isn't a render, so it always reads anew.
  */
-export async function requireWorkspace(): Promise<SignedIn> {
+export const requireWorkspace = cache(async (): Promise<SignedIn> => {
   const session = await getSession();
   if (!session) redirect("/signin");
   const [ws] = await asUser(session.userId, (tx) =>
@@ -180,7 +182,7 @@ export async function requireWorkspace(): Promise<SignedIn> {
     demo: ws.is_demo,
     today: await viewerToday(),
   };
-}
+});
 
 /** Ends every session this person has, on every device, this one included (Security E9). */
 export async function endAllSessions(userId: string): Promise<void> {
