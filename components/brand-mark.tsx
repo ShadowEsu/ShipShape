@@ -1,9 +1,9 @@
 /**
  * ShipShape's mark (Design, 5 Nov, after Council's blind test: agents/design/shipshape-logo-2026-11-04/README.md):
  * S2 "Paper boat", a folded-paper boat (the paperwork, afloat) on a 64-unit grid, filled, one colour (currentColor):
- * ink on white, white on ink. The favicon and app icons (app/icon.svg, app/icon1.png, app/icon2.png,
- * app/apple-icon.png) and the link preview (app/opengraph-image.tsx) draw the same paths;
- * `python3 scripts/brand-icons.py` makes the icons again after a change.
+ * ink on white, white on ink. These are the paths of Design's public/brand/shipshape-mark.svg, drawn inline so the
+ * mark takes the text colour; the link preview (app/opengraph-image.tsx) and the loading mark draw them too. The
+ * favicons and app icons are Design's own exports, copied byte for byte (README).
  */
 export const MARK_PATHS = ["M4 31l18 6h20l18-6-9 20H13z", "M23 32L32 9l9 23z"];
 
