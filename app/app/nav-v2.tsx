@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { initialsOf, NAV_GROUPS as GROUPS, TAB_ITEMS, WORKSPACE_HREF, type SearchTool } from "@/components/app-sections";
 import { Icon } from "@/components/icons";
+import { ScrollFlag } from "@/components/scroll-flag";
 import { Logo } from "@/components/ui";
 import { SearchDialog } from "./search-v2";
 
@@ -199,7 +200,7 @@ const isApple = () => /Mac|iPhone|iPad/.test(navigator.userAgent);
 /**
  * The slim bar over every page: the page's name on the left, search in the middle (⌘K or Ctrl K from anywhere), Help
  * and Feedback on the right. On the phone: the account button (the workspace page: every page, grouped as the sidebar,
- * and the account), the logo, and search.
+ * and the account), the logo, and search. Solid at the top of a page; glass once content scrolls under it (Quiet §3).
  */
 export function TopBar({ tools, pages, contact, workspace }: { tools: readonly SearchTool[]; pages: readonly SearchTool[]; contact: string | null; workspace: string }) {
   const path = usePathname();
@@ -219,6 +220,7 @@ export function TopBar({ tools, pages, contact, workspace }: { tools: readonly S
   const openSearch = () => search.current?.showModal();
   return (
     <>
+      <ScrollFlag target=".ui-v2 .top-bar" />
       <header className="top-bar">
         <Link
           href={WORKSPACE_HREF}

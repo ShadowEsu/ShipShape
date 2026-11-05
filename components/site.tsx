@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ScrollFlag } from "@/components/scroll-flag";
 import { Logo, NotLegalAdvice } from "@/components/ui";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import "@/app/site-quiet.css";
@@ -9,26 +10,32 @@ const NAV: [href: string, label: string][] = [
   ["/faq", "FAQ"],
 ];
 
-/** The site's header: Quiet (each page's own `.site-quiet` chrome) unless SHIPSHAPE_UI=v1 brings back the earlier one. */
+/**
+ * The site's header: Quiet (each page's own `.site-quiet` chrome) unless SHIPSHAPE_UI=v1 brings back the earlier one.
+ * The Quiet header stays at the top as the page scrolls: white at first, glass once content runs under it (Quiet §3).
+ */
 export function SiteHeader() {
   const cta = realDocsEnabled() ? "Sign in" : "Try the sample";
   if (uiV2()) {
     return (
-      <header className="site-quiet sq-header">
-        <div className="sq-wrap sq-header-row">
-          <Logo />
-          <nav aria-label="Main" className="sq-nav">
-            {NAV.map(([href, label]) => (
-              <Link key={href} href={href} className="sq-nav-link">
-                {label}
+      <>
+        <ScrollFlag target=".sq-header" />
+        <header className="site-quiet sq-header">
+          <div className="sq-wrap sq-header-row">
+            <Logo />
+            <nav aria-label="Main" className="sq-nav">
+              {NAV.map(([href, label]) => (
+                <Link key={href} href={href} className="sq-nav-link">
+                  {label}
+                </Link>
+              ))}
+              <Link href="/signin" className="sq-btn sq-btn-line">
+                {cta}
               </Link>
-            ))}
-            <Link href="/signin" className="sq-btn sq-btn-line">
-              {cta}
-            </Link>
-          </nav>
-        </div>
-      </header>
+            </nav>
+          </div>
+        </header>
+      </>
     );
   }
   return (

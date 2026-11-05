@@ -26,6 +26,12 @@
     transform: scale(0.98);
   }
 }
+/* Glass panels open without a fade: an opacity below 1 drops their blur while it plays (Quiet §5). */
+@keyframes q-open-glass {
+  from {
+    transform: translateY(4px) scale(0.98);
+  }
+}
 @keyframes q-rise {
   from {
     opacity: 0;
@@ -154,9 +160,9 @@
   pointer-events: none;
 }
 
-/* Sheets, menus and search (Quiet §5): each opens from 0.98 and fades in, 150ms; its backdrop fades with it. Esc and a
-   click outside close them at once (a <dialog> has no exit animation). A bottom sheet grows from its foot, a menu from
-   its corner under the button, search from its top. */
+/* Sheets, menus and search (Quiet §5): each opens from 0.98 and fades in, 150ms; its scrim (the dialog's ::backdrop)
+   dims in with it. Esc and a click outside close them at once (a <dialog> has no exit animation). A bottom sheet grows
+   from its foot, a menu from its corner under the button, search from its top. */
 .ui-v2 dialog:is(.sheet, .search-dialog)[open] {
   animation: q-open var(--q-state) var(--q-ease) both;
 }
@@ -177,8 +183,16 @@
     transform-origin: 50% 50%;
   }
 }
+/* The scrim dims by its background colour, from clear to each dialog's own (black at 10-30%, or none for a desktop
+   menu), never by an opacity fade (Quiet §5, Design 11-05 from Jaymini's measurement: an opacity fade on a wrapper
+   holding the dialog doubled interaction p95). */
+@keyframes q-scrim-in {
+  from {
+    background-color: transparent;
+  }
+}
 .ui-v2 dialog:is(.sheet, .search-dialog)[open]::backdrop {
-  animation: v2-fade-in var(--q-state) var(--q-ease) both;
+  animation: q-scrim-in var(--q-state) var(--q-ease) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
