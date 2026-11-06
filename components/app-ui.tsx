@@ -3,7 +3,7 @@ import { fmtDay, type Validity } from "@/lib/today";
 import { SECTION_NAMES } from "./app-sections";
 import { Icon, type IconName } from "./icons";
 
-/** A page's title and its actions. The redesigned app (`.ui-v2`) restyles it through the page-* classes (app/globals.css). */
+/** A page's title and its actions. The redesigned app (`.ui-v2`) restyles it through the page-* classes (app/ui-v2.css). */
 export function PageHeader({ eyebrow, title, children }: { eyebrow?: string; title: string; children?: React.ReactNode }) {
   return (
     <header className="page-header flex flex-wrap items-end justify-between gap-4">
@@ -135,6 +135,35 @@ export function Notice({ tone = "warn", children }: { tone?: "warn" | "bad" | "o
       </svg>
       <div>{children}</div>
     </div>
+  );
+}
+
+/**
+ * Under a paged list: where in it this page is ("Showing 51–100 of 240") and the way to the pages either side; nothing
+ * when the list fits on one page. `label` names the pages for a screen reader when a page has two lists. Under the
+ * redesigned look's hairline list it takes the list's width (app/ui-v2.css, .hair-list + .pager).
+ */
+export function Pager({ page, pages, size, shown, total, href, label = "Pages" }: { page: number; pages: number; size: number; shown: number; total: number; href: (page: number) => string; label?: string }) {
+  if (pages <= 1) return null;
+  const from = (page - 1) * size + 1;
+  return (
+    <nav aria-label={label} className="pager flex flex-wrap items-center justify-between gap-3 text-sm">
+      <p className="text-ink-2">
+        Showing {from}–{from + shown - 1} of {total}
+      </p>
+      <div className="flex gap-2">
+        {page > 1 && (
+          <Link href={href(page - 1)} className="btn-ghost" rel="prev">
+            Previous
+          </Link>
+        )}
+        {page < pages && (
+          <Link href={href(page + 1)} className="btn-ghost" rel="next">
+            Next
+          </Link>
+        )}
+      </div>
+    </nav>
   );
 }
 

@@ -387,7 +387,7 @@ export function DetailsListForm({ id, values }: { id: string; values: DetailValu
       {(state.error || !dirty) && <Status state={state} savedText="Saved. Reminders follow the new dates." savedRef={saved} />}
       {(unsaved || pending) && (
         // Docked at the foot of the phone's screen, 8px over the home indicator.
-        // save-dock: while it shows, the page scrolls fields clear of it (globals.css).
+        // save-dock: while it shows, the page scrolls fields clear of it (ui-v2.css).
         <div className="save-dock sticky bottom-[calc(8px+env(safe-area-inset-bottom))] z-10 md:static">
           <button className="btn press w-full" {...busyButton(pending)}>
             {pending ? "Saving…" : "Save details"}

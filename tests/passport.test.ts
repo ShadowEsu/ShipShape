@@ -4,15 +4,16 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 import { asService, asUser } from "@/lib/server/db";
-import { getDocument, listDocuments, setArchived } from "@/lib/server/documents";
+import { getDocument, pickableDocuments, setArchived } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import { LINKS_BUSY } from "@/lib/server/limits";
 import type { Ctx } from "@/lib/server/profile";
-import { createPassport, getPassport, listPassports, openLinksWith, openPassport, PASSPORT_ACCESS_SHOWN, passportFileUrl, revokePassport } from "@/lib/server/passport";
+import { createPassport, getPassport, openLinksWith, openPassport, PASSPORT_ACCESS_SHOWN, PASSPORTS_PAGE_SIZE, pagePassports, passportFileUrl, revokePassport, workingPassports } from "@/lib/server/passport";
 import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { listDocuments } from "./support/documents";
 import { fillBucket } from "./support/rate";
 
 /** Passport links (Security R6): secret in the fragment, hashed at rest, expiring, revocable, logged. */
@@ -113,9 +114,9 @@ describe("passport links", () => {
   });
 
   it("needs at least one document, and makes no link without one", async () => {
-    const before = (await listPassports(a)).length;
+    const before = (await pagePassports(a)).total;
     await expect(createPassport(a, { label: "Empty", days: 7, documentIds: [] })).rejects.toThrow(ZodError);
-    expect(await listPassports(a)).toHaveLength(before);
+    expect((await pagePassports(a)).total).toBe(before);
   });
 
   it("answers 'not found' for a malformed link id when turning a link off", async () => {
@@ -128,7 +129,7 @@ describe("passport links", () => {
     await fillBucket(db, "links", busy.userId, 30, 3600);
     await expect(createPassport(busy, { label: "One too many", days: 7, documentIds: [w9] })).rejects.toThrow(new UserError(LINKS_BUSY));
     expect(LINKS_BUSY).toBe("That's the hourly limit for new links. Nothing was made; try again in an hour.");
-    expect(await listPassports(busy)).toEqual([]);
+    expect((await pagePassports(busy)).rows).toEqual([]);
     const next = await sampleWorkspace("links-next@example.com");
     const [theirs] = await docIds(next);
     expect((await createPassport(next, { label: "Still fine", days: 7, documentIds: [theirs] })).token).toBeTruthy();
@@ -139,7 +140,7 @@ describe("passport links", () => {
     const [theirs] = await docIds(b);
     await expect(createPassport(a, { label: "Sneaky", days: 7, documentIds: [mine, theirs] })).rejects.toThrow(UserError);
     const { id } = await createPassport(a, { label: "Private", days: 7, documentIds: [mine] });
-    expect(await listPassports(b)).toEqual([]);
+    expect((await pagePassports(b)).rows).toEqual([]);
     expect(await getPassport(b, id)).toBeNull();
     await expect(revokePassport(b, id)).rejects.toThrow(UserError);
     const rows = await asUser(b.userId, (tx) => tx.query("update app.share_links set revoked_at = now() where id = $1 returning 1", [id]));
@@ -197,7 +198,7 @@ describe("passport links", () => {
     expect((await openPassport(id, token, IP))?.documents.map((d) => d.id)).toEqual([w9]);
     expect(await passportFileUrl(id, token, coi, IP)).toBeNull();
     expect((await getPassport(ctx, id))?.documents.map((d) => d.id)).toEqual([w9]);
-    expect(Object.fromEntries((await listPassports(ctx)).map((l) => [l.label, l.documents]))).toEqual({ Archive: 1, Other: 0, Off: 0, Expired: 0 });
+    expect(Object.fromEntries((await pagePassports(ctx)).rows.map((l) => [l.label, l.documents]))).toEqual({ Archive: 1, Other: 0, Off: 0, Expired: 0 });
     expect(await openLinksWith(ctx, coi)).toBe(0);
 
     await setArchived(ctx, coi, false);
@@ -226,6 +227,55 @@ describe("passport links", () => {
     const p = await getPassport(a, id);
     expect(p?.access).toHaveLength(PASSPORT_ACCESS_SHOWN);
     expect(p?.moreAccess).toBe(true);
+  });
+
+  it("lists links a page at a time, newest first, or with the working ones first; Home's working links are the newest that work", async () => {
+    const ctx = await sampleWorkspace("links-paged@example.com");
+    const total = PASSPORTS_PAGE_SIZE + 3;
+    // L01 is the newest. Every fifth is turned off; every seventh ended (35 both); the rest work.
+    await db.root((tx) =>
+      tx.query(
+        `insert into app.share_links (org_id, label, token_hash, created_at, expires_at, revoked_at)
+         select $1::uuid, 'L' || lpad(n::text, 2, '0'), md5(n::text || $1::uuid::text) || md5('x' || n::text || $1::uuid::text), now() - make_interval(mins => n),
+                case when n % 7 = 0 then now() - make_interval(mins => n) + interval '30 seconds' else now() + interval '7 days' end,
+                case when n % 5 = 0 then now() end
+         from generate_series(1, $2::int) n`,
+        [ctx.orgId, total],
+      ),
+    );
+    const label = (n: number) => `L${String(n).padStart(2, "0")}`;
+    const ns = Array.from({ length: total }, (_, i) => i + 1);
+    const works = (n: number) => n % 5 !== 0 && n % 7 !== 0;
+
+    const first = await pagePassports(ctx);
+    expect(first).toMatchObject({ total, page: 1, pages: 2 });
+    expect(first.rows.map((l) => l.label)).toEqual(ns.slice(0, PASSPORTS_PAGE_SIZE).map(label));
+    const last = await pagePassports(ctx, { page: 2 });
+    expect(last.rows.map((l) => l.label)).toEqual(ns.slice(PASSPORTS_PAGE_SIZE).map(label));
+    // A page past the end is the last page; below the start, the first.
+    expect(await pagePassports(ctx, { page: 99 })).toEqual(last);
+    expect((await pagePassports(ctx, { page: 0 })).rows).toEqual(first.rows);
+
+    // Working first across the pages, each part newest first.
+    const ordered = [...(await pagePassports(ctx, { workingFirst: true })).rows, ...(await pagePassports(ctx, { workingFirst: true, page: 2 })).rows];
+    expect(ordered.map((l) => l.label)).toEqual([...ns.filter(works), ...ns.filter((n) => !works(n))].map(label));
+
+    expect((await workingPassports(ctx, 3)).map((l) => l.label)).toEqual(["L01", "L02", "L03"]);
+    expect((await workingPassports(b, 3)).map((l) => l.label)).not.toContain("L01");
+  });
+
+  it("offers the documents that expire soonest up to its limit, plus any the address ticks, and counts the rest", async () => {
+    const ids = await docIds(a);
+    const [theirs] = await docIds(b);
+    const n = ids.length;
+    expect(n).toBeGreaterThan(3);
+    expect(await pickableDocuments(a, [], n)).toMatchObject({ left: 0 });
+    expect((await pickableDocuments(a, [], n)).docs.map((d) => d.id)).toEqual(ids);
+    const capped = await pickableDocuments(a, [], 2);
+    expect([capped.docs.map((d) => d.id), capped.left]).toEqual([ids.slice(0, 2), n - 2]);
+    // A ticked document past the limit is offered after the rest; a malformed id and another workspace's are not.
+    const ticked = await pickableDocuments(a, ["not-a-uuid", ids[n - 1], theirs, ids[0]], 2);
+    expect([ticked.docs.map((d) => d.id), ticked.left]).toEqual([[ids[0], ids[1], ids[n - 1]], n - 3]);
   });
 
   it("records creating and revoking in the workspace history", async () => {

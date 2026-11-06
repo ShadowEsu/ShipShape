@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect, RedirectType } from "next/navigation";
 import { z } from "zod";
 import { PlanLimit, UserError } from "@/lib/server/errors";
-import { createPassport, listPassports, revokePassport } from "@/lib/server/passport";
+import { createPassport, revokePassport, workingPassports } from "@/lib/server/passport";
 import { requireWorkspace } from "@/lib/server/session";
 import { markStart } from "@/lib/server/start-here";
 
@@ -38,7 +38,7 @@ export async function makePassport(_prev: PassportFormState, data: FormData): Pr
   } catch (e) {
     if (e instanceof PlanLimit) {
       // The Free plan's one open link: its page has the button that turns it off.
-      const open = (await listPassports(ctx)).find((l) => !l.revoked_at && new Date(l.expires_at).getTime() > Date.now());
+      const [open] = await workingPassports(ctx, 1);
       return { error: e.message, fix: open && { href: `/app/passport/${open.id}`, label: "Turn off your open link" }, values };
     }
     if (e instanceof UserError) return { error: e.message, values };

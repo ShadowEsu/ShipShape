@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/app-ui";
 import { Icon } from "@/components/icons";
-import type { Deadline, OutboxMessage } from "@/lib/server/deadlines";
+import { groupTotal, needsAttention, type Deadline, type OutboxMessage, type ShownDeadline } from "@/lib/server/deadlines";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { fmtDay, timeOf } from "@/lib/today";
 import { HairRow, StateChip } from "../hair-row";
 import { Celebrate, CountUp } from "../motion-moments";
+import { MoreDates } from "./more-dates";
 import { whenParts } from "./when";
 
 /** when(d) with its days counting up (motion spec §4: days left on deadlines); the words come from the same parts. */
@@ -27,23 +28,15 @@ const TONE = {
   ok: { dot: "ok", expires: "Current" },
 } as const;
 
-/**
- * The dates that put a document on Home's "Needs attention" (ATTENTION_SQL in lib/server/documents.ts): an expiry that
- * has lapsed or falls within 30 days, and a renewal notice due within 30 days. A passed renewal date isn't one: Home
- * drops it, so the filtered list does too.
- */
-export function needsAttention(d: Deadline): boolean {
-  return d.date_kind === "expires" ? d.days_left <= 30 : d.days_left >= 0 && d.days_left <= 30;
-}
-
-function Group({ title, items, tone }: { title: string; items: Deadline[]; tone: keyof typeof TONE }) {
+function Group({ title, items, tone }: { title: string; items: ShownDeadline[]; tone: keyof typeof TONE }) {
   if (!items.length) return null;
   const t = TONE[tone];
+  const total = groupTotal(items);
   return (
     <section className="space-y-2">
       <h2 className="section-title flex items-baseline gap-2">
         {title}
-        <span className="text-[15px] font-normal text-ink-3">{items.length}</span>
+        <span className="text-[15px] font-normal text-ink-3">{total}</span>
       </h2>
       {/* Home's wrapping rows: the title is never cut, and on the phone the chip goes under it (Design #26 MUST-1). */}
       <ul className="hair-list">
@@ -62,6 +55,7 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
           />
         ))}
       </ul>
+      <MoreDates shown={items.length} total={total} lapsed={tone === "bad"} className="px-1 text-[13px] text-ink-3" />
     </section>
   );
 }
@@ -110,7 +104,7 @@ export function DeadlinesV2({
   soon,
   gated,
 }: {
-  all: Deadline[];
+  all: ShownDeadline[];
   outbox: OutboxMessage[];
   reminders: boolean;
   member: boolean;

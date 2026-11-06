@@ -1,5 +1,5 @@
 import "server-only";
-import { listVendors } from "./collect";
+import { owingVendors } from "./collect";
 import { asUser } from "./db";
 import { collectOpen } from "./flags";
 import type { Ctx } from "./profile";
@@ -51,12 +51,11 @@ export async function waitingOnOthers(ctx: Ctx): Promise<Waiting> {
   const signatures = rows.map((r) => ({ id: r.id, documentId: r.document_id, title: r.title, signerName: r.signer_name, sentAt: r.sent_at }));
   const vendors: WaitingVendor[] = [];
   if (collectOpen(ctx)) {
-    for (const v of await listVendors(ctx)) {
+    for (const v of await owingVendors(ctx, WAITING_MAX)) {
       const outstanding = v.items.flatMap((i) => (i.state === "missing" ? [`${i.label} missing`] : i.state === "expired" ? [`${i.label} lapsed`] : []));
       // Read as one sentence: "W-9 missing, insurance certificate lapsed". A name that starts with an acronym (W-9, NDA) keeps it.
       const sentence = outstanding.map((s, n) => (n > 0 && /^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s));
-      if (sentence.length > 0) vendors.push({ id: v.id, name: v.name, outstanding: sentence });
-      if (vendors.length === WAITING_MAX) break;
+      vendors.push({ id: v.id, name: v.name, outstanding: sentence });
     }
   }
   return { signatures, vendors };

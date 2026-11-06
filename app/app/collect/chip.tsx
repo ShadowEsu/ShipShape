@@ -10,7 +10,7 @@ export const COLLECT_STATES: Record<CollectState, { label: string; cls: string; 
 
 /**
  * One requested document's state; colour always comes with an icon and words. The redesigned app (`.validity-chip` in
- * app/globals.css) shows it as Documents' dot and word in a hairline pill, without the icon (Design #26 MUST-2).
+ * app/ui-v2.css) shows it as Documents' dot and word in a hairline pill, without the icon (Design #26 MUST-2).
  */
 export function CollectChip({ state, label, expiresOn }: { state: CollectState; label?: string; expiresOn?: string | null }) {
   const s = COLLECT_STATES[state];

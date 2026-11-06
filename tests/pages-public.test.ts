@@ -30,7 +30,6 @@ import SignInPage from "@/app/signin/page";
 import { addVendor, createVendorLink, receiveFile, revokeVendorLink } from "@/lib/server/collect";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
-import { listDocuments } from "@/lib/server/documents";
 import { completeSigning, requestSignature, revokeSignatureRequest, sendSigningCode } from "@/lib/server/esign";
 import { SAMPLE_SIGNIN_BUSY } from "@/lib/server/limits";
 import { createPassport, revokePassport } from "@/lib/server/passport";
@@ -39,6 +38,7 @@ import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { dayOf, fmtDay, isoToday, timeOf, todayIn } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { listDocuments } from "./support/documents";
 import { fillBucket } from "./support/rate";
 import { actionsOf, renderPage, textOf } from "./support/render";
 

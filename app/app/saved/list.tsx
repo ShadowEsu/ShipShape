@@ -26,9 +26,8 @@ function savedLine(row: SavedRow, zone: string): string {
 }
 
 /**
- * Saved documents and links as one list, newest first (listSaved's order): the Saved page, and (v2) Home's Saved
- * section with listSaved(ctx, n). The redesigned look's hairline rows with the state in the meta line; the earlier
- * look's bordered list with chips.
+ * One page of saved documents and links as one list, newest first (pageSaved's order). The redesigned look's hairline
+ * rows with the state in the meta line; the earlier look's bordered list with chips.
  */
 export function SavedList({ rows, zone, v2 }: { rows: SavedRow[]; zone: string; v2: boolean }) {
   if (v2) {

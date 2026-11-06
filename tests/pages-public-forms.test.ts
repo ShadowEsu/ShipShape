@@ -12,7 +12,6 @@ import { SignFormView } from "@/app/s/[id]/sign-form";
 import { dayOf } from "@/lib/today";
 import { addVendor, createVendorLink, receiveFile } from "@/lib/server/collect";
 import { asService, asUser } from "@/lib/server/db";
-import { listDocuments } from "@/lib/server/documents";
 import { requestSignature } from "@/lib/server/esign";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { createPassport } from "@/lib/server/passport";
@@ -21,6 +20,7 @@ import { seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { listDocuments } from "./support/documents";
 import { actionsOf, renderPage, textOf } from "./support/render";
 
 /** The forms on the pages people outside a workspace open: each answer sits where the fix is, and the dates and labels say what's true. */

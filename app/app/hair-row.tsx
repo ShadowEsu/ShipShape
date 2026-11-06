@@ -57,7 +57,7 @@ export function HairRow({
 
 /**
  * A state as a dot and a word in a hairline pill (Design calm v2): green for current, done or working; amber for soon;
- * red for lapsed; grey for waiting or over. The dot colours are `.validity-chip`'s (app/globals.css), as on Documents.
+ * red for lapsed; grey for waiting or over. The dot colours are `.validity-chip`'s (app/ui-v2.css), as on Documents.
  */
 export function StateChip({ tone, children }: { tone: "ok" | "expiring" | "expired" | "none"; children: React.ReactNode }) {
   return tone === "none" ? (

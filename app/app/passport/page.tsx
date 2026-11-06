@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EmptyState, PageHeader } from "@/components/app-ui";
-import { DOC_KINDS, listDocuments } from "@/lib/server/documents";
+import { EmptyState, PageHeader, Pager } from "@/components/app-ui";
+import { pageParam } from "@/lib/paging";
+import { DOC_KINDS, pickableDocuments } from "@/lib/server/documents";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
-import { listPassports, PASSPORT_DAYS } from "@/lib/server/passport";
+import { PASSPORT_DAYS, PASSPORTS_PAGE_SIZE, pagePassports } from "@/lib/server/passport";
 import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { dayOf } from "@/lib/today";
 import { NewPassportForm } from "./forms";
@@ -14,15 +15,30 @@ export const metadata: Metadata = { title: "Passport" };
 
 /**
  * `?docs=<id>,<id>` ticks those documents in the form (from "What are they asking for?", and back from the preview); ids not
- * in this workspace are ignored. `?label=` and `?days=` bring the rest of the form back from the preview.
+ * in this workspace are ignored. `?label=` and `?days=` bring the rest of the form back from the preview. `?page=` pages
+ * Your links.
  */
-export default async function PassportPage({ searchParams }: { searchParams: Promise<{ docs?: string; label?: string; days?: string }> }) {
+export default async function PassportPage({ searchParams }: { searchParams: Promise<{ docs?: string; label?: string; days?: string; page?: string }> }) {
   const ctx = await requireWorkspace();
   // Link ends are instants: shown as the day where the owner is (the same rule as the pages their recipients open).
   const zone = await viewerZone();
-  const [links, docs, picked] = await Promise.all([listPassports(ctx), listDocuments(ctx), searchParams]);
+  const picked = await searchParams;
   const preselected = typeof picked.docs === "string" ? picked.docs.split(",").slice(0, 50) : [];
   const comingBack = { label: typeof picked.label === "string" ? picked.label.slice(0, 120) : "", days: Number(picked.days) };
+  const v2 = uiV2();
+  const [links, { docs, left }] = await Promise.all([pagePassports(ctx, { page: pageParam(picked.page), workingFirst: v2 }), pickableDocuments(ctx, preselected)]);
+  // Pages keep the form's ?docs=, ?label= and ?days= as they came, and land on Your links.
+  const pageHref = (n: number) => {
+    const params = new URLSearchParams();
+    for (const key of ["docs", "label", "days"] as const) {
+      const value = picked[key];
+      if (typeof value === "string" && value) params.set(key, value);
+    }
+    if (n > 1) params.set("page", String(n));
+    const query = params.toString();
+    return `/app/passport${query ? `?${query}` : ""}#links-title`;
+  };
+  const pager = <Pager label="Link pages" page={links.page} pages={links.pages} size={PASSPORTS_PAGE_SIZE} shown={links.rows.length} total={links.total} href={pageHref} />;
 
   const pickable = docs.map((d) => ({
     id: d.id,
@@ -33,9 +49,19 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
     holdsTaxId: d.kind === "w9" || d.template_id === "irs-w9",
   }));
 
-  if (uiV2())
+  if (v2)
     return (
-      <PassportV2 links={links} docs={pickable} preselected={preselected} today={ctx.today} initial={comingBack} zone={zone} gated={!ctx.demo && !realDocsEnabled()} />
+      <PassportV2
+        links={links.rows}
+        pager={pager}
+        docs={pickable}
+        left={left}
+        preselected={preselected}
+        today={ctx.today}
+        initial={comingBack}
+        zone={zone}
+        gated={!ctx.demo && !realDocsEnabled()}
+      />
     );
 
   return (
@@ -57,12 +83,15 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
             today={ctx.today}
             initial={comingBack}
             docs={pickable}
+            left={left}
           />
         </section>
 
         <section className="space-y-3">
-          <h2 className="font-semibold">Your links</h2>
-          {links.length === 0 ? (
+          <h2 id="links-title" tabIndex={-1} className="font-semibold">
+            Your links
+          </h2>
+          {links.total === 0 ? (
             <EmptyState
               icon="passport"
               title="No links yet"
@@ -70,7 +99,7 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
             />
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
-              {links.map((l) => {
+              {links.rows.map((l) => {
                 const s = linkStatus(l, zone);
                 return (
                   <li key={l.id}>
@@ -92,6 +121,7 @@ export default async function PassportPage({ searchParams }: { searchParams: Pro
               })}
             </ul>
           )}
+          {pager}
         </section>
       </div>
     </div>

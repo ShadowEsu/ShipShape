@@ -2,7 +2,7 @@ import "server-only";
 import { AI_REQUEST_MAX_CHARS } from "@/lib/ai";
 import { askedDocuments } from "@/lib/request-words";
 import type { Validity } from "@/lib/today";
-import { listDocuments, type DocKind } from "./documents";
+import { matchCandidates, type DocKind } from "./documents";
 import { UserError } from "./errors";
 import { rateLimited } from "./http";
 import type { Ctx } from "./profile";
@@ -57,6 +57,7 @@ const VALIDITY_ORDER: Record<Validity, number> = { ok: 0, none: 1, expiring: 2, 
 const FILLER = new Set(["the", "and", "for", "your", "our", "copy", "form", "completed", "signed", "sample", "naming", "with", "from", "certificate", "proof"]);
 // Titles shorten workers' compensation to "comp".
 const ALIASES = new Map([["comp", "compensation"]]);
+const ALIASED_FROM = new Map([...ALIASES].map(([from, to]) => [to, from]));
 /** A name's telling words. One final s goes, so "Worker's" and "Workers'", "license" and "licenses" agree. */
 const nameWords = (s: string) =>
   new Set(
@@ -78,7 +79,12 @@ export async function matchToDocuments(
   asked: readonly { kind: DocKind; label: string; quote?: string | null }[],
   source: string,
 ): Promise<RequestItem[]> {
-  const docs = (await listDocuments(ctx)).map((d) => ({ doc: d, words: nameWords(d.title) }));
+  // Only the documents that could match: one of the kinds asked for, or a title holding one of the words asked for
+  // (a title's word is the asked one, that plus a final s, or its alias), in the list's order, which the sort keeps.
+  const labelWords = asked.flatMap((item) => [...nameWords(item.label)]);
+  const fragments = [...new Set([...labelWords, ...labelWords.flatMap((w) => ALIASED_FROM.get(w) ?? [])])];
+  const kinds = [...new Set(asked.flatMap((item) => (item.kind === "other" ? [] : [item.kind])))];
+  const docs = (await matchCandidates(ctx, kinds, fragments)).map((d) => ({ doc: d, words: nameWords(d.title) }));
   const text = normalise(source);
   return asked.map((item) => {
     const quote = item.quote || null;

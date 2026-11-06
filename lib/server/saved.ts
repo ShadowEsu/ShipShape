@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { pageBounds, type Page } from "@/lib/paging";
 import type { Validity } from "@/lib/today";
 import { asUser, type Tx } from "./db";
 import { DOC_KINDS, type DocKind } from "./documents";
@@ -61,7 +62,13 @@ interface Raw {
 // $3 is the viewer's date (ctx.today), as documents.ts's DOC_SELECT. Archived documents and anything deleted
 // never show (Security S5; a deleted object's row is gone with it, on delete cascade). Turned-off and expired
 // links do, with their state. s.kind and s.object_id last: saves made in one transaction share created_at.
-const LIST_SQL = `
+const SAVED_FROM = `
+  from app.saved_items s
+  left join app.documents d on s.kind = 'document' and d.id = s.object_id and d.org_id = s.org_id and d.status = 'active'
+  left join app.share_links l on s.kind = 'link' and l.id = s.object_id and l.org_id = s.org_id
+  where s.org_id = $1 and s.user_id = $2 and (d.id is not null or l.id is not null)`;
+const LIST_SQL =
+  `
   select s.kind, s.object_id::text as id, s.created_at::text as saved_at,
          d.title, d.kind as doc_kind, d.expires_on::text as expires_on,
          case when d.expires_on is null then 'none'
@@ -71,12 +78,10 @@ const LIST_SQL = `
          l.label, l.expires_at::text as expires_at, l.revoked_at::text as revoked_at,
          case when l.revoked_at is not null then 'revoked' when l.expires_at <= now() then 'expired' else 'working' end as link_state,
          (select count(*)::int from app.share_link_documents sd where sd.link_id = l.id) as documents
-  from app.saved_items s
-  left join app.documents d on s.kind = 'document' and d.id = s.object_id and d.org_id = s.org_id and d.status = 'active'
-  left join app.share_links l on s.kind = 'link' and l.id = s.object_id and l.org_id = s.org_id
-  where s.org_id = $1 and s.user_id = $2 and (d.id is not null or l.id is not null)
-  order by s.created_at desc, s.kind, s.object_id
-  limit $4::int`;
+  ` +
+  SAVED_FROM +
+  ` order by s.created_at desc, s.kind, s.object_id limit $4::int offset $5::int`;
+const COUNT_SQL = `select count(*)::int as n` + SAVED_FROM;
 
 function display(r: Raw): SavedRow | null {
   if (r.kind === "document") {
@@ -106,10 +111,17 @@ function display(r: Raw): SavedRow | null {
   };
 }
 
-/** The caller's saved documents and links in this workspace, newest first, as display rows; `limit` caps them (all when omitted). */
-export async function listSaved(ctx: Ctx, limit?: number): Promise<SavedRow[]> {
-  const rows = await asUser(ctx.userId, (tx) => tx.query<Raw>(LIST_SQL, [ctx.orgId, ctx.userId, ctx.today, limit ?? null]));
-  return rows.flatMap((r) => display(r) ?? []);
+/** How many saved items the Saved page lists at once (saves are one per document or link, which Pro doesn't limit). */
+export const SAVED_PAGE_SIZE = 50;
+
+/** One page of the caller's saved documents and links in this workspace, newest first, as display rows. */
+export async function pageSaved(ctx: Ctx, wanted = 1, size = SAVED_PAGE_SIZE): Promise<Page<SavedRow>> {
+  return asUser(ctx.userId, async (tx) => {
+    const [{ n: total }] = await tx.query<{ n: number }>(COUNT_SQL, [ctx.orgId, ctx.userId]);
+    const { page, pages } = pageBounds(total, wanted, size);
+    const rows = await tx.query<Raw>(LIST_SQL, [ctx.orgId, ctx.userId, ctx.today, size, (page - 1) * size]);
+    return { rows: rows.flatMap((r) => display(r) ?? []), total, page, pages };
+  });
 }
 
 const Kind = z.enum(["document", "link"]);

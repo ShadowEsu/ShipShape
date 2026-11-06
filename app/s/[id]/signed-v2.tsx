@@ -30,7 +30,7 @@ export function SignedV2({ id, view, zone, contact }: { id: string; view: Signin
               <path d="M60 92l16 16 34-36" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
             </g>
           </svg>
-          {/* Takes focus right after signing (stamp.tsx), as the Sign button that had it is gone; never shows a ring (globals.css). */}
+          {/* Takes focus right after signing (stamp.tsx), as the Sign button that had it is gone; never shows a ring (ui-v2.css). */}
           <h1 tabIndex={-1} className="stamp-title stamp-rise mt-4 font-serif text-[32px] leading-9 font-semibold tracking-tight">
             Signed
           </h1>
