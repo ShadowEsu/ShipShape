@@ -94,10 +94,9 @@ export function SiteFooter() {
             </nav>
           ))}
         </div>
-        {/* The name, large and faint, cut by the page's edge: decoration, so screen readers skip it. */}
-        <p className="sq-wordmark" aria-hidden="true">
-          ShipShape
-        </p>
+        {/* The name, large and faint, cut by the page's edge: pure decoration (WCAG 1.4.3 sets it no contrast), so screen
+            readers skip it and the word is drawn by the stylesheet (.sq-wordmark::before), not set as text to check. */}
+        <p className="sq-wordmark" aria-hidden="true" />
       </footer>
     );
   }

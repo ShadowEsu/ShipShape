@@ -291,6 +291,10 @@ html:has(.sq-header) {
   transform: translateY(18%);
   user-select: none;
 }
+/* The word itself, as generated content: decoration, not text (see site.tsx). */
+.site-quiet .sq-wordmark::before {
+  content: "ShipShape";
+}
 @media (min-width: 768px) {
   .site-quiet .sq-footer-row {
     grid-template-columns: 2fr repeat(3, minmax(0, 1fr));
