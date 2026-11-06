@@ -4,13 +4,13 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { GET as cron } from "@/app/api/cron/reminders/route";
 import { asAnon, asService, asUser } from "@/lib/server/db";
-import { deadlinesIcs, fold, listDeadlines, listOutbox, purgeOutbox, runReminders, type Deadline } from "@/lib/server/deadlines";
-import { listDocuments } from "@/lib/server/documents";
+import { deadlinesIcs, fold, groupTotal, listDeadlines, listOutbox, needsAttention, purgeOutbox, runReminders, shownDeadlines, type Deadline } from "@/lib/server/deadlines";
 import type { Ctx } from "@/lib/server/profile";
 import { SAMPLE_EIN, seedSampleWorkspace } from "@/lib/server/sample";
 import { localBlobStore, setBlobStoreForTests } from "@/lib/server/storage";
 import { fmtDay, isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { listDocuments } from "./support/documents";
 
 let db: TestDb;
 let blobDir: string;
@@ -320,6 +320,32 @@ describe("the outbox (0039: W10-4, W10-5)", () => {
     vi.unstubAllEnvs();
     expect(await run.json()).toMatchObject({ ok: true, outbox: 1 });
     expect(await left()).toEqual(["code 23 hours", "reminder 89 days"]);
+  });
+});
+
+describe("the Deadlines page's dates", () => {
+  it("lists the earliest of each part (lapsed, passed renewal notice, next 30 days, later) and counts every one", async () => {
+    const { owner, orgId, expiresIn } = await proWorkspace("deadlines-shown@example.com");
+    const ctx: Ctx = { userId: owner, demo: false, authAt: Math.floor(Date.now() / 1000), orgId, name: "Pro Co", role: "owner", today };
+    for (const days of [-10, -5, -1, 0, 5, 30, 31, 60, 400]) await expiresIn(`D${days}`, days);
+    await db.root((tx) => tx.query("insert into app.documents (org_id, title, kind, renews_on) values ($1, 'R-3', 'other', $2)", [orgId, addDays(today, -3)]));
+
+    const shown = await shownDeadlines(ctx, 2);
+    expect(shown.map((d) => [d.title, d.part, d.part_total])).toEqual([
+      ["D-10", "lapsed", 3],
+      ["D-5", "lapsed", 3],
+      ["R-3", "passed", 1],
+      ["D0", "soon", 3],
+      ["D5", "soon", 3],
+      ["D31", "later", 3],
+      ["D60", "later", 3],
+    ]);
+    // The page's Lapsed group is every date that passed, renewal notices too: 3 of its 4 shown.
+    const lapsed = shown.filter((d) => d.days_left < 0);
+    expect([lapsed.length, groupTotal(lapsed)]).toEqual([3, 4]);
+    // What needs attention is what Home lists: lapsed expiries and anything in the next 30 days, not a passed renewal notice.
+    expect(shown.filter(needsAttention).map((d) => d.title)).toEqual(["D-10", "D-5", "D0", "D5"]);
+    expect(await shownDeadlines(ctx)).toHaveLength(10);
   });
 });
 

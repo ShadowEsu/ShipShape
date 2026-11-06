@@ -20,7 +20,6 @@ import {
 } from "@/lib/server/collect";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
-import { listDocuments } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { collectOpen, GateClosed } from "@/lib/server/flags";
@@ -30,6 +29,7 @@ import { seedSampleWorkspace } from "@/lib/server/sample";
 import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } from "@/lib/server/storage";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
+import { listDocuments } from "./support/documents";
 import { fillBucket } from "./support/rate";
 
 /** Collect: vendors send documents through upload links (secret in the fragment, hashed, expiring, revocable). */

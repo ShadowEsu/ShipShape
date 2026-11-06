@@ -4,8 +4,8 @@ import { attentionLine } from "@/lib/attention";
 import { aiEnabled } from "@/lib/server/ai";
 import { ATTENTION_MAX, DOC_KINDS, homeSummary, recentDocuments } from "@/lib/server/documents";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
-import { waitingOnOthers } from "@/lib/server/home";
-import { listPassports } from "@/lib/server/passport";
+import { WAITING_MAX, waitingOnOthers } from "@/lib/server/home";
+import { hasPassports, workingPassports } from "@/lib/server/passport";
 import { loadProfile } from "@/lib/server/profile";
 import { samplePaperPreviews } from "@/lib/server/sample";
 import { DEFAULT_WORKSPACE_NAME, requireWorkspace, viewerZone } from "@/lib/server/session";
@@ -27,7 +27,7 @@ export default async function AppHome() {
       homeSummary(ctx),
       recentDocuments(ctx),
       waitingOnOthers(ctx),
-      listPassports(ctx),
+      workingPassports(ctx, WAITING_MAX),
       viewerZone(),
       startPath(ctx),
     ]);
@@ -48,7 +48,7 @@ export default async function AppHome() {
       />
     );
   }
-  const [docs, profile, links] = await Promise.all([homeSummary(ctx), loadProfile(ctx), listPassports(ctx)]);
+  const [docs, profile, linked] = await Promise.all([homeSummary(ctx), loadProfile(ctx), hasPassports(ctx)]);
   const { attention, current, first } = docs;
   const canUpload = !ctx.demo && realDocsEnabled();
   // The list comes most-urgent first: what can still be renewed, then what has lapsed. Shown as two labelled
@@ -81,7 +81,7 @@ export default async function AppHome() {
       title: "Add an expiry date",
       body: first ? `Start with ${first.title}, so ShipShape can warn you before it lapses.` : "So ShipShape can warn you before it lapses.",
     },
-    { done: links.length > 0, href: "/app/passport", title: "Share a passport link", body: "One link with the documents a customer asked for." },
+    { done: linked, href: "/app/passport", title: "Share a passport link", body: "One link with the documents a customer asked for." },
   ];
   const done = setup.filter((s) => s.done).length;
   const next = setup.find((s) => !s.done);

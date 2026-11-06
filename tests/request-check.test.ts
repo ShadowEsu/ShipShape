@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ASKED_MAX, askedDocuments, QUOTE_MAX } from "@/lib/request-words";
 import { setAiProviderForTests } from "@/lib/server/ai";
 import { asUser } from "@/lib/server/db";
+import { matchCandidates } from "@/lib/server/documents";
 import { UserError } from "@/lib/server/errors";
 import type { Ctx } from "@/lib/server/profile";
 import { readRequestByNames, RequestInputError } from "@/lib/server/request-check";
@@ -172,6 +173,21 @@ describe("checking a request by names", () => {
     await addDoc(ctx, "Worker's comp certificate 2026", "other", 200);
     const [item] = await readRequestByNames(ctx, "Please send your workers' compensation certificate before Monday.", "net-7");
     expect([item.state, item.matches.map((m) => m.title)]).toEqual(["ready", ["Worker's comp certificate 2026"]]);
+  });
+
+  it("reads only the documents a request could match: its kinds, and titles holding its words in any case, plural or spelling", async () => {
+    const ctx = await workspace();
+    await addDoc(ctx, "W-9 2026", "w9", null);
+    await addDoc(ctx, "STATE CONTRACTOR LICENSES", "other", 200);
+    // U+212A KELVIN SIGN: JavaScript lowercases it to "k", so the matcher reads this title as "worker bond".
+    await addDoc(ctx, "Wor\u212Aer bond", "other", 200);
+    await addDoc(ctx, "Fire inspection", "permit", 200);
+    await addDoc(ctx, "Office lease", "other", 200);
+    const titles = async (kinds: string[], words: string[]) => (await matchCandidates(ctx, kinds, words)).map((d) => d.title).sort();
+    expect(await titles(["w9"], ["contractor", "license", "worker"])).toEqual(["STATE CONTRACTOR LICENSES", "W-9 2026", "Wor\u212Aer bond"]);
+    expect(await titles([], [])).toEqual(["Wor\u212Aer bond"]);
+    // Only lowercase letters and digits are patterns: a % or _ in a word can't widen the match.
+    expect(await titles([], ["%", "_"])).toEqual(["Wor\u212Aer bond"]);
   });
 
   it("refuses text too short or too long for the text field, as the AI does", async () => {

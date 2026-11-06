@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EmptyState, Notice, PageHeader } from "@/components/app-ui";
+import { EmptyState, Notice, PageHeader, Pager } from "@/components/app-ui";
 import { FocusButton } from "@/components/focus-button";
+import { pageOf, pageParam } from "@/lib/paging";
 import { listArchivedVendors, listVendors } from "@/lib/server/collect";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { collectOpen, uiV2 } from "@/lib/server/flags";
@@ -13,7 +14,20 @@ import { CollectV2 } from "./v2";
 
 export const metadata: Metadata = { title: "Collect" };
 
-export default async function CollectPage() {
+/** How many vendors each of Collect's lists shows at once (Pro has no vendor limit, so both are paged). */
+const VENDORS_PAGE_SIZE = 50;
+
+/** Collect's address with its lists' pages; `archived` there (even as 1) keeps the archived vendors open. */
+function collectHref(page: number, archived: number | null): string {
+  const params = new URLSearchParams();
+  if (page > 1) params.set("page", String(page));
+  if (archived !== null) params.set("archived", String(archived));
+  const query = params.toString();
+  return query ? `/app/collect?${query}` : "/app/collect";
+}
+
+/** `?page=` pages the vendors; `?archived=` pages the archived ones and opens their list. */
+export default async function CollectPage({ searchParams }: { searchParams: Promise<{ page?: string; archived?: string }> }) {
   const ctx = await requireWorkspace();
 
   if (!collectOpen(ctx)) {
@@ -28,10 +42,52 @@ export default async function CollectPage() {
     );
   }
 
-  const [vendors, archived] = await Promise.all([listVendors(ctx), listArchivedVendors(ctx)]);
+  const [all, allArchived, sp] = await Promise.all([listVendors(ctx), listArchivedVendors(ctx), searchParams]);
+  // The counts are the whole workspace's, so the page is cut after the read.
+  const counts = summaryCounts(all);
+  const vendors = pageOf(all, pageParam(sp.page), VENDORS_PAGE_SIZE);
+  const archivedOpen = sp.archived !== undefined;
+  const archived = pageOf(allArchived, pageParam(sp.archived), VENDORS_PAGE_SIZE);
+  const pager = (
+    <Pager
+      label="Vendor pages"
+      page={vendors.page}
+      pages={vendors.pages}
+      size={VENDORS_PAGE_SIZE}
+      shown={vendors.rows.length}
+      total={vendors.total}
+      href={(n) => collectHref(n, archivedOpen ? archived.page : null)}
+    />
+  );
+  // Inside the archived disclosure, under its list.
+  const archivedPager = archived.pages > 1 && (
+    <div className="mt-2">
+      <Pager
+        label="Archived vendor pages"
+        page={archived.page}
+        pages={archived.pages}
+        size={VENDORS_PAGE_SIZE}
+        shown={archived.rows.length}
+        total={archived.total}
+        href={(n) => `${collectHref(vendors.page, n)}#archived-vendors`}
+      />
+    </div>
+  );
   const kinds = Object.entries(DOC_KINDS).map(([key, label]) => ({ key, label }));
-  if (uiV2()) return <CollectV2 vendors={vendors} archived={archived} kinds={kinds} demo={ctx.demo} />;
-  const counts = summaryCounts(vendors);
+  if (uiV2())
+    return (
+      <CollectV2
+        vendors={vendors.rows}
+        archived={archived.rows}
+        archivedTotal={archived.total}
+        archivedOpen={archivedOpen}
+        counts={counts}
+        pager={pager}
+        archivedPager={archivedPager}
+        kinds={kinds}
+        demo={ctx.demo}
+      />
+    );
 
   return (
     <div className="space-y-8">
@@ -46,7 +102,7 @@ export default async function CollectPage() {
         </Notice>
       )}
 
-      {vendors.length > 0 && (
+      {vendors.total > 0 && (
         <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {SUMMARY.map((s) => (
             <div key={s.state} className="card py-4">
@@ -66,20 +122,20 @@ export default async function CollectPage() {
           <h2 id="vendors-heading" className="font-semibold">
             Vendors
           </h2>
-          {vendors.length === 0 ? (
+          {vendors.total === 0 ? (
             <EmptyState
-              title={archived.length > 0 ? "No active vendors" : "No vendors yet"}
+              title={archived.total > 0 ? "No active vendors" : "No vendors yet"}
               body="Each vendor you add shows here with what you asked them for and where it stands."
               example={["Ace Electric · W-9 ✓ · Insurance missing"]}
             >
               {/* The form is beside this list (below it on a phone), with the page's one primary button: this one takes you to its first field. */}
               <FocusButton target="vendor-name" className="btn-ghost">
-                {archived.length > 0 ? "Add a vendor" : "Add your first vendor"}
+                {archived.total > 0 ? "Add a vendor" : "Add your first vendor"}
               </FocusButton>
             </EmptyState>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
-              {vendors.map((v) => (
+              {vendors.rows.map((v) => (
                 <li key={v.id}>
                   <Link href={`/app/collect/${v.id}`} className="flex flex-col gap-2 px-4 py-3 hover:bg-canvas">
                     <span className="flex items-center justify-between gap-3">
@@ -98,11 +154,12 @@ export default async function CollectPage() {
               ))}
             </ul>
           )}
-          {archived.length > 0 && (
-            <details className="text-sm">
-              <summary className="cursor-pointer text-ink-2">Archived vendors ({archived.length})</summary>
+          {pager}
+          {archived.total > 0 && (
+            <details id="archived-vendors" className="text-sm" open={archivedOpen}>
+              <summary className="cursor-pointer text-ink-2">Archived vendors ({archived.total})</summary>
               <ul className="mt-2 space-y-1">
-                {archived.map((v) => (
+                {archived.rows.map((v) => (
                   <li key={v.id}>
                     <Link href={`/app/collect/${v.id}`} className="underline">
                       {v.name}
@@ -110,6 +167,7 @@ export default async function CollectPage() {
                   </li>
                 ))}
               </ul>
+              {archivedPager}
             </details>
           )}
         </section>

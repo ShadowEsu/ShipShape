@@ -5,15 +5,35 @@ import { Icon } from "@/components/icons";
 import type { VendorRow } from "@/lib/server/collect";
 import { CollectChip } from "./chip";
 import { NewVendorFormV2 } from "./forms";
-import { SUMMARY, summaryCounts } from "./summary";
+import { SUMMARY } from "./summary";
 
 /**
  * Collect in the redesigned app (Design spec 2026-11-02 §4, PR 7 plan): one column. The four counts as quiet tiles,
  * the vendors as a grouped list with their chips, the archived ones behind a disclosure, then Add a vendor as field
- * rows. Same data, words and actions as the current page.
+ * rows. Same data, words and actions as the current page. The lists are one page each (page.tsx pages them, and gives the
+ * whole workspace's counts); `archivedOpen` when the address pages the archived ones.
  */
-export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorRow[]; archived: VendorRow[]; kinds: { key: string; label: string }[]; demo: boolean }) {
-  const counts = summaryCounts(vendors);
+export function CollectV2({
+  vendors,
+  archived,
+  archivedTotal,
+  archivedOpen,
+  counts,
+  pager,
+  archivedPager,
+  kinds,
+  demo,
+}: {
+  vendors: VendorRow[];
+  archived: VendorRow[];
+  archivedTotal: number;
+  archivedOpen: boolean;
+  counts: Record<string, number>;
+  pager: React.ReactNode;
+  archivedPager: React.ReactNode;
+  kinds: { key: string; label: string }[];
+  demo: boolean;
+}) {
   return (
     <div className="space-y-10">
       <div className="space-y-4">
@@ -50,13 +70,13 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
         {vendors.length === 0 ? (
           <EmptyState
             icon="collect"
-            title={archived.length > 0 ? "No active vendors" : "No vendors yet"}
+            title={archivedTotal > 0 ? "No active vendors" : "No vendors yet"}
             body="Each vendor you add shows here with what you asked them for and where it stands."
             example={["Ace Electric · W-9 ✓ · Insurance missing"]}
           >
             {/* The form is under this list, with the page's one primary button: this one takes you to its first field. */}
             <FocusButton target="vendor-name" className="btn-ghost press">
-              {archived.length > 0 ? "Add a vendor" : "Add your first vendor"}
+              {archivedTotal > 0 ? "Add a vendor" : "Add your first vendor"}
             </FocusButton>
           </EmptyState>
         ) : (
@@ -85,10 +105,11 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
             ))}
           </ul>
         )}
-        {archived.length > 0 && (
-          <details className="group">
+        {pager}
+        {archivedTotal > 0 && (
+          <details id="archived-vendors" className="group" open={archivedOpen}>
             <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-sm text-ink-2 underline [&::-webkit-details-marker]:hidden">
-              Archived vendors ({archived.length})
+              Archived vendors ({archivedTotal})
               <span className="disclosure-chevron rotate-90 group-open:-rotate-90">
                 <Icon name="chevron" size={16} />
               </span>
@@ -105,6 +126,7 @@ export function CollectV2({ vendors, archived, kinds, demo }: { vendors: VendorR
                 </li>
               ))}
             </ul>
+            {archivedPager}
           </details>
         )}
       </section>

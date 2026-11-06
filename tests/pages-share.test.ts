@@ -384,7 +384,7 @@ describe.each([
 
   it("with no vendors: a ghosted example vendor, and a button to the form's first field", async () => {
     await signIn(mail("collect-empty"));
-    const html = await renderPage(CollectPage, {});
+    const html = await renderPage(CollectPage, { searchParams: Promise.resolve({}) });
     expect(textOf(html)).toContain("No vendors yet Each vendor you add shows here with what you asked them for and where it stands.");
     const example = /<div aria-hidden="true"[^>]*>([\s\S]*?)<\/ul><\/div>/.exec(html)?.[1] ?? "";
     expect(textOf(example)).toBe("Example Ace Electric · W-9 ✓ · Insurance missing");
@@ -402,7 +402,7 @@ describe.each([
     const ctx = await signIn(mail("collect-only-archived"));
     const vendorId = await addVendor(ctx, { name: "Old Supplier", email: "", requested: ["w9"] });
     await db.root((tx) => tx.query("update app.vendors set status = 'archived' where id = $1", [vendorId]));
-    const html = await renderPage(CollectPage, {});
+    const html = await renderPage(CollectPage, { searchParams: Promise.resolve({}) });
     expect(textOf(html)).toContain("No active vendors Each vendor you add shows here");
     expect(textOf(html)).not.toContain("No vendors yet");
     expect(actionsOf(html).map((a) => a.label)).toContain("Add a vendor");
@@ -488,7 +488,7 @@ describe("Collect, redesigned only", () => {
     await asUser(userId, (tx) => seedSampleWorkspace(tx, org.id, userId));
     await finishSignIn(userId, { demo: true });
     await addVendor(await requireWorkspace(), { name: "Ace Electric", email: "", requested: ["w9"] });
-    const html = await renderPage(CollectPage, {});
+    const html = await renderPage(CollectPage, { searchParams: Promise.resolve({}) });
     const text = textOf(html);
 
     const tiles = [...html.matchAll(/<div class="tile gap-1"><dt[^>]*>([^<]*)<\/dt><dd[^>]*><span[^>]*>(\d+)<\/span>/g)].map((m) => `${m[1]}: ${m[2]}`);

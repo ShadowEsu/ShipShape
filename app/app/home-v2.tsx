@@ -5,7 +5,7 @@ import { PaperSvg } from "@/components/paper-svg";
 import { attentionLine } from "@/lib/attention";
 import { LETTER } from "@/lib/pdf/surface";
 import { DOC_KINDS, type AttentionRow, type DocRow } from "@/lib/server/documents";
-import { WAITING_MAX, type WaitingSignature, type WaitingVendor } from "@/lib/server/home";
+import type { WaitingSignature, WaitingVendor } from "@/lib/server/home";
 import type { PassportRow } from "@/lib/server/passport";
 import type { SamplePreview } from "@/lib/server/sample";
 import type { StartPath } from "@/lib/server/start-here";
@@ -14,7 +14,6 @@ import { dayOf, fmtDay } from "@/lib/today";
 import { AiBox } from "./ai-box";
 import { HairRow, StateChip } from "./hair-row";
 import { Arrive } from "./motion-moments";
-import { linkStatus } from "./passport/link-status";
 import { StartHere } from "./start-here";
 
 /** How many of what needs you Home lists; Deadlines has every date. */
@@ -38,7 +37,7 @@ export function HomeV2(props: {
   previews: ReadonlyMap<string, SamplePreview>;
   /** The open signature requests, each with the day it was sent where the viewer is, and the vendors who owe a document. */
   waiting: { signatures: (WaitingSignature & { sentOn: string })[]; vendors: WaitingVendor[] };
-  /** The workspace's passport links: the working ones show under Shared. */
+  /** Shared's passport links: the newest that still work (page.tsx reads at most WAITING_MAX). */
   links: PassportRow[];
   zone: string;
   tools: readonly Tool[];
@@ -46,8 +45,7 @@ export function HomeV2(props: {
   /** A sample's Start here; null in a real workspace. */
   start: StartPath | null;
 }) {
-  const { needs, needsTotal, today, canUpload, papers, previews, waiting, zone, tools, aiOn, start } = props;
-  const links = props.links.filter((l) => linkStatus(l, zone).working).slice(0, WAITING_MAX);
+  const { needs, needsTotal, today, canUpload, papers, previews, waiting, links, zone, tools, aiOn, start } = props;
   const drawn = papers.flatMap((doc) => {
     const preview = previews.get(doc.id);
     return preview ? [{ doc, preview }] : [];
