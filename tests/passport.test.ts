@@ -236,7 +236,7 @@ describe("passport links", () => {
     await db.root((tx) =>
       tx.query(
         `insert into app.share_links (org_id, label, token_hash, created_at, expires_at, revoked_at)
-         select $1, 'L' || lpad(n::text, 2, '0'), md5(n::text || $1::text) || md5('x' || n::text || $1::text), now() - make_interval(mins => n),
+         select $1::uuid, 'L' || lpad(n::text, 2, '0'), md5(n::text || $1::uuid::text) || md5('x' || n::text || $1::uuid::text), now() - make_interval(mins => n),
                 case when n % 7 = 0 then now() - make_interval(mins => n) + interval '30 seconds' else now() + interval '7 days' end,
                 case when n % 5 = 0 then now() end
          from generate_series(1, $2::int) n`,
