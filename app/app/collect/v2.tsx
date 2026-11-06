@@ -2,7 +2,7 @@ import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/app-ui";
 import { FocusButton } from "@/components/focus-button";
 import { Icon } from "@/components/icons";
-import type { VendorRow } from "@/lib/server/collect";
+import type { VendorCounts, VendorRow } from "@/lib/server/collect";
 import { CollectChip } from "./chip";
 import { NewVendorFormV2 } from "./forms";
 import { SUMMARY } from "./summary";
@@ -28,7 +28,7 @@ export function CollectV2({
   archived: VendorRow[];
   archivedTotal: number;
   archivedOpen: boolean;
-  counts: Record<string, number>;
+  counts: VendorCounts;
   pager: React.ReactNode;
   archivedPager: React.ReactNode;
   kinds: { key: string; label: string }[];

@@ -16,9 +16,3 @@ export function pageBounds(total: number, wanted: number, size: number): { page:
   const pages = Math.max(1, Math.ceil(total / size));
   return { page: Math.min(pages, Math.max(1, Math.floor(wanted))), pages };
 }
-
-/** One page of a list already read in full (Collect: its counts need every vendor, so the page is cut after the read). */
-export function pageOf<T>(all: T[], wanted: number, size: number): Page<T> {
-  const { page, pages } = pageBounds(all.length, wanted, size);
-  return { rows: all.slice((page - 1) * size, page * size), total: all.length, page, pages };
-}

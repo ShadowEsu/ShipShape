@@ -2,20 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, Notice, PageHeader, Pager } from "@/components/app-ui";
 import { FocusButton } from "@/components/focus-button";
-import { pageOf, pageParam } from "@/lib/paging";
-import { listArchivedVendors, listVendors } from "@/lib/server/collect";
+import { pageParam } from "@/lib/paging";
+import { pageVendors, VENDORS_PAGE_SIZE } from "@/lib/server/collect";
 import { DOC_KINDS } from "@/lib/server/documents";
 import { collectOpen, uiV2 } from "@/lib/server/flags";
 import { requireWorkspace } from "@/lib/server/session";
 import { CollectChip } from "./chip";
 import { NewVendorForm } from "./forms";
-import { SUMMARY, summaryCounts } from "./summary";
+import { SUMMARY } from "./summary";
 import { CollectV2 } from "./v2";
 
 export const metadata: Metadata = { title: "Collect" };
-
-/** How many vendors each of Collect's lists shows at once (Pro has no vendor limit, so both are paged). */
-const VENDORS_PAGE_SIZE = 50;
 
 /** Collect's address with its lists' pages; `archived` there (even as 1) keeps the archived vendors open. */
 function collectHref(page: number, archived: number | null): string {
@@ -42,12 +39,11 @@ export default async function CollectPage({ searchParams }: { searchParams: Prom
     );
   }
 
-  const [all, allArchived, sp] = await Promise.all([listVendors(ctx), listArchivedVendors(ctx), searchParams]);
-  // The counts are the whole workspace's, so the page is cut after the read.
-  const counts = summaryCounts(all);
-  const vendors = pageOf(all, pageParam(sp.page), VENDORS_PAGE_SIZE);
+  const sp = await searchParams;
   const archivedOpen = sp.archived !== undefined;
-  const archived = pageOf(allArchived, pageParam(sp.archived), VENDORS_PAGE_SIZE);
+  // The tiles count every active vendor (pageVendors' counts), not just the page.
+  const [vendors, archived] = await Promise.all([pageVendors(ctx, "active", pageParam(sp.page)), pageVendors(ctx, "archived", pageParam(sp.archived))]);
+  const counts = vendors.counts;
   const pager = (
     <Pager
       label="Vendor pages"

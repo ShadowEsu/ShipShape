@@ -10,9 +10,9 @@ import {
   createVendorLink,
   deleteVendorFile,
   getVendor,
-  listArchivedVendors,
-  listVendors,
   openCollect,
+  owingVendors,
+  pageVendors,
   receiveFile,
   revokeVendorLink,
   setVendorArchived,
@@ -56,6 +56,9 @@ async function sampleWorkspace(): Promise<Ctx> {
 }
 
 const storedFiles = async () => (await readdir(blobDir, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).length;
+/** A workspace's vendors as Collect's first page lists them (the tests' workspaces fit on it). */
+const listVendors = async (ctx: Ctx) => (await pageVendors(ctx, "active")).rows;
+const listArchivedVendors = async (ctx: Ctx) => (await pageVendors(ctx, "archived")).rows;
 
 beforeAll(async () => {
   db = await freshDb();
@@ -106,6 +109,46 @@ describe("the sample workspace", () => {
     const stored = await readFile(path.join(blobDir, row.storage_path));
     expect(new TextDecoder().decode(stored.subarray(0, 5))).toBe("%PDF-");
     expect(Buffer.from(stored).includes("real document")).toBe(false);
+  });
+});
+
+describe("the vendor lists", () => {
+  it("page A to Z with every document asked for, count every vendor's states, and give Home the first ones owing something", async () => {
+    const ctx = await realWorkspace("vendors-paged@example.com");
+    // V01..V53, each asked for a W-9 and an insurance certificate. By n % 4: 0 both current, 1 the certificate missing,
+    // 2 the certificate expiring in 10 days, 3 the certificate lapsed yesterday. V00 is archived.
+    await db.root(async (tx) => {
+      await tx.query(
+        `insert into app.vendors (org_id, name, requested, status)
+         select $1::uuid, 'V' || lpad(n::text, 2, '0'), array['w9', 'coi'], case when n = 0 then 'archived' else 'active' end from generate_series(0, 53) n`,
+        [ctx.orgId],
+      );
+      await tx.query(
+        `insert into app.vendor_files (id, org_id, vendor_id, kind, filename, storage_path, mime, size_bytes, sha256, expires_on)
+         select f.id, $1::uuid, v.id, f.kind, 'f.pdf', $1::uuid::text || '/' || f.id::text || '/v1.pdf', 'application/pdf', 1, repeat('0', 64),
+                case when f.kind = 'coi' and n % 4 = 2 then current_date + 10 when f.kind = 'coi' and n % 4 = 3 then current_date - 1 end
+         from app.vendors v
+         cross join lateral (select substring(v.name, 2)::int as n) x
+         cross join lateral (select gen_random_uuid() as id, k as kind from unnest(array['w9', 'coi']) k) f
+         where v.org_id = $1::uuid and v.status = 'active' and not (f.kind = 'coi' and n % 4 = 1)`,
+        [ctx.orgId],
+      );
+    });
+    const name = (n: number) => `V${String(n).padStart(2, "0")}`;
+
+    const first = await pageVendors(ctx, "active");
+    expect(first).toMatchObject({ total: 53, page: 1, pages: 2, counts: { total: 53, ok: 13, missing: 14, expiring: 13, expired: 13 } });
+    expect(first.rows.map((v) => v.name)).toEqual(Array.from({ length: 50 }, (_, i) => name(i + 1)));
+    const last = await pageVendors(ctx, "active", 2);
+    expect(last.rows.map((v) => [v.name, v.state, v.items.map((i) => `${i.kind} ${i.state}`)])).toEqual([
+      ["V51", "expired", ["w9 ok", "coi expired"]],
+      ["V52", "ok", ["w9 ok", "coi ok"]],
+      ["V53", "missing", ["w9 ok", "coi missing"]],
+    ]);
+    expect((await pageVendors(ctx, "active", 9)).page).toBe(2);
+    expect((await pageVendors(ctx, "archived")).rows.map((v) => v.name)).toEqual(["V00"]);
+    expect((await owingVendors(ctx, 3)).map((v) => v.name)).toEqual(["V01", "V03", "V05"]);
+    expect((await getVendor(ctx, first.rows[1].id))?.vendor).toEqual(first.rows[1]);
   });
 });
 
