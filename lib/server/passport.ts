@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { isPrintable } from "@/lib/pdf/compose";
+import { pageBounds, type Page } from "@/lib/paging";
 import { keyedHash, newToken, sha256Hex } from "./crypto";
 import { asAnon, asUser } from "./db";
 import { DOC_KINDS, downloadName, type DocKind } from "./documents";
@@ -60,18 +61,48 @@ export async function createPassport(ctx: Ctx, input: unknown): Promise<{ id: st
   return { id, token };
 }
 
-/** The workspace's links, newest first; `onlyId` narrows to one. */
-export async function listPassports(ctx: Ctx, onlyId: string | null = null): Promise<PassportRow[]> {
-  return asUser(ctx.userId, (tx) =>
-    tx.query<PassportRow>(
-      `select l.id, l.label, l.expires_at::text as expires_at, l.revoked_at::text as revoked_at, l.created_at::text as created_at,
-         (select count(*)::int from app.share_link_documents sd where sd.link_id = l.id) as documents,
-         (select count(*)::int from app.share_access a where a.link_id = l.id and a.action = 'opened') as opens,
-         (select max(a.at)::text from app.share_access a where a.link_id = l.id) as last_opened
-       from app.share_links l where l.org_id = $1 and ($2::uuid is null or l.id = $2) order by l.created_at desc`,
-      [ctx.orgId, onlyId],
-    ),
-  );
+/** How many links the Passport page lists at once (Pro has no link limit, so the list is paged). */
+export const PASSPORTS_PAGE_SIZE = 50;
+
+// A link works while it's not turned off and not past its end (link-status.ts's "working").
+const WORKING = `(l.revoked_at is null and l.expires_at >= now())`;
+// $2 narrows to one link; $3 keeps only working links. Newest first, the working ones first when $4 (the redesigned
+// look); l.id last, so limit/offset ($5, $6) has a total order.
+const LINKS_SQL =
+  `select l.id, l.label, l.expires_at::text as expires_at, l.revoked_at::text as revoked_at, l.created_at::text as created_at,
+    (select count(*)::int from app.share_link_documents sd where sd.link_id = l.id) as documents,
+    (select count(*)::int from app.share_access a where a.link_id = l.id and a.action = 'opened') as opens,
+    (select max(a.at)::text from app.share_access a where a.link_id = l.id) as last_opened
+  from app.share_links l
+  where l.org_id = $1 and ($2::uuid is null or l.id = $2) and (not $3::boolean or ` +
+  WORKING +
+  `) order by case when $4::boolean then ` +
+  WORKING +
+  ` end desc, l.created_at desc, l.id limit $5::int offset $6::int`;
+
+type LinkQuery = { onlyId?: string; working?: boolean; workingFirst?: boolean; limit: number; offset?: number };
+const linkParams = (ctx: Ctx, q: LinkQuery) => [ctx.orgId, q.onlyId ?? null, q.working ?? false, q.workingFirst ?? false, q.limit, q.offset ?? 0];
+
+/** One page of the workspace's links, newest first (the working ones first when `workingFirst`). */
+export async function pagePassports(ctx: Ctx, opts: { page?: number; workingFirst?: boolean } = {}): Promise<Page<PassportRow>> {
+  return asUser(ctx.userId, async (tx) => {
+    const [{ n: total }] = await tx.query<{ n: number }>("select count(*)::int as n from app.share_links where org_id = $1", [ctx.orgId]);
+    const { page, pages } = pageBounds(total, opts.page ?? 1, PASSPORTS_PAGE_SIZE);
+    const q = { workingFirst: opts.workingFirst, limit: PASSPORTS_PAGE_SIZE, offset: (page - 1) * PASSPORTS_PAGE_SIZE };
+    const rows = await tx.query<PassportRow>(LINKS_SQL, linkParams(ctx, q));
+    return { rows, total, page, pages };
+  });
+}
+
+/** The newest links that still work, at most `max`: Home's Shared, and the Free plan's one open link. */
+export async function workingPassports(ctx: Ctx, max: number): Promise<PassportRow[]> {
+  return asUser(ctx.userId, (tx) => tx.query<PassportRow>(LINKS_SQL, linkParams(ctx, { working: true, limit: max })));
+}
+
+/** Whether this workspace has made any passport link (the earlier Home's setup step). */
+export async function hasPassports(ctx: Ctx): Promise<boolean> {
+  const [row] = await asUser(ctx.userId, (tx) => tx.query<{ any: boolean }>("select exists (select 1 from app.share_links where org_id = $1) as any", [ctx.orgId]));
+  return row.any;
 }
 
 export interface PassportDetail {
@@ -86,7 +117,7 @@ export const PASSPORT_ACCESS_SHOWN = 200;
 
 export async function getPassport(ctx: Ctx, id: string): Promise<PassportDetail | null> {
   if (!z.uuid().safeParse(id).success) return null;
-  const [link] = await listPassports(ctx, id);
+  const [link] = await asUser(ctx.userId, (tx) => tx.query<PassportRow>(LINKS_SQL, linkParams(ctx, { onlyId: id, limit: 1 })));
   if (!link) return null;
   return asUser(ctx.userId, async (tx) => {
     const documents = await tx.query<{ id: string; title: string; kind: DocKind }>(

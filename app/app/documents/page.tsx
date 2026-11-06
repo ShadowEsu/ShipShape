@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EmptyState, Notice, PageHeader, ValidityChip } from "@/components/app-ui";
+import { EmptyState, Notice, PageHeader, Pager, ValidityChip } from "@/components/app-ui";
+import { pageParam } from "@/lib/paging";
 import { DOC_KINDS, DOC_SORTS, DOCUMENTS_PAGE_SIZE, docSort, pageDocuments } from "@/lib/server/documents";
 import { esignAvailable } from "@/lib/server/esign";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
@@ -33,7 +34,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
   const archived = sp.archived === "1";
   const sort = docSort(sp.sort);
   // A page number that isn't one reads as 1; pageDocuments clamps to the pages there are.
-  const wanted = /^\d{1,6}$/.test(sp.page ?? "") ? Number(sp.page) : 1;
+  const wanted = pageParam(sp.page);
   const { rows: docs, total, page, pages } = await pageDocuments(ctx, { q: sp.q, kind: sp.kind, archived, page: wanted, sort });
   const filtered = Boolean(sp.q || sp.kind);
   // An empty list with nothing filtered: nothing to search, and each empty state has its own one action.
@@ -217,25 +218,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         </ul>
       )}
 
-      {pages > 1 && (
-        <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3 text-sm">
-          <p className="text-ink-2">
-            Showing {(page - 1) * DOCUMENTS_PAGE_SIZE + 1}–{(page - 1) * DOCUMENTS_PAGE_SIZE + docs.length} of {total}
-          </p>
-          <div className="flex gap-2">
-            {page > 1 && (
-              <Link href={pageHref(sp, page - 1)} className="btn-ghost" rel="prev">
-                Previous
-              </Link>
-            )}
-            {page < pages && (
-              <Link href={pageHref(sp, page + 1)} className="btn-ghost" rel="next">
-                Next
-              </Link>
-            )}
-          </div>
-        </nav>
-      )}
+      <Pager page={page} pages={pages} size={DOCUMENTS_PAGE_SIZE} shown={docs.length} total={total} href={(n) => pageHref(sp, n)} />
 
       {/* The redesigned app has the Archived tab instead. */}
       {!v2 && toArchived && (

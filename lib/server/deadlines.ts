@@ -23,9 +23,58 @@ const DATES_SQL = `
   where d.org_id = $1 and d.status = 'active' and x.due_on is not null
   order by x.due_on, d.title`;
 
-/** Every expiry and renewal date in the workspace, soonest first (lapsed ones included); days counted from the viewer's date. */
+/** Every expiry and renewal date in the workspace, soonest first (lapsed ones included), for the calendar file; days counted from the viewer's date. */
 export async function listDeadlines(ctx: Ctx): Promise<Deadline[]> {
   return asUser(ctx.userId, (tx) => tx.query<Deadline>(DATES_SQL, [ctx.orgId, ctx.today]));
+}
+
+/**
+ * Where a date sits on the Deadlines page: `lapsed` an expiry that passed, `passed` a renewal notice date that passed,
+ * `soon` in the next 30 days, `later` after that. Lapsed and soon are what put a document on Home's "Needs attention"
+ * (ATTENTION_SQL in lib/server/documents.ts); a passed renewal date isn't, as Home drops it.
+ */
+export type DatePart = "lapsed" | "passed" | "soon" | "later";
+
+export interface ShownDeadline extends Deadline {
+  part: DatePart;
+  /** How many dates the workspace has in this part, shown or not. */
+  part_total: number;
+}
+
+/** How many dates the Deadlines page lists from each part (Pro has no document limit); the earliest in each. */
+export const DEADLINES_SHOWN = 100;
+
+// Every part with a date shows its earliest, so what the page works out from what it shows (anything upcoming,
+// anything needing attention, the earliest upcoming date) is what all the dates would say. Ties: title, then the row.
+const SHOWN_SQL = `
+  with dates as (
+    select d.id as document_id, d.title, d.kind, x.date_kind, x.due_on, (x.due_on - $2::date) as days_left
+    from app.documents d
+    cross join lateral (values ('expires', d.expires_on), ('renews', d.renews_on)) as x(date_kind, due_on)
+    where d.org_id = $1 and d.status = 'active' and x.due_on is not null
+  ), parts as (
+    select *, case when days_left > 30 then 'later' when days_left >= 0 then 'soon' when date_kind = 'expires' then 'lapsed' else 'passed' end as part
+    from dates
+  ), ranked as (
+    select *, row_number() over (partition by part order by due_on, title, document_id, date_kind) as n, count(*) over (partition by part)::int as part_total
+    from parts
+  )
+  select document_id, title, kind, date_kind, due_on::text as due_on, days_left, part, part_total
+  from ranked
+  where n <= $3
+  order by due_on, title, document_id, date_kind`;
+
+/** The Deadlines page's dates: up to `shown` (DEADLINES_SHOWN) from each part, soonest first; days counted from the viewer's date. */
+export async function shownDeadlines(ctx: Ctx, shown = DEADLINES_SHOWN): Promise<ShownDeadline[]> {
+  return asUser(ctx.userId, (tx) => tx.query<ShownDeadline>(SHOWN_SQL, [ctx.orgId, ctx.today, shown]));
+}
+
+/** Whether a date puts its document on Home's "Needs attention". */
+export const needsAttention = (d: ShownDeadline) => d.part === "lapsed" || d.part === "soon";
+
+/** How many dates a group of the page has in all: each part it shows, counted once in full. */
+export function groupTotal(items: readonly ShownDeadline[]): number {
+  return [...new Map(items.map((d) => [d.part, d.part_total])).values()].reduce((sum, n) => sum + n, 0);
 }
 
 // Calendar file -----------------------------------------------------------------------------------

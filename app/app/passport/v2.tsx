@@ -8,27 +8,28 @@ import type { PickableDoc } from "./forms";
 import { NewLinkV2 } from "./forms-v2";
 import { linkStatus } from "./link-status";
 
-/** Your links as Sent lists them: wrapping hairline rows, the state as a dot and a word (Design #26 MUST-2). */
+/** Your links as Sent lists them: wrapping hairline rows, the state as a dot and a word (Design #26 MUST-2). Working links come first (the page's order). */
 function YourLinks({ links, zone }: { links: PassportRow[]; zone: string }) {
-  // Working links first, newest first within each (the list's own order); the stable sort keeps it.
-  const rows = links.map((l) => ({ l, s: linkStatus(l, zone) })).sort((a, b) => Number(b.s.working) - Number(a.s.working));
   return (
     <ul className="hair-list">
-      {rows.map(({ l, s }) => (
-        <HairRow
-          key={l.id}
-          href={`/app/passport/${l.id}`}
-          icon="passport"
-          title={l.label}
-          line={
-            <>
-              {l.documents} {l.documents === 1 ? "document" : "documents"} · opened <CountUp value={l.opens} /> {l.opens === 1 ? "time" : "times"} · until{" "}
-              {dayOf(l.expires_at, zone)}
-            </>
-          }
-          chip={<StateChip tone={s.working ? "ok" : "none"}>{s.label}</StateChip>}
-        />
-      ))}
+      {links.map((l) => {
+        const s = linkStatus(l, zone);
+        return (
+          <HairRow
+            key={l.id}
+            href={`/app/passport/${l.id}`}
+            icon="passport"
+            title={l.label}
+            line={
+              <>
+                {l.documents} {l.documents === 1 ? "document" : "documents"} · opened <CountUp value={l.opens} /> {l.opens === 1 ? "time" : "times"} · until{" "}
+                {dayOf(l.expires_at, zone)}
+              </>
+            }
+            chip={<StateChip tone={s.working ? "ok" : "none"}>{s.label}</StateChip>}
+          />
+        );
+      })}
     </ul>
   );
 }
@@ -36,11 +37,13 @@ function YourLinks({ links, zone }: { links: PassportRow[]; zone: string }) {
 /**
  * Passport in the redesigned app (Design spec 2026-11-02 §4, PR 7 plan): one column; Your links first once there are
  * any (working ones on top), then the new-link form; with none yet, the form first and what Your links will hold under
- * it. Same data, words and action as the current page.
+ * it. Same data, words and action as the current page. `links` is one page of them, `pager` the way to the others.
  */
 export function PassportV2({
   links,
+  pager,
   docs,
+  left,
   preselected,
   today,
   initial,
@@ -48,7 +51,10 @@ export function PassportV2({
   gated,
 }: {
   links: PassportRow[];
+  pager: React.ReactNode;
   docs: PickableDoc[];
+  /** How many documents the form doesn't list (past PICKER_MAX). */
+  left: number;
   preselected: string[];
   today: string;
   initial: { label: string; days: number };
@@ -69,6 +75,7 @@ export function PassportV2({
       ) : (
         <YourLinks links={links} zone={zone} />
       )}
+      {pager}
     </section>
   );
   return (
@@ -88,7 +95,7 @@ export function PassportV2({
         {gated && docs.length === 0 ? (
           <p className="text-sm text-ink-2">A link shares documents from this workspace, so it needs at least one. Adding real documents opens after our security review.</p>
         ) : (
-          <NewLinkV2 days={PASSPORT_DAYS} preselected={preselected} today={today} initial={initial} docs={docs} />
+          <NewLinkV2 days={PASSPORT_DAYS} preselected={preselected} today={today} initial={initial} docs={docs} left={left} />
         )}
       </section>
       {links.length === 0 && yours}

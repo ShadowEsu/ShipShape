@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { pageBounds, type Page } from "@/lib/paging";
 import { isPrintable } from "@/lib/pdf/compose";
 import { samplePdf } from "@/lib/pdf/sample-pdf";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
@@ -100,22 +101,46 @@ export interface VendorRow {
   items: CollectItem[];
 }
 
-const VENDOR_SQL = `
-  select v.id, v.name, v.email, v.status, k.kind, f.id as file_id, f.received_at::text as received_at, f.expires_on::text as expires_on,
-         case when f.id is null then 'missing'
-              when f.expires_on is null then 'ok'
-              when f.expires_on < $4::date then 'expired'
-              when f.expires_on <= $4::date + 30 then 'expiring'
-              else 'ok' end as state,
-         (select count(*)::int from app.vendor_links l where l.vendor_id = v.id and l.revoked_at is null and l.expires_at > now()) as open_links
-  from app.vendors v
-  cross join lateral unnest(v.requested) with ordinality as k(kind, n)
-  left join lateral (
-    select vf.id, vf.received_at, vf.expires_on from app.vendor_files vf
-    where vf.vendor_id = v.id and vf.kind = k.kind order by vf.received_at desc limit 1
-  ) f on true
-  where v.org_id = $1 and ($2::uuid is null or v.id = $2) and ($3::text is null or v.status = $3)
-  order by lower(v.name), v.id, k.n`;
+// One row per vendor and document asked for, with that document's state; $1 org, $2 one vendor (all when null), $3 status
+// (any when null), $4 the viewer's date. Then one row per vendor with which states its documents are in.
+const VENDOR_ITEMS = `
+  with items as (
+    select v.id, v.name, v.email, v.status, k.kind, k.n, f.id as file_id, f.received_at, f.expires_on,
+           case when f.id is null then 'missing'
+                when f.expires_on is null then 'ok'
+                when f.expires_on < $4::date then 'expired'
+                when f.expires_on <= $4::date + 30 then 'expiring'
+                else 'ok' end as state,
+           (select count(*)::int from app.vendor_links l where l.vendor_id = v.id and l.revoked_at is null and l.expires_at > now()) as open_links
+    from app.vendors v
+    cross join lateral unnest(v.requested) with ordinality as k(kind, n)
+    left join lateral (
+      select vf.id, vf.received_at, vf.expires_on from app.vendor_files vf
+      where vf.vendor_id = v.id and vf.kind = k.kind order by vf.received_at desc limit 1
+    ) f on true
+    where v.org_id = $1 and ($2::uuid is null or v.id = $2) and ($3::text is null or v.status = $3)
+  ), vendors as (
+    select id, lower(name) as sort_name, bool_and(state = 'ok') as all_ok, bool_or(state = 'expiring') as expiring,
+           bool_or(state = 'missing') as missing, bool_or(state = 'expired') as expired
+    from items group by id, name
+  )`;
+// A page of vendors A to Z ($6 rows from $7; all when $6 is null), only those owing a document (one missing or lapsed)
+// when $5, with their documents in the order asked for.
+const VENDOR_SQL =
+  VENDOR_ITEMS +
+  `, picked as (
+    select id, sort_name from vendors where not $5::boolean or missing or expired order by sort_name, id limit $6::int offset $7::int
+  )
+  select i.id, i.name, i.email, i.status, i.kind, i.file_id, i.received_at::text as received_at, i.expires_on::text as expires_on, i.state, i.open_links
+  from items i join picked p on p.id = i.id
+  order by p.sort_name, i.id, i.n`;
+// Collect's tiles over every vendor: "All current" counts vendors whose every document is current; the others count
+// vendors with at least one document in that state, so one vendor can count under two.
+const COUNTS_SQL =
+  VENDOR_ITEMS +
+  ` select count(*)::int as total, count(*) filter (where all_ok)::int as ok, count(*) filter (where expiring)::int as expiring,
+      count(*) filter (where missing)::int as missing, count(*) filter (where expired)::int as expired
+    from vendors`;
 
 interface VendorSqlRow {
   id: string;
@@ -130,8 +155,7 @@ interface VendorSqlRow {
   open_links: number;
 }
 
-async function queryVendors(ctx: Ctx, onlyId: string | null, status: "active" | "archived" | null): Promise<VendorRow[]> {
-  const rows = await asUser(ctx.userId, (tx) => tx.query<VendorSqlRow>(VENDOR_SQL, [ctx.orgId, onlyId, status, ctx.today]));
+function vendorRows(rows: VendorSqlRow[]): VendorRow[] {
   const byId = new Map<string, VendorRow>();
   for (const r of rows) {
     if (!isKind(r.kind)) continue;
@@ -146,13 +170,31 @@ async function queryVendors(ctx: Ctx, onlyId: string | null, status: "active" | 
   return [...byId.values()];
 }
 
-/** The workspace's active vendors with the state of each document asked for, A to Z. */
-export async function listVendors(ctx: Ctx): Promise<VendorRow[]> {
-  return queryVendors(ctx, null, "active");
+/** How many vendors each of Collect's lists shows at once (Pro has no vendor limit, so both are paged). */
+export const VENDORS_PAGE_SIZE = 50;
+
+/** How many of a list's vendors are in each state (Collect's tiles), and how many there are. */
+export type VendorCounts = Record<CollectState, number> & { total: number };
+
+/** One page of the workspace's active or archived vendors, A to Z, with the state of each document asked for, and the whole list's counts. */
+export async function pageVendors(
+  ctx: Ctx,
+  status: "active" | "archived",
+  wanted = 1,
+  size = VENDORS_PAGE_SIZE,
+): Promise<Page<VendorRow> & { counts: VendorCounts }> {
+  return asUser(ctx.userId, async (tx) => {
+    const [counts] = await tx.query<VendorCounts>(COUNTS_SQL, [ctx.orgId, null, status, ctx.today]);
+    const { page, pages } = pageBounds(counts.total, wanted, size);
+    const rows = await tx.query<VendorSqlRow>(VENDOR_SQL, [ctx.orgId, null, status, ctx.today, false, size, (page - 1) * size]);
+    return { rows: vendorRows(rows), total: counts.total, page, pages, counts };
+  });
 }
 
-export async function listArchivedVendors(ctx: Ctx): Promise<VendorRow[]> {
-  return queryVendors(ctx, null, "archived");
+/** The first `max` active vendors, A to Z, who still owe a document: one missing or lapsed (Home's Shared). */
+export async function owingVendors(ctx: Ctx, max: number): Promise<VendorRow[]> {
+  const rows = await asUser(ctx.userId, (tx) => tx.query<VendorSqlRow>(VENDOR_SQL, [ctx.orgId, null, "active", ctx.today, true, max, 0]));
+  return vendorRows(rows);
 }
 
 export interface VendorFile {
@@ -182,7 +224,7 @@ export interface VendorDetail {
 
 export async function getVendor(ctx: Ctx, id: string): Promise<VendorDetail | null> {
   if (!VendorId.safeParse(id).success) return null;
-  const [vendor] = await queryVendors(ctx, id, null);
+  const [vendor] = vendorRows(await asUser(ctx.userId, (tx) => tx.query<VendorSqlRow>(VENDOR_SQL, [ctx.orgId, id, null, ctx.today, false, 1, 0])));
   if (!vendor) return null;
   return asUser(ctx.userId, async (tx) => {
     const files = await tx.query<Omit<VendorFile, "label"> & { kind: string }>(

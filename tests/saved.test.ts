@@ -11,7 +11,7 @@ import { migrate, type MigrationStep } from "@/lib/server/migrations";
 import { createPassport } from "@/lib/server/passport";
 import type { Ctx } from "@/lib/server/profile";
 import { seedSampleWorkspace } from "@/lib/server/sample";
-import { isSaved, listSaved, SAVED_GONE, setSaved } from "@/lib/server/saved";
+import { isSaved, pageSaved, SAVED_GONE, setSaved } from "@/lib/server/saved";
 import { createLocalUser, finishSignIn, requireWorkspace } from "@/lib/server/session";
 import { isoToday } from "@/lib/today";
 import { freshDb, type TestDb } from "./support/db";
@@ -21,6 +21,9 @@ import { actionsOf, renderPage, textOf } from "./support/render";
  * Saved (0045): a person's own bookmarks to documents and passport links. Saves are personal: nobody else, in
  * the workspace or outside it, sees or changes them, and a save can only point at its own workspace's objects.
  */
+
+/** The caller's saved rows as the Saved page's first page lists them (the tests save fewer than a page). */
+const listSaved = async (ctx: Ctx) => (await pageSaved(ctx)).rows;
 
 const jar = vi.hoisted(() => new Map<string, { value: string; options?: Record<string, unknown> }>());
 vi.mock("next/headers", () => ({
@@ -116,7 +119,7 @@ describe("saving", () => {
     expect(await listSaved(ctx)).toEqual([]);
   });
 
-  it("lists documents and links newest first, as display rows; the limit takes the newest", async () => {
+  it("lists documents and links newest first, as display rows, a page at a time", async () => {
     const ctx = await signIn("saved-order@example.com");
     const w9 = await addDoc(ctx, "Form W-9");
     const coi = await addDoc(ctx, "Liability certificate", "coi", "2030-01-31");
@@ -129,7 +132,10 @@ describe("saving", () => {
     expect(rows[0]).toMatchObject({ kind: "document", title: "Liability certificate", kindLabel: "Insurance certificate", expiresOn: "2030-01-31", validity: "ok", href: `/app/documents/${coi}` });
     expect(rows[1]).toMatchObject({ kind: "link", label: "For Northwind", documents: 2, state: "working", revokedAt: null, href: `/app/passport/${link}` });
     expect(rows[2]).toMatchObject({ kind: "document", kindLabel: "W-9", expiresOn: null, validity: "none" });
-    expect((await listSaved(ctx, 2)).map((r) => r.id)).toEqual([coi, link]);
+    // A page at a time, newest first: two to a page puts the oldest on the second.
+    expect(await pageSaved(ctx, 1, 2)).toMatchObject({ total: 3, page: 1, pages: 2, rows: [{ id: coi }, { id: link }] });
+    expect(await pageSaved(ctx, 2, 2)).toMatchObject({ total: 3, page: 2, pages: 2, rows: [{ id: w9 }] });
+    expect((await pageSaved(ctx, 9, 2)).page).toBe(2);
   });
 
   it("shows turned-off and expired links with their state", async () => {
@@ -270,7 +276,7 @@ describe("saves are personal (row level security)", () => {
 });
 
 describe("pages", () => {
-  const savedPage = () => renderPage(SavedPage, {});
+  const savedPage = () => renderPage(SavedPage, { searchParams: Promise.resolve({}) });
   const documentPage = (id: string) => renderPage(DocumentPage, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
   const linkPage = (id: string) => renderPage(PassportDetail, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
   /** The Save toggle's form: its hidden fields and its button's visible text and accessible name. */

@@ -67,6 +67,8 @@ function FieldError({ id, error }: { id: string; error?: string }) {
 
 export interface PassportFormProps {
   docs: PickableDoc[];
+  /** How many active documents `docs` leaves out (it lists the PICKER_MAX that expire soonest, and any already ticked). */
+  left?: number;
   days: readonly number[];
   preselected: string[];
   /** The viewer's date (ctx.today, YYYY-MM-DD) from the server, so the end day matches Your links; the browser must not count from its own clock, or hydration differs around midnight. */
@@ -74,6 +76,10 @@ export interface PassportFormProps {
   /** What the person had typed before opening the preview (the preview's "Back" carries it in the address). */
   initial?: { label: string; days: number };
 }
+
+/** Under the documents to pick from when some aren't there (PICKER_MAX): the latest to expire are the ones left out. */
+export const notListed = (left: number) =>
+  left === 1 ? "1 more document, the one that expires last, isn't listed here." : `${left} more documents, the ones that expire last, aren't listed here.`;
 
 /** The new-link form's state, shared by both looks (NewPassportForm here, NewPassportFormV2 in forms-v2.tsx). */
 export function usePassportForm({ docs, days, preselected, initial = { label: "", days: Number.NaN } }: PassportFormProps) {
@@ -172,6 +178,7 @@ export function NewPassportForm(props: PassportFormProps) {
             </li>
           ))}
         </ul>
+        {props.left ? <p className="mt-2 text-sm text-ink-3">{notListed(props.left)}</p> : null}
         <FieldError id="docs-error" error={errors.docs} />
       </fieldset>
       <fieldset aria-describedby={[days.includes(chosen) ? "days-end" : null, errors.days ? "days-error" : null].filter(Boolean).join(" ") || undefined}>

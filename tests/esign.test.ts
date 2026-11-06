@@ -9,7 +9,7 @@ import type * as BuildIsolated from "@/lib/pdf/build-isolated";
 import { BuildBusy, BuildCrashed } from "@/lib/pdf/build-isolated";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asAnon, asService, asUser } from "@/lib/server/db";
-import { downloadUrl, getDocument, insertDocument, listDocuments, setArchived, uploadVersion } from "@/lib/server/documents";
+import { downloadUrl, getDocument, insertDocument, setArchived, uploadVersion } from "@/lib/server/documents";
 import { CERTIFICATE_ALLOWANCE, completeSigning, listSignatureRequests, openSigning, requestSignature, reviewFileUrl, revokeSignatureRequest, sendSigningCode, signingFileUrl, SIGNING_CODE_DELIVERY } from "@/lib/server/esign";
 import { UserError } from "@/lib/server/errors";
 import { GateClosed } from "@/lib/server/flags";
@@ -21,6 +21,7 @@ import { blobStore, localBlobStore, setBlobStoreForTests, verifyFileParams } fro
 import { isoToday } from "@/lib/today";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { freshDb, type TestDb } from "./support/db";
+import { listDocuments } from "./support/documents";
 import { fillBucket } from "./support/rate";
 
 /** E-signatures (Security R8): consent stored, email proven by a one-time code, signed copy immutable, every step audited. */

@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ACK_TEXT, ACK_VERSION } from "@/lib/legal";
+import { pageBounds, type Page } from "@/lib/paging";
 import { isPrintable } from "@/lib/pdf/compose";
 import { templateById } from "@/lib/templates/catalog";
 import type { Validity } from "@/lib/today";
@@ -50,14 +51,17 @@ export interface DocRow {
 }
 
 // $1 is the viewer's date (ctx.today): a document is current through its last day where the person is.
-const DOC_SELECT = `
-  select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on,
-         d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.notes, d.template_id,
-         d.created_at::text as created_at,
-         case when d.expires_on is null then 'none'
+const VALIDITY = `case when d.expires_on is null then 'none'
               when d.expires_on < $1::date then 'expired'
               when d.expires_on <= $1::date + 30 then 'expiring'
-              else 'ok' end as validity,
+              else 'ok' end as validity`;
+const DOC_SELECT =
+  `
+  select d.id, d.title, d.kind, d.status, d.issuer, d.counterparty, d.issued_on::text as issued_on,
+         d.expires_on::text as expires_on, d.renews_on::text as renews_on, d.notes, d.template_id,
+         d.created_at::text as created_at, ` +
+  VALIDITY +
+  `,
          (select count(*)::int from app.document_versions v where v.document_id = d.id) as versions,
          (select v.origin from app.document_versions v where v.document_id = d.id order by v.version desc limit 1) as latest_origin
   from app.documents d`;
@@ -103,10 +107,6 @@ function listParams(ctx: Ctx, opts: ListOpts): [string, string, string, string |
   const q = Array.from(opts.q ?? "", (c) => (breaksOneLine(c) ? " " : c)).join("").trim().slice(0, 100);
   const kind = opts.kind && opts.kind in DOC_KINDS ? opts.kind : null;
   return [ctx.today, ctx.orgId, opts.archived ? "archived" : "active", kind, q];
-}
-
-export async function listDocuments(ctx: Ctx, opts: ListOpts = {}): Promise<DocRow[]> {
-  return asUser(ctx.userId, (tx) => tx.query<DocRow>(LIST_SQL, listParams(ctx, opts)));
 }
 
 /** How many documents Home lists under "Needs attention" at once; the rest are a count and a link to the list. */
@@ -226,25 +226,66 @@ export async function documentsById(ctx: Ctx, ids: readonly string[]): Promise<D
   return asUser(ctx.userId, (tx) => tx.query<DocRow>(BY_ID_SQL, [ctx.today, ctx.orgId, ids]));
 }
 
+/** How many documents the passport form offers to pick from; past them, a document's own "Share in a link" still brings it. */
+export const PICKER_MAX = 500;
+
+export type PickRow = Pick<DocRow, "id" | "title" | "kind" | "template_id" | "validity">;
+
+// Only what the form shows: no version subqueries. $1 is the viewer's date, as DOC_SELECT; ordered as LIST_ORDER.
+const PICK_SQL =
+  `select d.id, d.title, d.kind, d.template_id, ` +
+  VALIDITY +
+  ` from app.documents d where d.org_id = $2 and d.status = 'active' and ($3::uuid[] is null or d.id = any($3::uuid[]))` +
+  LIST_ORDER +
+  ` limit $4::int`;
+
+/**
+ * The documents the passport form offers: the `max` (PICKER_MAX) that expire soonest, then any of `wanted` (the
+ * address's ?docs=, already ticked) past them, in the same order. `left` is how many active documents the form doesn't list.
+ */
+export async function pickableDocuments(ctx: Ctx, wanted: readonly string[], max = PICKER_MAX): Promise<{ docs: PickRow[]; left: number }> {
+  const ids = wanted.filter((id) => z.uuid().safeParse(id).success).slice(0, 50);
+  return asUser(ctx.userId, async (tx) => {
+    const [{ n: total }] = await tx.query<{ n: number }>("select count(*)::int as n from app.documents where org_id = $1 and status = 'active'", [ctx.orgId]);
+    const docs = await tx.query<PickRow>(PICK_SQL, [ctx.today, ctx.orgId, null, max]);
+    if (total <= max) return { docs, left: 0 };
+    const shown = new Set(docs.map((d) => d.id));
+    const missing = ids.filter((id) => !shown.has(id));
+    const extra = missing.length ? await tx.query<PickRow>(PICK_SQL, [ctx.today, ctx.orgId, missing, missing.length]) : [];
+    return { docs: [...docs, ...extra], left: total - docs.length - extra.length };
+  });
+}
+
+export type CandidateRow = Pick<DocRow, "id" | "title" | "kind" | "validity" | "expires_on">;
+
+// The request matcher's candidates, ordered as LIST_ORDER. A title qualifies by holding one of the fragments ($4, LIKE
+// patterns of [a-z0-9] only) lowercased as JS lowercases ASCII (collate "C" lowercases only A-Z); a title with anything
+// outside printable ASCII always qualifies, so the matcher itself decides those.
+const CANDIDATE_SQL =
+  `select d.id, d.title, d.kind, d.expires_on::text as expires_on, ` +
+  VALIDITY +
+  ` from app.documents d where d.org_id = $2 and d.status = 'active'
+    and (d.kind = any($3::text[]) or lower(d.title collate "C") like any($4::text[]) or d.title !~ '^[ -~]*$')` +
+  LIST_ORDER;
+
+/**
+ * The active documents a request could match (lib/server/request-check.ts): those of one of `kinds`, and those whose
+ * title holds one of `fragments` (lowercase letters and digits). Every document the matcher would pick is among them.
+ */
+export async function matchCandidates(ctx: Ctx, kinds: readonly string[], fragments: readonly string[]): Promise<CandidateRow[]> {
+  const patterns = fragments.filter((f) => /^[a-z0-9]+$/.test(f)).map((f) => `%${f}%`);
+  return asUser(ctx.userId, (tx) => tx.query<CandidateRow>(CANDIDATE_SQL, [ctx.today, ctx.orgId, kinds, patterns]));
+}
+
 /** How many documents the documents page lists at once (Pro has no document limit, so the list is paged). */
 export const DOCUMENTS_PAGE_SIZE = 50;
 
-export interface DocPage {
-  rows: DocRow[];
-  /** All the documents the filter matches, across every page. */
-  total: number;
-  /** The page shown, 1-based, clamped to the pages there are (an empty list is page 1 of 1). */
-  page: number;
-  pages: number;
-}
-
-/** One page of the documents list, in the chosen order (soonest expiry unless said), with the count the filter matches. */
-export async function pageDocuments(ctx: Ctx, opts: ListOpts & { page?: number; sort?: DocSort } = {}): Promise<DocPage> {
+/** One page of the documents list, in the chosen order (soonest expiry unless said); `total` is what the filter matches. */
+export async function pageDocuments(ctx: Ctx, opts: ListOpts & { page?: number; sort?: DocSort } = {}): Promise<Page<DocRow>> {
   const params = listParams(ctx, opts);
   return asUser(ctx.userId, async (tx) => {
     const [{ n: total }] = await tx.query<{ n: number }>(COUNT_SQL, params);
-    const pages = Math.max(1, Math.ceil(total / DOCUMENTS_PAGE_SIZE));
-    const page = Math.min(pages, Math.max(1, Math.floor(opts.page ?? 1)));
+    const { page, pages } = pageBounds(total, opts.page ?? 1, DOCUMENTS_PAGE_SIZE);
     const rows = await tx.query<DocRow>(PAGE_SQL, [...params, DOCUMENTS_PAGE_SIZE, (page - 1) * DOCUMENTS_PAGE_SIZE, docSort(opts.sort)]);
     return { rows, total, page, pages };
   });

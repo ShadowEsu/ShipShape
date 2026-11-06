@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { sha256Hex } from "@/lib/server/crypto";
 import { asService, asUser } from "@/lib/server/db";
-import { canSaveFacts, checkFill, DOCUMENT_GONE, documentsById, downloadUrl, fillTemplate, firstDocument, getDocument, listDocuments, sampleIsFull, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
+import { canSaveFacts, checkFill, DOCUMENT_GONE, documentsById, downloadUrl, fillTemplate, firstDocument, getDocument, sampleIsFull, setArchived, updateDocument, uploadDocument, uploadVersion } from "@/lib/server/documents";
 import { PlanLimit, UserError } from "@/lib/server/errors";
 import { FILES_FULL, FILL_BUSY, SAMPLE_DOCUMENTS, SAMPLE_FULL, UPLOAD_BUSY } from "@/lib/server/limits";
 import { planLimit } from "@/lib/server/plans";
@@ -23,6 +23,7 @@ import { templateById } from "@/lib/templates/catalog";
 import { isoToday } from "@/lib/today";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limit";
 import { freshDb, type TestDb } from "./support/db";
+import { listDocuments } from "./support/documents";
 import { fillBucket } from "./support/rate";
 
 /** The baselines (Tm y) of the W-9 requester box's text, from its appearance XObject (186.2 × 38 pt) in a flattened document. */

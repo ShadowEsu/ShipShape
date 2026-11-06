@@ -3,7 +3,7 @@ import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/app-ui";
 import { PLANS } from "@/lib/plans";
 import { billingView } from "@/lib/server/billing";
-import { listDeadlines, listOutbox, type Deadline } from "@/lib/server/deadlines";
+import { groupTotal, listOutbox, shownDeadlines, type ShownDeadline } from "@/lib/server/deadlines";
 import { DOC_KINDS, firstDocument } from "@/lib/server/documents";
 import { realDocsEnabled, uiV2 } from "@/lib/server/flags";
 import { mailOn } from "@/lib/server/mail";
@@ -11,12 +11,13 @@ import { requireWorkspace, viewerZone } from "@/lib/server/session";
 import { startStepOpen } from "@/lib/server/start-here";
 import { fmtDay, timeOf } from "@/lib/today";
 import { DeadlinesSeen } from "../start-mark";
+import { MoreDates } from "./more-dates";
 import { DeadlinesV2 } from "./v2";
 import { when } from "./when";
 
 export const metadata: Metadata = { title: "Deadlines" };
 
-function Group({ title, items, tone }: { title: string; items: Deadline[]; tone: "bad" | "warn" | "ok" }) {
+function Group({ title, items, tone }: { title: string; items: ShownDeadline[]; tone: "bad" | "warn" | "ok" }) {
   if (!items.length) return null;
   const chip = { bad: "bg-bad-soft text-bad", warn: "bg-warn-soft text-warn", ok: "bg-ok-soft text-ok" }[tone];
   const icon = { bad: "!", warn: "◷", ok: "✓" }[tone];
@@ -41,6 +42,7 @@ function Group({ title, items, tone }: { title: string; items: Deadline[]; tone:
           </li>
         ))}
       </ul>
+      <MoreDates shown={items.length} total={groupTotal(items)} lapsed={tone === "bad"} className="text-sm text-ink-2" />
     </section>
   );
 }
@@ -51,7 +53,7 @@ export default async function DeadlinesPage({ searchParams }: { searchParams: Pr
   const zone = await viewerZone();
   // Only owners and admins can read the outbox (0039), so a member's page doesn't ask for it.
   const member = ctx.role === "member";
-  const [all, outbox, { plan }, sp] = await Promise.all([listDeadlines(ctx), member ? [] : listOutbox(ctx), billingView(ctx), searchParams]);
+  const [all, outbox, { plan }, sp] = await Promise.all([shownDeadlines(ctx), member ? [] : listOutbox(ctx), billingView(ctx), searchParams]);
   // Reminders from ShipShape are a Pro feature (lib/server/deadlines.ts runs them for Pro only); the calendar file works on every plan.
   const reminders = PLANS[plan].emailReminders;
   const quiet = all.length > 0 && all.every((d) => d.days_left > 90);
