@@ -140,13 +140,14 @@ export function Notice({ tone = "warn", children }: { tone?: "warn" | "bad" | "o
 
 /**
  * Under a paged list: where in it this page is ("Showing 51–100 of 240") and the way to the pages either side; nothing
- * when the list fits on one page. `label` names the pages for a screen reader when a page has two lists.
+ * when the list fits on one page. `label` names the pages for a screen reader when a page has two lists. Under the
+ * redesigned look's hairline list it takes the list's width (app/globals.css, .hair-list + .pager).
  */
 export function Pager({ page, pages, size, shown, total, href, label = "Pages" }: { page: number; pages: number; size: number; shown: number; total: number; href: (page: number) => string; label?: string }) {
   if (pages <= 1) return null;
   const from = (page - 1) * size + 1;
   return (
-    <nav aria-label={label} className="flex flex-wrap items-center justify-between gap-3 text-sm">
+    <nav aria-label={label} className="pager flex flex-wrap items-center justify-between gap-3 text-sm">
       <p className="text-ink-2">
         Showing {from}–{from + shown - 1} of {total}
       </p>

@@ -428,6 +428,10 @@ body {
   .ui-v2 .hair-list > li + li {
     @apply border-t border-line;
   }
+  /* A pager under a hairline list sits on the list's own edges (its lines), not the column's (Design #59 S-2). */
+  .ui-v2 .hair-list + .pager {
+    @apply -mx-3;
+  }
   /* Narrow list: icon | title and meta (wrapping), then the state under them. From 36rem: icon | text | state | chevron, one line each. */
   .ui-v2 .hair-row {
     @apply grid min-h-13 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2 transition-colors duration-[150ms] hover:bg-fill @xl:grid-cols-[auto_minmax(0,1fr)_auto_auto];

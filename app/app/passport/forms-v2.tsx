@@ -204,7 +204,13 @@ function NewPassportFormV2({ onDone, ...props }: PassportFormProps & { onDone: (
               ))}
             </ul>
             {props.left ? (
-              <p className="mt-2 px-1 text-[13px] text-ink-3">{notListed(props.left)} To share one, open it in Documents and choose Share in a link.</p>
+              <p className="mt-2 px-1 text-[13px] text-ink-3">
+                {notListed(props.left)} To share one, open it in{" "}
+                <Link href="/app/documents" className="text-ink underline">
+                  Documents
+                </Link>{" "}
+                and choose Share in a link.
+              </p>
             ) : null}
             <FieldError id="docs-error" error={errors.docs} />
           </fieldset>
