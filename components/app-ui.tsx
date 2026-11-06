@@ -3,7 +3,7 @@ import { fmtDay, type Validity } from "@/lib/today";
 import { SECTION_NAMES } from "./app-sections";
 import { Icon, type IconName } from "./icons";
 
-/** A page's title and its actions. The redesigned app (`.ui-v2`) restyles it through the page-* classes (app/globals.css). */
+/** A page's title and its actions. The redesigned app (`.ui-v2`) restyles it through the page-* classes (app/ui-v2.css). */
 export function PageHeader({ eyebrow, title, children }: { eyebrow?: string; title: string; children?: React.ReactNode }) {
   return (
     <header className="page-header flex flex-wrap items-end justify-between gap-4">
@@ -141,7 +141,7 @@ export function Notice({ tone = "warn", children }: { tone?: "warn" | "bad" | "o
 /**
  * Under a paged list: where in it this page is ("Showing 51–100 of 240") and the way to the pages either side; nothing
  * when the list fits on one page. `label` names the pages for a screen reader when a page has two lists. Under the
- * redesigned look's hairline list it takes the list's width (app/globals.css, .hair-list + .pager).
+ * redesigned look's hairline list it takes the list's width (app/ui-v2.css, .hair-list + .pager).
  */
 export function Pager({ page, pages, size, shown, total, href, label = "Pages" }: { page: number; pages: number; size: number; shown: number; total: number; href: (page: number) => string; label?: string }) {
   if (pages <= 1) return null;

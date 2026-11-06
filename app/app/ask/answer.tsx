@@ -4,7 +4,7 @@ import { currentMatchIds } from "@/lib/request-words";
 import type { ReadBy, RequestItem } from "@/lib/server/request-check";
 import { Celebrate } from "../motion-moments";
 
-// `dot`: the state as the v2 chip's dot colour (validity-chip in globals.css); v1 keeps the tinted pill.
+// `dot`: the state as the v2 chip's dot colour (validity-chip in ui-v2.css); v1 keeps the tinted pill.
 const STATE: Record<RequestItem["state"], { label: string; cls: string; icon: string; dot: string }> = {
   ready: { label: "You have it", cls: "bg-ok-soft text-ok", icon: "✓", dot: "ok" },
   expiring: { label: "Expires soon", cls: "bg-warn-soft text-warn", icon: "◷", dot: "expiring" },

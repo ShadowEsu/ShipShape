@@ -5,8 +5,8 @@ import { useFormStatus } from "react-dom";
 /**
  * A button's props while its form is sending (`busy`): it can't be pressed again, yet stays focusable, so focus stays on
  * it and its sending text ("Saving…") is read. A disabled button would drop focus to the page. A press (or Enter in a
- * field, which presses the form's first button) is cancelled instead. `data-busy` styles it (globals.css): dimmed in
- * v1, its own colours with a progress pointer in v2 (the label says it's busy). `onClick` runs only while not busy.
+ * field, which presses the form's first button) is cancelled instead. `data-busy` styles it: dimmed in v1 (app/globals.css),
+ * its own colours with a progress pointer in v2 (app/ui-v2.css; the label says it's busy). `onClick` runs only while not busy.
  */
 export function busyButton(busy: boolean, onClick?: () => void) {
   return {
