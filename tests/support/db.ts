@@ -13,6 +13,8 @@ export interface TestDb {
   root<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
   /** Adds a row to auth.users and returns its id (null email: like a sample-workspace visitor). */
   user(email: string | null): Promise<string>;
+  /** The app's own login on the test server (`shipshape_app`, over TLS); null on PGlite. */
+  appUrl: string | null;
 }
 
 /**
@@ -25,11 +27,12 @@ const PG_TEST_URL = process.env.SHIPSHAPE_PG_TEST_URL;
 
 /** A fresh database with every migration applied, wired in as the app's database. */
 export async function freshDb(): Promise<TestDb> {
-  const { driver, root } = PG_TEST_URL ? await remoteDb(PG_TEST_URL) : await localDb();
+  const { driver, root, appUrl } = PG_TEST_URL ? await remoteDb(PG_TEST_URL) : await localDb();
   setDriverForTests(driver);
   return {
     driver,
     root,
+    appUrl,
     async user(email) {
       const [row] = await root((tx) => tx.query<{ id: string }>("insert into auth.users (email) values ($1) returning id", [email]));
       return row.id;
@@ -39,7 +42,7 @@ export async function freshDb(): Promise<TestDb> {
 
 async function localDb() {
   const driver = await createLocalDriver();
-  return { driver, root: <T>(fn: (tx: Tx) => Promise<T>) => driver.root(fn) };
+  return { driver, root: <T>(fn: (tx: Tx) => Promise<T>) => driver.root(fn), appUrl: null };
 }
 
 async function remoteDb(adminUrl: string) {
@@ -101,6 +104,7 @@ async function remoteDb(adminUrl: string) {
   appUrl.username = "shipshape_app";
   appUrl.password = password;
   return {
+    appUrl: appUrl.toString(),
     driver: await createRemoteDriver(appUrl.toString()),
     root: <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
       su.begin((t) => fn(postgresTx(t))) as Promise<T>,

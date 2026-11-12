@@ -144,6 +144,7 @@ const TABLES: Record<string, string | null> = {
   slack_connections: "org_id", // Slack (0052): who may add or remove it, and the secret columns no one signed in reads, are in slack.test.ts
   slack_posts: null, // server only: reminders waiting to be posted to Slack (0052), checked in slack.test.ts
   slack_states_used: null, // server only: "Add to Slack" states already taken (0052), checked in slack.test.ts
+  sample_files: null, // server only: a sample-only deployment's files (0053), checked below
 };
 
 describe("row level security", () => {
@@ -192,7 +193,7 @@ describe("row level security", () => {
     }
   });
 
-  it("waitlist, rate limits, sign-in identities, deletion requests, the file-cleanup queues, the email suppression list and the waitlist tally are closed to signed-in users", async () => {
+  it("waitlist, rate limits, sign-in identities, deletion requests, the file-cleanup queues, the email suppression list, the waitlist tally and the sample-file store are closed to signed-in users", async () => {
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.waitlist")));
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.waitlist (email) values ('x@example.com')")));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.rate_hits")));
@@ -221,6 +222,13 @@ describe("row level security", () => {
     // The counts that say whether the sample's waitlist card works (0051): only the waitlist route adds to them.
     await expectDenied(asUser(a, (tx) => tx.query("insert into app.waitlist_tally (day, source, joined) values (current_date, 'sample', 1000)")));
     await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.waitlist_tally")));
+    // A sample-only deployment's files (0053): reached only through /api/files' signed links, which the server makes after RLS
+    // allowed the version; nobody signed in or anonymous reads, adds or deletes one directly.
+    const file = `${orgB}/${crypto.randomUUID()}/v1.pdf`;
+    await expectDenied(asUser(a, (tx) => tx.query("insert into app.sample_files (path, mime, bytes) values ($1, 'application/pdf', '\\x25'::bytea)", [file])));
+    await expectDenied(asUser(a, (tx) => tx.query("select 1 from app.sample_files")));
+    await expectDenied(asUser(a, (tx) => tx.query("delete from app.sample_files")));
+    await expectDenied(asAnon((tx) => tx.query("select 1 from app.sample_files")));
   });
 
   it("sign-out-everywhere times: each person reads only their own, and only moves it themselves (Security E9)", async () => {

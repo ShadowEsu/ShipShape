@@ -100,12 +100,12 @@ export async function createLocalDriver(dataDir?: string, { supabaseStorage = tr
 }
 
 /** The production driver (postgres.js, verified TLS). Exported so `SHIPSHAPE_PG_TEST_URL` runs can test it. */
-export async function createRemoteDriver(url: string): Promise<Driver> {
+export async function createRemoteDriver(url: string, max = 3): Promise<Driver> {
   // Runtime-selected driver: local runs and PGlite tests never load the network client.
   const { default: postgres } = await import("postgres");
   // prepare: false because Supabase's transaction pooler doesn't keep prepared statements.
   // TLS always verified (pg-tls.ts).
-  const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10, ssl: pgTls() });
+  const sql = postgres(url, { prepare: false, max, idle_timeout: 20, connect_timeout: 10, ssl: pgTls() });
   return {
     transaction: (fn) => sql.begin((s) => fn(postgresTx(s))) as never,
     close: () => sql.end({ timeout: 5 }),
@@ -125,6 +125,7 @@ export function postgresTx(s: TransactionSql): Tx {
 // other's writes (and a second postgres.js pool in production).
 declare global {
   var shipshapeDb: Promise<Driver> | undefined;
+  var shipshapeBlobDb: Promise<Driver> | undefined;
 }
 
 function getDriver(): Promise<Driver> {
@@ -143,6 +144,19 @@ function getDriver(): Promise<Driver> {
 /** Tests inject their own database. */
 export function setDriverForTests(d: Driver) {
   globalThis.shipshapeDb = Promise.resolve(d);
+}
+
+/**
+ * The sample-file store's own pool (storage.ts postgresBlobStore), one connection, separate from the app's: the
+ * store writes while its caller's transaction holds one of the app pool's connections. Same database and login.
+ */
+export function blobDriver(url: string): Promise<Driver> {
+  if (!globalThis.shipshapeBlobDb) {
+    const d = createRemoteDriver(url, 1);
+    d.catch(() => (globalThis.shipshapeBlobDb = undefined));
+    globalThis.shipshapeBlobDb = d;
+  }
+  return globalThis.shipshapeBlobDb;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -174,7 +188,12 @@ export async function asAnon<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
 
 /** Server-only steps that no user may do directly (waitlist, webhooks, account deletion). */
 export async function asService<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-  return (await getDriver()).transaction(async (tx) => {
+  return asServiceOn(getDriver(), fn);
+}
+
+/** asService on a given driver (the sample-file store's own pool). */
+export async function asServiceOn<T>(driver: Promise<Driver>, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return (await driver).transaction(async (tx) => {
     await tx.query("set local role service_role");
     await tx.query(START, [JSON.stringify({ role: "service_role" })]);
     return fn(tx);

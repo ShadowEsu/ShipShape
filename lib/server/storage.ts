@@ -5,7 +5,7 @@ import path from "node:path";
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { productionAwsClient } from "./aws";
 import { safeEqual } from "./crypto";
-import { asService } from "./db";
+import { asService, asServiceOn, blobDriver, type Tx } from "./db";
 
 /**
  * Document files. Paths always start with the workspace id (`<org>/<document>/v<n>.<ext>`), and a
@@ -13,7 +13,8 @@ import { asService } from "./db";
  * database confirmed (under RLS) that the caller may see that version. /api/files checks the link
  * and streams the bytes from the store, so no storage URL ever reaches a browser (Security R2, C-4).
  *
- * Local and tests: files on disk. Production: one private S3 bucket (`s3BlobStore`, aws-plan.md).
+ * Local and tests: files on disk. Production: one private S3 bucket (`s3BlobStore`, aws-plan.md), or,
+ * while only sample workspaces exist, the sample's generated files in Postgres (`postgresBlobStore`).
  */
 
 export const MAX_URL_SECONDS = 300;
@@ -266,10 +267,59 @@ function s3Client(env: Env): S3Client {
   return new S3Client({ region, ...(endpoint ? { endpoint, forcePathStyle: true } : {}) });
 }
 
-/** The store a deployment uses, from its environment: S3 when a bucket is set; a folder only outside production. */
+/**
+ * Before AWS exists, a deployment that serves only sample workspaces keeps their generated files in Postgres
+ * (`app.sample_files`, 0053; ledger 616). Each call runs as the server's role on a pool of its own (`blobDriver`):
+ * files are written while the caller's transaction holds a connection from the app's pool, and with one pool,
+ * a few callers doing that at once could each wait on another's connection. It never holds a real document:
+ * storeFromEnv refuses it with SHIPSHAPE_REAL_DOCS on, and the sample's files are all made by ShipShape (the
+ * sample's upload links send made-up files; uploading your own needs real documents). Rows go with their
+ * workspace through `removePrefix`, as on S3.
+ */
+export function postgresBlobStore(run: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>): BlobStore {
+  return {
+    async put(p, bytes, mime) {
+      assertObjectPath(p);
+      const rows = await run((tx) =>
+        tx.query("insert into app.sample_files (path, mime, bytes) values ($1, $2, $3) on conflict (path) do nothing returning path", [p, mime, bytes]),
+      );
+      if (!rows.length) throw new ObjectExists(p);
+    },
+    async get(p) {
+      assertObjectPath(p);
+      const [row] = await run((tx) => tx.query<{ bytes: Uint8Array }>("select bytes from app.sample_files where path = $1", [p]));
+      if (!row) throw new ObjectMissing(p);
+      return new Uint8Array(row.bytes);
+    },
+    async remove(paths) {
+      paths.forEach(assertObjectPath);
+      if (paths.length) await run((tx) => tx.query("delete from app.sample_files where path = any($1::text[])", [paths]));
+    },
+    async removePrefix(prefix) {
+      assertWorkspacePrefix(prefix);
+      // The prefix is a workspace id and a slash (checked above), so starts_with matches that workspace's files only.
+      return (await run((tx) => tx.query("delete from app.sample_files where starts_with(path, $1) returning 1", [prefix]))).length;
+    },
+    signedUrl: fileUrl,
+  };
+}
+
+/**
+ * The store a deployment uses, from its environment: S3 when a bucket is set; Postgres for a sample-only
+ * deployment (SHIPSHAPE_SAMPLE_FILES=database); a folder only outside production.
+ */
 export function storeFromEnv(env: Env): BlobStore {
   const bucket = env.SHIPSHAPE_S3_BUCKET;
+  const sampleFiles = env.SHIPSHAPE_SAMPLE_FILES;
+  if (sampleFiles !== undefined && sampleFiles !== "database") throw new Error("SHIPSHAPE_SAMPLE_FILES must be database or unset");
+  if (bucket && sampleFiles) throw new Error("Set SHIPSHAPE_S3_BUCKET or SHIPSHAPE_SAMPLE_FILES, not both");
   if (bucket) return s3BlobStore(s3Client(env), bucket);
+  if (sampleFiles) {
+    if (env.SHIPSHAPE_REAL_DOCS === "1") throw new Error("Real documents need SHIPSHAPE_S3_BUCKET: SHIPSHAPE_SAMPLE_FILES=database holds sample files only");
+    const url = env.DATABASE_URL;
+    if (!url) throw new Error("SHIPSHAPE_SAMPLE_FILES=database needs DATABASE_URL");
+    return postgresBlobStore((fn) => asServiceOn(blobDriver(url), fn));
+  }
   if (env.NODE_ENV === "production") throw new Error("Production storage needs SHIPSHAPE_S3_BUCKET (not configured)");
   return localBlobStore(env.SHIPSHAPE_BLOB_DIR ?? path.join(process.cwd(), ".data", "blobs"));
 }
