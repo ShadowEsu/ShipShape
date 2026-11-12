@@ -13,6 +13,8 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   const contact = contactEmail();
+  // A sample-only deployment before AWS (ledger 616): the database is Neon's, and it holds the samples' files too.
+  const sampleOnly = process.env.SHIPSHAPE_SAMPLE_FILES === "database";
   return (
     <LegalPage title="Privacy policy" version={TERMS_VERSION}>
       <p>
@@ -122,8 +124,10 @@ export default function PrivacyPage() {
       </ul>
       <p>
         We don&apos;t sell your data, we don&apos;t share it for advertising, and we don&apos;t use your documents to train AI
-        models. Our providers are Vercel (hosting), Amazon Web Services (database, file storage and sign-in, in the United States,
-        region us-east-1), Stripe (payments) and Anthropic (the AI action above).
+        models.{" "}
+        {sampleOnly
+          ? "Our providers today are Vercel (hosting) and Neon (the database, which also keeps the sample workspaces' files, in the United States, region us-east-1). Stripe, Amazon Web Services and Anthropic are named above for payments, accounts and the AI action, none of which is switched on yet."
+          : "Our providers are Vercel (hosting), Amazon Web Services (database, file storage and sign-in, in the United States, region us-east-1), Stripe (payments) and Anthropic (the AI action above)."}
       </p>
 
       <h2>Security</h2>

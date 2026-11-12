@@ -117,6 +117,19 @@ const said = (html: string) => textOf(html).replace(/ ([.,;])/g, "$1");
 /** The same token with its last character changed: well-formed, and wrong. */
 const otherToken = (token: string) => token.slice(0, -1) + (token.endsWith("A") ? "B" : "A");
 
+/**
+ * 01:00 UTC five days from today: still the day before in Los Angeles, already that day in Tokyo. Relative to today, so a
+ * link set to end then is open and passes the tables' "ends after it was made" checks (a fixed 8 Nov 2026 stopped both).
+ */
+const zoneEdge = (() => {
+  const end = new Date();
+  end.setUTCHours(0, 0, 0, 0);
+  end.setUTCDate(end.getUTCDate() + 5);
+  end.setUTCHours(1);
+  const day = (timeZone: string) => end.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric", year: "numeric" });
+  return { iso: end.toISOString(), la: day("America/Los_Angeles"), tokyo: day("Asia/Tokyo") };
+})();
+
 /** The one thing a closed link offers: a drafted email asking whoever sent it for a new one. */
 function expectAskForNewLink(html: string) {
   const actions = actionsOf(html);
@@ -239,16 +252,16 @@ describe("a passport link (/p)", () => {
   it("says the link's last day where the viewer is, not the UTC day (Security: the viewer's zone comes from their own cookie)", async () => {
     const docs = await listDocuments(sample);
     const { id, token } = await createPassport(sample, { label: "West coast", days: 7, documentIds: [docs[0].id] });
-    // Ends at 01:00 UTC on the 8th: still the 7th in Los Angeles, already the 8th in Tokyo.
-    await db.root((tx) => tx.query("update app.share_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    // Ends at 01:00 UTC: still the day before in Los Angeles, already that day in Tokyo.
+    await db.root((tx) => tx.query("update app.share_links set expires_at = $2 where id = $1", [id, zoneEdge.iso]));
     jar.set("ss_passport", token);
     jar.set("ss_tz", "America/Los_Angeles");
-    expect(textOf(await passportPage(id))).toContain("this link works until Nov 7, 2026");
+    expect(textOf(await passportPage(id))).toContain(`this link works until ${zoneEdge.la}`);
     jar.set("ss_tz", "Asia/Tokyo");
-    expect(textOf(await passportPage(id))).toContain("this link works until Nov 8, 2026");
+    expect(textOf(await passportPage(id))).toContain(`this link works until ${zoneEdge.tokyo}`);
     // Junk zone: UTC.
     jar.set("ss_tz", "Mars/Olympus");
-    expect(textOf(await passportPage(id))).toContain("this link works until Nov 8, 2026");
+    expect(textOf(await passportPage(id))).toContain(`this link works until ${zoneEdge.tokyo}`);
     // The same for an expired link's end.
     await db.root((tx) => tx.query("update app.share_links set created_at = now() - interval '8 days', expires_at = now() - interval '1 hour' where id = $1", [id]));
     jar.set("ss_tz", "Pacific/Kiritimati");
@@ -407,12 +420,12 @@ describe("a signing link (/s)", () => {
 
   it("says until when it can be signed on the viewer's day, not the UTC day", async () => {
     const { id, token } = await request();
-    await db.root((tx) => tx.query("update app.signature_requests set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    await db.root((tx) => tx.query("update app.signature_requests set expires_at = $2 where id = $1", [id, zoneEdge.iso]));
     jar.set("ss_sign", token);
     jar.set("ss_tz", "America/Los_Angeles");
-    expect(said(await signingPage(id))).toContain("You can sign until Nov 7, 2026.");
+    expect(said(await signingPage(id))).toContain(`You can sign until ${zoneEdge.la}.`);
     jar.set("ss_tz", "Asia/Tokyo");
-    expect(said(await signingPage(id))).toContain("You can sign until Nov 8, 2026.");
+    expect(said(await signingPage(id))).toContain(`You can sign until ${zoneEdge.tokyo}.`);
   });
 
   describe("redesigned (SHIPSHAPE_UI=v2)", () => {
@@ -590,17 +603,17 @@ describe("an upload link (/c)", () => {
 
   it("says the link's last day and a file's received day where the vendor is, not the UTC day", async () => {
     const { id, token } = await link(sample, "Night Owl Supply");
-    await db.root((tx) => tx.query("update app.vendor_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    await db.root((tx) => tx.query("update app.vendor_links set expires_at = $2 where id = $1", [id, zoneEdge.iso]));
     jar.set("ss_collect", token);
     expect(await receiveFile(id, token, { kind: "w9", expiresOn: "", file: null })).toBe("sent");
     await db.root((tx) => tx.query("update app.vendor_files f set received_at = '2026-11-01 01:00:00+00' from app.vendor_links l where l.vendor_id = f.vendor_id and l.id = $1", [id]));
     jar.set("ss_tz", "America/Los_Angeles");
     const la = said(await collectPage(id));
-    expect(la).toContain("this link works until Nov 7, 2026");
+    expect(la).toContain(`this link works until ${zoneEdge.la}`);
     expect(la).toContain("Received Oct 31, 2026");
     jar.set("ss_tz", "Asia/Tokyo");
     const tokyo = said(await collectPage(id));
-    expect(tokyo).toContain("this link works until Nov 8, 2026");
+    expect(tokyo).toContain(`this link works until ${zoneEdge.tokyo}`);
     expect(tokyo).toContain("Received Nov 1, 2026");
   });
 });
@@ -777,6 +790,14 @@ describe("the public pages once payments are live (Security MUST-3, MUST-4)", ()
     const off = textOf(await renderPage(StatusPage, {}));
     expect(off).toContain("Features Sample workspaces");
     expect(off).toContain("Payments No real charges. Off");
+  });
+
+  it("a sample-only deployment's privacy page names the database it really uses, not AWS (ledger 616)", async () => {
+    vi.stubEnv("SHIPSHAPE_SAMPLE_FILES", "database");
+    const privacy = textOf(await renderPage(PrivacyPage, {}));
+    expect(privacy).toContain("Our providers today are Vercel (hosting) and Neon (the database, which also keeps the sample workspaces' files");
+    expect(privacy).toContain("none of which is switched on yet");
+    expect(privacy).not.toContain("Amazon Web Services (database, file storage and sign-in");
   });
 
   it("the pages for contractors and freelancers say 'in the sample' while real documents are closed, and mark Collect and signing for what they are once open", async () => {
