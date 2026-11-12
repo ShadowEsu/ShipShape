@@ -214,6 +214,14 @@ describe("real documents gate (Security G3)", () => {
     ]);
     expect(broken.join(" ")).not.toContain(secret);
     expect(launchProblems({ ...full, AWS_ROLE_ARN: undefined })).toEqual(["Production S3 storage needs AWS_ROLE_ARN"]);
+    // Before AWS (ledger 616): only sample workspaces, their files in Postgres. Everything else is still required, and real documents can't open.
+    const sampleOnly = { ...full, SHIPSHAPE_S3_BUCKET: undefined, AWS_REGION: undefined, AWS_ROLE_ARN: undefined, SHIPSHAPE_SAMPLE_FILES: "database" };
+    expect(launchProblems(sampleOnly)).toEqual([]);
+    expect(launchProblems({ ...sampleOnly, DATABASE_URL: undefined })).toEqual(["DATABASE_URL is not set", "SHIPSHAPE_SAMPLE_FILES=database needs DATABASE_URL"]);
+    expect(launchProblems({ ...sampleOnly, SHIPSHAPE_REAL_DOCS: "1" })).toEqual([
+      "Real documents need SHIPSHAPE_S3_BUCKET: SHIPSHAPE_SAMPLE_FILES=database holds sample files only",
+      "Real documents need account sign-in (COGNITO_*)",
+    ]);
     // The waitlist is open and /privacy tells people to write to come off it, so production needs the address before real documents too (W13-9), named once.
     expect(launchProblems({ ...full, CONTACT_EMAIL: undefined })).toEqual(["CONTACT_EMAIL is not set: /privacy tells people to write to it"]);
     expect(launchProblems({ ...full, CONTACT_EMAIL: "not an address", SHIPSHAPE_REAL_DOCS: "1" })).toEqual([

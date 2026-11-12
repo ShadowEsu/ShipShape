@@ -89,6 +89,19 @@ const primary = (html: string) => [...html.matchAll(/<(a|button)\b[^>]*\bclass="
 
 const none = () => ({ searchParams: Promise.resolve({}) });
 
+/**
+ * 01:00 UTC five days from today: still the day before in Los Angeles, already that day in Tokyo. Relative to today, so a
+ * link set to end then is still working (a fixed 8 Nov 2026 end showed as ended once that day passed).
+ */
+const zoneEdge = (() => {
+  const end = new Date();
+  end.setUTCHours(0, 0, 0, 0);
+  end.setUTCDate(end.getUTCDate() + 5);
+  end.setUTCHours(1);
+  const day = (timeZone: string) => end.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric", year: "numeric" });
+  return { iso: end.toISOString(), la: day("America/Los_Angeles"), tokyo: day("Asia/Tokyo") };
+})();
+
 describe("Passport", () => {
   it("with no documents: says a link needs one and offers only Add a document", async () => {
     await signIn("passport-empty@example.com");
@@ -243,15 +256,15 @@ describe("Passport", () => {
     const ctx = await signIn("passport-zone@example.com");
     const doc = await addDoc(ctx, "Liability certificate");
     const { id } = await createPassport(ctx, { label: "West coast", days: 7, documentIds: [doc] });
-    // Ends at 01:00 UTC on the 8th: the 7th in Los Angeles, the 8th in Tokyo.
-    await db.root((tx) => tx.query("update app.share_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    // Ends at 01:00 UTC: the day before in Los Angeles, that day in Tokyo.
+    await db.root((tx) => tx.query("update app.share_links set expires_at = $2 where id = $1", [id, zoneEdge.iso]));
     const detail = () => renderPage(PassportDetail, { params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
     jar.set("ss_tz", "America/Los_Angeles");
-    expect(textOf(await detail())).toMatch(/Works until Nov 7, 2026 ?\./);
-    expect(textOf(await renderPage(PassportPage, none()))).toContain("until Nov 7, 2026");
+    expect(textOf(await detail())).toMatch(new RegExp(`Works until ${zoneEdge.la} ?\\.`));
+    expect(textOf(await renderPage(PassportPage, none()))).toContain(`until ${zoneEdge.la}`);
     jar.set("ss_tz", "Asia/Tokyo");
-    expect(textOf(await detail())).toMatch(/Works until Nov 8, 2026 ?\./);
-    expect(textOf(await renderPage(PassportPage, none()))).toContain("until Nov 8, 2026");
+    expect(textOf(await detail())).toMatch(new RegExp(`Works until ${zoneEdge.tokyo} ?\\.`));
+    expect(textOf(await renderPage(PassportPage, none()))).toContain(`until ${zoneEdge.tokyo}`);
     // Once ended, the badge and the detail's notice say the same day.
     await db.root((tx) => tx.query("update app.share_links set created_at = '2026-10-25 01:00:00+00', expires_at = '2026-10-31 02:00:00+00' where id = $1", [id]));
     jar.set("ss_tz", "America/Los_Angeles");
@@ -427,12 +440,12 @@ describe.each([
     const ctx = await signIn(mail("collect-waiting"));
     const vendorId = await addVendor(ctx, { name: "Rivera Electric", email: "", requested: ["w9"] });
     const { id } = await createVendorLink(ctx, { vendorId, days: 7 });
-    await db.root((tx) => tx.query("update app.vendor_links set expires_at = '2026-11-08 01:00:00+00' where id = $1", [id]));
+    await db.root((tx) => tx.query("update app.vendor_links set expires_at = $2 where id = $1", [id, zoneEdge.iso]));
     jar.set("ss_tz", "America/Los_Angeles");
     const html = await renderPage(VendorPage, { params: Promise.resolve({ id: vendorId }), searchParams: Promise.resolve({}) });
-    // The end is an instant (01:00 UTC on the 8th): the owner in Los Angeles reads the 7th.
-    expect(textOf(html)).toContain("Waiting for Rivera Electric Your upload link works until Nov 7, 2026. Their files land here as soon as they send them");
-    expect(textOf(html)).toContain("until Nov 7, 2026");
+    // The end is an instant (01:00 UTC): the owner in Los Angeles reads the day before.
+    expect(textOf(html)).toContain(`Waiting for Rivera Electric Your upload link works until ${zoneEdge.la}. Their files land here as soon as they send them`);
+    expect(textOf(html)).toContain(`until ${zoneEdge.la}`);
     expect(textOf(html)).not.toContain("Nothing received yet");
   });
 

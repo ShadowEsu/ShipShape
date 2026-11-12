@@ -5,7 +5,8 @@ import path from "node:path";
 import { CreateBucketCommand, GetObjectCommand, PutBucketVersioningCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { productionAwsClient } from "@/lib/server/aws";
-import { type BlobStore, localBlobStore, MAX_URL_SECONDS, ObjectExists, ObjectMissing, s3BlobStore, storeFromEnv, verifyFileParams } from "@/lib/server/storage";
+import { asServiceOn, createLocalDriver, type LocalDriver } from "@/lib/server/db";
+import { type BlobStore, localBlobStore, MAX_URL_SECONDS, ObjectExists, ObjectMissing, postgresBlobStore, s3BlobStore, storeFromEnv, verifyFileParams } from "@/lib/server/storage";
 
 const newPath = () => `${randomUUID()}/${randomUUID()}/v1.pdf`;
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -103,6 +104,15 @@ describe("local file store", () => {
   contract(() => localBlobStore(dir));
 });
 
+describe("sample files in Postgres (SHIPSHAPE_SAMPLE_FILES=database, 0053)", () => {
+  let driver: LocalDriver;
+  beforeAll(async () => {
+    driver = await createLocalDriver();
+  }, 60_000);
+  afterAll(() => driver.close());
+  contract(() => postgresBlobStore((fn) => asServiceOn(Promise.resolve(driver), fn)));
+});
+
 describe("which store a deployment uses (Security D-2)", () => {
   const production = { NODE_ENV: "production", SHIPSHAPE_S3_BUCKET: "shipshape-files", AWS_REGION: "us-east-1", AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/shipshape-prod-app" };
 
@@ -116,6 +126,16 @@ describe("which store a deployment uses (Security D-2)", () => {
     expect(() => storeFromEnv({ ...production, AWS_REGION: undefined })).toThrow("needs AWS_REGION");
     // The complete set is accepted (no AWS call happens until a file is stored or read).
     expect(() => storeFromEnv(production)).not.toThrow();
+  });
+
+  it("keeps files in Postgres only for a sample-only deployment: never with real documents, never beside a bucket, never on a typo", () => {
+    const sampleOnly = { NODE_ENV: "production", SHIPSHAPE_SAMPLE_FILES: "database", DATABASE_URL: "postgres://shipshape_app@db.example:5432/shipshape" };
+    // The store opens no connection until a file is stored or read.
+    expect(() => storeFromEnv(sampleOnly)).not.toThrow();
+    expect(() => storeFromEnv({ ...sampleOnly, SHIPSHAPE_REAL_DOCS: "1" })).toThrow("Real documents need SHIPSHAPE_S3_BUCKET");
+    expect(() => storeFromEnv({ ...sampleOnly, DATABASE_URL: undefined })).toThrow("SHIPSHAPE_SAMPLE_FILES=database needs DATABASE_URL");
+    expect(() => storeFromEnv({ ...production, SHIPSHAPE_SAMPLE_FILES: "database" })).toThrow("not both");
+    for (const typo of ["db", "Database", "1", ""]) expect(() => storeFromEnv({ ...sampleOnly, SHIPSHAPE_SAMPLE_FILES: typo }), typo).toThrow("must be database or unset");
   });
 
   it("in production, an endpoint_url in the SDK's config file is ignored too: requests go to AWS (CG-1)", async () => {

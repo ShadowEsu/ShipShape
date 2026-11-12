@@ -59,6 +59,10 @@ MIGRATE_DATABASE_URL=postgres://<master>@<host>/shipshape DATABASE_CA_CERT="$(ca
 
 `scripts/migrate.ts` (Node 22.18 or later) runs `supabase/platform/plain-postgres.sql` once (the request roles, `auth.users`, `auth.uid()`), then each new migration in its own transaction as `shipshape_owner`, a role that can't log in and isn't a superuser. The master user needn't be a superuser (RDS's isn't). Each applied migration's SHA-256 is recorded; before changing anything, a run refuses when an applied migration's file has changed since or is gone, or when a new one sorts before one already applied (a branch merged late: name it with `--allow-late <file name>` to run it). The run ends by checking that `shipshape_app`, the only login the app uses, isn't a superuser, can't bypass row level security, create roles or databases, or replicate, and owns nothing (no table, function, schema or type), and that no other ShipShape role can log in; it also prints `password_encryption` and `rds.force_ssl`. The master credentials are for that run only; give `shipshape_app` its login separately. The certificate is always verified. Local databases and the tests are built by the same code (`lib/server/migrations.ts`).
 
+### A sample-only deployment (before AWS)
+
+With `SHIPSHAPE_REAL_DOCS` unset, the only workspaces are samples, and every file in them is one ShipShape made. Such a deployment can run without S3: `SHIPSHAPE_SAMPLE_FILES=database` keeps those files in Postgres (`app.sample_files`, migration 0053), read and written as the server's role on a one-connection pool of their own, and deleted with their workspace by the daily sample purge. One sample holds 13 files, about 350 KB. Every other production setting is still required (`lib/server/launch-check.ts`); the store refuses to start with `SHIPSHAPE_REAL_DOCS=1` or beside `SHIPSHAPE_S3_BUCKET`. Real documents need the S3 bucket.
+
 ## How it's built
 
 Next.js 16 (App Router, server actions), Postgres with row level security, pdf-lib for filling and certificates, Stripe for billing.
